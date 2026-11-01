@@ -583,6 +583,7 @@ Put that in a password manager. Rehearse a restore before you need one:
 | `CODE_INDEX.md` | Agent context index — per-file code structure | Generated; see [Agent context maps](#agent-context-maps) |
 | `install.sh` | The one script you run on the Pi | Commented inline |
 | `scripts/bootstrap.sh` | The ONE privileged, one-time host bootstrap (accounts, FHS layout, migration) | Commented inline; see [`deploy/README.md`](deploy/README.md) |
+| `scripts/reset-passwords.sh` | The owner-run password reset for all three logins | Commented inline; see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
 | `doctor.sh` | One-command health check | Commented inline |
 | `collect-diagnostics.sh` | Bundles logs and status into one redacted file | Commented inline |
 | `docker-compose.yml` | Blueprint for the Pi containers | Commented inline |
@@ -836,6 +837,10 @@ docker compose --env-file .env logs -f open-webui
 
 # Restart after config changes
 ./install.sh
+
+# Rotate the login passwords (auth gate + Open WebUI admin + Hermes dashboard)
+./scripts/reset-passwords.sh              # prompt twice, echo off
+./scripts/reset-passwords.sh --generate   # random password, shown once
 
 # Backups (automatic nightly at 03:15; these are manual controls)
 ./backup/backup.sh                 # run now

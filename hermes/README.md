@@ -539,6 +539,33 @@ are recorded in
 
 ---
 
+## Credentials: the WebUI dashboard login
+
+The Hermes WebUI dashboard can be gated with HTTP basic auth. When it is, the
+credential lives in the **default profile's** `config.yaml`,
+`dashboard.basic_auth`, as `username` plus `password_hash` (or a legacy
+plaintext `password`). Nothing in `.env` holds it, so it is not rotated with the
+stack secrets.
+
+Change it with [`../scripts/reset-passwords.sh`](../scripts/reset-passwords.sh)
+on the host. It computes the hash inside the running `hermes-agent` container
+with Hermes's own `plugins.dashboard_auth.basic.hash_password`, backs the config
+up at mode 0600, rewrites only the `password_hash` member, removes a sibling
+plaintext `password` member, and proves by parsing that only those two keys
+changed. `username` and `secret` stay byte-identical.
+
+The script preserves the enabled state: with no `basic_auth` block it changes
+nothing and reports `Hermes dashboard password not configured — skipped (not
+enabling)`. It also refuses when any `HERMES_DASHBOARD_BASIC_AUTH_*` variable is
+set in the container environment, because that overrides the file.
+
+A config edit takes effect at the next WebUI start, and `docker restart
+hermes-agent` also restarts the gateway, killing every running kanban worker.
+The script therefore prints `docker restart hermes-agent` instead of running it
+unless you confirm interactively or pass `--restart-hermes`.
+
+---
+
 ## Reaching OpenHands from Hermes
 
 Over `coder-net`, from inside the `hermes-agent` container, the OpenHands API answers at:

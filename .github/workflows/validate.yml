@@ -514,6 +514,25 @@ jobs:
         # or Caddy.
         run: bash scripts/test-auth-render.sh
 
+      - name: Password reset script tests
+        # Offline. NO Docker, NO network. `docker` is a stub on PATH and the
+        # in-container Python packages (bcrypt, yaml,
+        # plugins.dashboard_auth.basic, open_webui.*) are fixtures, so the REAL
+        # scripts/reset-passwords.sh runs every leg against a throwaway tree.
+        # Proves: compose `$` escaping is doubled exactly once and is
+        # idempotent (never `$$$$`); only the HYBRID_AI_AUTH_HASH line of the
+        # stack env file changes and every other line stays byte-for-byte,
+        # including a file with no trailing newline; both rewritten files get a
+        # timestamped 0600 backup; a configured Hermes dashboard has its
+        # password_hash replaced by Hermes's own helper while username and
+        # secret stay identical, and its plaintext password member is removed;
+        # an unconfigured dashboard leaves the file untouched and reports the
+        # exact skip message; a HERMES_DASHBOARD_BASIC_AUTH_* container variable
+        # makes that leg refuse and change nothing; the password never reaches
+        # an argv, a log or any file; and a failing leg gives a non-zero exit
+        # while the remaining legs still run.
+        run: bash scripts/test-reset-passwords.sh
+
       - name: Validate rendered Caddyfiles with real Caddy (TLS x auth matrix)
         # The only guard that runs a REAL Caddy over the RENDERED file: every
         # other suite stubs `caddy` textually, so none of them can catch a

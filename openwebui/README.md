@@ -55,6 +55,22 @@ means nothing to configure.
 
 ---
 
+## The admin login
+
+The Open WebUI admin account is the login for `http://<pi>:3000`. To change its
+password, run [`../scripts/reset-passwords.sh`](../scripts/reset-passwords.sh)
+on the host: it resets the EXISTING admin row in-container through the app's own
+`open_webui.utils.auth.get_password_hash`, never creates, deletes, promotes or
+demotes a user, and leaves `WEBUI_AUTH` and `WEBUI_SECRET_KEY` untouched. With
+more than one admin it lists the emails and asks which one to reset.
+
+The same script resets the `auth` gate and the Hermes dashboard password, so one
+run changes all three logins. See
+[`../docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md) for the by-hand
+`v0.11.4` import paths.
+
+---
+
 ## Behaviours that must not regress
 
 `test_refactor.py` covers these. Run it after any change to either source file.
