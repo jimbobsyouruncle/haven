@@ -78,6 +78,7 @@
 
 - docs/BUILDER_PUBLISH_SMOKE_TEST.md
 - docs/TROUBLESHOOTING.md - Troubleshooting & Operations
+- docs/agent-context-index-design.md - On-demand agent-context navigation: design and evidence
 - docs/tls-acme-design.md - TLS termination and ACME design (jarvis.lan -> daemonhub.dev)
 - docs/tls-renewal-health.md - TLS renewal health, audit and alerting
 ## hermes
