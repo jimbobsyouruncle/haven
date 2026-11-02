@@ -114,7 +114,7 @@ RUN set -eu; \
       "launchers": ["hermes", "hermes-acp"]}, indent=2) + "\n")' "${HERMES_INSTALL_DIR}" "${VENV}" \
  && python3 -c 'import json,pathlib,sys; p=pathlib.Path(sys.argv[1]) / "install-stamp.json"; \
       s=json.loads(p.read_text()); s["updateMechanism"] = "external"; s["distribution"] = "docker"; p.write_text(json.dumps(s) + "\n")' "${HERMES_INSTALL_DIR}" \
- && STORE_PY="$(find "${HERMES_INSTALL_DIR}/tools" -maxdepth 3 -type f -name 'python3.*' -path '*/bin/*' | head -n1)" \
+ && STORE_PY="$(find "${HERMES_INSTALL_DIR}/tools" -maxdepth 3 -type f -name 'python3.*' ! -name '*-config' -path '*/bin/*' | head -n1)" \
  && "${STORE_PY}" -m compileall -q "${HERMES_INSTALL_DIR}" \
  && test "$(stat -c '%u' "${HERMES_INSTALL_DIR}")" = "0" \
  && rm -rf "${HERMES_INSTALL_DIR}/.git" \
