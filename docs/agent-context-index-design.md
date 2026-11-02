@@ -46,7 +46,7 @@ generator fails closed with exit 1 rather than truncating.
 | Freshness checker | `scripts/check-agent-context.sh:38,54,60` | runs the generator twice into a temp dir with `--max-bytes 24576`; `cmp` on exactly `REPO_MAP.md` and `CODE_INDEX.md`; exit 1 on stale/missing, 2 on generator failure | hard-coded names, hard-coded list of two |
 | Fixture test | `scripts/test-check-agent-context.sh:120-165` | builds a throwaway repo and asserts exit codes 0/1/2 for seven cases; case 5 at `:151` removes `REPO_MAP.md` and must fail | hard-coded name in one case |
 | PR gate | `.github/workflows/agent-context.yml:18-29` | checks out the pin, runs the fixture, then the checker | pin `ref:` at line 22, budget in the checker |
-| Committer | `.github/workflows/agent-context-committer.yml:93,98,108,119,136,153` | loop guard, no-op guard, `git add`, commit message and PR body all name the two files; regenerates at `--max-bytes 24576` | four independent filename lists plus the staging list |
+| Committer | `.github/workflows/agent-context-committer.yml:93,98,108,119,136,153` | loop guard, no-op guard, `git add` and PR body name the two files; the commit message at `:137` is generic (`chore(agent-context): refresh maps for ${SHA}`) and names none; regenerates at `--max-bytes 24576` | four independent filename lists plus the staging list |
 | Agent instructions | `openhands/AGENTS.md:15-17` | "read `REPO_MAP.md` and `CODE_INDEX.md` ... first, then open only those files", unconditionally, for whatever repository is the target | unconditional mandatory read |
 | Instruction entry point | `openhands/README.md:246` | tells the operator to start a conversation with "Read `/workspace/openhands/AGENTS.md` and follow it" | inherits the unconditional read |
 | Human docs | `README.md:307-336`, `.github/README.md:127-146` | describe both files, the budget and the regeneration command | prose, not enforced |
@@ -140,17 +140,22 @@ Grounded answers, from the files each route opened:
   `:625` `leg_auth`, `:722` `leg_webui`, `:965` `leg_hermes`, and
   `:1075-1077` run each leg under `|| true` so one failure cannot abort the
   others. Credential shape: stdin only (`:22-30`), 0600 timestamped backups
-  (`:36-37`, `:661`), no argv or log exposure.
+  (`:36-37`, `:662`; the rewritten file itself is chmod 0600 at `:675`), no
+  argv or log exposure.
 * **Q2** `scripts/test-reset-passwords.sh:1-40` describes the offline harness
   (stubbed `docker`, fixture in-container modules); `.github/workflows/validate.yml:517-534`
   is the `Password reset script tests` step that runs it, inside the reusable
   `validate.yml` workflow that `sast-checks.yml:93-95` and `deploy.yml` call.
 * **Q3** `SECURITY_SUMMARY.md:1-40` is the do-not-weaken table;
   `status/Caddyfile.tmpl:29` is the private-range allowlist
-  (`@untrusted not remote_ip .../10 fd7a:115c:a1e0::/48`);
-  `openwebui/runpod_core.py:528-536` builds `httpx.AsyncClient(trust_env=False)`
-  so a stray proxy variable cannot reroute prompts; `backup/backup.sh:8` and
-  `:586` show restic encryption with `RESTAPI_PASSWORD_FILE`-style separation.
+  (`@untrusted not remote_ip .../10 fd7a:115c:a1e0::/48`); mesh egress is
+  enforced in `openwebui/runpod_pipe.py` — the default-on flag
+  `enforce_mesh_only: bool = True` at `:158-159`, the `is_mesh_address()` test
+  at `:172`, and its point of use before transmitting at `:283-284`, which also
+  accepts a `.ts.net` host; `openwebui/runpod_core.py:528-536` builds
+  `httpx.AsyncClient(trust_env=False)` so a stray proxy variable cannot reroute
+  prompts; `backup/backup.sh:8` and `:586` show restic encryption with
+  `RESTAPI_PASSWORD_FILE`-style separation.
 * **Q4** `docs/TROUBLESHOOTING.md:814-830`, "Forgot the admin password ...",
   instructs the operator to run the owner script on the host.
 
