@@ -315,10 +315,10 @@ Two files at the repository root give coding agents a small map of the codebase 
 
 Agents read these maps first and open only the files they actually need. That keeps context small and answers faster than dumping whole files into the prompt.
 
-Both files are generated from the tracked file list, are deterministic (no timestamps or commit SHAs), and must stay under 20480 bytes each. Regenerate them after any change that adds, removes, or renames a tracked file:
+Both files are generated from the tracked file list, are deterministic (no timestamps or commit SHAs), and must stay under 24576 bytes each. Regenerate them after any change that adds, removes, or renames a tracked file:
 
 ```bash
-python3 <path-to-generate.py> --root . --output-dir . --max-bytes 20480
+python3 <path-to-generate.py> --root . --output-dir . --max-bytes 24576
 ```
 
 `scripts/check-agent-context.sh` verifies they are fresh. It compares the committed maps against a fresh generator run and exits:
@@ -583,6 +583,7 @@ Put that in a password manager. Rehearse a restore before you need one:
 | `CODE_INDEX.md` | Agent context index — per-file code structure | Generated; see [Agent context maps](#agent-context-maps) |
 | `install.sh` | The one script you run on the Pi | Commented inline |
 | `scripts/bootstrap.sh` | The ONE privileged, one-time host bootstrap (accounts, FHS layout, migration) | Commented inline; see [`deploy/README.md`](deploy/README.md) |
+| `scripts/reset-passwords.sh` | The owner-run password reset for all three logins | Commented inline; see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
 | `doctor.sh` | One-command health check | Commented inline |
 | `collect-diagnostics.sh` | Bundles logs and status into one redacted file | Commented inline |
 | `docker-compose.yml` | Blueprint for the Pi containers | Commented inline |
@@ -836,6 +837,10 @@ docker compose --env-file .env logs -f open-webui
 
 # Restart after config changes
 ./install.sh
+
+# Rotate the login passwords (auth gate + Open WebUI admin + Hermes dashboard)
+./scripts/reset-passwords.sh              # prompt twice, echo off
+./scripts/reset-passwords.sh --generate   # random password, shown once
 
 # Backups (automatic nightly at 03:15; these are manual controls)
 ./backup/backup.sh                 # run now

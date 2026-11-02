@@ -810,17 +810,69 @@ If it works locally but not remotely, the other device is not on your tailnet.
 
 `WEBUI_SECRET_KEY` changed. It should never change — `install.sh` reuses it. Check whether `.env` was deleted or regenerated from scratch.
 
-**Forgot the admin password**
+**Forgot the admin password, the auth-gate password, or the Hermes dashboard password**
+
+Run the owner script on the host. It sets ONE new password on all three login
+surfaces and preserves every enabled state exactly as it found it:
 
 ```bash
-docker exec -it open-webui python -c "
-from open_webui.apps.webui.models.auths import Auths
-from open_webui.utils.utils import get_password_hash
-Auths.update_user_password_by_id('YOUR_USER_ID', get_password_hash('newpassword'))
-"
+./scripts/reset-passwords.sh              # prompt twice, echo off
+./scripts/reset-passwords.sh --generate   # random password, shown once
 ```
 
-Find your user ID under **Admin Panel → Users**.
+It backs up the stack env file and the Hermes config first (mode 0600,
+timestamped, beside the original), hashes the auth gate with bcrypt cost 12
+inside the `hybrid-ai-auth` container, recreates only the `auth` service, and
+reports per-leg applied/skipped/failed in a summary. The Hermes dashboard edit
+takes effect at the next WebUI start; the script prints the exact restart
+command rather than restarting, because a restart also kills running kanban
+workers.
+
+If the Open WebUI admin has to be reset by hand instead, the import paths are
+these for `v0.11.4`. Both calls are async, and
+`update_user_password_by_id` takes the HASH, not the plaintext:
+
+```bash
+docker exec -i open-webui python -c '
+import asyncio
+import sys
+
+from open_webui.models.auths import Auths
+from open_webui.utils.auth import get_password_hash
+
+
+async def main():
+    password = sys.stdin.readline().rstrip("\n")
+    hashed = await get_password_hash(password)
+    result = await Auths.update_user_password_by_id("YOUR_USER_ID", hashed)
+    if not result:
+        sys.stderr.write("no auth row was updated\n")
+        raise SystemExit(3)
+
+
+asyncio.run(main())
+'
+```
+
+Feed the password on stdin; it does not belong on the command line. Find your
+user ID under **Admin Panel → Users**, or ask the container for the admin rows:
+
+```bash
+docker exec open-webui python -c '
+import asyncio
+import json
+
+from open_webui.models.users import Users
+
+
+async def main():
+    result = await Users.get_users(filter={"roles": ["admin"]})
+    print(json.dumps([{"id": u.id, "email": u.email} for u in result["users"]]))
+
+
+asyncio.run(main())
+'
+```
 
 **Uploaded documents are not being found**
 
