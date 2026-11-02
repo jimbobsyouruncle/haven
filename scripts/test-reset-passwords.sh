@@ -34,6 +34,15 @@
 #   Failure semantics a failing leg exits non-zero and the other legs still run
 #   Generate          --generate prints a 24-character password exactly once in
 #                     the summary, and it reaches no argv
+#   Mutation failure  a failed install/mv/chmod/chown is reported, the original
+#                     file is left intact, and the other legs still run
+#   WebUI False       the app helper returning False fails the leg
+#   Restart failure   a requested restart that fails marks the leg failed
+#                     (config still written) and exits non-zero
+#   Empty confirm     an empty confirmation line is refused like a mismatch
+#   Scrubbing         a helper that echoes a password or a sentinel hash to
+#                     stderr cannot leak it into the script's output
+#   Ownership         the replacement carries the original's owner and mode
 #
 # USAGE:
 #   bash scripts/test-reset-passwords.sh
@@ -60,7 +69,7 @@ if [[ ! -x "$RESET_SCRIPT" ]]; then
   printf 'FATAL: cannot find an executable %s\n' "$RESET_SCRIPT" >&2
   exit 2
 fi
-for tool in mktemp stat grep cmp python3 install awk sed tr tail; do
+for tool in mktemp stat grep cmp python3 install awk sed tr tail chmod chown mv script; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'error: %s is required\n' "$tool" >&2
     exit 2
@@ -126,6 +135,10 @@ def hashpw(password, salt):
             cost = 12
     if isinstance(password, str):
         password = password.encode()
+    if os.environ.get("STUB_BCRYPT_ECHO_PASSWORD"):
+        # A hostile double that copies the password it received to stderr.
+        import sys
+        sys.stderr.write("synthetic stderr: %s\n" % password.decode("utf-8", "replace"))
     digest = hashlib.sha256(salt + password).hexdigest()
     return ("$2b$%02d$" % cost + digest[:53]).encode()
 PY
@@ -196,8 +209,13 @@ import hashlib
 
 
 def hash_password(password):
+    import os
+    import sys
     if isinstance(password, bytes):
         password = password.decode("utf-8", "replace")
+    if os.environ.get("STUB_HERMES_ECHO_SENTINEL"):
+        # A hostile double that copies a sentinel hash to stderr.
+        sys.stderr.write("synthetic stderr: %s\n" % os.environ["STUB_HERMES_ECHO_SENTINEL"])
     return "scrypt$fixture$" + hashlib.sha256(password.encode("utf-8")).hexdigest()
 PY
 
@@ -230,7 +248,8 @@ class Auths:
     async def update_user_password_by_id(user_id, password_hash):
         with open(os.environ["STUB_WEBUI_UPDATE_LOG"], "a", encoding="utf-8") as handle:
             handle.write("user_id=%s hash_len=%d\n" % (user_id, len(password_hash)))
-        return True
+        # Upstream v0.11.4 returns False when no auth row was updated.
+        return os.environ.get("STUB_WEBUI_UPDATE_RESULT", "1") != "0"
 PY
 
 cat > "$PYSTUB/open_webui/utils/auth.py" <<'PY'
@@ -261,6 +280,9 @@ fi
 
 if [[ "${1:-}" == "restart" ]]; then
   printf '%s\n' "${2:-}" >> "${state}/restart.log"
+  if [[ -n "${STUB_RESTART_FAIL:-}" ]]; then
+    exit 1
+  fi
   exit 0
 fi
 
@@ -319,6 +341,11 @@ if [[ "${1:-}" == "python3" || "${1:-}" == "python" ]]; then
   if [[ -n "${STUB_BCRYPT_SALT:-}" ]]; then
     envs+=("STUB_BCRYPT_SALT=${STUB_BCRYPT_SALT}")
   fi
+  for passthrough in STUB_BCRYPT_ECHO_PASSWORD STUB_HERMES_ECHO_SENTINEL STUB_WEBUI_UPDATE_RESULT; do
+    if [[ -n "${!passthrough:-}" ]]; then
+      envs+=("${passthrough}=${!passthrough}")
+    fi
+  done
   exec env "${envs[@]}" PYTHONPATH="${STUB_PY:?}" python3 -c "$program"
 fi
 
@@ -395,40 +422,107 @@ EOF
 
 # run_reset <label> <password-or-empty> [args...]
 # Sets RUN_RC. Password lines go on stdin only.
+# WRAPBIN, when set, is prepended to PATH ahead of the docker stub so a test can
+# wrap one host tool (install, mv, chown) without touching the repo.
 run_reset() {
   local label="$1" pw="$2"
   shift 2
   local out="${LOGS}/${label}.out" err="${LOGS}/${label}.err"
+  local -a run_env=(
+    "PATH=${WRAPBIN:+${WRAPBIN}:}${BIN}:${PATH}"
+    "STUB_STATE=$STATE" "STUB_PY=$PYSTUB"
+    "STUB_STACK_FILE=${FX}/env/stack.env"
+    "STUB_BCRYPT_COST=${STUB_BCRYPT_COST:-}"
+    "STUB_BCRYPT_SALT=${STUB_BCRYPT_SALT:-}"
+    "STUB_RESTART_FAIL=${STUB_RESTART_FAIL:-}"
+    "STUB_BCRYPT_ECHO_PASSWORD=${STUB_BCRYPT_ECHO_PASSWORD:-}"
+    "STUB_HERMES_ECHO_SENTINEL=${STUB_HERMES_ECHO_SENTINEL:-}"
+    "STUB_WEBUI_UPDATE_RESULT=${STUB_WEBUI_UPDATE_RESULT:-}"
+    "HYBRID_AI_ENV_FILE=${FX}/env/layout.env"
+    "HYBRID_AI_STACK_ENV_FILE=${FX}/env/stack.env"
+    "HYBRID_AI_APP_DIR=${FX}/app"
+    "HYBRID_AI_DATA_DIR=${FX}/data"
+  )
   set +e
   if [[ -n "$pw" ]]; then
-    printf '%s\n%s\n' "$pw" "$pw" | env \
-      PATH="${BIN}:${PATH}" \
-      STUB_STATE="$STATE" STUB_PY="$PYSTUB" \
-      STUB_STACK_FILE="${FX}/env/stack.env" \
-      STUB_BCRYPT_COST="${STUB_BCRYPT_COST:-}" \
-      STUB_BCRYPT_SALT="${STUB_BCRYPT_SALT:-}" \
-      HYBRID_AI_ENV_FILE="${FX}/env/layout.env" \
-      HYBRID_AI_STACK_ENV_FILE="${FX}/env/stack.env" \
-      HYBRID_AI_APP_DIR="${FX}/app" \
-      HYBRID_AI_DATA_DIR="${FX}/data" \
+    printf '%s\n%s\n' "$pw" "$pw" | env "${run_env[@]}" \
       "$RESET_SCRIPT" "$@" > "$out" 2> "$err"
     RUN_RC=$?
   else
-    env \
-      PATH="${BIN}:${PATH}" \
-      STUB_STATE="$STATE" STUB_PY="$PYSTUB" \
-      STUB_STACK_FILE="${FX}/env/stack.env" \
-      STUB_BCRYPT_COST="${STUB_BCRYPT_COST:-}" \
-      STUB_BCRYPT_SALT="${STUB_BCRYPT_SALT:-}" \
-      HYBRID_AI_ENV_FILE="${FX}/env/layout.env" \
-      HYBRID_AI_STACK_ENV_FILE="${FX}/env/stack.env" \
-      HYBRID_AI_APP_DIR="${FX}/app" \
-      HYBRID_AI_DATA_DIR="${FX}/data" \
-      "$RESET_SCRIPT" "$@" < /dev/null > "$out" 2> "$err"
+    env "${run_env[@]}" "$RESET_SCRIPT" "$@" < /dev/null > "$out" 2> "$err"
     RUN_RC=$?
   fi
   set -e
   return 0
+}
+
+# run_reset_tty <label> <stdin-file> [args...]
+# Runs the script under a real pty (util-linux `script`) so the interactive
+# branch is exercised: /dev/tty is available and stdin IS a terminal. The input
+# comes from a file so trailing/blank lines survive byte for byte.
+run_reset_tty() {
+  local label="$1" input_file="$2"
+  shift 2
+  local out="${LOGS}/${label}.out" err="${LOGS}/${label}.err"
+  local -a run_env=(
+    "PATH=${WRAPBIN:+${WRAPBIN}:}${BIN}:${PATH}"
+    "STUB_STATE=$STATE" "STUB_PY=$PYSTUB"
+    "STUB_STACK_FILE=${FX}/env/stack.env"
+    "STUB_BCRYPT_COST=${STUB_BCRYPT_COST:-}"
+    "STUB_BCRYPT_SALT=${STUB_BCRYPT_SALT:-}"
+    "STUB_RESTART_FAIL=${STUB_RESTART_FAIL:-}"
+    "STUB_BCRYPT_ECHO_PASSWORD=${STUB_BCRYPT_ECHO_PASSWORD:-}"
+    "STUB_HERMES_ECHO_SENTINEL=${STUB_HERMES_ECHO_SENTINEL:-}"
+    "STUB_WEBUI_UPDATE_RESULT=${STUB_WEBUI_UPDATE_RESULT:-}"
+    "HYBRID_AI_ENV_FILE=${FX}/env/layout.env"
+    "HYBRID_AI_STACK_ENV_FILE=${FX}/env/stack.env"
+    "HYBRID_AI_APP_DIR=${FX}/app"
+    "HYBRID_AI_DATA_DIR=${FX}/data"
+  )
+  set +e
+  timeout "${TTY_TIMEOUT:-25}" env "${run_env[@]}" \
+    script -qec "$(printf '%q ' "$RESET_SCRIPT" "$@")" /dev/null \
+    < "$input_file" > "$out" 2> "$err"
+  RUN_RC=$?
+  set -e
+  return 0
+}
+
+# _wrap_mutator <tool> <FAIL_VAR> <MATCH_VAR>
+# Writes $WRAPBIN/<tool> that exits with $<FAIL_VAR> when an argument contains
+# $<MATCH_VAR>, and forwards to the real binary otherwise. With <MATCH_VAR>
+# unset, the pattern is the empty string and every call with <FAIL_VAR> set
+# fails. This lets a test fail exactly ONE mutation without touching the repo.
+_wrap_mutator() { # <tool> <fail-var> <match-string>
+  local tool="$1" fail_var="$2" match="$3" real
+  WRAPBIN="${WORK}/wrap"
+  mkdir -p "$WRAPBIN"
+  real="$(command -v "$tool")"
+  cat > "$WRAPBIN/$tool" <<WRAP
+#!/usr/bin/env bash
+code="\${${fail_var}:-}"
+if [[ -n "\$code" ]]; then
+  for a in "\$@"; do
+    case "\$a" in
+      *"${match}"*) exit "\$code" ;;
+    esac
+  done
+fi
+exec "${real}" "\$@"
+WRAP
+  chmod 755 "$WRAPBIN/$tool"
+}
+
+# _wrap_chown_logger: a chown that records its argv, then delegates.
+_wrap_chown_logger() {
+  WRAPBIN="${WORK}/wrap"
+  mkdir -p "$WRAPBIN"
+  cat > "$WRAPBIN/chown" <<'WRAP'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${STUB_STATE}/chown.log"
+exec /usr/bin/chown "$@"
+WRAP
+  chmod 755 "$WRAPBIN/chown"
 }
 
 output_of() { cat "${LOGS}/$1.out" "${LOGS}/$1.err"; }
@@ -707,6 +801,263 @@ check "it is not in any captured argv" "0" \
   "$(grep -cF -- "$generated" "$STATE/argv.log" || true)"
 check "the generated value is not stored in the env file" "0" \
   "$(grep -cF -- "$generated" "${FX}/env/stack.env" || true)"
+
+# ---------------------------------------------------------------------------
+# 9. A failed install of the rewritten Hermes config is reported, not applied
+# ---------------------------------------------------------------------------
+echo "== install failure leaves the original intact =="
+fresh_fixture installfail
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+cp "${FX}/data/hermes_data/config.yaml" "${WORK}/hermes-installfail.before"
+_wrap_mutator install FAIL_INSTALL config.candidate.yaml
+FAIL_INSTALL=23 run_reset installfail "$PASSWORD" --no-restart
+WRAPBIN=""
+check "exit status is 1" "1" "$RUN_RC"
+check "the Hermes leg reports failed" "yes" \
+  "$(if grep -q 'Hermes dashboard  *failed' "${LOGS}/installfail.out"; then echo yes; else echo no; fi)"
+check "the failure detail names the staging step" "yes" \
+  "$(if grep -q 'could not stage the rewritten config.yaml' "${LOGS}/installfail.err"; then echo yes; else echo no; fi)"
+if cmp -s "${WORK}/hermes-installfail.before" "${FX}/data/hermes_data/config.yaml"; then
+  ok "a failed install leaves the original config.yaml intact"
+else
+  bad "a failed install still changed config.yaml"
+fi
+check "the auth leg still applied" "yes" \
+  "$(if grep -q 'auth gate  *applied' "${LOGS}/installfail.out"; then echo yes; else echo no; fi)"
+check "the webui leg still applied" "yes" \
+  "$(if grep -q 'Open WebUI admin  *applied' "${LOGS}/installfail.out"; then echo yes; else echo no; fi)"
+
+# ---------------------------------------------------------------------------
+# 10. A failed chmod / rename in the auth leg is reported, not applied
+# ---------------------------------------------------------------------------
+echo "== auth chmod failure leaves the env file intact =="
+fresh_fixture chmodfail
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+cp "${FX}/env/stack.env" "${WORK}/stack-chmodfail.before"
+_wrap_mutator chmod FAIL_CHMOD stack.env.tmp
+FAIL_CHMOD=1 run_reset chmodfail "$PASSWORD" --no-restart
+WRAPBIN=""
+check "exit status is 1" "1" "$RUN_RC"
+check "the auth leg reports failed" "yes" \
+  "$(if grep -q 'auth gate  *failed' "${LOGS}/chmodfail.out"; then echo yes; else echo no; fi)"
+check "the failure detail names the mode step" "yes" \
+  "$(if grep -q 'could not set mode 0600' "${LOGS}/chmodfail.err"; then echo yes; else echo no; fi)"
+if cmp -s "${WORK}/stack-chmodfail.before" "${FX}/env/stack.env"; then
+  ok "a failed chmod leaves the stack env file intact"
+else
+  bad "a failed chmod still changed the stack env file"
+fi
+check "the Hermes leg still applied" "yes" \
+  "$(if grep -q 'Hermes dashboard  *applied' "${LOGS}/chmodfail.out"; then echo yes; else echo no; fi)"
+
+echo "== auth rename failure leaves the env file intact =="
+fresh_fixture renamefail
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+cp "${FX}/env/stack.env" "${WORK}/stack-renamefail.before"
+_wrap_mutator mv FAIL_MV stack.env.tmp
+FAIL_MV=1 run_reset renamefail "$PASSWORD" --no-restart
+WRAPBIN=""
+check "exit status is 1" "1" "$RUN_RC"
+check "the auth leg reports failed" "yes" \
+  "$(if grep -q 'auth gate  *failed' "${LOGS}/renamefail.out"; then echo yes; else echo no; fi)"
+check "the failure detail names the replacement step" "yes" \
+  "$(if grep -q 'could not replace' "${LOGS}/renamefail.err"; then echo yes; else echo no; fi)"
+if cmp -s "${WORK}/stack-renamefail.before" "${FX}/env/stack.env"; then
+  ok "a failed rename leaves the stack env file intact"
+else
+  bad "a failed rename still changed the stack env file"
+fi
+check "the Hermes leg still applied" "yes" \
+  "$(if grep -q 'Hermes dashboard  *applied' "${LOGS}/renamefail.out"; then echo yes; else echo no; fi)"
+
+# ---------------------------------------------------------------------------
+# 11. A failed ownership application fails closed and leaves the original
+# ---------------------------------------------------------------------------
+echo "== chown failure leaves the original config intact =="
+fresh_fixture chownfail
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+cp "${FX}/data/hermes_data/config.yaml" "${WORK}/hermes-chownfail.before"
+_wrap_mutator chown FAIL_CHOWN config.yaml.tmp
+FAIL_CHOWN=1 run_reset chownfail "$PASSWORD" --no-restart
+WRAPBIN=""
+check "exit status is 1" "1" "$RUN_RC"
+check "the Hermes leg reports failed" "yes" \
+  "$(if grep -q 'Hermes dashboard  *failed' "${LOGS}/chownfail.out"; then echo yes; else echo no; fi)"
+check "the failure detail names the ownership step" "yes" \
+  "$(if grep -q 'could not preserve the ownership/mode' "${LOGS}/chownfail.err"; then echo yes; else echo no; fi)"
+if cmp -s "${WORK}/hermes-chownfail.before" "${FX}/data/hermes_data/config.yaml"; then
+  ok "a failed chown leaves the original config.yaml intact"
+else
+  bad "a failed chown still changed config.yaml"
+fi
+
+# ---------------------------------------------------------------------------
+# 12. The WebUI helper returning False fails the leg
+# ---------------------------------------------------------------------------
+echo "== webui helper returns False =="
+fresh_fixture webuifalse
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+cp "${FX}/env/stack.env" "${WORK}/stack-webuifalse.before"
+STUB_WEBUI_UPDATE_RESULT=0
+export STUB_WEBUI_UPDATE_RESULT
+run_reset webuifalse "$PASSWORD" --no-restart
+STUB_WEBUI_UPDATE_RESULT=""
+export STUB_WEBUI_UPDATE_RESULT
+check "exit status is 1" "1" "$RUN_RC"
+check "the webui leg reports failed" "yes" \
+  "$(if grep -q 'Open WebUI admin  *failed' "${LOGS}/webuifalse.out"; then echo yes; else echo no; fi)"
+check "the failure detail names the in-container update" "yes" \
+  "$(if grep -q 'the in-container update failed for' "${LOGS}/webuifalse.err"; then echo yes; else echo no; fi)"
+check "the auth leg still applied" "yes" \
+  "$(if grep -q 'auth gate  *applied' "${LOGS}/webuifalse.out"; then echo yes; else echo no; fi)"
+check "the Hermes leg still applied" "yes" \
+  "$(if grep -q 'Hermes dashboard  *applied' "${LOGS}/webuifalse.out"; then echo yes; else echo no; fi)"
+
+# ---------------------------------------------------------------------------
+# 13. A requested restart that fails is a failed (partial) leg
+# ---------------------------------------------------------------------------
+echo "== requested restart fails (--restart-hermes) =="
+fresh_fixture restartfail
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+STUB_RESTART_FAIL=1
+export STUB_RESTART_FAIL
+run_reset restartfail "$PASSWORD" --restart-hermes
+STUB_RESTART_FAIL=""
+export STUB_RESTART_FAIL
+check "exit status is 1" "1" "$RUN_RC"
+check "the Hermes leg reports failed" "yes" \
+  "$(if grep -q 'Hermes dashboard  *failed' "${LOGS}/restartfail.out"; then echo yes; else echo no; fi)"
+check "the detail says the config was written but the restart failed" "yes" \
+  "$(if grep -qF 'config written, restart failed' "${LOGS}/restartfail.out"; then echo yes; else echo no; fi)"
+check "a restart was attempted" "yes" \
+  "$(if [[ -s "$STATE/restart.log" ]]; then echo yes; else echo no; fi)"
+check "the config was still written" "yes" \
+  "$(if grep -q 'password_hash: scrypt' "${FX}/data/hermes_data/config.yaml"; then echo yes; else echo no; fi)"
+
+echo "== requested restart fails (interactive yes) =="
+fresh_fixture restarttty
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+STUB_RESTART_FAIL=1
+export STUB_RESTART_FAIL
+printf '%s\n%s\ny\n' "$PASSWORD" "$PASSWORD" > "${WORK}/tty-restarttty.in"
+run_reset_tty restarttty "${WORK}/tty-restarttty.in"
+STUB_RESTART_FAIL=""
+export STUB_RESTART_FAIL
+check "exit status is 1" "1" "$RUN_RC"
+check "the Hermes leg reports failed" "yes" \
+  "$(if grep -q 'Hermes dashboard  *failed' "${LOGS}/restarttty.out"; then echo yes; else echo no; fi)"
+check "the detail says the config was written but the restart failed" "yes" \
+  "$(if grep -qF 'config written, restart failed' "${LOGS}/restarttty.out"; then echo yes; else echo no; fi)"
+check "a restart was attempted" "yes" \
+  "$(if [[ -s "$STATE/restart.log" ]]; then echo yes; else echo no; fi)"
+
+echo "== a declined restart is not a failure =="
+fresh_fixture restartno
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+printf '%s\n%s\nn\n' "$PASSWORD" "$PASSWORD" > "${WORK}/tty-restartno.in"
+run_reset_tty restartno "${WORK}/tty-restartno.in"
+check "exit status is 0" "0" "$RUN_RC"
+check "the Hermes leg reports applied" "yes" \
+  "$(if grep -q 'Hermes dashboard  *applied' "${LOGS}/restartno.out"; then echo yes; else echo no; fi)"
+check "no restart was attempted" "none" \
+  "$(if [[ -s "$STATE/restart.log" ]]; then echo restart; else echo none; fi)"
+
+# ---------------------------------------------------------------------------
+# 14. A confirmation line that is empty is refused exactly like a mismatch
+# ---------------------------------------------------------------------------
+echo "== empty confirmation is refused (stdin) =="
+fresh_fixture emptysecond
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+set +e
+printf '%s\n\n' "$PASSWORD" | env \
+  PATH="${BIN}:${PATH}" STUB_STATE="$STATE" STUB_PY="$PYSTUB" \
+  STUB_STACK_FILE="${FX}/env/stack.env" \
+  HYBRID_AI_ENV_FILE="${FX}/env/layout.env" \
+  HYBRID_AI_STACK_ENV_FILE="${FX}/env/stack.env" \
+  HYBRID_AI_APP_DIR="${FX}/app" HYBRID_AI_DATA_DIR="${FX}/data" \
+  "$RESET_SCRIPT" --no-restart > "${LOGS}/emptysecond.out" 2> "${LOGS}/emptysecond.err"
+RUN_RC=$?
+set -e
+check "exit status is 2" "2" "$RUN_RC"
+check "the mismatch is reported" "yes" \
+  "$(if grep -q 'the two passwords do not match' "${LOGS}/emptysecond.err"; then echo yes; else echo no; fi)"
+check "nothing was changed" "0" \
+  "$(grep -c -E '^(auth gate|Open WebUI admin|Hermes dashboard)' "${LOGS}/emptysecond.out" || true)"
+
+echo "== empty confirmation is refused (interactive) =="
+fresh_fixture emptysecondtty
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+printf '%s\n\n' "$PASSWORD" > "${WORK}/tty-emptysecond.in"
+run_reset_tty emptysecondtty "${WORK}/tty-emptysecond.in"
+check "exit status is 2" "2" "$RUN_RC"
+check "the mismatch is reported" "yes" \
+  "$(if output_of emptysecondtty | grep -q 'the two passwords do not match'; then echo yes; else echo no; fi)"
+
+# ---------------------------------------------------------------------------
+# 15. Subprocess output is scrubbed: a hostile helper cannot leak a secret
+# ---------------------------------------------------------------------------
+echo "== a helper that echoes the password to stderr does not leak it =="
+fresh_fixture leakpw
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+STUB_BCRYPT_ECHO_PASSWORD=1
+export STUB_BCRYPT_ECHO_PASSWORD
+run_reset leakpw "$PASSWORD" --no-restart
+STUB_BCRYPT_ECHO_PASSWORD=""
+export STUB_BCRYPT_ECHO_PASSWORD
+check "exit status is 0" "0" "$RUN_RC"
+check "the password is not in the script's stdout or stderr" "none" \
+  "$(if output_of leakpw | grep -qF -- "$PASSWORD"; then echo found; else echo none; fi)"
+check "the auth leg still applied" "yes" \
+  "$(if grep -q 'auth gate  *applied' "${LOGS}/leakpw.out"; then echo yes; else echo no; fi)"
+check "the webui leg still applied" "yes" \
+  "$(if grep -q 'Open WebUI admin  *applied' "${LOGS}/leakpw.out"; then echo yes; else echo no; fi)"
+check "the Hermes leg still applied" "yes" \
+  "$(if grep -q 'Hermes dashboard  *applied' "${LOGS}/leakpw.out"; then echo yes; else echo no; fi)"
+
+echo "== a helper that echoes a sentinel hash to stderr does not leak it =="
+fresh_fixture leakhash
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+SENTINEL_HASH='scrypt$sentinel$DO-NOT-LEAK-9f3a'
+STUB_HERMES_ECHO_SENTINEL="$SENTINEL_HASH"
+export STUB_HERMES_ECHO_SENTINEL
+run_reset leakhash "$PASSWORD" --no-restart
+STUB_HERMES_ECHO_SENTINEL=""
+export STUB_HERMES_ECHO_SENTINEL
+check "exit status is 0" "0" "$RUN_RC"
+check "the sentinel hash is not in the script's stdout or stderr" "none" \
+  "$(if output_of leakhash | grep -qF -- "$SENTINEL_HASH"; then echo found; else echo none; fi)"
+check "the Hermes leg still applied" "yes" \
+  "$(if grep -q 'Hermes dashboard  *applied' "${LOGS}/leakhash.out"; then echo yes; else echo no; fi)"
+check "the auth leg still applied" "yes" \
+  "$(if grep -q 'auth gate  *applied' "${LOGS}/leakhash.out"; then echo yes; else echo no; fi)"
+
+# ---------------------------------------------------------------------------
+# 16. The replacement carries the original's owner and mode
+# ---------------------------------------------------------------------------
+echo "== the replacement preserves owner and mode =="
+fresh_fixture ownership
+hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
+orig_uid="$(stat -c '%u' "${FX}/data/hermes_data/config.yaml")"
+orig_gid="$(stat -c '%g' "${FX}/data/hermes_data/config.yaml")"
+: > "$STATE/chown.log"
+_wrap_chown_logger
+run_reset ownership "$PASSWORD" --no-restart
+WRAPBIN=""
+check "exit status is 0" "0" "$RUN_RC"
+check "the rewritten config keeps the original mode" "600" \
+  "$(mode_of "${FX}/data/hermes_data/config.yaml")"
+if [[ -s "$STATE/chown.log" ]]; then
+  check "chown was applied to the replacement with the original uid:gid" "yes" \
+    "$(if grep -qF "${orig_uid}:${orig_gid}" "$STATE/chown.log"; then echo yes; else echo no; fi)"
+  check "the chown targets the staged replacement, not the original" "yes" \
+    "$(if grep -qF 'config.yaml.tmp' "$STATE/chown.log"; then echo yes; else echo no; fi)"
+else
+  printf 'SKIPPED: chown not permitted\n'
+  check "the rewritten config keeps the original mode" "600" \
+    "$(mode_of "${FX}/data/hermes_data/config.yaml")"
+fi
+check "the env replacement also carried the original owner" "yes" \
+  "$(if grep -qF -- "${FX}/env/stack.env.tmp" "$STATE/chown.log"; then echo yes; else echo no; fi)"
 
 # ---------------------------------------------------------------------------
 # Summary

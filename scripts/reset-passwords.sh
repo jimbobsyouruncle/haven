@@ -196,7 +196,7 @@ read_password() {
     fail_msg "an empty password is refused"
     return 1
   fi
-  if (( have_second )) && [[ -n "$second" && "$second" != "$first" ]]; then
+  if (( have_second )) && [[ "$second" != "$first" ]]; then
     fail_msg "the two passwords do not match"
     return 1
   fi
@@ -247,6 +247,33 @@ _env_rewrite_key() {
   if (( trailing_nl == 0 )); then
     truncate -s -1 "$out"
   fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# File metadata preservation
+#
+# A replacement file must carry the original's owner, group and mode, or a
+# root-run replacement leaves a caller-owned file the Hermes runtime user can
+# no longer read. Read the original's metadata BEFORE the rename and apply it
+# to the replacement; fail closed when it cannot be read or applied.
+# ---------------------------------------------------------------------------
+_file_uid()  { stat -c '%u' -- "$1" 2>/dev/null || stat -f '%u' -- "$1"; }
+_file_gid()  { stat -c '%g' -- "$1" 2>/dev/null || stat -f '%g' -- "$1"; }
+_file_mode() { stat -c '%a' -- "$1" 2>/dev/null || stat -f '%Lp' -- "$1"; }
+
+# _preserve_owner_mode <original> <target>
+# Copies <original>'s uid, gid and mode onto <target>. Returns non-zero when
+# any value cannot be read or applied.
+_preserve_owner_mode() {
+  local original="$1" target="$2"
+  local uid="" gid="" mode=""
+  uid="$(_file_uid "$original")" || return 1
+  gid="$(_file_gid "$original")" || return 1
+  mode="$(_file_mode "$original")" || return 1
+  [[ -n "$uid" && -n "$gid" && -n "$mode" ]] || return 1
+  chmod "$mode" -- "$target" || return 1
+  chown "$uid:$gid" -- "$target" || return 1
   return 0
 }
 
@@ -326,7 +353,10 @@ target = os.environ["HYBRID_AI_WEBUI_TARGET_ID"]
 
 async def main():
     hashed = await get_password_hash(password)
-    await Auths.update_user_password_by_id(target, hashed)
+    result = await Auths.update_user_password_by_id(target, hashed)
+    if not result:
+        sys.stderr.write("the update helper reported that no auth row was updated\n")
+        raise SystemExit(3)
 
 
 asyncio.run(main())
@@ -608,7 +638,7 @@ leg_auth() {
 
   note "auth: hashing the password inside $AUTH_CONTAINER (bcrypt, cost $BCRYPT_MIN_ROUNDS)"
   if ! hash="$(printf '%s' "$NEW_PASSWORD" | docker exec -i "$AUTH_CONTAINER" \
-      python3 -c "$(auth_hash_program)" | tail -n 1)"; then
+      python3 -c "$(auth_hash_program)" 2>/dev/null | tail -n 1)"; then
     AUTH_STATE="failed"; AUTH_DETAIL="could not compute the bcrypt hash in $AUTH_CONTAINER"
     fail_msg "auth: could not compute the hash in $AUTH_CONTAINER (is it running?)"
     return 1
@@ -642,8 +672,24 @@ leg_auth() {
     fail_msg "auth: could not rewrite $AUTH_HASH_KEY"
     return 1
   fi
-  chmod 0600 "$tmp"
-  mv -f -- "$tmp" "$ENV_FILE"
+  if ! chmod 0600 -- "$tmp"; then
+    rm -f -- "$tmp"
+    AUTH_STATE="failed"; AUTH_DETAIL="could not set mode 0600 on the rewritten env file"
+    fail_msg "auth: could not set mode 0600 on the rewritten env file"
+    return 1
+  fi
+  if ! _preserve_owner_mode "$ENV_FILE" "$tmp"; then
+    rm -f -- "$tmp"
+    AUTH_STATE="failed"; AUTH_DETAIL="could not preserve the ownership/mode of the stack env file"
+    fail_msg "auth: could not preserve the ownership/mode of $ENV_FILE"
+    return 1
+  fi
+  if ! mv -f -- "$tmp" "$ENV_FILE"; then
+    rm -f -- "$tmp"
+    AUTH_STATE="failed"; AUTH_DETAIL="could not replace the stack env file with the rewritten copy"
+    fail_msg "auth: could not replace $ENV_FILE"
+    return 1
+  fi
 
   note "auth: recreating only the auth service"
   if ! "${COMPOSE[@]}" up -d --no-deps --force-recreate auth >/dev/null; then
@@ -652,7 +698,7 @@ leg_auth() {
     return 1
   fi
 
-  if ! length="$(docker exec "$AUTH_CONTAINER" python3 -c "$(auth_length_program)" | tr -d '[:space:]')"; then
+  if ! length="$(docker exec "$AUTH_CONTAINER" python3 -c "$(auth_length_program)" 2>/dev/null | tr -d '[:space:]')"; then
     AUTH_STATE="failed"; AUTH_DETAIL="the hash is written but the container could not be queried"
     fail_msg "auth: could not read the hash length from $AUTH_CONTAINER"
     return 1
@@ -680,7 +726,7 @@ leg_webui() {
 
   rows="${WORK_DIR}/admins.tsv"
   note "webui: listing the admin accounts inside $WEBUI_CONTAINER"
-  if ! raw="$(docker exec "$WEBUI_CONTAINER" python3 -c "$(webui_admin_list_program)")"; then
+  if ! raw="$(docker exec "$WEBUI_CONTAINER" python3 -c "$(webui_admin_list_program)" 2>/dev/null)"; then
     WEBUI_STATE="failed"; WEBUI_DETAIL="could not list the admin accounts in $WEBUI_CONTAINER"
     fail_msg "webui: could not list the admin accounts (is the container running?)"
     return 1
@@ -732,7 +778,7 @@ for row in json.load(sys.stdin):
 
   note "webui: resetting the password of ${emails[index]}"
   if ! printf '%s' "$NEW_PASSWORD" | docker exec -i -e HYBRID_AI_WEBUI_TARGET_ID="${ids[index]}" \
-      "$WEBUI_CONTAINER" python -c "$(webui_set_password_program)"; then
+      "$WEBUI_CONTAINER" python -c "$(webui_set_password_program)" >/dev/null 2>&1; then
     WEBUI_STATE="failed"; WEBUI_DETAIL="the in-container update failed for ${emails[index]}"
     fail_msg "webui: the in-container update failed for ${emails[index]}"
     return 1
@@ -756,7 +802,7 @@ hermes_probe() {
   HERMES_HAS_HASH=0
   HERMES_HAS_PLAIN=0
 
-  if ! probe_out="$(docker exec -i "$HERMES_CONTAINER" python3 -c "$(hermes_probe_program)" < "$cfg")"; then
+  if ! probe_out="$(docker exec -i "$HERMES_CONTAINER" python3 -c "$(hermes_probe_program)" < "$cfg" 2>/dev/null)"; then
     return 1
   fi
   while IFS='=' read -r name value; do
@@ -800,7 +846,7 @@ hermes_apply_config() {
 
   note "hermes: hashing the password inside $HERMES_CONTAINER"
   if ! new_hash="$(printf '%s' "$NEW_PASSWORD" | docker exec -i "$HERMES_CONTAINER" \
-      python3 -c "$(hermes_hash_program)" | tail -n 1)"; then
+      python3 -c "$(hermes_hash_program)" 2>/dev/null | tail -n 1)"; then
     HERMES_STATE="failed"; HERMES_DETAIL="could not compute the dashboard hash in $HERMES_CONTAINER"
     fail_msg "hermes: could not compute the dashboard hash in $HERMES_CONTAINER"
     return 1
@@ -840,7 +886,7 @@ print(json.dumps({"config": config, "password_hash": password_hash}))
       return 1
     fi
     if ! payload="$(printf '%s' "$payload" | docker exec -i "$HERMES_CONTAINER" \
-        python3 -c "$(hermes_roundtrip_program)")"; then
+        python3 -c "$(hermes_roundtrip_program)" 2>/dev/null)"; then
       rm -f -- "$hash_file"
       HERMES_STATE="failed"; HERMES_DETAIL="the YAML round-trip fallback failed"
       fail_msg "hermes: the YAML round-trip fallback failed"
@@ -882,8 +928,7 @@ print(json.dumps({"old": old, "new": new}))
   fi
 
   if ! verify_out="$(printf '%s' "$payload" | docker exec -i "$HERMES_CONTAINER" \
-      python3 -c "$(hermes_verify_program)")"; then
-    printf '%s\n' "$verify_out" >&2
+      python3 -c "$(hermes_verify_program)" 2>/dev/null)"; then
     rm -f -- "$hash_file" "$candidate"
     HERMES_STATE="failed"; HERMES_DETAIL="the in-container verification rejected the edit"
     fail_msg "hermes: the in-container verification rejected the edit"
@@ -891,8 +936,24 @@ print(json.dumps({"old": old, "new": new}))
   fi
   note "hermes: $(printf '%s' "$verify_out" | tr '\n' ' ')"
 
-  install -m 0600 -- "$candidate" "$tmp"
-  mv -f -- "$tmp" "$cfg"
+  if ! install -m 0600 -- "$candidate" "$tmp"; then
+    rm -f -- "$tmp" "$candidate" "$hash_file"
+    HERMES_STATE="failed"; HERMES_DETAIL="could not stage the rewritten config.yaml"
+    fail_msg "hermes: could not stage the rewritten config.yaml"
+    return 1
+  fi
+  if ! _preserve_owner_mode "$cfg" "$tmp"; then
+    rm -f -- "$tmp" "$candidate" "$hash_file"
+    HERMES_STATE="failed"; HERMES_DETAIL="could not preserve the ownership/mode of config.yaml"
+    fail_msg "hermes: could not preserve the ownership/mode of $cfg"
+    return 1
+  fi
+  if ! mv -f -- "$tmp" "$cfg"; then
+    rm -f -- "$tmp" "$candidate" "$hash_file"
+    HERMES_STATE="failed"; HERMES_DETAIL="could not replace config.yaml with the rewritten copy"
+    fail_msg "hermes: could not replace $cfg"
+    return 1
+  fi
   rm -f -- "$candidate" "$hash_file"
 
   HERMES_STATE="applied"
@@ -932,8 +993,7 @@ hermes_restart() {
 
   if (( RESTART_HERMES )); then
     note "hermes: restarting $HERMES_CONTAINER (--restart-hermes)"
-    if ! docker restart "$HERMES_CONTAINER" >/dev/null; then
-      HERMES_DETAIL="${HERMES_DETAIL}; the restart failed"
+    if ! docker restart "$HERMES_CONTAINER" >/dev/null 2>&1; then
       fail_msg "hermes: restarting $HERMES_CONTAINER failed"
       return 1
     fi
@@ -960,8 +1020,7 @@ hermes_restart() {
   IFS= read -r answer < /dev/tty || answer=""
   if [[ "$answer" =~ ^[Yy]$ ]]; then
     note "hermes: restarting $HERMES_CONTAINER"
-    if ! docker restart "$HERMES_CONTAINER" >/dev/null; then
-      HERMES_DETAIL="${HERMES_DETAIL}; the restart failed"
+    if ! docker restart "$HERMES_CONTAINER" >/dev/null 2>&1; then
       fail_msg "hermes: restarting $HERMES_CONTAINER failed"
       return 1
     fi
@@ -1018,8 +1077,12 @@ main() {
   leg_hermes || true
 
   if [[ "$HERMES_STATE" == "applied" ]]; then
-    hermes_restart || true
-    if (( HERMES_RESTARTED )); then
+    # A requested restart that fails must not leave the leg looking applied:
+    # the config WAS written, so say so, but the leg failed and the exit is
+    # non-zero. With no restart requested this is unchanged.
+    if ! hermes_restart; then
+      HERMES_STATE="failed"; HERMES_DETAIL="config written, restart failed"
+    elif (( HERMES_RESTARTED )); then
       HERMES_DETAIL="${HERMES_DETAIL}; restarted"
     fi
   fi

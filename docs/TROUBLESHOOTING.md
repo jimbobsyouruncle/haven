@@ -844,7 +844,10 @@ from open_webui.utils.auth import get_password_hash
 async def main():
     password = sys.stdin.readline().rstrip("\n")
     hashed = await get_password_hash(password)
-    await Auths.update_user_password_by_id("YOUR_USER_ID", hashed)
+    result = await Auths.update_user_password_by_id("YOUR_USER_ID", hashed)
+    if not result:
+        sys.stderr.write("no auth row was updated\n")
+        raise SystemExit(3)
 
 
 asyncio.run(main())
