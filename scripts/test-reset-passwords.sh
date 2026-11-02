@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016  # every single-quoted `$` here is a bcrypt or
-# compose-escape fixture that MUST stay literal; expansion is the thing under test
 # ---------------------------------------------------------------------------
 # FILE: scripts/test-reset-passwords.sh
 # PURPOSE (plain English):
@@ -45,6 +43,9 @@
 #   1  one or more cases failed
 #   2  a required tool is missing, or the script under test is absent
 # ---------------------------------------------------------------------------
+# Every single-quoted `$` below is a bcrypt or compose-escape fixture that must
+# stay literal: expansion is the thing under test.
+# shellcheck disable=SC2016
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

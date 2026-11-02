@@ -315,10 +315,10 @@ Two files at the repository root give coding agents a small map of the codebase 
 
 Agents read these maps first and open only the files they actually need. That keeps context small and answers faster than dumping whole files into the prompt.
 
-Both files are generated from the tracked file list, are deterministic (no timestamps or commit SHAs), and must stay under 20480 bytes each. Regenerate them after any change that adds, removes, or renames a tracked file:
+Both files are generated from the tracked file list, are deterministic (no timestamps or commit SHAs), and must stay under 24576 bytes each. Regenerate them after any change that adds, removes, or renames a tracked file:
 
 ```bash
-python3 <path-to-generate.py> --root . --output-dir . --max-bytes 20480
+python3 <path-to-generate.py> --root . --output-dir . --max-bytes 24576
 ```
 
 `scripts/check-agent-context.sh` verifies they are fresh. It compares the committed maps against a fresh generator run and exits:

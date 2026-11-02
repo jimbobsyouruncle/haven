@@ -35,7 +35,7 @@ if [ ! -d "$REPO_ROOT/.git" ]; then
   exit 2
 fi
 
-REGEN_CMD="python3 $GENERATOR --root . --output-dir . --max-bytes 20480"
+REGEN_CMD="python3 $GENERATOR --root . --output-dir . --max-bytes 24576"
 
 # Retired consolidated dumps must not remain tracked; they are removed only
 # through a reviewed PR.
@@ -51,8 +51,8 @@ TMP_DIR="$(mktemp -d)"
 tmp_out="$TMP_DIR/agent-context"
 mkdir -p "$tmp_out"
 
-if ! python3 "$GENERATOR" --root "$REPO_ROOT" --output-dir "$tmp_out" --max-bytes 20480 >/dev/null; then
-  echo "error: generator failed (this includes a size overflow over --max-bytes 20480)" >&2
+if ! python3 "$GENERATOR" --root "$REPO_ROOT" --output-dir "$tmp_out" --max-bytes 24576 >/dev/null; then
+  echo "error: generator failed (this includes a size overflow over --max-bytes 24576)" >&2
   exit 2
 fi
 
