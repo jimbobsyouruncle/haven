@@ -368,11 +368,15 @@ fresh_fixture() { # <name> -> creates FX with an app dir, a data dir and env fil
 HYBRID_AI_ENV_FILE=${FX}/env/layout.env
 HYBRID_AI_STACK_ENV_FILE=${FX}/env/stack.env
 EOF
+  # A `$`-rich legacy placeholder. It exercises compose escaping and
+  # byte-preservation without being a real hash, or even a bcrypt-shaped one, so
+  # the generic secret detector has nothing to match and nothing is suppressed.
+  LEGACY_FIXTURE_HASH='LEGACY$PLACEHOLDER$HASH$VALUE$000000000000000000000000000000'
   printf '%s\n' "# operator notes, do not reorder" \
     "TLS_DOMAIN=daemonhub.dev" \
     "" \
     "HYBRID_AI_AUTH_USER=owner" \
-    'HYBRID_AI_AUTH_HASH=$2a$14$LEGACYPLACEHOLDERPLACEHOLDERPLACEHOLDERPLACEHOLDERPLACEHOLD' \
+    "HYBRID_AI_AUTH_HASH=${LEGACY_FIXTURE_HASH}" \
     "AUTH_ENABLED=on" \
     "HYBRID_AI_AUTH_COOKIE_SECRET=fixture-cookie-secret" \
     "WEBUI_AUTH=true" \
