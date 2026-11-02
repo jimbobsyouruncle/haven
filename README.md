@@ -315,6 +315,8 @@ Two files at the repository root give coding agents a small map of the codebase 
 
 Agents read these maps first and open only the files they actually need. That keeps context small and answers faster than dumping whole files into the prompt.
 
+The cost of that first read, and the alternatives measured against it, are in [`docs/agent-context-index-design.md`](docs/agent-context-index-design.md). That document is a design and evidence record; it does not change the two files or the check below.
+
 Both files are generated from the tracked file list, are deterministic (no timestamps or commit SHAs), and must stay under 24576 bytes each. Regenerate them after any change that adds, removes, or renames a tracked file:
 
 ```bash

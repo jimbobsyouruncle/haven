@@ -126,7 +126,7 @@ Dependabot covers **GitHub Actions only**. These pins still move by hand and are
 
 ## Agent context maps and freshness check
 
-`REPO_MAP.md` and `CODE_INDEX.md` at the repository root are small, generated maps of the tracked tree. Coding agents read them instead of whole-code dumps, so context stays small and answers stay fast.
+`REPO_MAP.md` and `CODE_INDEX.md` at the repository root are small, generated maps of the tracked tree. Coding agents read them instead of whole-code dumps, so context stays small and answers stay fast. The measured cost of that first read, and the layouts compared against it, are recorded in [`../docs/agent-context-index-design.md`](../docs/agent-context-index-design.md).
 
 The **Agent context** workflow (`workflows/agent-context.yml`) enforces that they are fresh. On every pull request to `main` it checks out the generator at a pinned commit from `jimbobsyouruncle/shared-actions`, runs the fixture test (`scripts/test-check-agent-context.sh`), and runs `scripts/check-agent-context.sh` against the committed maps.
 
