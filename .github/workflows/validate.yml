@@ -1052,3 +1052,8 @@ jobs:
         # tool output. Copying one into a URL or fixture ships a broken
         # executable value. This fails the build if one is committed.
         run: bash scripts/check-no-masked-literals.sh
+
+      - name: Report IP literals in code (warn only)
+        # Warn mode: prints environment-specific IPv4 literals and always exits
+        # 0. The report is the burn-down list for a later error-mode change.
+        run: bash scripts/check-no-ip-literals.sh
