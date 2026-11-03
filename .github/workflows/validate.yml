@@ -1046,3 +1046,9 @@ jobs:
             exit 1
           fi
           echo "No secrets or local state tracked."
+
+      - name: Assert no display-masked literals in code
+        # A display mask turns a real value into a bracketed placeholder in
+        # tool output. Copying one into a URL or fixture ships a broken
+        # executable value. This fails the build if one is committed.
+        run: bash scripts/check-no-masked-literals.sh

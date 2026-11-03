@@ -368,6 +368,9 @@
 ## scripts/check-hermes-nonroot.sh
 - err()
 
+## scripts/check-no-masked-literals.sh
+- usage()
+
 ## scripts/deploy-forced-command.sh
 - refuse()
 
@@ -674,6 +677,12 @@
 - mk_repo()
 - run_check()
 - no_leak()
+
+## scripts/test-check-no-masked-literals.sh
+- new_fixture()
+- run_check()
+- check_case()
+- check_mentions()
 
 ## scripts/test-deploy-build-gate.sh
 - ok()

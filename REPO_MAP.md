@@ -126,6 +126,7 @@
 - scripts/check-agent-context.sh - Check that the checked-in agent context maps are fresh.
 - scripts/check-git-remotes.sh - FILE: scripts/check-git-remotes.sh
 - scripts/check-hermes-nonroot.sh - FILE: scripts/check-hermes-nonroot.sh
+- scripts/check-no-masked-literals.sh - Fail when a display-mask placeholder stands in for a real value.
 - scripts/deploy-forced-command.sh
 - scripts/deploy-image-gate.sh - FILE: scripts/deploy-image-gate.sh
 - scripts/deploy-instance.sh
@@ -149,6 +150,7 @@
 - scripts/test-bootstrap.sh - FILE: scripts/test-bootstrap.sh
 - scripts/test-check-agent-context.sh - Fixture test for scripts/check-agent-context.sh.
 - scripts/test-check-git-remotes.sh
+- scripts/test-check-no-masked-literals.sh - Fixture test for scripts/check-no-masked-literals.sh.
 - scripts/test-deploy-build-gate.sh - FILE: scripts/test-deploy-build-gate.sh
 - scripts/test-deploy-forced-command.sh
 - scripts/test-deploy-image-gate.sh
