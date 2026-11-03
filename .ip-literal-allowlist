@@ -1,0 +1,25 @@
+# Initial warn-mode inventory of pre-existing files that carry an IPv4 literal.
+# This is the burn-down list for a later error-mode change: do not add entries.
+# One repo-relative path per line, sorted. No patterns, no inline allow comments.
+docker-compose.yml
+docker-compose.yml.tmpl
+doctor.sh
+install.sh
+openhands/docker-compose.openhands.yml
+openwebui/runpod_core.py
+openwebui/runpod_pipe.py
+openwebui/test_refactor.py
+scripts/lib/tls.sh
+scripts/sandbox-firewall.sh
+scripts/test-doctor-proxy-b77.sh
+scripts/test-doctor-resolv-conf.sh
+scripts/test-doctor-runpod-key.sh
+scripts/test-doctor-sandbox-firewall.sh
+scripts/test-doctor-startup-grace.sh
+scripts/test-install-tailscale-migration.sh
+scripts/test-prune-docker-cache.sh
+scripts/test-sandbox-firewall.sh
+scripts/test-uninstall.sh
+status/Caddyfile
+status/Caddyfile.tmpl
+status/test_pod_probe.py

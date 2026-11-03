@@ -368,6 +368,9 @@
 ## scripts/check-hermes-nonroot.sh
 - err()
 
+## scripts/check-no-ip-literals.sh
+- usage()
+
 ## scripts/check-no-masked-literals.sh
 - usage()
 
@@ -677,6 +680,14 @@
 - mk_repo()
 - run_check()
 - no_leak()
+
+## scripts/test-check-no-ip-literals.sh
+- quad()
+- new_fixture()
+- run_check()
+- check_case()
+- check_mentions()
+- check_absent()
 
 ## scripts/test-check-no-masked-literals.sh
 - new_fixture()
