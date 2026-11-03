@@ -13,7 +13,7 @@ This document records the threat model, the findings from a secure-code review a
 | Adversary | Capability | Mitigated? |
 |---|---|---|
 | Passive network observer | Sees traffic between your home and the cloud | **Yes** — WireGuard via Tailscale, plus a hard mesh-range check |
-| Opportunistic internet scanner | Probes for exposed services | **Yes** — no public ports; loopback binds; no RunPod HTTP proxy |
+| Opportunistic internet scanner | Probes for exposed services | **Yes** — no internet-inbound ports; loopback binds; no RunPod HTTP proxy. The Caddy proxy listens on 80 (all interfaces) always and 443 when TLS is on, for the LAN and the tailnet only; with TLS on, port 80 is redirect-only |
 | Compromised process on the GPU pod | Reads memory, environment, process list, filesystem | **Partly** — keys are file-based and shredded, env scrubbed, logging off |
 | Malicious model weights | Arbitrary code execution on the pod | **Yes** — `--trust-remote-code` off by default |
 | Compromised upstream image or action | Supply-chain substitution | **Partly** — versions pinned; the Hermes base image is pinned by digest, the compose images by tag |

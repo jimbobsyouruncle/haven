@@ -22,7 +22,9 @@ Your RunPod prompts travel over an encrypted private network. The cloud server k
 - A 32-billion-parameter coding model on demand, typically a few dollars a month rather than a fixed subscription.
 - Optional fallback to OpenRouter for fast, serverless cloud inference without cold boots.
 - Autonomous workflow orchestration and persistent long-term memory via Hermes Agent.
-- No public ports, no port forwarding, no exposing your home network to the internet.
+- No public ports and no port forwarding. The proxy is the one listener that faces the
+  LAN and the tailnet: port 80 always, plus port 443 when TLS is on. Nothing is
+  published to the internet unless you forward it yourself.
 - Push to `main` and your Pi updates itself, without ever touching your data.
 - Streamlined local DNS: `yourdomain.com` for chat, `hermes.` for orchestration, and `status.` for health. OpenHands stays off the proxy — you reach it through an SSH tunnel.
 - Nightly encrypted backups to Cloudflare R2 covering chats, documents, vectors, memories, connections, pipes, and settings — a failed disk is an inconvenience, not a catastrophe.
@@ -51,7 +53,7 @@ Your RunPod prompts travel over an encrypted private network. The cloud server k
 +──────────────────────────────────┼───────────────────────────────+
                                    |
                     Tailscale encrypted mesh (100.x.x.x)
-                     no public ports, WireGuard tunnel
+                     no internet-inbound ports, WireGuard tunnel
                                    |
 +──────────────────────────────────┼───────────────────────────────+
 |  RUNPOD CLOUD                    V                               |
@@ -103,7 +105,9 @@ Host ports, and who can reach them:
 | Ollama | `127.0.0.1:11434` | the Pi only |
 | OpenHands | `127.0.0.1:${OPENHANDS_PORT:-3001}` | you, over an SSH tunnel |
 | OpenHands | `172.17.0.1:${OPENHANDS_PORT:-3001}` | Docker sandboxes only, for webhooks |
-| Status page, proxy | none (behind Caddy) | the proxy |
+| Caddy proxy | `80` on all interfaces | your browser, on the LAN and the tailnet |
+| Caddy proxy | `443` on all interfaces, only when `TLS_ENABLED=yes` | your browser, on the LAN and the tailnet |
+| Status page | none (behind Caddy) | the proxy |
 
 The Hermes binds on all interfaces are a pre-existing gap, recorded in [SECURITY.md](SECURITY.md) and [hermes/README.md](hermes/README.md); a later phase narrows them. This change adds no host binds.
 
@@ -805,7 +809,7 @@ Claims are only worth what enforces them. Each one below maps to a specific mech
 | **OpenRouter inference (Optional fallback)** | **Prompts sent to OpenRouter are subject to their privacy policy. Use local Ollama or RunPod for strict privacy.** | `.env` config |
 | No telemetry leaves the Pi | `DO_NOT_TRACK`, `SCARF_NO_ANALYTICS` | `docker-compose.yml` |
 | Documents are embedded locally | `RAG_EMBEDDING_ENGINE=""` — computed in-container | `docker-compose.yml` |
-| No inbound ports are exposed | Subdomain routing handled strictly internally by Caddy | `status/Caddyfile` |
+| No internet-inbound ports are exposed | The proxy listens on 80 always and 443 only with TLS; hostname routing stays inside Caddy, and with TLS on port 80 is redirect-only | `status/Caddyfile`, `docker-compose.yml` |
 | The status page cannot leak credentials | It is given none — no `.env`, no API keys | `docker-compose.yml`, `status/app.py` |
 | Backups are unreadable by Cloudflare | restic encrypts on the Pi before upload; R2 stores ciphertext only | `backup/backup.sh` |
 

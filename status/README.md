@@ -54,6 +54,12 @@ The page auto-refreshes every 60 seconds, and pauses refreshing while a download
 
 `http://<your-pi>/` now serves Open WebUI through the same proxy. Port `3000` stays published, so existing bookmarks keep working.
 
+> **TLS on:** the `http://<your-pi>/…` URLs above answer `308` and point at
+> the certificate-bearing name (`https://<TLS_DOMAIN>/…`,
+> `https://status.<TLS_DOMAIN>/…`, `https://hermes.<TLS_DOMAIN>/…`). Port 80
+> is redirect-only in that mode. `http://` paths keep working unchanged with
+> TLS off.
+
 ---
 
 ## Security

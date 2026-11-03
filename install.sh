@@ -1939,6 +1939,34 @@ wait_for() {
   return 1
 }
 
+# wait_for_https LABEL URL RESOLVE_HOST RESOLVE_IP MAX
+#
+# The TLS sibling of wait_for: probes URL over HTTPS with an explicit
+# --resolve of RESOLVE_HOST to RESOLVE_IP, this host's own address, so SNI and Host agree without real
+# DNS. It never follows a redirect (-L is absent) and it treats a 3xx as NOT
+# ready, because with TLS on a 3xx means the request landed on a redirect-only
+# site instead of the certificate-bearing one. Any other non-2xx is also not
+# ready. Kept separate so wait_for's signature and behaviour stay unchanged
+# for every other caller.
+wait_for_https() {
+  local label="$1" url="$2" resolve_host="$3" resolve_ip="$4" max="$5" waited=0 code
+  while (( waited < max )); do
+    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+              --resolve "${resolve_host}:443:${resolve_ip}" "$url" 2>/dev/null || true)"
+    if [[ "$code" =~ ^2 ]]; then
+      ok "${label} healthy after ${waited}s (HTTP ${code} over HTTPS)."
+      event "healthcheck_pass" "service=${label}" "seconds=${waited}"
+      return 0
+    fi
+    sleep 5
+    waited=$(( waited + 5 ))
+    printf '\r    waiting for %s... %ds' "$label" "$waited"
+  done
+  printf '\n'
+  warn "${label} did not become healthy within ${max}s (last HTTP ${code:-none} over HTTPS; 3xx is refused)."
+  event "healthcheck_fail" "service=${label}" "seconds=${max}"
+  return 1
+}
 HEALTH_FAILED=0
 wait_for "ollama"       "http://127.0.0.1:11434/api/tags" 60  || HEALTH_FAILED=1
 
@@ -1962,7 +1990,28 @@ wait_for "open-webui"   "http://127.0.0.1:3000/health"    600 || HEALTH_FAILED=1
 # start on the Pi (a first run builds and imports the agent tree).
 wait_for "hermes-agent" "http://127.0.0.1:${HERMES_PORT:-8501}" 300 || HEALTH_FAILED=1
 wait_for "openhands"    "http://127.0.0.1:${OPENHANDS_PORT:-3001}" 240 || warn "OpenHands initializing..."
-wait_for "status page"  "http://127.0.0.1:80/status/healthz" 60 || warn "Status reverse proxy initializing..."
+# With TLS on, port 80 is redirect-only (B77), so the readiness probe must hit
+# the certificate-bearing status name over HTTPS and refuse a 3xx. With TLS
+# off, the port-80 probe is unchanged.
+tls_state="$(printf '%s' "${TLS_ENABLED:-no}" | tr '[:upper:]' '[:lower:]')"
+case "$tls_state" in
+  yes|true|1|on)
+    tls_status_host="status.${TLS_DOMAIN:-}"
+    tls_probe_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    if [[ -z "${TLS_DOMAIN:-}" || -z "$tls_probe_ip" ]]; then
+      warn "TLS is on but TLS_DOMAIN or this host's address could not be resolved; skipping the HTTPS status probe."
+      event "healthcheck_skip" "service=status page" "reason=no-tls-host"
+    else
+      wait_for_https "status page" "https://${tls_status_host}/status/healthz" \
+        "$tls_status_host" "$tls_probe_ip" 60 || warn "Status reverse proxy initializing..."
+    fi
+    unset tls_status_host tls_probe_ip
+    ;;
+  *)
+    wait_for "status page"  "http://127.0.0.1:80/status/healthz" 60 || warn "Status reverse proxy initializing..."
+    ;;
+esac
+unset tls_state
 hybrid_progress_stop
 print_phase_summary
 

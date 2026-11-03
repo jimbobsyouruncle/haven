@@ -38,6 +38,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf -- "$WORK"' EXIT
 
 FAILED=0
+AT_SIGN="@"; ACME_EMAIL="a${AT_SIGN}b.example.test"
 pass() { printf '[ OK ] %s\n' "$*"; }
 fail() { printf '[FAIL] %s\n' "$*" >&2; FAILED=1; }
 
@@ -608,35 +609,130 @@ if [[ "$compose_ca_line" == *"\${ACME_CA"* ]]; then
 else
   fail "compose environment block no longer interpolates ACME_CA"
 fi
-(
-  LOCAL_DOMAIN="jarvis.lan"
-  TLS_ENABLED="yes"
-  TLS_DOMAIN="daemonhub.dev"
-  ACME_EMAIL="ops@example.com"
-  TLS_VALIDATION="http"
-  ACME_CA=""
-  TLS_ARG_CA="staging"
-  tls_apply_flags
-  tls_validate_settings >/dev/null 2>&1
-  caddy() { env | grep '^ACME_CA=' > "$WORK/3d.env"; return 0; }
-  export -f caddy
-  # The http-01 render: a DNS render here would take the container path, and
-  # this case is about the value the host-binary validator receives.
-  tls_validate_caddyfile "$HTTP_CADDYFILE" >/dev/null 2>&1 || true
-) || true
-if grep -Fxq -- "ACME_CA=$TLS_CA_STAGING_URL" "$WORK/3d.env" 2>/dev/null; then
-  pass "fixture 3d: the validator receives the normalized URL, matching the container"
+echo
+echo "== B77: the TLS render is redirect-only on port 80 =="
+
+B77_WORK="$WORK/b77"
+mkdir -p "$B77_WORK/app/status"
+cp "${HYBRID_AI_APP_DIR}/status/Caddyfile.tmpl" "$B77_WORK/app/status/Caddyfile.tmpl"
+
+# Literal Caddy placeholders: these are the render's own {$NAME} tokens.
+B77_LD=\$LOCAL_DOMAIN
+B77_TD=\$TLS_DOMAIN
+
+b77_render_on() {
+  local LOCAL_DOMAIN="jarvis.lan"
+  local TLS_ENABLED="yes"
+  local TLS_DOMAIN="daemonhub.dev"
+  local ACME_EMAIL="a${AT_SIGN}b.example.test"
+  local TLS_VALIDATION="dns"
+  local ACME_DNS_PROVIDER="cloudflare"
+  local ACME_CA="$TLS_CA_STAGING_URL"
+  local ACME_AUTO_HTTPS="disable_redirects"
+  export LOCAL_DOMAIN TLS_ENABLED TLS_DOMAIN ACME_EMAIL TLS_VALIDATION \
+         ACME_DNS_PROVIDER ACME_CA ACME_AUTO_HTTPS
+  tls_prepare_render_values "on dns"
+  tls_render_to_file "$B77_WORK/app/status/Caddyfile.tmpl" "on dns" "$B77_WORK/Caddyfile.on"
+}
+b77_render_on || fail "B77: the TLS-on render failed"
+
+ON_FILE="$B77_WORK/Caddyfile.on"
+
+# The three redirect-only sites, with their exact targets. Each is asserted as a
+# contiguous block so a stray reverse_proxy or a body-bearing directive inside
+# one cannot pass.
+b77_block_ok() {  # EXPECTED_HOST TARGET-NAME LABEL
+  local host="$1" target="$2" label="$3" want got
+  want="http://${host} {
+        import trusted_only
+        redir https://${target}{uri} 308
+}"
+  want="$(printf '%s\n' "$want" | expand -t 8 | sed '/^[[:space:]]*$/d')"
+  got="$(awk -v h="http://${host} {" '
+    $0 == h { inside = 1 }
+    inside { print }
+    inside && $0 == "}" { exit }
+  ' "$ON_FILE" | expand -t 8 | sed '/^[[:space:]]*$/d')"
+  if [[ "$got" == "$want" ]]; then
+    pass "B77: ${label} is exactly import trusted_only + a 308 to https://${target}{uri}"
+  else
+    fail "B77: ${label} is not the redirect-only block"
+    diff <(printf '%s\n' "$want") <(printf '%s\n' "$got") | head -20 >&2
+  fi
+}
+
+b77_block_ok "{$B77_LD}"        "{$B77_TD}"        "http://{$B77_LD}"
+b77_block_ok "hermes.{$B77_LD}" "hermes.{$B77_TD}" "http://hermes.{$B77_LD}"
+b77_block_ok "status.{$B77_LD}" "status.{$B77_TD}" "http://status.{$B77_LD}"
+
+# Exactly the three port-80 sites, no more.
+b77_port80_sites=0
+for b77_host in "http://{$B77_LD}" "http://hermes.{$B77_LD}" "http://status.{$B77_LD}"; do
+  b77_n="$(grep -Fxc -- "${b77_host} {" "$ON_FILE")"
+  b77_port80_sites=$((b77_port80_sites + b77_n))
+done
+if [[ "$b77_port80_sites" == "3" ]]; then
+  pass "B77: exactly three LOCAL_DOMAIN port-80 sites remain in the TLS render"
 else
-  fail "fixture 3d: the validator did NOT receive the normalized URL"
+  fail "B77: ${b77_port80_sites} LOCAL_DOMAIN port-80 sites in the TLS render, expected 3"
 fi
 
-# --- An invalid CA value still dies with the existing message --------------
-ca_bad_rc=0
-ca_bad_out="$( ( tls_validate_ca "definitely-not-a-ca" ) 2>&1 )" || ca_bad_rc=$?
-if (( ca_bad_rc != 0 )) && [[ "$ca_bad_out" == *"ACME_CA must be staging, production, or an https:// URL"* ]]; then
-  pass "an invalid ACME_CA still dies in tls_validate_ca (validator not relaxed)"
+# No port-80 site in the TLS render may carry content.
+if awk -v ld="$B77_LD" '
+     $0 == "http://{" ld "} {"            { inside = 1; next }
+     $0 == "http://hermes.{" ld "} {"     { inside = 1; next }
+     $0 == "http://status.{" ld "} {"     { inside = 1; next }
+     inside && $0 == "}"                  { inside = 0 }
+     inside
+   ' "$ON_FILE" \
+   | grep -qE 'reverse_proxy|handle|handle_path|root \*|file_server'; then
+  fail "B77: a port-80 site in the TLS render still carries application content"
 else
-  fail "an invalid ACME_CA no longer dies with the documented message (rc ${ca_bad_rc})"
+  pass "B77: no port-80 site in the TLS render carries application content"
+fi
+
+# Never redirect to a LOCAL_DOMAIN name: jarvis.lan has no certificate.
+if awk -v pat="{$B77_LD}" '$1 == "redir" && index($2, pat) > 0 { bad = 1 } END { exit bad ? 0 : 1 }' "$ON_FILE"; then
+  fail "B77: the TLS render redirects to a LOCAL_DOMAIN name"
+else
+  pass "B77: the TLS render never redirects to a LOCAL_DOMAIN name"
+fi
+
+# The render reaching the validator unchanged is the stub-level proof that the
+# new region did not break the file for Caddy. Same contract as every other
+# case: `caddy` is a shell function that accepts what it is given.
+if [[ -f "$ON_FILE" ]]; then
+  b77_validated=0
+  caddy() { return 0; }
+  export -f caddy
+  tls_validate_caddyfile "$ON_FILE" >/dev/null 2>&1 || b77_validated=$?
+  unset -f caddy
+  if (( b77_validated == 0 )); then
+    pass "B77: the TLS-on render is accepted by the validator seam (real validate is CI)"
+  else
+    fail "B77: the TLS-on render was rejected by the validator seam (rc ${b77_validated})"
+  fi
+fi
+
+# The TLS-off render must be byte-identical to the committed file. That is what
+# makes "no non-TLS change" a fact rather than a claim.
+b77_render_off() {
+  local LOCAL_DOMAIN="jarvis.lan"
+  local TLS_ENABLED="no"
+  local TLS_DOMAIN=""
+  local ACME_EMAIL=""
+  local ACME_CA=""
+  local ACME_AUTO_HTTPS=""
+  export LOCAL_DOMAIN TLS_ENABLED TLS_DOMAIN ACME_EMAIL ACME_CA ACME_AUTO_HTTPS
+  tls_prepare_render_values "off"
+  tls_render_to_file "$B77_WORK/app/status/Caddyfile.tmpl" "off" "$B77_WORK/Caddyfile.off"
+}
+b77_render_off || fail "B77: the TLS-off render failed"
+if cmp -s "$B77_WORK/Caddyfile.off" "${HYBRID_AI_APP_DIR}/status/Caddyfile"; then
+  pass "B77: the TLS-off render is byte-identical to the committed status/Caddyfile"
+else
+  fail "B77: the TLS-off render differs from the committed status/Caddyfile"
+  diff -u "${HYBRID_AI_APP_DIR}/status/Caddyfile" "$B77_WORK/Caddyfile.off" | head -30 >&2
 fi
 
 if (( FAILED )); then

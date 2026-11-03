@@ -849,7 +849,88 @@ fi
 # Check every logical path the proxy is supposed to serve. Checking them
 # individually means a single broken route is identified precisely, rather
 # than reported as a vague "the proxy is unhappy".
-if curl -fsS --max-time 5 http://127.0.0.1:80/status/healthz >/dev/null 2>&1; then
+#
+# TLS changes what port 80 answers. With TLS enabled the LOCAL_DOMAIN sites on
+# port 80 are redirect-only (B77), so content must be checked on the
+# certificate-bearing TLS_DOMAIN names over 443 instead. A redirect is never a
+# healthy content answer: a 3xx here is a FAILURE naming the code and URL.
+PROXY_TLS_VAL="$(env_get TLS_ENABLED | tr '[:upper:]' '[:lower:]')"
+case "$PROXY_TLS_VAL" in
+  yes|true|1|on) PROXY_TLS_ON=1 ;;
+  *)             PROXY_TLS_ON=0 ;;
+esac
+
+if (( PROXY_TLS_ON )); then
+  # Probe by certificate-bearing name, resolved to this host's own address, so
+  # SNI and the Host header agree without touching real DNS. No -L: a redirect
+  # is observed and judged, never followed into looking healthy.
+  PROXY_TLS_DOMAIN="$(env_get TLS_DOMAIN)"
+  PROXY_LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
+  if [[ -z "$PROXY_TLS_DOMAIN" || -z "$PROXY_LAN_IP" ]]; then
+    warn "TLS is on but TLS_DOMAIN or this host's address could not be resolved" \
+         "Set TLS_DOMAIN in .env, then re-run ./doctor.sh"
+  else
+    # --resolve pins the HOST BEING PROBED to this host's own address, so
+    # hermes./status. names get the same treatment as the apex and nothing
+    # reaches real DNS. No -L: a redirect is observed and judged, never
+    # followed into looking healthy.
+    proxy_https_code() {  # URL [HOST]
+      local host="${2:-$PROXY_TLS_DOMAIN}"
+      curl -sS -o /dev/null -w '%{http_code}' --max-time 6 \
+        --resolve "${host}:443:${PROXY_LAN_IP}" "$1" 2>/dev/null || true
+    }
+    # Verdicts, mirroring the port-80 rule this replaces: 200/503 means the
+    # route answered; anything else is a warn. A 3xx is called out by name
+    # because with TLS on a redirect can only mean the request landed on a
+    # redirect-only site instead of the certificate-bearing one -- and it is
+    # NEVER followed, so a redirect to a login page can never look healthy.
+    proxy_https_verdict() {  # PATH LABEL [HOST]
+      local path="$1" label="$2" host="${3:-$PROXY_TLS_DOMAIN}" code
+      code="$(proxy_https_code "https://${host}${path}" "$host")"
+      case "$code" in
+        200|503) pass "Proxy: ${path} -> ${label} over HTTPS (HTTP ${code})" ;;
+        3??)     fail "Proxy: ${path} over HTTPS returned a redirect (HTTP ${code}): https://${host}${path}" \
+                      "Port 80 redirects, port 443 serves. This request was answered by a redirect-only site, so content is not reachable. Check: docker logs --tail 30 hybrid-ai-proxy" ;;
+        *)       warn "Proxy: ${path} over HTTPS returned HTTP ${code}" \
+                      "Check the Caddyfile and: docker logs --tail 30 hybrid-ai-proxy" ;;
+      esac
+    }
+
+    if [[ "$(proxy_https_code "https://${PROXY_TLS_DOMAIN}/status/healthz")" =~ ^(200|503|401|403)$ ]]; then
+      pass "Proxy: /status responding over HTTPS (https://${PROXY_TLS_DOMAIN})"
+      proxy_https_verdict /hub          "hub page"
+      proxy_https_verdict /app/         "Open WebUI"
+      proxy_https_verdict /health       "health summary"
+      proxy_https_verdict /openwebui    "Open WebUI alias"
+      proxy_https_verdict /status/healthz "status page" "status.${PROXY_TLS_DOMAIN}"
+      proxy_https_verdict /             "hermes site" "hermes.${PROXY_TLS_DOMAIN}"
+    else
+      warn "Proxy: https://${PROXY_TLS_DOMAIN}/status/healthz is not answering over HTTPS" \
+           "With TLS on, port 80 redirects only. Check: docker logs --tail 30 hybrid-ai-proxy; docker logs --tail 30 hybrid-ai-status"
+    fi
+
+    # The bypass guard (B77): an application path on port 80 must answer 3xx,
+    # never content. A 200 here is the plaintext bypass, so it FAILS and names
+    # the code and the URL. -L is absent on purpose: following the redirect
+    # would hide the very status being judged.
+    proxy_http_redirect_only() {  # HOST PATH
+      local host="$1" path="$2" code
+      code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 6 \
+                -H "Host: ${host}" "http://${PROXY_LAN_IP}${path}" 2>/dev/null || true)"
+      case "$code" in
+        3??) pass "Proxy: port 80 answers ${code} for ${host}${path} (redirect-only)" ;;
+        *)   fail "Proxy: port 80 returned HTTP ${code:-none} for ${host}${path}, expected a 3xx redirect" \
+                   "Plain HTTP must not serve content when TLS is on. Check status/Caddyfile and: docker logs --tail 30 hybrid-ai-proxy" ;;
+      esac
+    }
+    proxy_http_redirect_only "${PROXY_TLS_DOMAIN}" /hub
+    proxy_http_redirect_only "status.${PROXY_TLS_DOMAIN}" /status/healthz
+    proxy_http_redirect_only "hermes.${PROXY_TLS_DOMAIN}" /
+    unset -f proxy_http_redirect_only
+    unset -f proxy_https_code proxy_https_verdict
+  fi
+elif curl -fsS --max-time 5 http://127.0.0.1:80/status/healthz >/dev/null 2>&1; then
   pass "Proxy: /status responding"
   for route in "/hub:hub page" "/app/:Open WebUI" "/health:health summary"; do
     path="${route%%:*}"; label="${route#*:}"

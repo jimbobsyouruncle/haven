@@ -181,6 +181,9 @@
 - runpod_key_check()
 - container_env()
 - install_hint()
+- proxy_https_code()
+- proxy_https_verdict()
+- proxy_http_redirect_only()
 - sandbox_image_probe()
 - grace_epoch()
 - resolv_skip()
@@ -217,6 +220,7 @@
 - install_secret_guard_hook()
 - print_phase_summary()
 - wait_for()
+- wait_for_https()
 - reconcile_backup_cache_ownership()
 - install_backup_scheduler_system()
 - install_backup_scheduler()
@@ -591,6 +595,16 @@
 - render()
 - check_fail_closed()
 
+## scripts/test-b77-port80-dynamic.sh
+- cleanup()
+- pass()
+- fail()
+- render_variant()
+- http_probe()
+- wait_ready()
+- start_proxy()
+- check_redir()
+
 ## scripts/test-backup-containers.sh
 - ok()
 - bad()
@@ -746,6 +760,14 @@
 - summary_count()
 - run_doctor()
 
+## scripts/test-doctor-proxy-b77.sh
+- pass()
+- fail()
+- lookup()
+- summary_count()
+- run_doctor()
+- write_env_tls()
+
 ## scripts/test-doctor-resolv-conf.sh
 - pass()
 - fail()
@@ -810,6 +832,7 @@
 - check()
 - run_install()
 - firewall_sudo()
+- set_stack_tls()
 
 ## scripts/test-install-tailscale-migration.sh
 - ok()
@@ -961,6 +984,9 @@
 - image_for_render()
 - run_order_case()
 - normalized_ca()
+- b77_render_on()
+- b77_block_ok()
+- b77_render_off()
 
 ## scripts/test-tls-check.sh
 - ok()
@@ -990,6 +1016,8 @@
 - expect()
 - reject()
 - try_prepare()
+- site_block()
+- check_redir()
 
 ## scripts/test-uninstall.sh
 - ok()

@@ -10,6 +10,17 @@ Start with [Diagnostic triage](#diagnostic-triage) to find which layer is failin
 
 Service health, **last run status for every scheduled job**, recent errors, log tails, and a one-click diagnostic download. Usually the fastest way to see what is wrong. `http://<your-pi>/hub` lists every service with live health.
 
+> **TLS on:** port 80 is redirect-only. Every request to `http://<your-pi>/…`,
+> `http://hermes.<your-pi>/…` and `http://status.<your-pi>/…` answers `308` and
+> points at the certificate-bearing name (`https://<TLS_DOMAIN>/…`,
+> `https://hermes.<TLS_DOMAIN>/…`, `https://status.<TLS_DOMAIN>/…`). That is
+> correct behaviour, not a fault. Use the `https://` names, and when you probe
+> by hand add `-L` deliberately or you will only ever see the `308`.
+> A `308` from `curl` without `-L` is a healthy proxy, never a healthy service.
+>
+> **TLS off:** the `http://<your-pi>/…` URLs below are served directly, exactly
+> as before. Nothing redirects.
+
 **On the command line:**
 
 ```bash
@@ -104,7 +115,11 @@ From the CLI:
 ```bash
 grep '^EVENT' backup.log | tail -20
 grep '^EVENT' install.log | tail -10
-curl -s http://localhost/status/api | jq '.jobs'
+# Loopback carries Host: localhost, which matches no site, so probe the real name.
+# With TLS on, use https://status.<TLS_DOMAIN> -- http on port 80 is a 308.
+curl -s "$( [ "$(grep -c '^TLS_ENABLED=yes' .env 2>/dev/null)" = 1 ] \
+  && echo "https://status.$(sed -n 's/^TLS_DOMAIN=//p' .env | head -1)" \
+  || echo "http://localhost" )/status/api" | jq '.jobs'
 ```
 
 ---
@@ -118,6 +133,8 @@ curl -s http://localhost/status/api | jq '.jobs'
 | `/health` returns 503 | **Expected** when any check is degraded — that is the endpoint working | Open `/status` to see which check |
 | Blank Open WebUI page under a subpath | Open WebUI cannot be served from a subpath | Use `/openwebui` (which redirects to the site root), never a custom prefix |
 | Port 80 in use, proxy will not start | Another web server on the Pi | `sudo ss -tlnp \| grep :80` |
+| `curl http://<your-pi>/...` returns 308 and no page | **Expected with TLS on.** Port 80 is redirect-only; the `Location` is the certificate-bearing HTTPS name | Follow the redirect (browser or `curl -L`), or use `https://<TLS_DOMAIN>/...` directly. A 200 here would mean the bypass is back |
+| The `hybrid-ai-proxy` container reports unhealthy | It should not. The healthcheck probes loopback on :80 with the address literal as `Host`, which matches no site in either render. It asserts one thing: Caddy answered. `wget` exit codes decide that, and they differ by build: GNU `wget` without `-f` exits 0 even on a 404, while BusyBox `wget` (the Alpine image) exits non-zero on any 4xx/5xx. So on the image we ship, a healthcheck pass means Caddy returned a 2xx for the unmatched `Host`; a 4xx would fail it. `scripts/test-b77-port80-dynamic.sh` records Caddy's real answer in CI, in both renders | `docker compose logs proxy`, then `docker compose exec proxy wget -S -qO /dev/null http://[IP_ADDRESS]:80/status/healthz` |
 | Page loads, containers show "not found" | Socket group mismatch | Compare `DOCKER_GID` in `.env` with `stat -c '%g' /var/run/docker.sock`, then `./install.sh` |
 | Everything on the page fails | Status container cannot reach the others | `docker network inspect hybrid-ai` |
 | The Backups tile says "no successful backup recorded" although backups succeed | The status container is reading a different file than the backup units write. The reader and the writer must name ONE resolved path: `scripts/lib/hybrid-ai-env.sh` resolves `BACKUP_LOG` from the mode (system mode: the units' `LogsDirectory=` at `/var/log/hybrid-ai-backup/backup.log`; user mode: `$HYBRID_AI_LOG_DIR/backup.log`), `install.sh` writes that resolved value into the stack env file, and the status mount is `${BACKUP_LOG:?...}` | Confirm the value the helper resolves matches what compose mounted, then re-run `./install.sh` so the stack env file carries it. See [Relocated paths](#relocated-paths-split-layout) |
