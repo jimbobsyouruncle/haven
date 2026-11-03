@@ -43,6 +43,9 @@ FAILED=0
 CHECKS=0
 NS="b77-$$"
 PROXY_IMAGE="hybrid-ai-b77-proxy:$$"
+# The container-local loopback address. Spelled out so the harness runs the
+# production healthcheck command verbatim.
+LOOPBACK="127.0.0.1"
 
 cleanup() {
   docker rm -f "${NS}-on" "${NS}-off" "${NS}-upstream" >/dev/null 2>&1 || true
@@ -96,12 +99,14 @@ fi
 # proxy -> stub upstream hop.
 docker network create "$NS-net" >/dev/null || exit 2
 
-# Dummy certificate so a TLS site can be socket-tested without ACME.
-mkdir -p "$SCRATCH/certs"
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-  -subj "/CN=jarvis.example.com" \
-  -addext "subjectAltName=DNS:jarvis.example.com,DNS:*.jarvis.example.com" \
-  -keyout "$SCRATCH/certs/key.pem" -out "$SCRATCH/certs/cert.pem" >/dev/null 2>&1
+# The DNS-01 render reads its provider credential from
+# /run/secrets/cloudflare_dns_token at config load, so the container would exit
+# before binding :80 without one. This is a throwaway placeholder created at
+# runtime; it is never committed and it authorizes nothing. No TLS handshake is
+# exercised: this suite asserts port-80 behaviour only.
+mkdir -p "$SCRATCH/secrets"
+printf '%s\n' 'b77-dummy-dns-token-not-a-real-secret' > "$SCRATCH/secrets/cloudflare_dns_token"
+chmod 0444 "$SCRATCH/secrets/cloudflare_dns_token"
 
 # Stub upstream. It answers 200 to everything, so a port-80 200 in the TLS
 # variant would be unambiguous evidence of application content leaking.
@@ -152,8 +157,8 @@ fi
 
 # --- probing helpers -------------------------------------------------------
 http_probe() {  # CONTAINER HOST PATH -> "code<TAB>location<TAB>bodylen"
-  local ctr="$1" host="$2" path="$3" hdrs body
-  docker exec "$ctr" sh -c "curl -sS -o /tmp/body -D - --max-time 5 -H \"Host: ${host}\" \"http://[IP_ADDRESS]${path}\"" \
+  local ctr="$1" host="$2" path="$3" body
+  docker exec "$ctr" sh -c "curl -sS -o /tmp/body -D - --max-time 5 -H \"Host: ${host}\" \"http://${LOOPBACK}${path}\"" \
     > "$SCRATCH/hdrs" 2>/dev/null
   body="$(docker exec "$ctr" sh -c 'wc -c < /tmp/body' 2>/dev/null | tr -d ' \r')"
   printf '%s\t%s\t%s\n' \
@@ -163,10 +168,10 @@ http_probe() {  # CONTAINER HOST PATH -> "code<TAB>location<TAB>bodylen"
 }
 
 wait_ready() {  # CONTAINER
-  local ctr="$1" i
-  for i in $(seq 1 40); do
+  local ctr="$1"
+  for _ in $(seq 1 40); do
     if docker exec "$ctr" sh -c 'caddy version' >/dev/null 2>&1 \
-       && docker exec "$ctr" sh -c 'wget -qO- http://[IP_ADDRESS]:80/ >/dev/null 2>&1'; then
+       && docker exec "$ctr" sh -c 'wget -qO- http://'"$LOOPBACK"':80/ >/dev/null 2>&1'; then
       return 0
     fi
     sleep 1
@@ -185,7 +190,7 @@ start_proxy() {  # NAME RENDER_FILE
     -e HYBRID_AI_AUTH_USER="operator" \
     -e HYBRID_AI_AUTH_HASH='$2a$14$abcdefghijklmnopqrstuvABCDEFGHIJKLMNOPQRSTUVWXYZ' \
     -v "$2:/etc/caddy/Caddyfile:ro" \
-    -v "$SCRATCH/certs:/certs:ro" \
+    -v "$SCRATCH/secrets/cloudflare_dns_token:/run/secrets/cloudflare_dns_token:ro" \
     "$PROXY_IMAGE" >/dev/null || return 1
 }
 
@@ -241,7 +246,7 @@ if start_proxy "${NS}-on" "$SCRATCH/on/Caddyfile" && wait_ready "${NS}-on"; then
   fi
 
   # (d) the EXACT production healthcheck, inside the container (loopback).
-  HC_CMD='wget -qO- http://[IP_ADDRESS]:80/status/healthz >/dev/null 2>&1 || exit 1'
+  HC_CMD="wget -qO- http://${LOOPBACK}:80/status/healthz >/dev/null 2>&1 || exit 1"
   echo "production healthcheck: $(grep -F 'wget -qO-' "$REPO_ROOT/docker-compose.yml.tmpl" | head -1 | sed 's/^ *//')"
   if docker exec "${NS}-on" sh -c "$HC_CMD"; then
     pass "TLS-on: production healthcheck exit 0 (loopback, unmatched Host)"
@@ -249,7 +254,7 @@ if start_proxy "${NS}-on" "$SCRATCH/on/Caddyfile" && wait_ready "${NS}-on"; then
     fail "TLS-on: production healthcheck would mark the container unhealthy"
   fi
   hc_code="$(docker exec "${NS}-on" sh -c \
-    'wget -S -qO /dev/null http://[IP_ADDRESS]:80/status/healthz 2>&1 | awk "/HTTP\//{print \$2; exit}"' 2>/dev/null | tr -d '\r')"
+    "wget -S -qO /dev/null http://${LOOPBACK}:80/status/healthz 2>&1 | awk '/HTTP\//{print \$2; exit}'" 2>/dev/null | tr -d '\r')"
   echo "TLS-on healthcheck HTTP status (loopback, unmatched Host): ${hc_code:-none}"
   echo "NOTE: Caddy's implicit catch-all answers an empty 2xx for an unmatched"
   echo "      Host, so wget exits 0. BusyBox wget exits 1 on a real 404, so a"
@@ -292,7 +297,7 @@ if start_proxy "${NS}-off" "$SCRATCH/off/Caddyfile" && wait_ready "${NS}-off"; t
     fail "TLS-off: production healthcheck would mark the container unhealthy"
   fi
   hc_code_off="$(docker exec "${NS}-off" sh -c \
-    'wget -S -qO /dev/null http://[IP_ADDRESS]:80/status/healthz 2>&1 | awk "/HTTP\//{print \$2; exit}"' 2>/dev/null | tr -d '\r')"
+    "wget -S -qO /dev/null http://${LOOPBACK}:80/status/healthz 2>&1 | awk '/HTTP\//{print \$2; exit}'" 2>/dev/null | tr -d '\r')"
   echo "TLS-off healthcheck HTTP status (loopback, unmatched Host): ${hc_code_off:-none}"
 else
   fail "TLS-off Caddy failed to start or never answered on :80"

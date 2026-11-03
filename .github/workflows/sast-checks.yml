@@ -106,9 +106,24 @@ jobs:
               echo "::error::base_sha must be 40 lowercase hex characters, got '${BASE_SHA_INPUT}'"
               exit 1
             fi
-            if ! git cat-file -e "${BASE_SHA_INPUT}^{commit}" 2>/dev/null; then
-              echo "::error::base_sha '${BASE_SHA_INPUT}' is not a commit in the fetched history"
-              exit 1
+            # The job runs in a container against a bind-mounted checkout that
+            # another uid owns, so git refuses it as "dubious ownership" unless
+            # the path is trusted explicitly. Scope that trust to this checkout.
+            git config --global --add safe.directory "$PWD"
+            # Keep git's real diagnostic: the previous probe hid it, so an
+            # unresolvable SHA looked like a missing commit and skipped both
+            # scans. A shallow PR checkout may simply not hold the commit, so
+            # one bounded fetch is attempted before failing closed.
+            if ! err="$(git cat-file -e "${BASE_SHA_INPUT}^{commit}" 2>&1)"; then
+              echo "git could not resolve ${BASE_SHA_INPUT}: ${err}"
+              echo "attempting one bounded fetch of ${BASE_SHA_INPUT}"
+              if ! err="$(git fetch --no-tags --depth=1 origin "${BASE_SHA_INPUT}" 2>&1)"; then
+                echo "git fetch failed: ${err}"
+              fi
+              if ! err="$(git cat-file -e "${BASE_SHA_INPUT}^{commit}" 2>&1)"; then
+                echo "::error::base_sha '${BASE_SHA_INPUT}' is not a commit in the fetched history: ${err}"
+                exit 1
+              fi
             fi
             echo "dispatch with base_sha: running whole-tree AND diff-aware scans"
             semgrep scan --config auto --error

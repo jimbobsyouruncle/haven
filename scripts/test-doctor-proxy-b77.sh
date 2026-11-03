@@ -76,7 +76,7 @@ mkdir -p "$BIN" "$APPD/scripts/lib" "$WORK/home" "$WORK/ws" "$WORK/ohstate"
 
 TLS_DOMAIN_FIX="proxy.example.test"
 BRIDGE_IP="$(sed -n "s/.*\"\\\$BINDINGS\" == \\*\"\\([^:\"]*\\):\\\${OH_PORT}\".*/\\1/p" "$DOCTOR" | head -1)"
-BRIDGE_IP="${BRIDGE_IP:-[IP_ADDRESS]}"
+BRIDGE_IP="${BRIDGE_IP:-192.0.2.10}"
 
 # --- PATH stubs -------------------------------------------------------------
 # The curl branch is FIXTURE-DRIVEN: it records the URL, then answers from the
@@ -122,7 +122,7 @@ case "$me" in
     case "$key" in
       http://*)
         case "$host" in
-          [IP_ADDRESS]|localhost)
+          127.0.0.1|localhost)
             # The legacy port-80 probe (Host is the loopback literal).
             case "$path" in
               /status/healthz) code="${FIX_PORT80_LOOPBACK_STATUS:-${FIX_PORT80_LOOPBACK:-200}}" ;;
@@ -219,14 +219,14 @@ case "$me" in
   findmnt) echo '/dev/nvme0n1p2' ;;
   nvme|lsblk|vcgencmd|getent) exit 1 ;;
   dmesg|ip) exit 0 ;;
-  hostname) for a in "$@"; do [[ "$a" == "-I" ]] && { echo '[IP_ADDRESS] '; exit 0; }; done; echo host ;;
+  hostname) for a in "$@"; do [[ "$a" == "-I" ]] && { echo '192.0.2.10 '; exit 0; }; done; echo host ;;
   uname) for a in "$@"; do [[ "$a" == "-m" ]] && { echo aarch64; exit 0; }; done; echo Linux ;;
   nproc) echo 4 ;;
   tailscale)
     for a in "$@"; do
       case "$a" in
         status) echo '{"BackendState":"Running","Peer":{"k":{"HostName":"runpod-worker","Online":true}}}'; exit 0 ;;
-        ip) echo '[IP_ADDRESS]'; exit 0 ;;
+        ip) echo '100.64.0.7'; exit 0 ;;
       esac
     done
     exit 0 ;;
@@ -244,6 +244,7 @@ done
 
 # --- scratch app ------------------------------------------------------------
 cp "$REPO_ROOT/scripts/lib/hybrid-ai-env.sh" "$APPD/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/tailscale-resolve.sh" "$APPD/scripts/lib/"
 cp "$DOCTOR" "$APPD/doctor.sh"
 chmod +x "$APPD/doctor.sh"
 
@@ -359,7 +360,6 @@ run_doctor on-ok "$APPD/doctor.sh" \
   FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
   FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
   FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
-OUT_ON_OK="$OUT"
 if grep -q 'Proxy: /status responding over HTTPS' "$OUT"; then
   pass "TLS on: the apex status probe is reported over HTTPS"
 else
@@ -393,6 +393,10 @@ else
   fail "TLS on (healthy): exit code ${RC} differs from the baseline (${RC_BASE_ON})"
 fi
 
+# The healthy TLS-on run's failure count is the baseline the bypass must
+# exceed. Recorded from a real run, never defaulted to 0.
+FAILED_BASE="${FAILED:-0}"
+
 # --- (ii) TLS on, port 80 serves content: the bypass -----------------------
 run_doctor on-bypass "$APPD/doctor.sh" \
   FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
@@ -400,7 +404,6 @@ run_doctor on-bypass "$APPD/doctor.sh" \
   FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
   FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
   FIX_PORT80_APP=200 FIX_PORT80_LOOPBACK=200
-OUT_ON_BYPASS="$OUT"
 if grep -q 'port 80 returned HTTP 200' "$OUT"; then
   pass "TLS on: a port-80 200 application answer is reported"
 else
@@ -429,7 +432,6 @@ run_doctor on-https-redir "$APPD/doctor.sh" \
   FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
   FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
   FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
-OUT_ON_HTTPS_REDIR="$OUT"
 if grep -q 'over HTTPS returned a redirect (HTTP 308)' "$OUT"; then
   pass "TLS on: an HTTPS 3xx is reported with its code"
 else
@@ -455,7 +457,6 @@ run_doctor on-login "$APPD/doctor.sh" \
   FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=302 \
   FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=302 \
   FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
-OUT_ON_LOGIN="$OUT"
 # Only the paths this scenario set to 302. /openwebui is deliberately 200 here,
 # so it must still pass: the assertion is about the redirect paths, not a sweep.
 if ! grep -qE 'Proxy: /(hub|app/) -> .*(HTTP 200)' "$OUT" \
@@ -473,11 +474,10 @@ fi
 # --- (v) TLS off: today's port-80 behaviour, exactly ----------------------
 write_env_tls no
 run_doctor base-off "$APPD/doctor-base.sh"
-RC_BASE_OFF=$RC; F_BASE_OFF="${FAILED:-0}"
+RC_BASE_OFF=$RC
 run_doctor off-ok "$APPD/doctor.sh" \
   FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
   FIX_PORT80_LOOPBACK_STATUS=200 FIX_PORT80_LOOPBACK=200 FIX_PORT80_APP=200
-OUT_OFF_OK="$OUT"
 if grep -q 'Proxy: /status responding$' "$OUT"; then
   pass "TLS off: the port-80 status pass line is unchanged"
 else
@@ -512,7 +512,6 @@ run_doctor on-auth "$APPD/doctor.sh" \
   FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
   FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
   FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
-OUT_ON_AUTH="$OUT"
 if grep -q 'over HTTPS returned HTTP 401' "$OUT"; then
   pass "TLS on: a 401 is reported with its code, not silently accepted"
 else
