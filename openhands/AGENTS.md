@@ -97,3 +97,14 @@ If a change genuinely requires modifying one of these, stop and explain why.
 - Never `git push --force`, delete branches, rewrite history, or merge to the default branch.
 - Before any push, show the branch, the commit, test results, changed files, and residual risks.
 - One logical change per branch.
+
+## Build path
+
+- **Addresses are variables, never literals.** Read a host or address from config or derive
+  it at runtime. Never type a dotted quad into a script, fixture, URL, or test.
+- **Never copy a value out of tool output.** Output is display-masked, so a real address and
+  a bracketed placeholder look identical. Read the committed blob or the API response
+  programmatically and assert on bytes.
+- **Before recording a test receipt, assert HEAD equals the SHA claimed.** Run
+  `git rev-parse HEAD` and state that exact SHA in the receipt. A receipt taken against
+  another commit is not evidence.
