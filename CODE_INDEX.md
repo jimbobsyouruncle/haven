@@ -683,6 +683,9 @@
 - run_check()
 - check_case()
 - check_mentions()
+- check_absent()
+- fingerprint()
+- write_baseline()
 
 ## scripts/test-deploy-build-gate.sh
 - ok()

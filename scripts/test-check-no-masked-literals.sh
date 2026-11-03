@@ -75,6 +75,45 @@ check_mentions() {
   fi
 }
 
+check_absent() {
+  local name="$1" needle="$2"
+  if grep -qF "$needle" "$OUT_FILE"; then
+    echo "FAIL: $name (unexpectedly reported $needle)"
+    sed 's/^/      /' "$OUT_FILE" || true
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "PASS: $name (did not report $needle)"
+  fi
+}
+
+# fingerprint <file> <line-number>; prints the sha256 of that line's text,
+# exactly as the check script computes it (no trailing newline).
+fingerprint() {
+  python3 - "$1" "$2" <<'PY'
+import hashlib
+import sys
+
+path, lineno = sys.argv[1], int(sys.argv[2])
+with open(path, "rb") as handle:
+    line = handle.read().splitlines()[lineno - 1]
+sys.stdout.write(hashlib.sha256(line).hexdigest())
+PY
+}
+
+# write_baseline <fixture-dir> <path> <sha256> [<path> <sha256> ...]
+write_baseline() {
+  local dir="$1"
+  shift
+  mkdir -p "$dir/scripts"
+  {
+    printf '%s\n' '# this is a shrink-only ratchet; test fixture'
+    while [ "$#" -ge 2 ]; do
+      printf '%s\t%s\n' "$1" "$2"
+      shift 2
+    done
+  } >"$dir/scripts/no-masked-literals-baseline.txt"
+}
+
 # Case 1: a URL holding a placeholder fails, and the finding names file:line.
 C1="$TMP_DIR/case1"
 new_fixture "$C1"
@@ -82,7 +121,7 @@ printf 'url=http://%s:8080/healthz\n' "$IP_TOK" >"$C1/svc.sh"
 git -C "$C1" add svc.sh
 git -C "$C1" commit -q -m "fixture: url placeholder"
 check_case "url placeholder fails" 1 "$(run_check "$C1")"
-check_mentions "url placeholder names file and line" "svc.sh:1:"
+check_mentions "url placeholder names file and line" "NEW: svc.sh:1"
 
 # Case 2: a URL whose value comes from a shell variable passes.
 C2="$TMP_DIR/case2"
@@ -139,6 +178,64 @@ EOF
 git -C "$C5" add NOTES.md docs/guide.sh tool.sh
 git -C "$C5" commit -q -m "fixture: docs and markdown"
 check_case "markdown and docs ignored" 0 "$(run_check "$C5")"
+
+# Case A: the baseline file is never scanned. Its comment holds a token-shaped
+# string, yet the check still passes, proving the exclusion works.
+CA="$TMP_DIR/caseA"
+new_fixture "$CA"
+mkdir -p "$CA/scripts"
+cat >"$CA/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "clean"
+EOF
+{
+  printf '%s\n' '# this is a shrink-only ratchet; adding an entry needs owner approval'
+  printf '# a token-shaped string in a comment must not be scanned: echo "host is %s"\n' "$IP_TOK"
+} >"$CA/scripts/no-masked-literals-baseline.txt"
+git -C "$CA" add tool.sh scripts/no-masked-literals-baseline.txt
+git -C "$CA" commit -q -m "fixture: token-shaped baseline comment"
+check_case "baseline file not scanned" 0 "$(run_check "$CA")"
+check_absent "baseline comment not reported" "no-masked-literals-baseline.txt:"
+
+# Case B: a baselined finding passes. The seeded URL token has a matching
+# fingerprint entry, so the check accepts it and reports ACCEPTED.
+CB="$TMP_DIR/caseB"
+new_fixture "$CB"
+printf 'url=http://%s:8080/healthz\n' "$IP_TOK" >"$CB/svc.sh"
+CB_SHA="$(fingerprint "$CB/svc.sh" 1)"
+write_baseline "$CB" "svc.sh" "$CB_SHA"
+git -C "$CB" add svc.sh scripts/no-masked-literals-baseline.txt
+git -C "$CB" commit -q -m "fixture: baselined url placeholder"
+check_case "baselined finding passes" 0 "$(run_check "$CB")"
+check_mentions "baselined finding reported as ACCEPTED" "ACCEPTED: svc.sh:1"
+
+# Case C: the same setup plus a second seeded token with no baseline entry.
+# The baselined one stays accepted, the new one fails and names its file:line.
+CC="$TMP_DIR/caseC"
+new_fixture "$CC"
+printf 'url=http://%s:8080/healthz\n' "$IP_TOK" >"$CC/svc.sh"
+printf 'echo "host is %s"\n' "$IP_TOK" >"$CC/extra.sh"
+CC_SHA="$(fingerprint "$CC/svc.sh" 1)"
+write_baseline "$CC" "svc.sh" "$CC_SHA"
+git -C "$CC" add svc.sh extra.sh scripts/no-masked-literals-baseline.txt
+git -C "$CC" commit -q -m "fixture: new token beside a baselined one"
+check_case "new token not in baseline fails" 1 "$(run_check "$CC")"
+check_mentions "new token names its file and line" "NEW: extra.sh:1"
+check_absent "baselined token not reported as NEW" "NEW: svc.sh:1"
+
+# Case D: a baseline entry whose finding is absent from the tree is stale.
+CD="$TMP_DIR/caseD"
+new_fixture "$CD"
+cat >"$CD/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "clean"
+EOF
+CD_SHA="$(fingerprint "$CD/tool.sh" 1)"
+write_baseline "$CD" "gone.sh" "$CD_SHA"
+git -C "$CD" add tool.sh scripts/no-masked-literals-baseline.txt
+git -C "$CD" commit -q -m "fixture: stale baseline entry"
+check_case "stale baseline entry fails" 1 "$(run_check "$CD")"
+check_mentions "stale entry reported as stale" "stale"
 
 if [ "$FAILURES" -ne 0 ]; then
   echo "FAILURES: $FAILURES" >&2
