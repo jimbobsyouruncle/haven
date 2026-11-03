@@ -479,6 +479,18 @@ jobs:
         # `docker compose build proxy` failed on the first TLS enablement.
         run: bash scripts/test-tls-installer-render.sh
 
+      - name: B77 port-80 redirect-only dynamic tests
+        # Needs Docker (ubuntu-latest). Renders the REAL production variants
+        # through scripts/lib/tls.sh, builds the repo's own ./caddy image, and
+        # asserts with a live Caddy that, with TLS on, every http://LOCAL_DOMAIN,
+        # hermes. and status. application path answers 308 to the matching
+        # certificate-bearing TLS_DOMAIN name with no body and no 200. Also
+        # re-runs the EXACT production healthcheck inside the container in both
+        # variants and records Caddy's answer for an unmatched Host. The
+        # non-TLS variant must stay byte-identical to status/Caddyfile and keep
+        # routing content on :80. No production contact: dummy certs, a fake
+        # DNS token, stubbed upstreams, and --network none for validation runs.
+        run: bash scripts/test-b77-port80-dynamic.sh
       - name: TLS Caddyfile validation tests
         # Offline; docker and caddy are stubbed as shell functions. Proves
         # tls_validate_caddyfile hands the validator the same runtime values

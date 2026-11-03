@@ -333,6 +333,88 @@ else
 fi
 
 
+# --- B77: port 80 is redirect-only when TLS is on -------------------------
+# The non-TLS render must keep serving content on port 80. The TLS render must
+# serve ONLY redirects there, to certificate-bearing TLS_DOMAIN names, and must
+# never redirect to a LOCAL_DOMAIN name (no certificate exists for it). These
+# assertions are textual: the dynamic proof runs in CI with a real Caddy.
+off_caddy="$WORK/off1/Caddyfile"
+on_caddy="$WORK/on1/Caddyfile"
+
+for site in "http://{\$LOCAL_DOMAIN}" "http://hermes.{\$LOCAL_DOMAIN}" "http://status.{\$LOCAL_DOMAIN}"; do
+  if [[ "$(grep -Fxc -- "${site} {" "$off_caddy")" == "1" ]]; then
+    pass "TLS-off keeps the content site ${site}"
+  else
+    fail "TLS-off lost the content site ${site}"
+  fi
+  if [[ "$(grep -Fxc -- "${site} {" "$on_caddy")" == "1" ]]; then
+    pass "TLS-on keeps a port-80 site block for ${site}"
+  else
+    fail "TLS-on lost the port-80 site block for ${site}"
+  fi
+done
+
+# Pull one site block out of a render, so assertions below cannot accidentally
+# match a neighbour's directive.
+site_block() {  # FILE SITE
+  awk -v s="$2 {" 'index($0,s)==1 {f=1} f {print} f && /^}/ {exit}' "$1"
+}
+
+# TLS-on: exact 308 targets, and no application content on port 80 at all.
+check_redir() {  # SITE EXPECTED_LOCATION
+  local site="$1" want="$2" block
+  block="$(site_block "$on_caddy" "$site")"
+  if [[ "$block" == *"redir ${want} 308"* ]] \
+     && [[ "$block" == *'import trusted_only'* ]] \
+     && [[ "$block" != *'reverse_proxy'* ]] \
+     && [[ "$block" != *'handle'* ]]; then
+    pass "TLS-on ${site} is redirect-only to ${want} with trusted_only"
+  else
+    fail "TLS-on ${site} is not a bare 308 redirect to ${want} (fail-closed allowlist kept)"
+  fi
+}
+check_redir "http://{\$LOCAL_DOMAIN}"        "https://{\$TLS_DOMAIN}{uri}"
+check_redir "http://hermes.{\$LOCAL_DOMAIN}" "https://hermes.{\$TLS_DOMAIN}{uri}"
+check_redir "http://status.{\$LOCAL_DOMAIN}" "https://status.{\$TLS_DOMAIN}{uri}"
+
+# No redirect may target a LOCAL_DOMAIN name: jarvis.lan has no certificate.
+if grep -Eq "redir https://[^ {]*\\{\\$LOCAL_DOMAIN\\}" "$on_caddy"; then
+  fail "TLS-on redirects to a LOCAL_DOMAIN name, which has no certificate"
+else
+  pass "TLS-on never redirects to a LOCAL_DOMAIN name"
+fi
+
+# The existing TLS_DOMAIN -> HTTPS redirect site is untouched by this change.
+if [[ "$(grep -Fxc -- "http://{\$TLS_DOMAIN}, http://*.{\$TLS_DOMAIN} {" "$on_caddy")" == "1" ]] \
+   && [[ "$(site_block "$on_caddy" "http://{\$TLS_DOMAIN}, http://*.{\$TLS_DOMAIN}")" == *'redir https://{host}{uri} 308'* ]]; then
+  pass "the existing TLS_DOMAIN 308 redirect site is unchanged"
+else
+  fail "the existing TLS_DOMAIN 308 redirect site changed"
+fi
+
+# TLS-off must keep the application routes on port 80 (content preserved).
+off_apex="$(site_block "$off_caddy" "http://{\$LOCAL_DOMAIN}")" 
+for route in '/status*' '/hub*' '/health' '/ollama/*' '/openwebui*' '/chat*'; do
+  if [[ "$off_apex" == *"handle ${route} {"* ]] || [[ "$off_apex" == *"handle_path ${route} {"* ]]; then
+    pass "TLS-off port 80 still routes ${route}"
+  else
+    fail "TLS-off port 80 no longer routes ${route}"
+  fi
+done
+if [[ "$off_apex" == *'reverse_proxy open-webui:8080'* ]]; then
+  pass "TLS-off port 80 still serves the catch-all content route"
+else
+  fail "TLS-off port 80 lost the catch-all content route"
+fi
+
+# The non-TLS render must not contain ANY redirect-only site (the change must
+# not leak into the TLS-off variant).
+if [[ "$(grep -c 'redir https://' "$off_caddy" || true)" == "0" ]]; then
+  pass "TLS-off render contains no HTTPS redirect (content behaviour unchanged)"
+else
+  fail "TLS-off render gained an HTTPS redirect"
+fi
+
 if (( FAILED )); then
   printf '\nsome checks failed\n' >&2
   exit 1

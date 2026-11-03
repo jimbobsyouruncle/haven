@@ -21,6 +21,16 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      # Optional. Only used by the Semgrep job, and only on a dispatch run: it
+      # turns the job into a fail-closed pair of scans (whole tree + diff-aware
+      # against this commit). An invalid or unresolvable value FAILS the job;
+      # it never falls back to a whole-tree scan. pull_request and schedule are
+      # unaffected.
+      base_sha:
+        description: 'Commit SHA for a diff-aware Semgrep baseline (dispatch only)'
+        required: false
+        type: string
   schedule:
     - cron: '17 6 * * 1'   # Mondays 06:17 UTC
 
@@ -71,19 +81,55 @@ jobs:
           fetch-depth: 0
       - name: Run Semgrep Rules
         # Diff-aware on pull requests, full tree otherwise. A PR scans only
-        # what it changed against the base commit; workflow_dispatch and the
-        # weekly schedule keep the whole-tree scan, so the rule-drift check
-        # and manual runs still see every file. An absent or empty base SHA
-        # (e.g. a schedule event) falls back to the full scan rather than to
-        # a scan of nothing, so a diff-aware run can never pass vacuously.
+        # what it changed against the base commit; the weekly schedule keeps
+        # the whole-tree scan, so the rule-drift check still sees every file.
+        # An absent or empty base SHA (e.g. a schedule event) falls back to
+        # the full scan rather than to a scan of nothing, so a diff-aware run
+        # can never pass vacuously.
+        #
+        # workflow_dispatch with the optional `base_sha` input runs BOTH scans
+        # and requires both to pass. That value is validated first: it must be
+        # 40 lowercase hex characters AND a commit present in the fetched
+        # history. An invalid or unresolvable value fails the job closed; it
+        # never degrades to the whole-tree scan. An empty input keeps the
+        # whole-tree scan, exactly as before.
         # Residual: --config auto still resolves rules from the Semgrep
         # registry at run time, so rule CONTENT is not pinned by the image
         # digest even though the Semgrep version is.
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA_INPUT: ${{ github.event.inputs.base_sha }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] && [ -n "$BASE_SHA" ]; then
-            semgrep scan --config auto --error --baseline-commit "$BASE_SHA"
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${BASE_SHA_INPUT}" ]; then
+            if ! printf '%s' "${BASE_SHA_INPUT}" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::base_sha must be 40 lowercase hex characters, got '${BASE_SHA_INPUT}'"
+              exit 1
+            fi
+            # The job runs in a container against a bind-mounted checkout that
+            # another uid owns, so git refuses it as "dubious ownership" unless
+            # the path is trusted explicitly. Scope that trust to this checkout.
+            git config --global --add safe.directory "$PWD"
+            # Keep git's real diagnostic: the previous probe hid it, so an
+            # unresolvable SHA looked like a missing commit and skipped both
+            # scans. A shallow PR checkout may simply not hold the commit, so
+            # one bounded fetch is attempted before failing closed.
+            if ! err="$(git cat-file -e "${BASE_SHA_INPUT}^{commit}" 2>&1)"; then
+              echo "git could not resolve ${BASE_SHA_INPUT}: ${err}"
+              echo "attempting one bounded fetch of ${BASE_SHA_INPUT}"
+              if ! err="$(git fetch --no-tags --depth=1 origin "${BASE_SHA_INPUT}" 2>&1)"; then
+                echo "git fetch failed: ${err}"
+              fi
+              if ! err="$(git cat-file -e "${BASE_SHA_INPUT}^{commit}" 2>&1)"; then
+                echo "::error::base_sha '${BASE_SHA_INPUT}' is not a commit in the fetched history: ${err}"
+                exit 1
+              fi
+            fi
+            echo "dispatch with base_sha: running whole-tree AND diff-aware scans"
+            semgrep scan --config auto --error
+            semgrep scan --config auto --error --baseline-commit "${BASE_SHA_INPUT}"
+          elif [ "${{ github.event_name }}" = "pull_request" ] && [ -n "${BASE_SHA}" ]; then
+            semgrep scan --config auto --error --baseline-commit "${BASE_SHA}"
           else
             semgrep scan --config auto --error
           fi

@@ -141,6 +141,7 @@
 - scripts/test-agent-image-hybrid-cutover.sh - FILE: scripts/test-agent-image-hybrid-cutover.sh
 - scripts/test-agent-image-repo-migration.sh - FILE: scripts/test-agent-image-repo-migration.sh
 - scripts/test-auth-render.sh - FILE: scripts/test-auth-render.sh
+- scripts/test-b77-port80-dynamic.sh - B77 dynamic proof: with TLS on, port 80 is redirect-only.
 - scripts/test-backup-containers.sh - FILE: scripts/test-backup-containers.sh
 - scripts/test-backup-mode-timers.sh - FILE: scripts/test-backup-mode-timers.sh
 - scripts/test-backup-system-units.sh - FILE: scripts/test-backup-system-units.sh
@@ -159,6 +160,7 @@
 - scripts/test-doctor-backup-probe.sh - Offline regression guard for doctor.sh's backup-repository probe.
 - scripts/test-doctor-lease-less.sh - FILE: scripts/test-doctor-lease-less.sh
 - scripts/test-doctor-post-deploy-log.sh - FILE: scripts/test-doctor-post-deploy-log.sh
+- scripts/test-doctor-proxy-b77.sh - FILE: scripts/test-doctor-proxy-b77.sh
 - scripts/test-doctor-resolv-conf.sh - FILE: scripts/test-doctor-resolv-conf.sh
 - scripts/test-doctor-runpod-key.sh - FILE: scripts/test-doctor-runpod-key.sh
 - scripts/test-doctor-sandbox-firewall.sh - FILE: scripts/test-doctor-sandbox-firewall.sh

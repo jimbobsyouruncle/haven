@@ -55,6 +55,8 @@
 }
 #@end
 
+#@region local_http
+#@off
 http://status.{$LOCAL_DOMAIN} {
 	import trusted_only
 	import secure_headers
@@ -130,6 +132,25 @@ http://{$LOCAL_DOMAIN} {
 		reverse_proxy open-webui:8080
 	}
 }
+#@on
+http://{$LOCAL_DOMAIN} {
+	import trusted_only
+
+	redir https://{$TLS_DOMAIN}{uri} 308
+}
+
+http://hermes.{$LOCAL_DOMAIN} {
+	import trusted_only
+
+	redir https://hermes.{$TLS_DOMAIN}{uri} 308
+}
+
+http://status.{$LOCAL_DOMAIN} {
+	import trusted_only
+
+	redir https://status.{$TLS_DOMAIN}{uri} 308
+}
+#@end
 #@region https
 #@off
 #@on

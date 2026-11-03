@@ -2130,18 +2130,30 @@ tail -3 "${HYBRID_AI_LOG_DIR}/tls-check.log"
 ### Step 13 -- Dual-name verification, then announce
 
 ```bash
-# Both names must serve. HTTPS first, the fallback second.
+# Content is verified ONLY through the certificate-bearing names. The legacy
+# jarvis.lan names are checked for the redirect, not for content: with TLS on,
+# port 80 is redirect-only (B77), so a 200 there would be the bypass back.
 for u in https://daemonhub.dev/ https://hermes.daemonhub.dev/ \
-         https://status.daemonhub.dev/status/healthz \
-         http://jarvis.lan/status/healthz http://hermes.jarvis.lan/; do
+         https://status.daemonhub.dev/status/healthz; do
   printf '%-52s ' "$u"
   curl -skS -o /dev/null -w '%{http_code}\n' "$u"
 done
-# expected: 200 200 200 200 200   (all five)
+# expected: 200 200 200          (all three, content through HTTPS)
+
+for u in http://jarvis.lan/status/healthz http://hermes.jarvis.lan/; do
+  printf '%-52s ' "$u"
+  curl -sS -o /dev/null -w '%{http_code} -> %{redirect_url}\n' "$u"
+done
+# expected: 308 -> https://daemonhub.dev/status/healthz
+#           308 -> https://hermes.daemonhub.dev/
+# A 200 on either http:// line is a FAILURE: it means port 80 still serves
+# content, which is exactly the unauthenticated bypass B77 closes. Never pass
+# -L here: following the redirect would hide the 308 behind a healthy 200.
 ```
 
-Update bookmarks and the release note. `jarvis.lan` stays published and listed
-in the installer output.
+Update bookmarks and the release note. `jarvis.lan` keeps working as a
+redirector only; the installer output and the docs list the `https://`
+`daemonhub.dev` names for content.
 
 ### Step 14 -- Keep the rollback armed for one week
 

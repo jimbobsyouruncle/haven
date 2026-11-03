@@ -162,11 +162,24 @@ EOF
 # HERMES_HEALTH ("ok" by default, anything else fails).
 cat > "$BIN/curl" <<'EOF'
 #!/usr/bin/env bash
-url=""
-for a in "$@"; do case "$a" in http*) url="$a" ;; esac; done
+# Records every argv (so the TLS probe's --resolve can be asserted), and
+# answers the HTTPS status readiness probe from FIX_STATUS_HTTPS_CODE. The
+# probe reads %{http_code} from -w, so the code is printed only when -w is
+# given; every other endpoint answers healthy.
+printf '%s\n' "$*" >> "${CURL_ARGV_LOG:-/dev/null}"
+url=""; has_w=0
+for a in "$@"; do
+  case "$a" in http*) url="$a" ;; esac
+  [[ "$a" == *"%{http_code}"* ]] && has_w=1
+done
 case "$url" in
   *8501*) [[ "${HERMES_HEALTH:-ok}" == "ok" ]] && exit 0 || exit 1 ;;
-  *) exit 0 ;;
+  https://status.*/status/healthz)
+    code="${FIX_STATUS_HTTPS_CODE:-200}"
+    [[ "$has_w" == "1" ]] && printf '%s' "$code"
+    [[ "$code" == 2* ]] && exit 0 || exit 22 ;;
+  *) [[ "$has_w" == "1" ]] && printf '200'
+     exit 0 ;;
 esac
 EOF
 # install: record the argv, then do the real copy so the mode and the bytes are
@@ -238,6 +251,7 @@ done
 ln -sfn "$BIN_ROOT/id" "$BIN_NOSYS/id"
 
 INSTALL_ARGV="$WORK/install-argv.log"
+CURL_ARGV="$WORK/curl-argv.log"
 SYSTEMCTL_ARGV="$WORK/systemctl-argv.log"
 SUDO_ARGV="$WORK/sudo-argv.log"
 CHOWN_ARGV="$WORK/chown-argv.log"
@@ -264,6 +278,8 @@ run_install() {
       RECONCILE_ACCOUNT="${RECONCILE_ACCOUNT:-1}" \
       SUDO_ARGV_LOG="$SUDO_ARGV" \
       SYSTEMCTL_LOG="$SYSTEMCTL_ARGV" \
+      CURL_ARGV_LOG="${CURL_ARGV_LOG:-$CURL_ARGV}" \
+      FIX_STATUS_HTTPS_CODE="${FIX_STATUS_HTTPS_CODE:-200}" \
       SYSTEMCTL_STATE="$WORK/sysstate" \
       SYSTEMCTL_UNIT_DIR="$unit_dir" \
       HERMES_HEALTH="$health" \
@@ -741,6 +757,114 @@ if [[ -s "$CHOWN_ARGV" ]]; then
   bad "a user-mode run chowned the cache"
 else
   ok "a user-mode run performs no chown"
+fi
+
+# ---------------------------------------------------------------------------
+# B77: the readiness probe must not accept a redirect.
+#
+# With TLS on, port 80 is redirect-only, so waiting on http://<loopback>:80 and
+# accepting the answer would either wait on a redirect page or pass against a
+# plaintext bypass. The probe must instead wait on the certificate-bearing
+# status name over HTTPS, with an explicit --resolve and no follow.
+#
+# TLS state is expressed the way a real host expresses it: in the stack env file
+# that install.sh itself reads at STEP 2 (HYBRID_AI_STACK_ENV_FILE). Setting
+# TLS_ENABLED=yes in the process environment alone is NOT enough, because the
+# stack file load overrides it -- which is exactly what the first version of
+# this fixture got wrong. TLS_DOMAIN must also differ from LOCAL_DOMAIN, and
+# ACME_EMAIL must contain one '@'; the fixture builds that address from
+# fragments so the tracked source holds no address literal.
+echo
+echo "== B77: the status readiness probe is TLS-aware =="
+
+AT='@'
+FIX_EMAIL="operator${AT}proxy.example.test"
+FIX_TLS_DOMAIN="proxy.example.test"
+
+set_stack_tls() {  # on|off
+  local want="$1" tmp
+  tmp="$(mktemp)"
+  grep -vE '^(TLS_ENABLED|TLS_DOMAIN|ACME_EMAIL|TLS_VALIDATION|ACME_DNS_PROVIDER)=' "$STACK" > "$tmp"
+  {
+    cat "$tmp"
+    if [[ "$want" == "on" ]]; then
+      printf 'TLS_ENABLED=yes\n'
+      printf 'TLS_DOMAIN=%s\n' "$FIX_TLS_DOMAIN"
+      printf 'ACME_EMAIL=%s\n' "$FIX_EMAIL"
+      # http-01 keeps the fixture free of a credential FILE while still
+      # exercising a real TLS-on render.
+      printf 'TLS_VALIDATION=http\n'
+      printf 'ACME_DNS_PROVIDER=cloudflare\n'
+    else
+      printf 'TLS_ENABLED=no\n'
+      printf 'TLS_DOMAIN=%s\n' "$FIX_TLS_DOMAIN"
+    fi
+  } > "$STACK"
+  rm -f -- "$tmp"
+  chmod 600 "$STACK"
+}
+
+# Guard the guard: if the fixture cannot actually put the installer into TLS
+# mode, say so instead of reporting a meaningless pass below.
+set_stack_tls on
+if grep -qx 'TLS_ENABLED=yes' "$STACK"; then
+  ok "fixture: the stack env file asks for TLS"
+else
+  bad "fixture: the stack env file does not ask for TLS"
+fi
+
+: > "$CURL_ARGV"
+run_install ok "$WORK/tls-probe-ok.log" || true
+if grep -q -- '--resolve status.proxy.example.test:443:' "$CURL_ARGV"; then
+  ok "TLS on: the status probe uses --resolve for the certificate-bearing name"
+else
+  bad "TLS on: the status probe does not use --resolve for status.<TLS_DOMAIN>"
+fi
+if grep -q 'https://status\.proxy\.example\.test/status/healthz' "$CURL_ARGV"; then
+  ok "TLS on: the status probe targets https://status.<TLS_DOMAIN>/status/healthz"
+else
+  bad "TLS on: the status probe does not target the HTTPS status name"
+fi
+if grep -qE 'http://[^ ]*:80/status/healthz' "$CURL_ARGV"; then
+  bad "TLS on: the status probe still probed port 80"
+else
+  ok "TLS on: the status probe no longer probes port 80"
+fi
+if grep -qE -- '(^| )-L( |$)|--location' "$CURL_ARGV"; then
+  bad "TLS on: the status probe follows redirects (-L)"
+else
+  ok "TLS on: the status probe never follows a redirect"
+fi
+
+# A 308 on the HTTPS status name must NOT be accepted as ready.
+: > "$CURL_ARGV"
+rc=0
+FIX_STATUS_HTTPS_CODE=308 run_install ok "$WORK/tls-probe-308.log" || rc=$?
+if grep -q 'did not become healthy' "$WORK/tls-probe-308.log"; then
+  ok "TLS on: a 308 over HTTPS is refused as not ready"
+else
+  bad "TLS on: a 308 over HTTPS was accepted as ready"
+  sed 's/^/      /' "$WORK/tls-probe-308.log" | tail -30 >&2
+fi
+if grep -q '3xx is refused' "$WORK/tls-probe-308.log"; then
+  ok "TLS on: the refusal names the 3xx rule"
+else
+  bad "TLS on: the refusal does not name the 3xx rule"
+fi
+
+# TLS off keeps today's port-80 probe, unchanged.
+set_stack_tls off
+: > "$CURL_ARGV"
+run_install ok "$WORK/tls-off-probe.log" || true
+if grep -qE 'http://[^ ]*:80/status/healthz' "$CURL_ARGV"; then
+  ok "TLS off: the status probe is still the port-80 one"
+else
+  bad "TLS off: the port-80 status probe disappeared"
+fi
+if grep -q -- '--resolve' "$CURL_ARGV"; then
+  bad "TLS off: the probe used --resolve, which it never did before"
+else
+  ok "TLS off: no --resolve is used"
 fi
 
 # ---------------------------------------------------------------------------
