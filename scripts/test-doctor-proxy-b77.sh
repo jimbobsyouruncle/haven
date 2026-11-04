@@ -144,10 +144,6 @@ case "$me" in
     esac
 
     # HTTPS probes: keyed by the exact host and path the fixture names.
-    lookup() { # var-name
-      local v="$1"
-      printf '%s' "${!v:-}"
-    }
     fin=""
     case "$key" in
       "https://${FIX_TLS_DOMAIN}/status/healthz")  fin="${FIX_HTTPS_APEX_STATUS:-200}" ;;
@@ -160,8 +156,17 @@ case "$me" in
       "https://hermes.${FIX_TLS_DOMAIN}/")         fin="${FIX_HTTPS_HERMES:-200}" ;;
     esac
     [[ -z "$fin" ]] && fin=200
+    # The Location header, as curl's %{redirect_url} reports it (absolute,
+    # resolved against the request URL). Empty means "no Location". A literal
+    # {host} is replaced with the host actually requested, so one fixture value
+    # can express "the same host" for every route without naming each one.
+    floc="${FIX_HTTPS_LOC//\{host\}/$host}"
+    rw="code"
+    for a in "$@"; do
+      case "$a" in *'%{redirect_url}'*) rw="loc" ;; esac
+    done
     [[ -n "$write_out" ]] && printf '' > "$write_out"
-    printf '%s' "$fin"
+    if [[ "$rw" == "loc" ]]; then printf '%s' "$floc"; else printf '%s' "$fin"; fi
     # `curl -fsS` must fail on a non-2xx, exactly as the real one does.
     for a in "$@"; do
       if [[ "$a" == "-fsS" || "$a" == "-fs" || "$a" == "--fail" ]]; then
@@ -521,6 +526,138 @@ if ! grep -q 'Proxy: /hub -> hub page over HTTPS (HTTP 401' "$OUT"; then
   pass "TLS on: a 401 is never counted as a content pass"
 else
   fail "TLS on: a 401 was counted as a content pass"
+fi
+
+# --- B86: a 302 to /auth/login on the SAME host is an answer --------------
+# Narrow by design. Only 302 -> https://<same host>/auth/login is accepted,
+# with ?next= ignored. Every other 3xx, and a 302 to another path or another
+# host, stays exactly as refused as it was under B77.
+write_env_tls yes
+
+# (b86-1) 302 -> /auth/login on the same host PASSES, and all six route
+# checks run (the gate answered, so nothing may be skipped).
+run_doctor on-login-ok "$APPD/doctor.sh" \
+  FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
+  FIX_HTTPS_APEX_STATUS=302 FIX_HTTPS_APEX_HUB=302 FIX_HTTPS_APEX_APP=302 \
+  FIX_HTTPS_APEX_HEALTH=302 FIX_HTTPS_APEX_OPENWEBUI=302 FIX_HTTPS_APEX_ROOT=302 \
+  FIX_HTTPS_STATUS=302 FIX_HTTPS_HERMES=302 \
+  FIX_HTTPS_LOC="https://{host}/auth/login?next=%2Fhub" \
+  FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
+if grep -q 'Proxy: /status responding over HTTPS' "$OUT"; then
+  pass "B86: a 302 to /auth/login on the same host passes the gate probe"
+else
+  fail "B86: a 302 to /auth/login on the same host did not pass the gate probe"
+fi
+if grep -q 'Proxy: /hub -> hub page over HTTPS (HTTP 302 to /auth/login)' "$OUT"; then
+  pass "B86: a 302 to /auth/login is reported as a pass for a route"
+else
+  fail "B86: a 302 to /auth/login was not reported as a route pass"
+fi
+if grep -q 'Proxy: HTTPS route checks run: 6/6' "$OUT"; then
+  pass "B86: all six HTTPS route checks run when the gate passes"
+else
+  fail "B86: not all six HTTPS route checks ran"
+fi
+if ! grep -qE '✗ Proxy:' "$OUT"; then
+  pass "B86: the login-gate 302 adds no proxy failure line"
+else
+  fail "B86: the login-gate 302 printed a proxy failure line"
+fi
+
+# (b86-2) 302 to any other path on the same host still FAILS.
+run_doctor on-login-other-path "$APPD/doctor.sh" \
+  FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
+  FIX_HTTPS_APEX_STATUS=200 FIX_HTTPS_APEX_HUB=302 FIX_HTTPS_APEX_APP=200 \
+  FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
+  FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
+  FIX_HTTPS_LOC="https://${TLS_DOMAIN_FIX}/somewhere-else" \
+  FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
+if grep -q 'over HTTPS returned a redirect (HTTP 302)' "$OUT"; then
+  pass "B86: a 302 to another path is still reported as a redirect failure"
+else
+  fail "B86: a 302 to another path was not reported as a redirect failure"
+fi
+
+# (b86-3) 302 to /auth/login on a DIFFERENT host still FAILS.
+run_doctor on-login-other-host "$APPD/doctor.sh" \
+  FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
+  FIX_HTTPS_APEX_STATUS=200 FIX_HTTPS_APEX_HUB=302 FIX_HTTPS_APEX_APP=200 \
+  FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
+  FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
+  FIX_HTTPS_LOC="https://elsewhere.example.test/auth/login" \
+  FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
+if grep -q 'over HTTPS returned a redirect (HTTP 302)' "$OUT"; then
+  pass "B86: a 302 to /auth/login on another host is still a redirect failure"
+else
+  fail "B86: a 302 to /auth/login on another host was accepted"
+fi
+
+# (b86-3b) the GATE probe answering a 302 elsewhere must not pass, and then no
+# route may be counted: zero checks is a warn, never a pass.
+run_doctor on-gate-302-other "$APPD/doctor.sh" \
+  FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
+  FIX_HTTPS_APEX_STATUS=302 FIX_HTTPS_APEX_HUB=200 FIX_HTTPS_APEX_APP=200 \
+  FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
+  FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
+  FIX_HTTPS_LOC="https://${TLS_DOMAIN_FIX}/somewhere-else" \
+  FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
+if grep -q 'is not answering over HTTPS' "$OUT"; then
+  pass "B86: a gate 302 to another path does not pass the gate probe"
+else
+  fail "B86: a gate 302 to another path passed the gate probe"
+fi
+if grep -q 'Proxy: HTTPS route checks run: 0/6' "$OUT"; then
+  pass "B86: zero route checks are reported as 0/6"
+else
+  fail "B86: zero route checks were not reported as 0/6"
+fi
+if grep -qE '✓ Proxy: HTTPS route checks run: 0/6' "$OUT"; then
+  fail "B86: zero route checks were reported as a pass"
+else
+  pass "B86: zero route checks are never a pass"
+fi
+
+# (b86-4) 200 passes and 503 on /status/healthz passes, as before.
+run_doctor on-200 "$APPD/doctor.sh" \
+  FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
+  FIX_HTTPS_APEX_STATUS=200 FIX_HTTPS_APEX_HUB=200 FIX_HTTPS_APEX_APP=200 \
+  FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
+  FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
+  FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
+if grep -q 'Proxy: /hub -> hub page over HTTPS (HTTP 200)' "$OUT"; then
+  pass "B86: a 200 is still a pass"
+else
+  fail "B86: a 200 is no longer a pass"
+fi
+run_doctor on-503 "$APPD/doctor.sh" \
+  FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
+  FIX_HTTPS_APEX_STATUS=503 FIX_HTTPS_APEX_HUB=200 FIX_HTTPS_APEX_APP=200 \
+  FIX_HTTPS_APEX_HEALTH=503 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
+  FIX_HTTPS_STATUS=503 FIX_HTTPS_HERMES=200 \
+  FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
+if grep -q 'Proxy: /status responding over HTTPS' "$OUT"; then
+  pass "B86: a 503 on /status/healthz is still a pass"
+else
+  fail "B86: a 503 on /status/healthz is no longer a pass"
+fi
+
+# (b86-5) a 308 on port 80 is still the B77 bypass guard's expected answer,
+# and a 308 over HTTPS is still refused.
+if grep -q 'redirect-only' "$OUT"; then
+  pass "B86: the port-80 308 guard still runs"
+else
+  fail "B86: the port-80 308 guard stopped running"
+fi
+run_doctor on-308-https "$APPD/doctor.sh" \
+  FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
+  FIX_HTTPS_APEX_STATUS=200 FIX_HTTPS_APEX_HUB=308 FIX_HTTPS_APEX_APP=200 \
+  FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
+  FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
+  FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
+if grep -q 'over HTTPS returned a redirect (HTTP 308)' "$OUT"; then
+  pass "B86: a 308 over HTTPS is still refused (B77 preserved)"
+else
+  fail "B86: a 308 over HTTPS was not refused"
 fi
 
 # --- fail-before: the same assertions against the unpatched doctor --------

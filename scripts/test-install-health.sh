@@ -167,17 +167,22 @@ cat > "$BIN/curl" <<'EOF'
 # probe reads %{http_code} from -w, so the code is printed only when -w is
 # given; every other endpoint answers healthy.
 printf '%s\n' "$*" >> "${CURL_ARGV_LOG:-/dev/null}"
-url=""; has_w=0
+url=""; has_w=0; has_loc=0
 for a in "$@"; do
   case "$a" in http*) url="$a" ;; esac
   [[ "$a" == *"%{http_code}"* ]] && has_w=1
+  [[ "$a" == *"%{redirect_url}"* ]] && has_loc=1
 done
 case "$url" in
   *8501*) [[ "${HERMES_HEALTH:-ok}" == "ok" ]] && exit 0 || exit 1 ;;
   https://status.*/status/healthz)
     code="${FIX_STATUS_HTTPS_CODE:-200}"
-    [[ "$has_w" == "1" ]] && printf '%s' "$code"
-    [[ "$code" == 2* ]] && exit 0 || exit 22 ;;
+    if [[ "$has_loc" == "1" ]]; then
+      printf '%s' "${FIX_STATUS_HTTPS_LOC:-}"
+    elif [[ "$has_w" == "1" ]]; then
+      printf '%s' "$code"
+    fi
+    [[ "$code" == 2* || "$code" == 302 ]] && exit 0 || exit 22 ;;
   *) [[ "$has_w" == "1" ]] && printf '200'
      exit 0 ;;
 esac
@@ -280,6 +285,7 @@ run_install() {
       SYSTEMCTL_LOG="$SYSTEMCTL_ARGV" \
       CURL_ARGV_LOG="${CURL_ARGV_LOG:-$CURL_ARGV}" \
       FIX_STATUS_HTTPS_CODE="${FIX_STATUS_HTTPS_CODE:-200}" \
+      FIX_STATUS_HTTPS_LOC="${FIX_STATUS_HTTPS_LOC:-}" \
       SYSTEMCTL_STATE="$WORK/sysstate" \
       SYSTEMCTL_UNIT_DIR="$unit_dir" \
       HERMES_HEALTH="$health" \
@@ -865,6 +871,86 @@ if grep -q -- '--resolve' "$CURL_ARGV"; then
   bad "TLS off: the probe used --resolve, which it never did before"
 else
   ok "TLS off: no --resolve is used"
+fi
+
+# ---------------------------------------------------------------------------
+# B86: the readiness probe accepts ONE redirect shape -- a 302 to
+# https://<same host>/auth/login, with ?next= ignored -- and nothing else.
+# HEALTH_FAILED semantics are unchanged: a refused probe still only warns.
+set_stack_tls on
+
+# (a) 302 -> /auth/login on the same host: healthy, and no status-page warning.
+# The probed host is status.<TLS_DOMAIN>, so that is the host the Location must
+# name for the redirect to count.
+: > "$CURL_ARGV"
+rc=0
+FIX_STATUS_HTTPS_CODE=302 \
+  FIX_STATUS_HTTPS_LOC="https://status.${FIX_TLS_DOMAIN}/auth/login?next=%2Fstatus%2Fhealthz" \
+  run_install ok "$WORK/tls-probe-login.log" || rc=$?
+check "B86: a 302 to /auth/login still exits 0" "0" "$rc"
+if grep -q 'status page healthy after' "$WORK/tls-probe-login.log"; then
+  ok "B86: a 302 to /auth/login is healthy"
+else
+  bad "B86: a 302 to /auth/login was not treated as healthy"
+  sed 's/^/      /' "$WORK/tls-probe-login.log" | tail -20 >&2
+fi
+if grep -q 'Status reverse proxy initializing' "$WORK/tls-probe-login.log"; then
+  bad "B86: a healthy TLS-on deploy still printed the status-page warning"
+else
+  ok "B86: a healthy TLS-on deploy prints no status-page warning"
+fi
+
+# (b) 302 anywhere else: refused, and it warns.
+: > "$CURL_ARGV"
+rc=0
+FIX_STATUS_HTTPS_CODE=302 \
+  FIX_STATUS_HTTPS_LOC="https://${FIX_TLS_DOMAIN}/somewhere-else" \
+  run_install ok "$WORK/tls-probe-other.log" || rc=$?
+check "B86: a 302 to another path still exits 0 (warn only)" "0" "$rc"
+if grep -q 'did not become healthy' "$WORK/tls-probe-other.log"; then
+  ok "B86: a 302 to another path is refused"
+else
+  bad "B86: a 302 to another path was accepted as ready"
+fi
+if grep -q 'Status reverse proxy initializing' "$WORK/tls-probe-other.log"; then
+  ok "B86: a refused 302 warns about the status page"
+else
+  bad "B86: a refused 302 printed no status-page warning"
+fi
+
+# (c) 302 -> /auth/login on a DIFFERENT host: refused.
+: > "$CURL_ARGV"
+rc=0
+FIX_STATUS_HTTPS_CODE=302 \
+  FIX_STATUS_HTTPS_LOC="https://elsewhere.example.test/auth/login" \
+  run_install ok "$WORK/tls-probe-other-host.log" || rc=$?
+check "B86: a cross-host login 302 still exits 0 (warn only)" "0" "$rc"
+if grep -q 'did not become healthy' "$WORK/tls-probe-other-host.log"; then
+  ok "B86: a cross-host login 302 is refused"
+else
+  bad "B86: a cross-host login 302 was accepted as ready"
+fi
+
+# (d) 200 is healthy and warns about nothing.
+: > "$CURL_ARGV"
+rc=0
+FIX_STATUS_HTTPS_CODE=200 run_install ok "$WORK/tls-probe-200.log" || rc=$?
+check "B86: a 200 still exits 0" "0" "$rc"
+if grep -q 'status page healthy after' "$WORK/tls-probe-200.log"; then
+  ok "B86: a 200 is healthy"
+else
+  bad "B86: a 200 is no longer healthy"
+fi
+
+# (e) 308 is still refused, with the B77 wording.
+: > "$CURL_ARGV"
+rc=0
+FIX_STATUS_HTTPS_CODE=308 run_install ok "$WORK/tls-probe-308-b86.log" || rc=$?
+check "B86: a 308 still exits 0 (warn only)" "0" "$rc"
+if grep -q 'did not become healthy' "$WORK/tls-probe-308-b86.log"; then
+  ok "B86: a 308 is still refused"
+else
+  bad "B86: a 308 was accepted as ready"
 fi
 
 # ---------------------------------------------------------------------------
