@@ -1939,21 +1939,43 @@ wait_for() {
   return 1
 }
 
+# tls_https_login_gate CODE LOCATION EXPECTED_HOST
+#
+# The one redirect that counts as healthy on a certificate-bearing name (B86):
+# a 302 to exactly /auth/login on the SAME host, with the ?next= query ignored.
+# Every other 3xx stays refused, so the redirect-only bypass B77 closed stays
+# closed. LOCATION is curl's %{redirect_url}, i.e. what a follow WOULD visit.
+tls_https_login_gate() {  # CODE LOCATION EXPECTED_HOST
+  local code="$1" loc="$2" host="$3"
+  case "$code" in
+    2*) return 0 ;;
+    302) [[ "${loc%%\?*}" == "https://${host}/auth/login" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
 # wait_for_https LABEL URL RESOLVE_HOST RESOLVE_IP MAX
 #
 # The TLS sibling of wait_for: probes URL over HTTPS with an explicit
 # --resolve of RESOLVE_HOST to RESOLVE_IP, this host's own address, so SNI and Host agree without real
 # DNS. It never follows a redirect (-L is absent) and it treats a 3xx as NOT
 # ready, because with TLS on a 3xx means the request landed on a redirect-only
-# site instead of the certificate-bearing one. Any other non-2xx is also not
-# ready. Kept separate so wait_for's signature and behaviour stay unchanged
-# for every other caller.
+# site instead of the certificate-bearing one. The single exception is the
+# login gate below: a 302 to /auth/login on the same host is the auth gate
+# answering, which is healthy. Any other non-2xx is also not ready. Kept
+# separate so wait_for's signature and behaviour stay unchanged for every
+# other caller.
 wait_for_https() {
-  local label="$1" url="$2" resolve_host="$3" resolve_ip="$4" max="$5" waited=0 code
+  local label="$1" url="$2" resolve_host="$3" resolve_ip="$4" max="$5" waited=0 code loc=""
   while (( waited < max )); do
     code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
               --resolve "${resolve_host}:443:${resolve_ip}" "$url" 2>/dev/null || true)"
-    if [[ "$code" =~ ^2 ]]; then
+    loc=""
+    if [[ "$code" == "302" ]]; then
+      loc="$(curl -sS -o /dev/null -w '%{redirect_url}' --max-time 5 \
+                --resolve "${resolve_host}:443:${resolve_ip}" "$url" 2>/dev/null || true)"
+    fi
+    if tls_https_login_gate "$code" "$loc" "$resolve_host"; then
       ok "${label} healthy after ${waited}s (HTTP ${code} over HTTPS)."
       event "healthcheck_pass" "service=${label}" "seconds=${waited}"
       return 0

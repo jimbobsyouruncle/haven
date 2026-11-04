@@ -880,24 +880,68 @@ if (( PROXY_TLS_ON )); then
       curl -sS -o /dev/null -w '%{http_code}' --max-time 6 \
         --resolve "${host}:443:${PROXY_LAN_IP}" "$1" 2>/dev/null || true
     }
-    # Verdicts, mirroring the port-80 rule this replaces: 200/503 means the
-    # route answered; anything else is a warn. A 3xx is called out by name
-    # because with TLS on a redirect can only mean the request landed on a
-    # redirect-only site instead of the certificate-bearing one -- and it is
-    # NEVER followed, so a redirect to a login page can never look healthy.
-    proxy_https_verdict() {  # PATH LABEL [HOST]
-      local path="$1" label="$2" host="${3:-$PROXY_TLS_DOMAIN}" code
-      code="$(proxy_https_code "https://${host}${path}" "$host")"
+    # curl resolves the Location header against the request URL, so this is the
+    # absolute URL a follow WOULD visit. It is computed, never followed.
+    proxy_https_location() {  # URL [HOST]
+      local host="${2:-$PROXY_TLS_DOMAIN}"
+      curl -sS -o /dev/null -w '%{redirect_url}' --max-time 6 \
+        --resolve "${host}:443:${PROXY_LAN_IP}" "$1" 2>/dev/null || true
+    }
+    # The only redirect that is a healthy answer (B86): a 302 to exactly
+    # /auth/login on the SAME certificate-bearing host. The ?next= query is
+    # ignored. Every other 3xx stays refused -- accepting 3xx in general would
+    # reopen the redirect-only bypass B77 closed.
+    proxy_https_login_gate() {  # CODE LOCATION EXPECTED_HOST
+      local code="$1" loc="$2" host="$3"
       case "$code" in
-        200|503) pass "Proxy: ${path} -> ${label} over HTTPS (HTTP ${code})" ;;
-        3??)     fail "Proxy: ${path} over HTTPS returned a redirect (HTTP ${code}): https://${host}${path}" \
-                      "Port 80 redirects, port 443 serves. This request was answered by a redirect-only site, so content is not reachable. Check: docker logs --tail 30 hybrid-ai-proxy" ;;
-        *)       warn "Proxy: ${path} over HTTPS returned HTTP ${code}" \
-                      "Check the Caddyfile and: docker logs --tail 30 hybrid-ai-proxy" ;;
+        200|503|401|403) return 0 ;;
+        302) [[ "${loc%%\?*}" == "https://${host}/auth/login" ]] ;;
+        *) return 1 ;;
       esac
     }
+    proxy_https_gate_answer() {  # URL HOST
+      local url="$1" host="$2" code loc=""
+      code="$(proxy_https_code "$url" "$host")"
+      if [[ "$code" == "302" ]]; then
+        loc="$(proxy_https_location "$url" "$host")"
+      fi
+      proxy_https_login_gate "$code" "$loc" "$host"
+    }
+    # Verdicts, mirroring the port-80 rule this replaces: 200/503 means the
+    # route answered and 401/403 stays a warn, exactly as before. A 302 to
+    # /auth/login on the same host is an answer; every other 3xx is called out
+    # by name and FAILS, because with TLS on a redirect means the request
+    # landed on a redirect-only site instead of the certificate-bearing one --
+    # and it is NEVER followed, so a redirect cannot look healthy by following.
+    proxy_https_verdict() {  # PATH LABEL [HOST]
+      local path="$1" label="$2" host="${3:-$PROXY_TLS_DOMAIN}" code loc="" accepted=0
+      code="$(proxy_https_code "https://${host}${path}" "$host")"
+      if [[ "$code" == "302" ]]; then
+        loc="$(proxy_https_location "https://${host}${path}" "$host")"
+      fi
+      proxy_https_login_gate "$code" "$loc" "$host" && accepted=1
+      PROXY_HTTPS_RUN=$(( PROXY_HTTPS_RUN + 1 ))
+      if (( accepted )); then
+        case "$code" in
+          401|403) warn "Proxy: ${path} over HTTPS returned HTTP ${code}" \
+                        "Check the Caddyfile and: docker logs --tail 30 hybrid-ai-proxy" ;;
+          302)     pass "Proxy: ${path} -> ${label} over HTTPS (HTTP 302 to /auth/login)" ;;
+          *)       pass "Proxy: ${path} -> ${label} over HTTPS (HTTP ${code})" ;;
+        esac
+      else
+        case "$code" in
+          3??) fail "Proxy: ${path} over HTTPS returned a redirect (HTTP ${code}): https://${host}${path}" \
+                     "Port 80 redirects, port 443 serves. This request was answered by a redirect-only site, so content is not reachable. Check: docker logs --tail 30 hybrid-ai-proxy" ;;
+          *)   warn "Proxy: ${path} over HTTPS returned HTTP ${code}" \
+                     "Check the Caddyfile and: docker logs --tail 30 hybrid-ai-proxy" ;;
+        esac
+      fi
+    }
 
-    if [[ "$(proxy_https_code "https://${PROXY_TLS_DOMAIN}/status/healthz")" =~ ^(200|503|401|403)$ ]]; then
+    # How many of the six route checks actually ran. Zero is a warn, never a
+    # pass: a skipped probe must not read as a verified proxy.
+    PROXY_HTTPS_RUN=0
+    if proxy_https_gate_answer "https://${PROXY_TLS_DOMAIN}/status/healthz" "$PROXY_TLS_DOMAIN"; then
       pass "Proxy: /status responding over HTTPS (https://${PROXY_TLS_DOMAIN})"
       proxy_https_verdict /hub          "hub page"
       proxy_https_verdict /app/         "Open WebUI"
@@ -908,6 +952,12 @@ if (( PROXY_TLS_ON )); then
     else
       warn "Proxy: https://${PROXY_TLS_DOMAIN}/status/healthz is not answering over HTTPS" \
            "With TLS on, port 80 redirects only. Check: docker logs --tail 30 hybrid-ai-proxy; docker logs --tail 30 hybrid-ai-status"
+    fi
+    if (( PROXY_HTTPS_RUN > 0 )); then
+      pass "Proxy: HTTPS route checks run: ${PROXY_HTTPS_RUN}/6"
+    else
+      warn "Proxy: HTTPS route checks run: 0/6" \
+           "No HTTPS route was checked, so the proxy is not verified. Check: docker logs --tail 30 hybrid-ai-proxy"
     fi
 
     # The bypass guard (B77): an application path on port 80 must answer 3xx,
@@ -928,7 +978,9 @@ if (( PROXY_TLS_ON )); then
     proxy_http_redirect_only "status.${PROXY_TLS_DOMAIN}" /status/healthz
     proxy_http_redirect_only "hermes.${PROXY_TLS_DOMAIN}" /
     unset -f proxy_http_redirect_only
-    unset -f proxy_https_code proxy_https_verdict
+    unset -f proxy_https_code proxy_https_location proxy_https_login_gate \
+              proxy_https_gate_answer proxy_https_verdict
+    unset PROXY_HTTPS_RUN
   fi
 elif curl -fsS --max-time 5 http://127.0.0.1:80/status/healthz >/dev/null 2>&1; then
   pass "Proxy: /status responding"
