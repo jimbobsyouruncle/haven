@@ -283,6 +283,11 @@ services:
     environment:
       STATUS_PORT: "8088"
       LOCAL_DOMAIN: ${LOCAL_DOMAIN:?LOCAL_DOMAIN must be set}
+      # Public hostnames only, and both are non-secret: the same values the
+      # proxy renders its certificate sites from. They let the hub print the
+      # certificate-bearing https:// names instead of the http:// ones.
+      TLS_ENABLED: ${TLS_ENABLED:-no}
+      TLS_DOMAIN: ${TLS_DOMAIN:-}
       OLLAMA_URL: http://ollama:11434
       WEBUI_URL: http://open-webui:8080
       HERMES_URL: http://hermes:8501

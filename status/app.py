@@ -75,12 +75,53 @@ from typing import Any, Dict, List, Optional, Tuple
 # --- Configuration (all non-secret) -----------------------------------------
 LISTEN_PORT = int(os.getenv("STATUS_PORT", "8088"))
 LOCAL_DOMAIN = os.getenv("LOCAL_DOMAIN", "yourhostname.com")
+# Public hostnames only, and both are non-secret. The container still receives
+# no credential of any kind.
+TLS_ENABLED = os.getenv("TLS_ENABLED", "no")
+TLS_DOMAIN = os.getenv("TLS_DOMAIN", "")
 DOCKER_SOCK = os.getenv("DOCKER_SOCKET", "/var/run/docker.sock")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 WEBUI_URL = os.getenv("WEBUI_URL", "http://open-webui:8080")
 HERMES_URL = os.getenv("HERMES_URL", "http://hermes-agent:8501")
 OPENHANDS_URL = os.getenv("OPENHANDS_URL", "http://openhands:3001")
+
+# The truthy set is scripts/lib/tls.sh's tls_is_on(), so the browser-facing
+# names agree with what the installer and Caddy treat as "TLS on".
+_TLS_ON_VALUES = ("1", "yes", "YES", "Yes", "true", "TRUE", "True")
+
+
+def base_url(sub: str = "") -> str:
+    """Browser-facing URL for a service, honouring the TLS cutover.
+
+    TLS on: https://<sub>.<TLS_DOMAIN>, or https://<TLS_DOMAIN> for the apex.
+    TLS off: http://<sub>.<LOCAL_DOMAIN>, or http://<LOCAL_DOMAIN> -- exactly
+    the URLs this page printed before the cutover.
+
+    An empty TLS_DOMAIN falls back to LOCAL_DOMAIN, so no URL can ever render
+    as "https://." or "https://hermes.".
+    """
+    if TLS_ENABLED in _TLS_ON_VALUES:
+        scheme = "https"
+        domain = TLS_DOMAIN.strip() or LOCAL_DOMAIN
+    else:
+        scheme = "http"
+        domain = LOCAL_DOMAIN
+    host = f"{sub}.{domain}" if sub else domain
+    return f"{scheme}://{host}"
+
+
+def domain_caption() -> str:
+    """The hub's subtitle, worded for the mode in force.
+
+    TLS off keeps today's exact text and markup. TLS on names the certificate
+    domain as a bare host name, so the caption can never be read as an
+    http:// address.
+    """
+    if TLS_ENABLED in _TLS_ON_VALUES:
+        return f"Domain: <strong>{html.escape(TLS_DOMAIN.strip() or LOCAL_DOMAIN)}</strong>"
+    return f"Local Domain: <strong>{html.escape(LOCAL_DOMAIN)}</strong>"
+
 
 RUNPOD_HOST = os.getenv("RUNPOD_HOST", "")
 VLLM_PORT = os.getenv("VLLM_PORT", "8000")
@@ -993,7 +1034,7 @@ def render_html(data: Dict[str, Any]) -> str:
 <nav>
   <a href="/hub">Hub</a>
   <a href="/status" class="on">Status</a>
-  <a href="http://{html.escape(LOCAL_DOMAIN)}">Open WebUI</a>
+  <a href="{html.escape(base_url())}">Open WebUI</a>
 </nav>
 <header>
   <h1>hybrid-ai status</h1>
@@ -1027,7 +1068,7 @@ def render_html(data: Dict[str, Any]) -> str:
   <div class="btns"><button id="dl2">Download diagnostic bundle</button></div>
 </div>
 
-<footer>hybrid-ai · <a href="/hub">Hub</a> · <a href="http://{html.escape(LOCAL_DOMAIN)}">Open WebUI</a></footer>
+<footer>hybrid-ai · <a href="/hub">Hub</a> · <a href="{html.escape(base_url())}">Open WebUI</a></footer>
 </div>
 <script>
 async function download(btn){{
@@ -1069,7 +1110,7 @@ document.addEventListener('visibilitychange', () => {{ if(!document.hidden) sche
 
 def render_hub(data: Dict[str, Any]) -> str:
     """
-    The landing page at http://<LOCAL_DOMAIN>/hub — directory of available services
+    The landing page served at /hub — directory of available services
     rendered with live status indicators and clickable subdomain URLs.
     """
     by_name = {item["name"]: item for item in data["services"] + data["checks"]}
@@ -1081,13 +1122,13 @@ def render_hub(data: Dict[str, Any]) -> str:
                 f"<span style='color:var(--dim);font-size:13px'>{html.escape(detail)}</span>")
 
     tiles = [
-        (f"http://{LOCAL_DOMAIN}", "Open WebUI", "Chat, local RAG, and document workspace.",
+        (base_url(), "Open WebUI", "Chat, local RAG, and document workspace.",
          badge("Open WebUI")),
         ("http://127.0.0.1:3001", "OpenHands", "Available through the authenticated SSH tunnel.",
          badge("OpenHands")),
-        (f"http://hermes.{LOCAL_DOMAIN}", "Hermes Agent", "System orchestrator & memory engine.",
+        (base_url("hermes"), "Hermes Agent", "System orchestrator & memory engine.",
          badge("Hermes Agent")),
-        (f"http://status.{LOCAL_DOMAIN}", "Status Dashboard", "System diagnostics, health checks, and logs.",
+        (base_url("status"), "Status Dashboard", "System diagnostics, health checks, and logs.",
          f"<span class='dot {data['overall']}'></span>"
          f"<span style='color:var(--dim);font-size:13px'>{_BANNER[data['overall']]}</span>"),
     ]
@@ -1106,20 +1147,20 @@ def render_hub(data: Dict[str, Any]) -> str:
 <title>hybrid-ai hub</title><style>{_CSS}</style></head><body><div class="wrap">
 <nav>
   <a href="/hub" class="on">Hub</a>
-  <a href="http://status.{html.escape(LOCAL_DOMAIN)}">Status</a>
-  <a href="http://{html.escape(LOCAL_DOMAIN)}">Open WebUI</a>
+  <a href="{html.escape(base_url('status'))}">Status</a>
+  <a href="{html.escape(base_url())}">Open WebUI</a>
 </nav>
 <header><h1>hybrid-ai service hub</h1></header>
-<div class="sub">Local Domain: <strong>{html.escape(LOCAL_DOMAIN)}</strong> · {html.escape(data['generated'])}</div>
+<div class="sub">{domain_caption()} · {html.escape(data['generated'])}</div>
 <div class="banner {data['overall']}">{_BANNER[data['overall']]}</div>
 <div class="tiles">{cards}</div>
 <div class="card" style="margin-top:18px"><h2>Addresses</h2>
-  <div class="row"><span class="nm">Open WebUI</span><span class="dt"><code>http://{html.escape(LOCAL_DOMAIN)}</code></span></div>
+  <div class="row"><span class="nm">Open WebUI</span><span class="dt"><code>{html.escape(base_url())}</code></span></div>
   <div class="row"><span class="nm">OpenHands</span><span class="dt"><code>http://127.0.0.1:3001 via SSH tunnel</code></span></div>
-  <div class="row"><span class="nm">Hermes Agent</span><span class="dt"><code>http://hermes.{html.escape(LOCAL_DOMAIN)}</code></span></div>
-  <div class="row"><span class="nm">Status Page</span><span class="dt"><code>http://status.{html.escape(LOCAL_DOMAIN)}</code></span></div>
-  <div class="row"><span class="nm">Ollama API</span><span class="dt"><code>http://{html.escape(LOCAL_DOMAIN)}/ollama/</code></span></div>
-  <div class="row"><span class="nm">Health Summary</span><span class="dt"><code>http://{html.escape(LOCAL_DOMAIN)}/health</code></span></div>
+  <div class="row"><span class="nm">Hermes Agent</span><span class="dt"><code>{html.escape(base_url('hermes'))}</code></span></div>
+  <div class="row"><span class="nm">Status Page</span><span class="dt"><code>{html.escape(base_url('status'))}</code></span></div>
+  <div class="row"><span class="nm">Ollama API</span><span class="dt"><code>{html.escape(base_url())}/ollama/</code></span></div>
+  <div class="row"><span class="nm">Health Summary</span><span class="dt"><code>{html.escape(base_url())}/health</code></span></div>
 </div>
 <footer>hybrid-ai</footer>
 </div></body></html>"""
