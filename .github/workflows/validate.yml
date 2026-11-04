@@ -428,6 +428,18 @@ jobs:
         # SKIP is visible here as a failure, never a silent pass.
         run: bash scripts/test-status-backup-probe.sh
 
+      - name: Status hub URL / domain-cutover tests
+        # Offline, no Docker, no network, no third-party dependency. Imports
+        # status/app.py fresh with a known env for each case and renders both
+        # the hub page and the status page from a fixture data dict. With TLS
+        # on, the three public names must be https://<TLS_DOMAIN>,
+        # https://hermes.<TLS_DOMAIN> and https://status.<TLS_DOMAIN>, with no
+        # http:// name for those hosts left anywhere; with TLS off the URLs are
+        # exactly today's http://<LOCAL_DOMAIN> set. The OpenHands row must stay
+        # the loopback SSH-tunnel address in both cases. Fails against the
+        # pre-cutover app.py, which emitted http:// names unconditionally.
+        run: python3 status/test_hub_urls.py
+
       - name: Agent-server image repository tests
         # Offline. Proves install.sh's STEP 2b migration moves the canonical
         # ghcr.io/openhands/agent-server repository in an existing .env to the

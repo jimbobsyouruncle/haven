@@ -1128,6 +1128,8 @@
 - step_remove_data()
 
 ## status/app.py
+- def base_url(sub)
+- def domain_caption()
 - def _http_get(url, timeout)
 - def redact(text)
 - class _UnixHTTPConnection(HTTPConnection)
@@ -1184,6 +1186,12 @@
 - def write(text)
 - def remove()
 - def shape(tile)
+
+## status/test_hub_urls.py
+- def ok(msg)
+- def bad(msg)
+- def check(label, got, want)
+- def render(tls_enabled, tls_domain)
 
 ## status/test_pod_probe.py
 - def ok(msg)

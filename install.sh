@@ -2571,15 +2571,25 @@ ok "Control plane stack is up."
 
 run_prune_catch_up || true
 
-# Section 7.4: during the dual-name period both names are printed, https first.
-tls_print_urls
-printf '\n    Service Hub  : http://%s/hub\n' "${LOCAL_DOMAIN}"
-printf '    Open WebUI   : http://%s\n' "${LOCAL_DOMAIN}"
+# Section 7.4: ONE set of names, not two. With TLS on the certificate-bearing
+# names are printed and the old http://<LOCAL_DOMAIN> block is gone; with TLS
+# off this output is byte-identical to before. The OpenHands row below stays
+# loopback in both cases: it is reachable only through the SSH tunnel.
+if tls_is_on; then
+  url_scheme="https"
+  url_domain="${TLS_DOMAIN}"
+else
+  url_scheme="http"
+  url_domain="${LOCAL_DOMAIN}"
+fi
+printf '\n    Service Hub  : %s://%s/hub\n' "${url_scheme}" "${url_domain}"
+printf '    Open WebUI   : %s://%s\n' "${url_scheme}" "${url_domain}"
 printf '    OpenHands    : SSH tunnel to http://127.0.0.1:%s\n' "${OPENHANDS_PORT:-3001}"
-printf '    Hermes Agent : http://hermes.%s\n' "${LOCAL_DOMAIN}"
-printf '    Status Page  : http://status.%s\n' "${LOCAL_DOMAIN}"
-printf '    Ollama API   : http://%s/ollama/\n' "${LOCAL_DOMAIN}"
+printf '    Hermes Agent : %s://hermes.%s\n' "${url_scheme}" "${url_domain}"
+printf '    Status Page  : %s://status.%s\n' "${url_scheme}" "${url_domain}"
+printf '    Ollama API   : %s://%s/ollama/\n' "${url_scheme}" "${url_domain}"
 printf '    vLLM peer    : http://%s:%s/v1  (on demand)\n\n' "${RUNPOD_HOST:-<unresolved>}" "${VLLM_PORT:-8000}"
+tls_print_ca_caution
 
 if ((${#MISSING_DNS[@]} > 0)); then
   hr
@@ -2598,9 +2608,9 @@ else
 fi
 
 printf '\n  Next steps:\n'
-printf '    1. Open http://%s and log in / set up admin\n' "${LOCAL_DOMAIN}"
-printf '    2. Open http://hermes.%s to view persistent memories and skills\n' "${LOCAL_DOMAIN}"
+printf '    1. Open %s://%s and log in / set up admin\n' "${url_scheme}" "${url_domain}"
+printf '    2. Open %s://hermes.%s to view persistent memories and skills\n' "${url_scheme}" "${url_domain}"
 printf '    3. From your client, run: ssh -N -L 127.0.0.1:%s:127.0.0.1:%s %s@%s\n' \
   "${OPENHANDS_PORT:-3001}" "${OPENHANDS_PORT:-3001}" "${USER}" "${PI_HOST}"
 printf '       Then open http://127.0.0.1:%s for OpenHands\n' "${OPENHANDS_PORT:-3001}"
-printf '    4. Check stack health at http://status.%s or run ./doctor.sh\n\n' "${LOCAL_DOMAIN}"
+printf '    4. Check stack health at %s://status.%s or run ./doctor.sh\n\n' "${url_scheme}" "${url_domain}"
