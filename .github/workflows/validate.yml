@@ -333,6 +333,18 @@ jobs:
         # PATH and the unit/polkit dirs are scratch directories.
         run: bash scripts/test-deploy-wiring-install.sh
 
+      - name: Install auth env-leak tests
+        # Offline, no root, no Docker, no network. Proves install.sh's compose
+        # phase cannot leak the Compose-escaped HYBRID_AI_AUTH_HASH and
+        # HYBRID_AI_AUTH_USER that STEP 2 exported: `docker compose up` reads
+        # the process environment ahead of --env-file. Without the unset before
+        # the start, the auth container received a 63-byte escaped hash for a
+        # 60-byte bcrypt hash and refused every password. A stubbed docker dumps
+        # the login-gate pair (presence and byte length only) at the compose up
+        # call; the fix case also asserts the env file still delivers the
+        # operator's bytes, and the fail-closed empty-value refusal still fires.
+        run: bash scripts/test-install-auth-env-leak.sh
+
       - name: Conversation prune lease-guard tests
         # Offline, no root, no Docker, no network. RUNS
         # scripts/prune-conversations.sh against throwaway fixture trees under
