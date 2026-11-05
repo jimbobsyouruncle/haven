@@ -254,6 +254,34 @@ sudo tail -n 20 /var/log/hybrid-ai-post-deploy-verify.log
 sudo journalctl -u 'hybrid-ai-post-deploy-verify-*' --since -2h
 ```
 
+Each run also writes the same verdict as JSON, one file per deploy sha, at
+`${HYBRID_AI_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json` (default
+`/var/lib/hybrid-ai/hermes_data/deploy-verdicts/`). The container sees that
+directory at `/root/.hermes/deploy-verdicts/`, so this is how a check inside the
+container reads the verdict of the deploy that put it there. The host log above
+is not mounted in the container. A failure to write the file is a warning on
+stderr only; it never changes the result line or the exit code.
+
+Read it on the host:
+
+```
+sudo jq . "/var/lib/hybrid-ai/hermes_data/deploy-verdicts/$(git -C /workspace rev-parse HEAD).json"
+```
+
+Read it inside the container, where each file is one compact JSON object:
+
+```
+jq . /root/.hermes/deploy-verdicts/*.json
+jq -r 'select(.verdict != "PASS") | "\(.sha) \(.verdict): \(.detail)"' /root/.hermes/deploy-verdicts/*.json
+```
+
+The keys are `sha`, `verdict` (`PASS`, `FAIL` or `TIMEOUT`), `rc`, `at` (UTC),
+`head` (the tree's commit, or `null`), `app_dir`, `detail` (the same text the
+result line carries, `""` when there is none) and `run_ids` (the polled run ids,
+or `null` when none were polled). The directory is 0755 and the files are 0644,
+owned by `hermes:hermes`; a root-owned file there is what `doctor.sh` warns
+about.
+
 Each run appends a `waiting for <sha> at <UTC>` line and then exactly one
 result line:
 

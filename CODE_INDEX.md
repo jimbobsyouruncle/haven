@@ -538,6 +538,9 @@
 
 ## scripts/run-post-deploy-verify.sh
 - usage_refuse()
+- verdict_dir()
+- verdict_warn()
+- write_verdict()
 - finish()
 - resolve_app_dir()
 - gate_skip()

@@ -14,6 +14,12 @@ set -Eeuo pipefail
 #   deployed tree still sits on that same commit. It writes ONE result line:
 #   PASS, FAIL (with the reason) or TIMEOUT.
 #
+#   It also records that verdict as JSON in the mounted data dir, because the
+#   host log is not mounted in the container: one file per deploy SHA at
+#   ${HYBRID_AI_DATA_DIR:-/var/lib/hybrid-ai}/hermes_data/deploy-verdicts/
+#   <sha>.json. A failure to write the file is a warning on stderr only. It
+#   never changes the result line or the exit code.
+#
 # WHY IT EXISTS:
 #   The deploy workflow reports on the work it started, not on the result of the
 #   build it kicked off in the same run. A verification that runs after the run
@@ -51,10 +57,122 @@ usage_refuse() {
   exit 2
 }
 
+# Where the JSON verdict for this SHA goes. Resolved at call time so a test can
+# point it at a throwaway dir; the default follows the data-dir convention.
+verdict_dir() {
+  printf '%s' "${HYBRID_AI_DEPLOY_VERDICT_DIR:-${HYBRID_AI_DATA_DIR:-/var/lib/hybrid-ai}/hermes_data/deploy-verdicts}"
+}
+
+# At most ONE stderr line per run: the caller's verdict must not be buried, and
+# a retry inside one finish() must not print twice.
+VERDICT_WARNED=0
+verdict_warn() { # <reason>
+  if (( VERDICT_WARNED == 0 )); then
+    VERDICT_WARNED=1
+    printf 'run-post-deploy-verify: %s\n' "$1" >&2
+  fi
+  return 0
+}
+
+# Records the verdict as one JSON object per deploy SHA for the container, which
+# cannot see the host log. Every step returns 0 on failure and says so once on
+# stderr: this must never change finish's stdout line or exit code.
+write_verdict() { # <verdict> <rc> [detail]
+  local verdict="$1" rc="$2" detail="${3:-}"
+  local dir at head="" app_dir="" json ids_json="null" tmp="" target=""
+  local hermes_ok=1
+
+  dir="$(verdict_dir 2>/dev/null)" || return 0
+  if [[ -z "$dir" ]]; then
+    verdict_warn "no verdict directory resolved; the verdict file was not written"
+    return 0
+  fi
+
+  at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" || return 0
+
+  # head: the tree's commit when it is readable, else JSON null.
+  if [[ -n "${APP_DIR:-}" ]]; then
+    app_dir="$APP_DIR"
+    head="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null)" || head=""
+  fi
+
+  # run_ids: the polled ids when at least one was polled, else JSON null.
+  if (( ${#RUN_IDS[@]} > 0 )); then
+    if ! ids_json="$(printf '%s\n' "${RUN_IDS[@]}" | jq -R . | jq -s -c . 2>/dev/null)"; then
+      ids_json="null"
+    fi
+  fi
+
+  if ! json="$(jq -nc \
+      --arg sha "$SHA" \
+      --arg verdict "$verdict" \
+      --argjson rc "$rc" \
+      --arg at "$at" \
+      --arg head "$head" \
+      --arg app_dir "$app_dir" \
+      --arg detail "$detail" \
+      --argjson run_ids "$ids_json" \
+      '{sha: $sha, verdict: $verdict, rc: $rc, at: $at,
+        head: (if $head == "" then null else $head end),
+        app_dir: (if $app_dir == "" then null else $app_dir end),
+        detail: $detail,
+        run_ids: $run_ids}' 2>/dev/null)"; then
+    verdict_warn "could not build the verdict JSON for ${SHA}"
+    return 0
+  fi
+
+  # The transient unit runs as root; a root-owned file in the data dir is what
+  # doctor warns about, so hand both the dir and the file to hermes.
+  id -u hermes >/dev/null 2>&1 || hermes_ok=0
+
+  if (( hermes_ok )); then
+    if ! install -d -o hermes -g hermes -m 0755 "$dir" 2>/dev/null; then
+      verdict_warn "could not create the verdict directory ${dir}"
+      return 0
+    fi
+  else
+    if ! install -d -m 0755 "$dir" 2>/dev/null; then
+      verdict_warn "could not create the verdict directory ${dir}"
+      return 0
+    fi
+  fi
+
+  target="${dir}/${SHA}.json"
+  if ! tmp="$(mktemp "${dir}/.${SHA}.XXXXXX" 2>/dev/null)"; then
+    verdict_warn "could not create a temporary file in ${dir}"
+    return 0
+  fi
+  if ! printf '%s\n' "$json" > "$tmp" 2>/dev/null; then
+    rm -f -- "$tmp" 2>/dev/null || true
+    verdict_warn "could not write the verdict JSON into ${dir}"
+    return 0
+  fi
+
+  if (( hermes_ok )); then
+    if ! install -m 0644 -o hermes -g hermes "$tmp" "$target" 2>/dev/null; then
+      rm -f -- "$tmp" 2>/dev/null || true
+      verdict_warn "could not install the verdict file ${target}"
+      return 0
+    fi
+  else
+    if ! install -m 0644 "$tmp" "$target" 2>/dev/null; then
+      rm -f -- "$tmp" 2>/dev/null || true
+      verdict_warn "could not install the verdict file ${target}"
+      return 0
+    fi
+    # Only after the file is in place, so a real failure is the line reported.
+    verdict_warn "the hermes account is absent: the verdict file is written without owner hermes, so doctor may warn"
+  fi
+
+  rm -f -- "$tmp" 2>/dev/null || true
+  return 0
+}
+
 # One result line on stdout, nothing else. Detail, when present, is folded into
 # that single line so the log stays greppable.
 finish() { # <PASS|FAIL|TIMEOUT> <rc> [detail]
   local verdict="$1" rc="$2" detail="${3:-}"
+  write_verdict "$verdict" "$rc" "$detail" || true
   if [[ -n "$detail" ]]; then
     printf '%s: %s\n' "$verdict" "$detail"
   else

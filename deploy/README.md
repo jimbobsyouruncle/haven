@@ -169,6 +169,14 @@ with the deployed sha.
 It writes one `waiting for <sha> at <UTC>` line up front, then exactly one
 result line -- `PASS`, `FAIL: ...` or `TIMEOUT: ...`.
 
+It also writes that verdict as one JSON file per deploy sha at
+`${HYBRID_AI_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json` (default
+`/var/lib/hybrid-ai/hermes_data/deploy-verdicts/`), which the container sees at
+`/root/.hermes/deploy-verdicts/`. The host log is not mounted in the container,
+so this file is how container-side checks read the verdict. A failure to write
+it is a warning on stderr only: it never changes the result line or the exit
+code.
+
 **`doctor.sh` reads that back.** The log is appended across deploys, so the
 doctor check takes the last `waiting for` line as the run of interest and reads
 the first verdict line after it. It surfaces that verdict in the next deploy's
@@ -213,6 +221,7 @@ Paths (both resolved in `scripts/lib/hybrid-ai-env.sh`):
 |---|---|
 | Verifier | `/usr/local/sbin/run-post-deploy-verify.sh`, installed root:root 0755 by `install.sh` |
 | Log | `/var/log/hybrid-ai-post-deploy-verify.log`, appended by the transient unit |
+| Verdict JSON | `${HYBRID_AI_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json`, owned `hermes:hermes` 0644 in a 0755 dir; the container reads it at `/root/.hermes/deploy-verdicts/`. A write failure is a warning only and never changes the verdict |
 
 After the tree check the verifier also runs the **Backups tile gate**. It reads
 `BACKUP_LOG`, `BACKUP_GROUP_GID` and `LOCAL_DOMAIN` from the layout file as data

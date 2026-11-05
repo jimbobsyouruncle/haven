@@ -68,22 +68,39 @@ exit 0
 EOF
 
 # jq: answer only the filters the verifier uses. Rows come from JQ_STUB_ROWS; the
-# Backups tile state comes from JQ_STUB_TILE.
+# Backups tile state comes from JQ_STUB_TILE. Any other filter (the verdict JSON
+# builder and the assertions that read it back) goes to the real jq.
+REAL_JQ="$(command -v jq)"
+if [[ -z "$REAL_JQ" ]]; then
+  echo "FATAL: jq is required to run these tests" >&2
+  exit 1
+fi
+export REAL_JQ
+
 cat > "$BINDIR/jq" <<'EOF'
 #!/usr/bin/env bash
+# Only the FILTER selects a stub mode; --arg/--argjson values are skipped so a
+# detail string can never be mistaken for a filter.
 mode=""
+skip=0
 for a in "$@"; do
+  if (( skip )); then skip=0; continue; fi
+  case "$a" in
+    --arg|--argjson|--slurpfile|--rawfile|-f) skip=1; continue ;;
+    -*) continue ;;
+  esac
   case "$a" in
     *'has("workflow_runs")'*) mode=has ;;
     *'workflow_runs[]'*) mode=rows ;;
     *'Backups'*) mode=tile ;;
   esac
+  break
 done
 case "$mode" in
   has) exit "${JQ_STUB_HAS_EXIT:-0}" ;;
   rows) printf '%b' "${JQ_STUB_ROWS:-}"; exit 0 ;;
   tile) printf '%s' "${JQ_STUB_TILE:-}"; exit 0 ;;
-  *) exit 1 ;;
+  *) exec "${REAL_JQ:?}" "$@" ;;
 esac
 EOF
 
@@ -138,9 +155,10 @@ export JQ_STUB_ROWS=$'1\tcompleted\tsuccess\n'
 
 GIT_CALL_LOG="$WORKDIR/git-calls.argv"
 
-# run_verify <app|__unset__> <layout|__absent__> -> sets RC, OUT, GIT_CALLS, RESOLVED
+# run_verify <app|__unset__> <layout|__absent__> [verdict-dir] ->
+#   sets RC, OUT (stdout+stderr), OUT_STDOUT, OUT_STDERR, GIT_CALLS, RESOLVED
 run_verify() {
-  local app="$1" layout="$2"
+  local app="$1" layout="$2" vdir="${3:-$WORKDIR/verdicts}"
   local env_args=()
   if [[ "$app" != "__unset__" ]]; then
     env_args+=(HYBRID_AI_APP_DIR="$app")
@@ -157,12 +175,16 @@ run_verify() {
   set +e
   # Scrub the gate's inputs so a value leaked into the caller's environment
   # cannot make a case pass: the layout file must be the only source here.
+  # HYBRID_AI_DEPLOY_VERDICT_DIR keeps every case out of the real data dir.
   env -u BACKUP_LOG -u BACKUP_GROUP_GID -u LOCAL_DOMAIN -u VERIFY_STATUS_UID \
     -u VERIFY_STATUS_GID "${env_args[@]}" GIT_CALL_LOG="$GIT_CALL_LOG" \
-    "$VERIFY_SCRIPT" --wait-for "$SHA_A" > "$WORKDIR/out" 2>&1
+    HYBRID_AI_DEPLOY_VERDICT_DIR="$vdir" \
+    "$VERIFY_SCRIPT" --wait-for "$SHA_A" > "$WORKDIR/out" 2> "$WORKDIR/err"
   RC=$?
   set -e
-  OUT="$(cat "$WORKDIR/out")"
+  OUT_STDOUT="$(cat "$WORKDIR/out")"
+  OUT_STDERR="$(cat "$WORKDIR/err")"
+  OUT="$(cat "$WORKDIR/out" "$WORKDIR/err")"
   GIT_CALLS="$(cat "$GIT_CALL_LOG" 2>/dev/null || true)"
   # The verifier runs `git -C <dir> rev-parse HEAD`; read back the directory it
   # actually resolved.
@@ -289,6 +311,159 @@ else
 fi
 printf 'EVENT ts=2026-01-01T00:00:00Z event=backup_success detail=stub\n' > "$BLOG"
 unset CURL_TILE_CODE JQ_STUB_TILE
+
+# --- Verdict JSON -----------------------------------------------------------
+# The container cannot see the host log, so each deploy SHA gets a JSON file in
+# the data dir. Every case above already ran with HYBRID_AI_DEPLOY_VERDICT_DIR
+# pointed at $WORKDIR/verdicts and still had to print the same result line.
+VDIR="$WORKDIR/verdicts"
+VDIR_FILE="$VDIR/$SHA_A.json"
+
+# jq programs that compare against arguments live in files: a heredoc keeps the
+# jq variables literal without a shell-expansion warning.
+FAIL_FILTER="$WORKDIR/fail.jq"
+cat > "$FAIL_FILTER" <<'JQEOF'
+(.verdict == "FAIL") and (.rc == 1) and (.detail == $d) and (.sha == $sha) and (.head == $head)
+JQEOF
+
+DETAIL_FILTER="$WORKDIR/detail.jq"
+cat > "$DETAIL_FILTER" <<'JQEOF'
+(.detail == $d) and (.verdict == "FAIL")
+JQEOF
+
+# Case 11: PASS writes a well-formed file with all eight keys.
+rm -rf "$VDIR"
+write_layout "$TREE_A"
+export CURL_STUB_CODE=200 JQ_STUB_ROWS=$'1\tcompleted\tsuccess\n'
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" -eq 0 ]] && grep -qx 'PASS' <<<"$OUT_STDOUT" && [[ -f "$VDIR_FILE" ]]; then
+  if "$REAL_JQ" -e '
+      (keys == ["app_dir","at","detail","head","rc","run_ids","sha","verdict"])
+      and (.verdict == "PASS")
+      and (.rc == 0)
+      and (.detail == "")
+      and (.sha == "'"$SHA_A"'")
+      and (.head == "'"$SHA_A"'")
+      and (.app_dir == "'"$TREE_A"'")
+      and (.run_ids | type == "array")
+      and (.at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+    ' "$VDIR_FILE" >/dev/null 2>&1; then
+    pass "PASS writes <sha>.json with all 8 keys, verdict PASS, rc 0, detail '', head, run_ids array"
+  else
+    fail "the PASS verdict file is malformed or carries wrong values: $("$REAL_JQ" -c . "$VDIR_FILE" 2>&1)"
+  fi
+else
+  fail "a PASS run did not write $VDIR_FILE: rc $RC, out '$OUT'"
+fi
+
+# Case 12: a FAIL path writes verdict FAIL with the SAME detail as the line, and
+# rc stays 1. The tree is on SHA_B while SHA_A is verified.
+rm -rf "$VDIR"
+run_verify "$TREE_B" "__absent__"
+EXPECT_DETAIL="deployed tree is on ${SHA_B}, expected ${SHA_A}"
+if [[ "$RC" -eq 1 ]] && grep -qxF "FAIL: ${EXPECT_DETAIL}" <<<"$OUT_STDOUT" && [[ -f "$VDIR_FILE" ]]; then
+  if "$REAL_JQ" -e --arg d "$EXPECT_DETAIL" --arg sha "$SHA_A" --arg head "$SHA_B" \
+      -f "$FAIL_FILTER" "$VDIR_FILE" >/dev/null 2>&1; then
+    pass "FAIL path writes verdict FAIL with the same detail as the stdout line, rc 1"
+  else
+    fail "the FAIL verdict file does not match the stdout line: $("$REAL_JQ" -c . "$VDIR_FILE" 2>&1)"
+  fi
+else
+  fail "a FAIL run did not write a matching $VDIR_FILE: rc $RC, out '$OUT'"
+fi
+
+# Case 13: a verdict write that cannot succeed changes nothing. The parent of the
+# target is a REGULAR FILE, so `install -d` cannot create the dir even as root.
+BLOCKER="$WORKDIR/blocker"
+printf 'not a directory\n' > "$BLOCKER"
+rm -rf "$VDIR"
+run_verify "$TREE_A" "__absent__"
+NORMAL_STDOUT="$OUT_STDOUT"
+NORMAL_RC="$RC"
+NORMAL_LINES="$(grep -c '' <<<"$OUT_STDERR" || true)"
+run_verify "$TREE_A" "__absent__" "$BLOCKER/deploy-verdicts"
+LINES="$(grep -c '' <<<"$OUT_STDERR" || true)"
+if [[ "$RC" -eq "$NORMAL_RC" && "$OUT_STDOUT" == "$NORMAL_STDOUT" ]]; then
+  # Exactly ONE new stderr line, naming the reason; nothing else changes.
+  if [[ ! -e "$BLOCKER/deploy-verdicts/$SHA_A.json" ]] \
+     && [[ "$LINES" -le $(( NORMAL_LINES + 1 )) ]] \
+     && grep -qxF "run-post-deploy-verify: could not create the verdict directory $BLOCKER/deploy-verdicts" <<<"$OUT_STDERR"; then
+    pass "an impossible verdict path is a warning only: stdout and rc unchanged, script did not abort"
+  else
+    fail "an impossible verdict path broke the isolation (stderr lines $LINES vs $NORMAL_LINES): '$OUT_STDERR'"
+  fi
+else
+  fail "the verdict write changed the result: rc $RC vs $NORMAL_RC, stdout '$OUT_STDOUT' vs '$NORMAL_STDOUT'"
+fi
+
+# Case 14: the detail lands in the JSON as ONE line. `grep -c ''` counts the
+# lines of the file, so 1 proves the object is on a single line with exactly one
+# trailing newline, and jq -r proves the value reads back unchanged.
+rm -rf "$VDIR"
+export CURL_STUB_CODE=500
+run_verify "$TREE_A" "__absent__"
+unset CURL_STUB_CODE
+export CURL_STUB_CODE=200
+if [[ -f "$VDIR_FILE" ]]; then
+  if "$REAL_JQ" -e . "$VDIR_FILE" >/dev/null 2>&1 \
+     && [[ "$(grep -c '' "$VDIR_FILE")" -eq 1 ]] \
+     && [[ "$("$REAL_JQ" -r .detail "$VDIR_FILE")" == "github api returned HTTP 500" ]] \
+     && [[ "$("$REAL_JQ" -r .detail "$VDIR_FILE")" != *$'\n'* ]] \
+     && [[ "$(tail -c 1 "$VDIR_FILE" | wc -l)" -eq 1 ]]; then
+    pass "the verdict file parses, is one line, and .detail holds the single-line reason"
+  else
+    fail "the verdict file is not one parseable line: $("$REAL_JQ" -c . "$VDIR_FILE" 2>&1)"
+  fi
+else
+  fail "the HTTP-error FAIL wrote no verdict file: out '$OUT'"
+fi
+
+# Case 15: a quote in the detail is escaped by jq, never hand-concatenated, so
+# the file still parses and the raw bytes hold the escaped form.
+rm -rf "$VDIR"
+TRICKY='fail"ure'
+export JQ_STUB_ROWS="1"$'\t'"completed"$'\t'"${TRICKY}"$'\n'
+run_verify "$TREE_A" "__absent__"
+export JQ_STUB_ROWS=$'1\tcompleted\tsuccess\n'
+TRICKY_DETAIL="run 1 conclusion ${TRICKY}"
+if [[ -f "$VDIR_FILE" ]] && grep -qxF "FAIL: ${TRICKY_DETAIL}" <<<"$OUT_STDOUT"; then
+  if "$REAL_JQ" -e --arg d "$TRICKY_DETAIL" -f "$DETAIL_FILTER" "$VDIR_FILE" >/dev/null 2>&1 \
+     && grep -qF 'fail\"ure' "$VDIR_FILE" \
+     && [[ "$(grep -c '' "$VDIR_FILE")" -eq 1 ]]; then
+    pass "an awkward detail is JSON-escaped: the file parses and stays one line"
+  else
+    fail "the awkward detail was not escaped correctly: $(cat "$VDIR_FILE" 2>&1)"
+  fi
+else
+  fail "the awkward-detail FAIL did not match the stdout line: rc $RC, out '$OUT'"
+fi
+
+# Case 16: ownership/mode. Assert mode always; assert hermes:hermes only when the
+# account exists here. Never touches the real /var/lib path.
+rm -rf "$VDIR"
+run_verify "$TREE_A" "__absent__"
+if [[ -f "$VDIR_FILE" ]]; then
+  DMODE="$(stat -c '%a' "$VDIR")"
+  FMODE="$(stat -c '%a' "$VDIR_FILE")"
+  if [[ "$DMODE" == "755" && "$FMODE" == "644" ]]; then
+    if id -u hermes >/dev/null 2>&1; then
+      OWNER="$(stat -c '%U:%G' "$VDIR_FILE")"
+      DOWNER="$(stat -c '%U:%G' "$VDIR")"
+      if [[ "$OWNER" == "hermes:hermes" && "$DOWNER" == "hermes:hermes" ]]; then
+        pass "verdict dir is hermes:hermes 0755 and file is hermes:hermes 0644"
+      else
+        fail "expected hermes:hermes ownership, got dir '$DOWNER' file '$OWNER'"
+      fi
+    else
+      echo "skip: hermes account absent"
+      pass "verdict dir mode 0755 and file mode 0644 (owner not asserted)"
+    fi
+  else
+    fail "expected dir mode 755 and file mode 644, got dir '$DMODE' file '$FMODE'"
+  fi
+else
+  fail "no verdict file to check ownership on: out '$OUT'"
+fi
 
 echo "== done =="
 if [[ "$failures" -ne 0 ]]; then
