@@ -150,7 +150,7 @@ cat > "$BIN/getent" <<'EOF'
 #!/usr/bin/env bash
 case "${1:-}" in
   group) printf 'docker:x:999:\n' ;;
-  hosts) printf '[IP_ADDRESS] %s\n' "${2:-}" ;;
+  hosts) exit 0 ;;
   passwd) printf 'hybrid-ai-backup:x:999:999::/var/lib/hybrid-ai-backup:/usr/sbin/nologin\n'; exit 0 ;;
 esac
 exit 0
