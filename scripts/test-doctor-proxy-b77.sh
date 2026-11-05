@@ -528,30 +528,32 @@ else
   fail "TLS on: a 401 was counted as a content pass"
 fi
 
-# --- B86: a 302 to /auth/login on the SAME host is an answer --------------
-# Narrow by design. Only 302 -> https://<same host>/auth/login is accepted,
-# with ?next= ignored. Every other 3xx, and a 302 to another path or another
-# host, stays exactly as refused as it was under B77.
+# --- B86: a 302 to the APEX /auth/login is an answer ----------------------
+# Narrow by design. Only 302 -> https://<TLS_DOMAIN>/auth/login is accepted,
+# with ?next= ignored. forward_auth sends every vhost -- apex and subdomains
+# alike -- to the apex login, so the Location host is the APEX, not the probed
+# host. Every other 3xx, a 302 to another path, and a 302 to a host outside the
+# TLS domain all stay exactly as refused as they were under B77.
 write_env_tls yes
 
-# (b86-1) 302 -> /auth/login on the same host PASSES, and all six route
-# checks run (the gate answered, so nothing may be skipped).
+# (b86-1) 302 -> apex /auth/login PASSES for every probe, subdomains included,
+# and all six route checks run (the gate answered, so nothing may be skipped).
 run_doctor on-login-ok "$APPD/doctor.sh" \
   FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
   FIX_HTTPS_APEX_STATUS=302 FIX_HTTPS_APEX_HUB=302 FIX_HTTPS_APEX_APP=302 \
   FIX_HTTPS_APEX_HEALTH=302 FIX_HTTPS_APEX_OPENWEBUI=302 FIX_HTTPS_APEX_ROOT=302 \
   FIX_HTTPS_STATUS=302 FIX_HTTPS_HERMES=302 \
-  FIX_HTTPS_LOC="https://{host}/auth/login?next=%2Fhub" \
+  FIX_HTTPS_LOC="https://${TLS_DOMAIN_FIX}/auth/login?next=%2Fhub" \
   FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
 if grep -q 'Proxy: /status responding over HTTPS' "$OUT"; then
-  pass "B86: a 302 to /auth/login on the same host passes the gate probe"
+  pass "B86: a 302 to the apex /auth/login passes the gate probe"
 else
-  fail "B86: a 302 to /auth/login on the same host did not pass the gate probe"
+  fail "B86: a 302 to the apex /auth/login did not pass the gate probe"
 fi
 if grep -q 'Proxy: /hub -> hub page over HTTPS (HTTP 302 to /auth/login)' "$OUT"; then
-  pass "B86: a 302 to /auth/login is reported as a pass for a route"
+  pass "B86: a 302 to the apex /auth/login is reported as a pass for a route"
 else
-  fail "B86: a 302 to /auth/login was not reported as a route pass"
+  fail "B86: a 302 to the apex /auth/login was not reported as a route pass"
 fi
 if grep -q 'Proxy: HTTPS route checks run: 6/6' "$OUT"; then
   pass "B86: all six HTTPS route checks run when the gate passes"
@@ -564,7 +566,56 @@ else
   fail "B86: the login-gate 302 printed a proxy failure line"
 fi
 
-# (b86-2) 302 to any other path on the same host still FAILS.
+# (b86-1b) the APEX probe itself answering 302 to the apex login is a pass.
+run_doctor on-login-apex-only "$APPD/doctor.sh" \
+  FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
+  FIX_HTTPS_APEX_STATUS=200 FIX_HTTPS_APEX_HUB=302 FIX_HTTPS_APEX_APP=200 \
+  FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
+  FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
+  FIX_HTTPS_LOC="https://${TLS_DOMAIN_FIX}/auth/login" \
+  FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
+if grep -q 'Proxy: /hub -> hub page over HTTPS (HTTP 302 to /auth/login)' "$OUT"; then
+  pass "B86: a 302 to the apex /auth/login from the apex probe is a pass"
+else
+  fail "B86: a 302 to the apex /auth/login from the apex probe was refused"
+fi
+if ! grep -qE '✗ Proxy:' "$OUT"; then
+  pass "B86: the apex-probe apex-login 302 adds no failure line"
+else
+  fail "B86: the apex-probe apex-login 302 printed a failure line"
+fi
+
+# (b86-1c) SUBDOMAIN probes (status., hermes.) that redirect to the apex login
+# pass, and the sweep still reports 6/6 with no proxy failure line.
+run_doctor on-login-subdomains "$APPD/doctor.sh" \
+  FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
+  FIX_HTTPS_APEX_STATUS=200 FIX_HTTPS_APEX_HUB=200 FIX_HTTPS_APEX_APP=200 \
+  FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
+  FIX_HTTPS_STATUS=302 FIX_HTTPS_HERMES=302 \
+  FIX_HTTPS_LOC="https://${TLS_DOMAIN_FIX}/auth/login?next=%2Fstatus%2Fhealthz" \
+  FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
+if grep -q 'Proxy: /status/healthz -> status page over HTTPS (HTTP 302 to /auth/login)' "$OUT"; then
+  pass "B86: a status. probe redirecting to the apex login is a pass"
+else
+  fail "B86: a status. probe redirecting to the apex login was refused"
+fi
+if grep -q 'Proxy: / -> hermes site over HTTPS (HTTP 302 to /auth/login)' "$OUT"; then
+  pass "B86: a hermes. probe redirecting to the apex login is a pass"
+else
+  fail "B86: a hermes. probe redirecting to the apex login was refused"
+fi
+if grep -q 'Proxy: HTTPS route checks run: 6/6' "$OUT"; then
+  pass "B86: the subdomain apex-login case reports 6/6"
+else
+  fail "B86: the subdomain apex-login case did not report 6/6"
+fi
+if ! grep -qE '✗ Proxy:' "$OUT"; then
+  pass "B86: the subdomain apex-login case adds no proxy failure line"
+else
+  fail "B86: the subdomain apex-login case printed a proxy failure line"
+fi
+
+# (b86-2) 302 to any other path on the apex host still FAILS.
 run_doctor on-login-other-path "$APPD/doctor.sh" \
   FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
   FIX_HTTPS_APEX_STATUS=200 FIX_HTTPS_APEX_HUB=302 FIX_HTTPS_APEX_APP=200 \
@@ -578,7 +629,7 @@ else
   fail "B86: a 302 to another path was not reported as a redirect failure"
 fi
 
-# (b86-3) 302 to /auth/login on a DIFFERENT host still FAILS.
+# (b86-3) 302 to /auth/login on a host OUTSIDE the TLS domain still FAILS.
 run_doctor on-login-other-host "$APPD/doctor.sh" \
   FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
   FIX_HTTPS_APEX_STATUS=200 FIX_HTTPS_APEX_HUB=302 FIX_HTTPS_APEX_APP=200 \
@@ -587,9 +638,24 @@ run_doctor on-login-other-host "$APPD/doctor.sh" \
   FIX_HTTPS_LOC="https://elsewhere.example.test/auth/login" \
   FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
 if grep -q 'over HTTPS returned a redirect (HTTP 302)' "$OUT"; then
-  pass "B86: a 302 to /auth/login on another host is still a redirect failure"
+  pass "B86: a 302 to /auth/login on a host outside the TLS domain is a redirect failure"
 else
-  fail "B86: a 302 to /auth/login on another host was accepted"
+  fail "B86: a 302 to /auth/login on a host outside the TLS domain was accepted"
+fi
+
+# (b86-3a) a LOOKALIKE host (evil-<TLS_DOMAIN>) must FAIL: the apex match is
+# exact, never a suffix or wildcard match.
+run_doctor on-login-lookalike "$APPD/doctor.sh" \
+  FIX_TLS_DOMAIN="$TLS_DOMAIN_FIX" \
+  FIX_HTTPS_APEX_STATUS=200 FIX_HTTPS_APEX_HUB=302 FIX_HTTPS_APEX_APP=200 \
+  FIX_HTTPS_APEX_HEALTH=200 FIX_HTTPS_APEX_OPENWEBUI=200 FIX_HTTPS_APEX_ROOT=200 \
+  FIX_HTTPS_STATUS=200 FIX_HTTPS_HERMES=200 \
+  FIX_HTTPS_LOC="https://evil-${TLS_DOMAIN_FIX}/auth/login" \
+  FIX_PORT80_APP=308 FIX_PORT80_LOOPBACK=200
+if grep -q 'over HTTPS returned a redirect (HTTP 302)' "$OUT"; then
+  pass "B86: a 302 to a lookalike host is a redirect failure"
+else
+  fail "B86: a 302 to a lookalike host was accepted"
 fi
 
 # (b86-3b) the GATE probe answering a 302 elsewhere must not pass, and then no

@@ -1948,34 +1948,38 @@ wait_for() {
   return 1
 }
 
-# tls_https_login_gate CODE LOCATION EXPECTED_HOST
+# tls_https_login_gate CODE LOCATION APEX_DOMAIN
 #
 # The one redirect that counts as healthy on a certificate-bearing name (B86):
-# a 302 to exactly /auth/login on the SAME host, with the ?next= query ignored.
-# Every other 3xx stays refused, so the redirect-only bypass B77 closed stays
-# closed. LOCATION is curl's %{redirect_url}, i.e. what a follow WOULD visit.
-tls_https_login_gate() {  # CODE LOCATION EXPECTED_HOST
-  local code="$1" loc="$2" host="$3"
+# a 302 to exactly /auth/login on the configured TLS apex domain, with the
+# ?next= query ignored. forward_auth sends every vhost -- apex and subdomains
+# alike -- to the apex login, so a status.<apex> probe that lands on
+# https://<apex>/auth/login is correct behaviour. The host must match the apex
+# exactly, so an unrelated or lookalike host still fails. Every other 3xx stays
+# refused, so the redirect-only bypass B77 closed stays closed. LOCATION is
+# curl's %{redirect_url}, i.e. what a follow WOULD visit.
+tls_https_login_gate() {  # CODE LOCATION APEX_DOMAIN
+  local code="$1" loc="$2" apex="$3"
   case "$code" in
     2*) return 0 ;;
-    302) [[ "${loc%%\?*}" == "https://${host}/auth/login" ]] ;;
+    302) [[ "${loc%%\?*}" == "https://${apex}/auth/login" ]] ;;
     *) return 1 ;;
   esac
 }
 
-# wait_for_https LABEL URL RESOLVE_HOST RESOLVE_IP MAX
+# wait_for_https LABEL URL RESOLVE_HOST RESOLVE_IP MAX APEX_DOMAIN
 #
 # The TLS sibling of wait_for: probes URL over HTTPS with an explicit
 # --resolve of RESOLVE_HOST to RESOLVE_IP, this host's own address, so SNI and Host agree without real
 # DNS. It never follows a redirect (-L is absent) and it treats a 3xx as NOT
 # ready, because with TLS on a 3xx means the request landed on a redirect-only
 # site instead of the certificate-bearing one. The single exception is the
-# login gate below: a 302 to /auth/login on the same host is the auth gate
+# login gate below: a 302 to /auth/login on APEX_DOMAIN is the auth gate
 # answering, which is healthy. Any other non-2xx is also not ready. Kept
 # separate so wait_for's signature and behaviour stay unchanged for every
 # other caller.
 wait_for_https() {
-  local label="$1" url="$2" resolve_host="$3" resolve_ip="$4" max="$5" waited=0 code loc=""
+  local label="$1" url="$2" resolve_host="$3" resolve_ip="$4" max="$5" apex="$6" waited=0 code loc=""
   while (( waited < max )); do
     code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
               --resolve "${resolve_host}:443:${resolve_ip}" "$url" 2>/dev/null || true)"
@@ -1984,7 +1988,7 @@ wait_for_https() {
       loc="$(curl -sS -o /dev/null -w '%{redirect_url}' --max-time 5 \
                 --resolve "${resolve_host}:443:${resolve_ip}" "$url" 2>/dev/null || true)"
     fi
-    if tls_https_login_gate "$code" "$loc" "$resolve_host"; then
+    if tls_https_login_gate "$code" "$loc" "$apex"; then
       ok "${label} healthy after ${waited}s (HTTP ${code} over HTTPS)."
       event "healthcheck_pass" "service=${label}" "seconds=${waited}"
       return 0
@@ -2022,8 +2026,10 @@ wait_for "open-webui"   "http://127.0.0.1:3000/health"    600 || HEALTH_FAILED=1
 wait_for "hermes-agent" "http://127.0.0.1:${HERMES_PORT:-8501}" 300 || HEALTH_FAILED=1
 wait_for "openhands"    "http://127.0.0.1:${OPENHANDS_PORT:-3001}" 240 || warn "OpenHands initializing..."
 # With TLS on, port 80 is redirect-only (B77), so the readiness probe must hit
-# the certificate-bearing status name over HTTPS and refuse a 3xx. With TLS
-# off, the port-80 probe is unchanged.
+# the certificate-bearing status name over HTTPS and refuse a 3xx. The one
+# exception is the apex-login redirect: forward_auth answers every vhost,
+# status.<apex> included, with https://<apex>/auth/login, which is healthy.
+# With TLS off, the port-80 probe is unchanged.
 tls_state="$(printf '%s' "${TLS_ENABLED:-no}" | tr '[:upper:]' '[:lower:]')"
 case "$tls_state" in
   yes|true|1|on)
@@ -2034,7 +2040,7 @@ case "$tls_state" in
       event "healthcheck_skip" "service=status page" "reason=no-tls-host"
     else
       wait_for_https "status page" "https://${tls_status_host}/status/healthz" \
-        "$tls_status_host" "$tls_probe_ip" 60 || warn "Status reverse proxy initializing..."
+        "$tls_status_host" "$tls_probe_ip" 60 "$TLS_DOMAIN" || warn "Status reverse proxy initializing..."
     fi
     unset tls_status_host tls_probe_ip
     ;;

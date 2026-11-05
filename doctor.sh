@@ -888,14 +888,18 @@ if (( PROXY_TLS_ON )); then
         --resolve "${host}:443:${PROXY_LAN_IP}" "$1" 2>/dev/null || true
     }
     # The only redirect that is a healthy answer (B86): a 302 to exactly
-    # /auth/login on the SAME certificate-bearing host. The ?next= query is
-    # ignored. Every other 3xx stays refused -- accepting 3xx in general would
-    # reopen the redirect-only bypass B77 closed.
-    proxy_https_login_gate() {  # CODE LOCATION EXPECTED_HOST
-      local code="$1" loc="$2" host="$3"
+    # /auth/login on the configured TLS APEX domain. forward_auth sends every
+    # vhost -- apex and subdomains alike -- to the apex login, so a subdomain
+    # probe that lands on https://<TLS_DOMAIN>/auth/login is correct behaviour,
+    # not a mismatch. The ?next= query is ignored; the host must match the apex
+    # exactly, so an unrelated or lookalike host still fails. Every other 3xx
+    # stays refused -- accepting 3xx in general would reopen the redirect-only
+    # bypass B77 closed.
+    proxy_https_login_gate() {  # CODE LOCATION APEX_DOMAIN
+      local code="$1" loc="$2" apex="$3"
       case "$code" in
         200|503|401|403) return 0 ;;
-        302) [[ "${loc%%\?*}" == "https://${host}/auth/login" ]] ;;
+        302) [[ "${loc%%\?*}" == "https://${apex}/auth/login" ]] ;;
         *) return 1 ;;
       esac
     }
@@ -905,11 +909,12 @@ if (( PROXY_TLS_ON )); then
       if [[ "$code" == "302" ]]; then
         loc="$(proxy_https_location "$url" "$host")"
       fi
-      proxy_https_login_gate "$code" "$loc" "$host"
+      proxy_https_login_gate "$code" "$loc" "$PROXY_TLS_DOMAIN"
     }
     # Verdicts, mirroring the port-80 rule this replaces: 200/503 means the
     # route answered and 401/403 stays a warn, exactly as before. A 302 to
-    # /auth/login on the same host is an answer; every other 3xx is called out
+    # /auth/login on the apex domain is an answer, whichever vhost was probed;
+    # every other 3xx is called out
     # by name and FAILS, because with TLS on a redirect means the request
     # landed on a redirect-only site instead of the certificate-bearing one --
     # and it is NEVER followed, so a redirect cannot look healthy by following.
@@ -919,7 +924,7 @@ if (( PROXY_TLS_ON )); then
       if [[ "$code" == "302" ]]; then
         loc="$(proxy_https_location "https://${host}${path}" "$host")"
       fi
-      proxy_https_login_gate "$code" "$loc" "$host" && accepted=1
+      proxy_https_login_gate "$code" "$loc" "$PROXY_TLS_DOMAIN" && accepted=1
       PROXY_HTTPS_RUN=$(( PROXY_HTTPS_RUN + 1 ))
       if (( accepted )); then
         case "$code" in

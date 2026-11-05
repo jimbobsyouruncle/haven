@@ -875,23 +875,24 @@ fi
 
 # ---------------------------------------------------------------------------
 # B86: the readiness probe accepts ONE redirect shape -- a 302 to
-# https://<same host>/auth/login, with ?next= ignored -- and nothing else.
+# https://<TLS_DOMAIN>/auth/login, with ?next= ignored -- and nothing else.
+# forward_auth sends every vhost, status.<TLS_DOMAIN> included, to the APEX
+# login, so the Location host is the TLS apex, not the probed host.
 # HEALTH_FAILED semantics are unchanged: a refused probe still only warns.
 set_stack_tls on
 
-# (a) 302 -> /auth/login on the same host: healthy, and no status-page warning.
-# The probed host is status.<TLS_DOMAIN>, so that is the host the Location must
-# name for the redirect to count.
+# (a) status.<TLS_DOMAIN> probe answered by 302 to the APEX login: healthy,
+# and no status-page warning. This is the healthy forward_auth behaviour.
 : > "$CURL_ARGV"
 rc=0
 FIX_STATUS_HTTPS_CODE=302 \
-  FIX_STATUS_HTTPS_LOC="https://status.${FIX_TLS_DOMAIN}/auth/login?next=%2Fstatus%2Fhealthz" \
+  FIX_STATUS_HTTPS_LOC="https://${FIX_TLS_DOMAIN}/auth/login?next=%2Fstatus%2Fhealthz" \
   run_install ok "$WORK/tls-probe-login.log" || rc=$?
-check "B86: a 302 to /auth/login still exits 0" "0" "$rc"
+check "B86: a 302 to the apex /auth/login still exits 0" "0" "$rc"
 if grep -q 'status page healthy after' "$WORK/tls-probe-login.log"; then
-  ok "B86: a 302 to /auth/login is healthy"
+  ok "B86: a 302 to the apex /auth/login is healthy"
 else
-  bad "B86: a 302 to /auth/login was not treated as healthy"
+  bad "B86: a 302 to the apex /auth/login was not treated as healthy"
   sed 's/^/      /' "$WORK/tls-probe-login.log" | tail -20 >&2
 fi
 if grep -q 'Status reverse proxy initializing' "$WORK/tls-probe-login.log"; then
@@ -929,6 +930,20 @@ if grep -q 'did not become healthy' "$WORK/tls-probe-other-host.log"; then
   ok "B86: a cross-host login 302 is refused"
 else
   bad "B86: a cross-host login 302 was accepted as ready"
+fi
+
+# (c2) 302 -> /auth/login on a LOOKALIKE host (evil-<TLS_DOMAIN>): refused.
+# The apex match is exact, never a suffix match.
+: > "$CURL_ARGV"
+rc=0
+FIX_STATUS_HTTPS_CODE=302 \
+  FIX_STATUS_HTTPS_LOC="https://evil-${FIX_TLS_DOMAIN}/auth/login" \
+  run_install ok "$WORK/tls-probe-lookalike.log" || rc=$?
+check "B86: a lookalike-host login 302 still exits 0 (warn only)" "0" "$rc"
+if grep -q 'did not become healthy' "$WORK/tls-probe-lookalike.log"; then
+  ok "B86: a lookalike-host login 302 is refused"
+else
+  bad "B86: a lookalike-host login 302 was accepted as ready"
 fi
 
 # (d) 200 is healthy and warns about nothing.
