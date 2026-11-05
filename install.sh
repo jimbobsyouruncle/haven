@@ -1859,6 +1859,15 @@ if [[ "$BUILD_GATE_DECISION" != "cache" ]]; then
 fi
 PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 
+# STEP 2 exported every key from the stack env file into this shell, so the
+# login-gate pair is still here in its Compose-escaped file form. Compose reads
+# the process environment ahead of --env-file, so leaving it set would hand the
+# container the escaped bytes instead of the operator's value (a 60-byte bcrypt
+# hash arrives as 63 bytes and every password is refused). Drop only these two
+# from this shell before the start; the env file itself carries them intact.
+# The fail-closed empty-value check already ran in STEP 5 (tls_auth_fail_closed).
+unset HYBRID_AI_AUTH_HASH HYBRID_AI_AUTH_USER
+
 if ! "${COMPOSE[@]}" up -d --remove-orphans; then
   PHASE_UP=$(( SECONDS - _phase_mark ))
   event "stack_start_failed"

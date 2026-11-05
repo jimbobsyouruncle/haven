@@ -827,6 +827,27 @@ If it works locally but not remotely, the other device is not on your tailnet.
 
 `WEBUI_SECRET_KEY` changed. It should never change — `install.sh` reuses it. Check whether `.env` was deleted or regenerated from scratch.
 
+**Every auth-gate password is refused right after a deploy**
+
+The `auth` container is holding a hash it cannot parse, so it treats every
+password as wrong and answers 401. Compose reads the shell environment ahead of
+`--env-file`, and `install.sh` loads the stack env file into its own shell, so an
+earlier build could hand the container the Compose-escaped form of
+`HYBRID_AI_AUTH_HASH` (63 bytes for a 60-byte bcrypt hash) instead of the value
+the file carries. `install.sh` now clears that pair from its shell before
+`docker compose up`, so a current deploy cannot do this.
+
+To confirm on a host that already ran an affected deploy, compare the byte count
+the container sees with the byte count in the file. The file value is escaped
+(`$$` for each `$`); the container should see the shorter, un-escaped hash:
+
+```bash
+docker exec hybrid-ai-auth printenv HYBRID_AI_AUTH_HASH | wc -c
+```
+
+The next deploy of a tree with the fix re-delivers the value straight from the
+file, so the container sees the un-escaped bytes again.
+
 **Forgot the admin password, the auth-gate password, or the Hermes dashboard password**
 
 Run the owner script on the host. It sets ONE new password on all three login
