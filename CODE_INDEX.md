@@ -852,6 +852,13 @@
 - fb_rc()
 - render_step8()
 
+## scripts/test-install-auth-env-leak.sh
+- ok()
+- bad()
+- check()
+- seed_stack()
+- run_install()
+
 ## scripts/test-install-health.sh
 - ok()
 - bad()
