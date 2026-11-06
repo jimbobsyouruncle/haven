@@ -136,6 +136,7 @@
 - snapshot_one_db()
 - discover_databases()
 - rsync_classify()
+- dry_run_report()
 - upload_backup()
 
 ## backup/restore.sh
@@ -767,6 +768,12 @@
 - run_install()
 - reset_state()
 - reset_sbin()
+
+## scripts/test-doctor-b87-tooling.sh
+- pass()
+- fail()
+- run_doctor()
+- count_line()
 
 ## scripts/test-doctor-backup-counts.sh
 - pass()
