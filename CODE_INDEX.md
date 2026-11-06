@@ -382,11 +382,11 @@
 ## scripts/ci-parity.sh
 - usage()
 - parse_steps()
-- invoked_scripts()
+- invoked_files()
+- only_scripts()
 - only_test_suites()
-- has_non_test_script()
+- has_git_ls_files()
 - ci_owned_reason()
-- default_extra_reason()
 - run_gate()
 - handle_steps()
 
