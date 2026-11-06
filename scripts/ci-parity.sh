@@ -13,28 +13,35 @@
 #   .github/workflows/agent-context.yml   the PR agent-context map job
 #
 #   Default mode replays, in workflow order, executing each step's own `run:`
-#   body verbatim (so a workflow edit cannot drift away from this runner):
+#   body verbatim (so a workflow edit cannot drift away from this runner). A
+#   step is a default gate when ANY of these hold:
 #
-#     validate.yml
-#       :36-46   Shell syntax check            `git ls-files '*.sh'` + `bash -n`
-#       :53-61   Python syntax check           `git ls-files '*.py'` + py_compile
-#       :63-67   Generated pipe is in sync with its sources
-#       :863-892 Assert proxy allowlist is intact
-#       :894-988 Assert secure_headers coverage
-#       :990-1003 Assert Hermes gateway autostart is pinned to the default profile
-#       :1005-1029 Assert the WebUI is pinned to the /opt agent and fails closed
-#       :1031-1048 Assert no secrets are tracked
-#       :1050-1054 Assert no display-masked literals in code
-#                 -> bash scripts/check-no-masked-literals.sh
-#       :1056-1059 Report IP literals in code (warn only)
-#                 -> bash scripts/check-no-ip-literals.sh
-#     agent-context.yml
-#       :28-29   Check the maps are fresh
-#                 -> bash scripts/check-agent-context.sh <generated generator>
+#     * it enumerates the tree itself (`git ls-files` in the body), which is how
+#       the shell and Python syntax checks discover their inputs;
+#     * it invokes a tracked repo file -- a `scripts/*.sh` check script, a
+#       `status/*.py` suite, `openwebui/build_pipe.py`, ...;
+#     * its name starts with "Assert " and it carries an inline `run:` body.
 #
-#   Any step in either workflow that invokes a tracked `scripts/*.sh` check is
-#   picked up automatically, so a new repo check script becomes a local gate as
-#   soon as validate.yml calls it.
+#   Matched by that rule at the current base, the default gates are:
+#
+#     Shell syntax check                                        (git ls-files, bash -n)
+#     Python syntax check                                       (git ls-files, py_compile)
+#     Generated pipe is in sync with its sources                 (openwebui/build_pipe.py)
+#     Status deploy-verification tile tests                     (status/test_deploy_verification.py)
+#     GPU pod wake-readiness tile tests                         (status/test_pod_probe.py)
+#     Status hub URL / domain-cutover tests                     (status/test_hub_urls.py)
+#     Assert proxy allowlist is intact
+#     Assert secure_headers coverage
+#     Assert Hermes gateway autostart is pinned to the default profile
+#     Assert the WebUI is pinned to the /opt agent and fails closed
+#     Assert no secrets are tracked
+#     Assert no display-masked literals in code                 (scripts/check-no-masked-literals.sh)
+#     Report IP literals in code (warn only)                    (scripts/check-no-ip-literals.sh)
+#     Check the maps are fresh                                  (scripts/check-agent-context.sh)
+#
+#   Each gate prints its own workflow file and line, so the list above can never
+#   drift from the YAML. Any new step that matches the rule becomes a local gate
+#   with no edit here; any step that matches nothing fails as UNCLASSIFIED.
 #
 # --full
 #   Additionally runs every `scripts/test-*.sh` suite that validate.yml runs.
@@ -47,15 +54,20 @@
 #     Install auth test dependency (bcrypt)    pip install from the network
 #     Pipe behavioural tests                   needs the httpx install above
 #     Auth service tests                       needs the bcrypt install above
-#     Status deploy-verification tile tests    python suite outside test-*.sh
-#     GPU pod wake-readiness tile tests        python suite outside test-*.sh
 #     Validate rendered Caddyfiles with real Caddy (TLS x auth matrix)
 #                                              builds ./caddy and runs docker
 #     Compose schema check                     requires `docker compose`
 #     Validate status/Caddyfile parses         runs caddy:2.11-alpine in docker
 #     Validate TLS-on render with real Caddy   docker build + real Caddy
+#     Set up Python / Checkout / generator checkout
+#                                              GitHub-side setup steps, no gate
 #   CodeQL and ShellCheck/Semgrep live in sast-checks.yml, not here; they are
 #   not repo gates and are not replayed by this runner.
+#
+#   A step that matches neither the default rule nor this table fails the run as
+#   UNCLASSIFIED GATE. That is deliberate: a new static gate must be classified
+#   here, and a new CI-only gate must be declared here, before this runner will
+#   pass again.
 #
 # FAIL CLOSED
 #   * A gate that exits non-zero fails the run (exit 1) and is named.
@@ -198,7 +210,8 @@ PYCACHE_DIR="$(mktemp -d)"
 trap 'rm -rf "${PYCACHE_DIR:-}"' EXIT
 export PYTHONPYCACHEPREFIX="$PYCACHE_DIR"
 
-# Emit each step that carries a `run:` body as name<NUL>body<NUL>, in file order.
+# Emit each step that carries a `run:` body as line<NUL>name<NUL>body<NUL>,
+# in file order, where `line` is the 1-based file line of the step's `run:`.
 parse_steps() {
   python3 - "$1" <<'PY'
 import re
@@ -222,6 +235,7 @@ while i < len(lines):
         continue
     m = re.match(r"^(\s*)run:\s*(.*)$", line)
     if m and name is not None:
+        run_line = i + 1
         key_indent = len(m.group(1))
         rest = m.group(2).strip()
         if rest in ("|", ">", "|-", ">-", "|+", ">+"):
@@ -244,13 +258,15 @@ while i < len(lines):
         else:
             body = rest
             i += 1
-        steps.append((name, body.rstrip("\n")))
+        steps.append((run_line, name, body.rstrip("\n")))
         name = None
         continue
     i += 1
 
 out = sys.stdout
-for step_name, step_body in steps:
+for step_line, step_name, step_body in steps:
+    out.write(str(step_line))
+    out.write("\0")
     out.write(step_name)
     out.write("\0")
     out.write(step_body)
@@ -258,17 +274,28 @@ for step_name, step_body in steps:
 PY
 }
 
-# Echo, space separated, the tracked scripts a step body invokes.
-invoked_scripts() {
+# Echo, space separated, the tracked repo files a step body invokes.
+invoked_files() {
   local body="$1"
   local found=""
-  local script
-  while IFS= read -r script; do
+  local file
+  while IFS= read -r file; do
     case "$body" in
-      *"$script"*) found="$found $script" ;;
+      *"$file"*) found="$found $file" ;;
     esac
-  done < <(git -C "$ROOT_ABS" ls-files 'scripts/*.sh')
+  done < <(git -C "$ROOT_ABS" ls-files)
   printf '%s' "${found# }"
+}
+
+# Echo, space separated, only the scripts/*.sh entries of a list.
+only_scripts() {
+  local list="$1" file out=""
+  for file in $list; do
+    case "$file" in
+      scripts/*.sh) out="$out $file" ;;
+    esac
+  done
+  printf '%s' "${out# }"
 }
 
 only_test_suites() {
@@ -283,15 +310,11 @@ only_test_suites() {
   return 0
 }
 
-has_non_test_script() {
-  local list="$1" script
-  for script in $list; do
-    case "$script" in
-      scripts/test-*.sh) : ;;
-      *) return 0 ;;
-    esac
-  done
-  return 1
+has_git_ls_files() {
+  case "$1" in
+    *"git ls-files"*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 ci_owned_reason() {
@@ -308,12 +331,6 @@ ci_owned_reason() {
     "Auth service tests")
       printf '%s' "needs the bcrypt install above"
       ;;
-    "Status deploy-verification tile tests")
-      printf '%s' "python suite outside scripts/test-*.sh, not in the --full set"
-      ;;
-    "GPU pod wake-readiness tile tests")
-      printf '%s' "python suite outside scripts/test-*.sh, not in the --full set"
-      ;;
     "Validate rendered Caddyfiles with real Caddy (TLS x auth matrix)")
       printf '%s' "builds ./caddy and needs the docker engine"
       ;;
@@ -326,24 +343,8 @@ ci_owned_reason() {
     "Validate TLS-on render with real Caddy")
       printf '%s' "docker build plus a real Caddy container"
       ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-# Steps with no repo script and no "Assert" name that are still static and
-# offline. Line numbers are quoted in the header above.
-default_extra_reason() {
-  case "$1" in
-    "Shell syntax check")
-      printf '%s' "git ls-files '*.sh' + bash -n (validate.yml:36-46)"
-      ;;
-    "Python syntax check")
-      printf '%s' "git ls-files '*.py' + py_compile (validate.yml:53-61)"
-      ;;
-    "Generated pipe is in sync with its sources")
-      printf '%s' "python3 openwebui/build_pipe.py --check (validate.yml:63-67)"
+    "Checkout"|"Set up Python"|"Check out the generator")
+      printf '%s' "GitHub runner setup, no assertion of its own"
       ;;
     *)
       return 1
@@ -371,40 +372,43 @@ run_gate() {
 
 handle_steps() {
   local wf="$1"
-  local gate_name="" gate_body=""
+  local gate_line="" gate_name="" gate_body=""
 
-  while IFS= read -r -d '' gate_name && IFS= read -r -d '' gate_body; do
-    local scripts="" reason="" label=""
+  while IFS= read -r -d '' gate_line \
+    && IFS= read -r -d '' gate_name \
+    && IFS= read -r -d '' gate_body; do
+    local files="" scripts="" reason="" label=""
 
     # agent-context.yml checks out the generator into the tree; point the gate
     # at wherever this run actually resolved it.
     gate_body="${gate_body//$SHARED_CHECKOUT_REL/$GENERATOR_ABS}"
-
-    scripts="$(invoked_scripts "$gate_body")"
 
     if reason="$(ci_owned_reason "$gate_name")"; then
       echo "CI-OWNED: $gate_name -- $reason"
       continue
     fi
 
+    files="$(invoked_files "$gate_body")"
+    scripts="$(only_scripts "$files")"
+
     if only_test_suites "$scripts"; then
       if [ "$FULL" -eq 1 ]; then
-        label="step '$gate_name' -> $scripts"
+        label="$wf:$gate_line $gate_name -> $scripts"
       else
         echo "DEFERRED (--full): $gate_name -> $scripts"
         continue
       fi
-    elif reason="$(default_extra_reason "$gate_name")"; then
-      label="step '$gate_name' -- $reason"
-    elif [ -n "$scripts" ] && has_non_test_script "$scripts"; then
-      label="step '$gate_name' -> $scripts"
+    elif [ -n "$files" ]; then
+      label="$wf:$gate_line $gate_name -> $files"
+    elif has_git_ls_files "$gate_body"; then
+      label="$wf:$gate_line $gate_name"
     elif [ "${gate_name#Assert }" != "$gate_name" ]; then
-      label="step '$gate_name'"
+      label="$wf:$gate_line $gate_name"
     else
-      echo "UNCLASSIFIED GATE: $gate_name ($wf)" >&2
+      echo "UNCLASSIFIED GATE: $gate_name ($wf:$gate_line)" >&2
       echo "This runner refuses to skip a gate it cannot place. Either it is" >&2
       echo "CI-only (add it to the CI-OWNED table in this script with a reason)" >&2
-      echo "or it is static (add it to the default set in this script)." >&2
+      echo "or it invokes tracked files and needs no entry at all." >&2
       GATE_FAILURES=$((GATE_FAILURES + 1))
       continue
     fi
