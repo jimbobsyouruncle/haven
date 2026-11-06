@@ -379,6 +379,17 @@
 ## scripts/check-no-masked-literals.sh
 - usage()
 
+## scripts/ci-parity.sh
+- usage()
+- parse_steps()
+- invoked_files()
+- only_scripts()
+- only_test_suites()
+- has_git_ls_files()
+- ci_owned_reason()
+- run_gate()
+- handle_steps()
+
 ## scripts/deploy-forced-command.sh
 - refuse()
 
@@ -705,6 +716,11 @@
 - check_absent()
 - fingerprint()
 - write_baseline()
+
+## scripts/test-ci-parity.sh
+- record()
+- run_runner()
+- new_case()
 
 ## scripts/test-deploy-build-gate.sh
 - ok()
