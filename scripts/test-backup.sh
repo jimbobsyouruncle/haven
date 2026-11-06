@@ -760,6 +760,119 @@ assert "case u2: system-mode log is NOT world-readable" \
   bash -c "[[ \"\$(stat -c '%a' '$LOG')\" != 644 ]]"
 
 # ---------------------------------------------------------------------------
+# Cases v1/v2: --dry-run must exercise the capture path and report, not abort.
+#
+# The defect: the dry-run report ran BEFORE stage_backup(), while STAGED_MB is
+# assigned only inside stage_backup(). Under `set -Eeuo pipefail` the report
+# aborted with "STAGED_MB: unbound variable". v1 reproduces that against the
+# PRISTINE pre-fix script; v2 proves the fixed copy exits 0 and prints the
+# staged report. The pre-fix script is read from the base commit into a
+# SEPARATE scratch copy, so the fixed $BACKUP is never overwritten.
+# ---------------------------------------------------------------------------
+PREFIX_REPO="$TMPROOT/repo-prefix"
+PREFIX_BACKUP=""
+if cp -a "$REPO" "$PREFIX_REPO" 2>/dev/null \
+   && git -C "$REPO_SRC" show \
+        "46b840ccccf1d19bf61cc24c3f51ca15a61e6dcd:backup/backup.sh" \
+        > "$PREFIX_REPO/backup/backup.sh" 2>/dev/null \
+   && [[ -s "$PREFIX_REPO/backup/backup.sh" ]]; then
+  chmod +x "$PREFIX_REPO/backup/backup.sh"
+  PREFIX_BACKUP="$PREFIX_REPO/backup/backup.sh"
+fi
+
+rm -rf "$REPO/hermes_data"; mkdir -p "$REPO/hermes_data"
+sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1);'
+
+if [[ -n "$PREFIX_BACKUP" ]]; then
+  : > "$LOG"; : > "$DOCKER_LOG"
+  RUN_RC=0
+  bash "$PREFIX_BACKUP" --non-interactive --dry-run > "$TMPROOT/out" 2>&1 || RUN_RC=$?
+  check "case v1: pre-fix --dry-run aborts (unbound STAGED_MB)" 1 "$RUN_RC"
+  assert "case v1: pre-fix run reports the unbound variable" \
+    bash -c "grep -q 'STAGED_MB: unbound variable' '$TMPROOT/out'"
+  # The ERR-trap line echoes the failing printf, so match a REAL rendered value.
+  assert "case v1: pre-fix run prints no staged report" \
+    bash -c "! grep -qE '^  Staged [0-9?]+ MB:' '$TMPROOT/out'"
+else
+  echo "SKIP: case v1: base commit script not available in this clone" >&2
+fi
+
+rm -rf "$CAPTURE"
+run_backup_env BACKUP_NO_PAUSE=1 -- --non-interactive --dry-run
+check "case v2: fixed --dry-run exits 0" 0 "$RUN_RC"
+assert "case v2: fixed run prints the dry-run line" \
+  bash -c "grep -qF 'Dry run -- nothing will be uploaded.' '$TMPROOT/out'"
+assert "case v2: fixed run prints the staged size" \
+  bash -c "grep -qE 'Staged [0-9?]+ MB:' '$TMPROOT/out'"
+assert "case v2: fixed run lists the staged tree" \
+  bash -c "grep -qE '^    [df] ' '$TMPROOT/out'"
+assert "case v2: fixed run names the repository" \
+  bash -c "grep -qF 'Repository: s3:https://example.invalid/bucket' '$TMPROOT/out'"
+# Nothing was uploaded: this harness's restic stub copies the staging dir aside
+# on 'backup', so an empty CAPTURE proves upload_backup() never ran.
+assert "case v2: fixed --dry-run uploaded nothing" \
+  bash -c "[[ ! -d '$CAPTURE' ]]"
+
+# ---------------------------------------------------------------------------
+# Case w1: backups/ is never captured into backups (self-recursion).
+#
+# The exclude list is the ONE source for both rsync and find, so the three
+# assertions below cover the three consumers: the rsync argument list, the
+# bare-name prune list, and the real find invocation built from that list.
+# backup.sh runs on load, so its array and functions are extracted from the
+# file text with awk and sourced in isolation -- the pruning outcome is then
+# produced by the REAL hermes_rsync_excludes / hermes_prune_names bodies.
+# ---------------------------------------------------------------------------
+EXCLUDES_ONLY="$TMPROOT/excludes-only.sh"
+awk '/^HERMES_EXCLUDES=\(/ { print; inside=1; next }
+     inside && /^\)/      { print; inside=0; next }
+     inside               { print }
+     /^hermes_rsync_excludes\(\)/ { fn=1 }
+     fn                   { print }
+     fn && /^\}/          { fn=0 }
+     /^hermes_prune_names\(\)/ { fnn=1 }
+     fnn                  { print }
+     fnn && /^\}/         { fnn=0 }' "$BACKUP_SRC" > "$EXCLUDES_ONLY" 2>/dev/null || true
+
+if [[ -s "$EXCLUDES_ONLY" ]] && bash -c "source '$EXCLUDES_ONLY'" 2>/dev/null; then
+  RSYNC_EXCLUDES="$(bash -c "source '$EXCLUDES_ONLY'; hermes_rsync_excludes" | tr '\0' '\n')"
+  PRUNE_NAMES="$(bash -c "source '$EXCLUDES_ONLY'; hermes_prune_names" | tr '\0' '\n')"
+  assert "case w1: rsync exclusions contain --exclude=backups/" \
+    grep -qxF -- '--exclude=backups/' <<< "$RSYNC_EXCLUDES"
+  assert "case w1: hermes_prune_names emits backups" \
+    grep -qxF -- 'backups' <<< "$PRUNE_NAMES"
+  assert "case w1: hermes_prune_names does NOT emit backups-notes" \
+    bash -c "! grep -qxF -- 'backups-notes' <<< '$PRUNE_NAMES'"
+else
+  echo "SKIP: case w1: could not extract HERMES_EXCLUDES from backup.sh" >&2
+fi
+
+# w2: the real prune expression matches ONLY a directory named exactly
+# "backups". A sibling named backups-notes/ must survive.
+PRUNE_ROOT="$TMPROOT/prune-root"
+rm -rf "$PRUNE_ROOT"
+mkdir -p "$PRUNE_ROOT/backups" "$PRUNE_ROOT/backups-notes" "$PRUNE_ROOT/profiles/p1/backups"
+PRUNE_FIND_OUT="$TMPROOT/prune-find.out"
+if [[ -n "${PRUNE_NAMES:-}" ]]; then
+  PRUNE_ARGS=()
+  while IFS= read -r _n; do
+    [[ -z "$_n" ]] && continue
+    (( ${#PRUNE_ARGS[@]} )) && PRUNE_ARGS+=(-o)
+    PRUNE_ARGS+=(-name "$_n")
+  done <<< "$PRUNE_NAMES"
+  unset _n
+  find "$PRUNE_ROOT" \( "${PRUNE_ARGS[@]}" \) -prune -o -print > "$PRUNE_FIND_OUT" 2>/dev/null || true
+  assert "case w2: backups/ is pruned" \
+    bash -c "! grep -qxF '$PRUNE_ROOT/backups' '$PRUNE_FIND_OUT'"
+  assert "case w2: a nested backups/ is pruned too" \
+    bash -c "! grep -qxF '$PRUNE_ROOT/profiles/p1/backups' '$PRUNE_FIND_OUT'"
+  assert "case w2: backups-notes/ is NOT pruned" \
+    grep -qxF -- "$PRUNE_ROOT/backups-notes" "$PRUNE_FIND_OUT"
+else
+  echo "SKIP: case w2: prune names unavailable" >&2
+fi
+
+# ---------------------------------------------------------------------------
 if [[ "$FAILURES" -ne 0 ]]; then
   echo "FAILURES: $FAILURES" >&2
   exit 1
