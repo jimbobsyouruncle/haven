@@ -45,8 +45,8 @@
 #
 # --full
 #   Additionally runs every `scripts/test-*.sh` suite that validate.yml runs.
-#   These are the 46 fixture suites; they are slow and are NOT part of the
-#   default run.
+#   These are the 44 fixture suites (43 in validate.yml, 1 in
+#   agent-context.yml); they are slow and are NOT part of the default run.
 #
 # CI-OWNED GATES (cannot be evaluated without CI-only infrastructure)
 #   Listed explicitly, announced loudly at run time, never skipped silently:
@@ -59,15 +59,16 @@
 #     Compose schema check                     requires `docker compose`
 #     Validate status/Caddyfile parses         runs caddy:2.11-alpine in docker
 #     Validate TLS-on render with real Caddy   docker build + real Caddy
-#     Set up Python / Checkout / generator checkout
-#                                              GitHub-side setup steps, no gate
-#   CodeQL and ShellCheck/Semgrep live in sast-checks.yml, not here; they are
-#   not repo gates and are not replayed by this runner.
 #
 #   A step that matches neither the default rule nor this table fails the run as
 #   UNCLASSIFIED GATE. That is deliberate: a new static gate must be classified
 #   here, and a new CI-only gate must be declared here, before this runner will
-#   pass again.
+#   pass again. Steps built only from `uses:` (Checkout, Set up Python, the
+#   generator checkout) carry no `run:` body and assert nothing themselves, so
+#   they never reach the classifier and need no entry.
+#
+#   CodeQL and ShellCheck/Semgrep live in sast-checks.yml, not here; they are
+#   not repo gates and are not replayed by this runner.
 #
 # FAIL CLOSED
 #   * A gate that exits non-zero fails the run (exit 1) and is named.
@@ -342,9 +343,6 @@ ci_owned_reason() {
       ;;
     "Validate TLS-on render with real Caddy")
       printf '%s' "docker build plus a real Caddy container"
-      ;;
-    "Checkout"|"Set up Python"|"Check out the generator")
-      printf '%s' "GitHub runner setup, no assertion of its own"
       ;;
     *)
       return 1
