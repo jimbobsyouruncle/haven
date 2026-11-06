@@ -8,10 +8,11 @@ LABEL org.hybrid-ai.build-inputs-sha="$BUILD_INPUTS_SHA"
 
 # Install system dependencies
 # Add retry flags and quiet output to prevent mirror timeouts
-# sqlite3, jq, rsync and restic are base CLI tools the image's own harnesses
-# require (scripts/test-backup.sh, backup/backup.sh, backup/restore.sh,
-# collect-diagnostics.sh). A runtime `apt-get install` cannot supply them: this
-# RUN cleans the apt lists, and the runtime uid has no root.
+# sqlite3, jq, rsync, restic and shellcheck are base CLI tools the image's own
+# harnesses require (scripts/test-backup.sh, backup/backup.sh, backup/restore.sh,
+# collect-diagnostics.sh, and the repo's shell lint). A runtime `apt-get
+# install` cannot supply them: this RUN cleans the apt lists, and the runtime
+# uid has no root.
 RUN apt-get update -o Acquire::Retries=5 && \
     apt-get install -y --no-install-recommends \
         git \
@@ -23,7 +24,8 @@ RUN apt-get update -o Acquire::Retries=5 && \
         sqlite3 \
         jq \
         rsync \
-        restic && \
+        restic \
+        shellcheck && \
     rm -rf /var/lib/apt/lists/*
 
 # --- Pinned GitHub CLI (`gh`) for the kanban PR-acceptance gate --------------
