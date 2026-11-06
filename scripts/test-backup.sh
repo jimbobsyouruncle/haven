@@ -938,14 +938,16 @@ else
   echo "SKIP: case x1: base commit script not available in this clone (a shallow checkout: CI checks out with fetch-depth 0 for exactly this reason)" >&2
 fi
 
-# Cases y1/y2: a staging tree with far more than 40 entries. `find ... | head -40`
-# raises SIGPIPE (141) under pipefail on the base copy, so the following
-# "Repository:" line never prints and the run exits 141. y2 proves the fixed
-# script reaches the report and exits 0.
+# Cases y1/y2: `find ... | head -40` on the base copy raises SIGPIPE (141) under
+# pipefail, so the following "Repository:" line never prints and the run exits
+# 141. The entry count alone is not what crosses the pipe buffer: each name below
+# is padded to 198 characters, so the render is ~120 KB, several times past the
+# 64 KiB buffer, and find reliably receives SIGPIPE on any runner. y2 proves the
+# fixed script reaches the report and exits 0.
 BIG_STATE="$TMPROOT/oh-big"
 rm -rf "$BIG_STATE"; mkdir -p "$BIG_STATE"
 for _i in $(seq 1 600); do
-  : > "$BIG_STATE/entry-$(printf '%04d' "$_i")-padding-padding-padding-padding.txt"
+  : > "$BIG_STATE/entry-$(printf '%04d' "$_i")-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding-padding.txt"
 done
 unset _i
 BIG_WORK="$TMPROOT/big-work"; mkdir -p "$BIG_WORK"
