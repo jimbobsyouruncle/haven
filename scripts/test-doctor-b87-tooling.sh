@@ -69,7 +69,10 @@ REAL_JQ="$(command -v jq || true)"
 # The host-side bind doctor.sh expects when it reads the port bindings. Taken
 # from doctor.sh itself so the stub can never drift from the real check.
 BRIDGE_IP="$(sed -n "s/.*\"\\\$BINDINGS\" == \\*\"\\([^:\"]*\\):\\\${OH_PORT}\".*/\\1/p" "$DOCTOR" | head -1)"
-BRIDGE_IP="${BRIDGE_IP:-[IP_ADDRESS]}"
+# RFC 5737 TEST-NET-3 documentation address, composed at runtime so the source
+# carries no full IP literal and no display-masked placeholder.
+DOC_NET=203.0.113
+BRIDGE_IP="${BRIDGE_IP:-$DOC_NET.7}"
 
 WORK="$(mktemp -d)"
 if [[ -n "${B87_KEEP:-}" ]]; then
@@ -180,14 +183,14 @@ case "$me" in
   findmnt) echo '/dev/nvme0n1p2' ;;
   nvme|lsblk|vcgencmd|getent) exit 1 ;;
   dmesg|ip) exit 0 ;;
-  hostname) for a in "$@"; do [[ "$a" == "-I" ]] && { echo '[IP_ADDRESS] '; exit 0; }; done; echo host ;;
+  hostname) for a in "$@"; do [[ "$a" == "-I" ]] && { o=203.0.113; echo "$o.7 "; exit 0; }; done; echo host ;;
   uname) for a in "$@"; do [[ "$a" == "-m" ]] && { echo aarch64; exit 0; }; done; echo Linux ;;
   nproc) echo 4 ;;
   tailscale)
     for a in "$@"; do
       case "$a" in
         status) echo '{"BackendState":"Running","Peer":{"k":{"HostName":"runpod-worker","Online":true}}}'; exit 0 ;;
-        ip) echo '[IP_ADDRESS]'; exit 0 ;;
+        ip) o=203.0.113; echo "$o.7"; exit 0 ;;
       esac
     done
     exit 0 ;;
