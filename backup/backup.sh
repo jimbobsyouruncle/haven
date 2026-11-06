@@ -877,6 +877,10 @@ HERMES_EXCLUDES=(
   'tools/' 'hermes-agent/' 'installs/' 'cache/' 'image_cache/' 'audio_cache/'
   'lsp/' 'node_modules/' 'venv/' '.venv/' '__pycache__/' '.git/' 'logs/'
   'runtime/' 'sandboxes/' 'terminal-sessions/' 'profiles/*/home/'
+  # Backups are never captured into backups (self-recursion). Deliberately a
+  # BARE name, so hermes_prune_names prunes every directory named exactly
+  # "backups" under hermes_data.
+  'backups/'
   '*.pyc' '*.log' '*.lock' '*.pid' '*.sock'
   'models_dev_cache.json' 'models_dev_cache.etag' 'provider_models_cache.json'
   '*.db' '*.sqlite' '*.sqlite3' '*-wal' '*-shm' '*-journal'
@@ -1403,13 +1407,20 @@ STAGED_MB="${STAGED_MB:-?}"
 write_status
 }   # end stage_backup()
 
-if [[ "$MODE" == "dryrun" ]]; then
+# The dry-run report runs AFTER stage_backup(), so --dry-run exercises the whole
+# capture path and still uploads nothing. It exits 0 itself, which is why no
+# caller reaches upload_backup() in dry-run mode. STAGED_MB is set by
+# stage_backup(); the fallback keeps the report safe in --upload-only, where
+# stage_backup() did not run.
+dry_run_report() {
+  [[ -n "${STAGED_MB:-}" ]] || STAGED_MB="$(du -sm "$STAGING_DIR" 2>/dev/null | cut -f1 || true)"
+  STAGED_MB="${STAGED_MB:-?}"
   log "Dry run -- nothing will be uploaded."
   printf '\n  Staged %s MB:\n\n' "$STAGED_MB"
   find "$STAGING_DIR" -maxdepth 3 -mindepth 1 -printf '    %y %P\n' 2>/dev/null | head -40
   printf '\n  Repository: %s\n\n' "${RESTIC_REPOSITORY}"
   exit 0
-fi
+}
 
 # ---------------------------------------------------------------------------
 # STEP 7. Upload -- upload_backup()
@@ -1555,6 +1566,8 @@ printf '    Verify with  : ./backup/backup.sh --check\n\n'
 #   upload upload the existing staging directory; remove it on success; exit 0
 #          (complete) or 3 (incomplete). The ERR trap is cleared before any
 #          deliberate non-zero exit so it is not re-labelled a failure.
+# A --dry-run uses the both shape: it stages for real, then dry_run_report()
+# prints the staged report and exits 0, so upload_backup() is never reached.
 case "$RUN_PHASE" in
   stage)
     stage_backup
@@ -1579,6 +1592,10 @@ case "$RUN_PHASE" in
     ;;
   *)
     stage_backup
+    if [[ "$MODE" == "dryrun" ]]; then
+      trap - ERR
+      dry_run_report
+    fi
     upload_backup
     if (( INCOMPLETE_COUNT > 0 )); then
       trap - ERR

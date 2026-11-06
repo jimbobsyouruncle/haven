@@ -622,6 +622,25 @@ for svc in ollama open-webui hybrid-ai-status hybrid-ai-proxy hybrid-ai-openhand
   esac
 done
 
+# --- Hermes :: shellcheck is present in the image ----------------------------
+# The repo's own shell lint and the hermes harnesses assume shellcheck is in the
+# image: it is an apt package in the root layer, and the runtime uid cannot add
+# it (no root, and the layer cleans the apt lists). Two read-only probes at most:
+# one exec, plus one inspect only when the exec found nothing.
+SHELLCHECK_PATH="$(docker exec hermes-agent command -v shellcheck 2>/dev/null || true)"
+if [[ -n "$SHELLCHECK_PATH" ]]; then
+  pass "shellcheck present in the hermes-agent container"
+else
+  HERMES_RUNNING="$(docker inspect -f '{{.State.Running}}' hermes-agent 2>/dev/null || true)"
+  if [[ "$HERMES_RUNNING" == "true" ]]; then
+    fail "shellcheck is NOT present in the hermes-agent container" \
+         "The image is stale: rebuild and recreate it, e.g. ${COMPOSE_CMD} up -d --build hermes"
+  else
+    warn "shellcheck presence in the hermes-agent container could not be checked" \
+         "The container is absent or not running. Start it with ./install.sh, then re-run this check."
+  fi
+fi
+
 # --- Hermes :: read-only agent-repo mount and the internal coder-net ---------
 # Two things this change introduced, both load-bearing:
 #   1. /agent-repo is the OpenHands clone mounted READ-ONLY. If it ever became
@@ -1756,6 +1775,27 @@ else
   warn "Backups are not configured" \
        "Set them up by re-running ./install.sh - this is your only protection against a failed disk."
 fi
+
+# The DEPLOYED backup.sh is what the timer runs, so it -- not the git tree -- is
+# what must exclude backups/ from capture. Read-only: the array text is printed
+# with sed and matched with grep; the script is never executed or sourced.
+DEPLOYED_BACKUP_SH="${APP_DIR}/backup/backup.sh"
+if [[ ! -r "$DEPLOYED_BACKUP_SH" ]]; then
+  warn "deployed backup.sh could not be read at ${DEPLOYED_BACKUP_SH}" \
+       "deploy/backup.sh not found at that path. Deploy it (git pull && ./install.sh), then re-run this check."
+else
+  # Comment lines are dropped first, so only a real array entry can match.
+  HERMES_EXCLUDES_TEXT="$(sed -n '/^HERMES_EXCLUDES=(/,/^)/p' "$DEPLOYED_BACKUP_SH" 2>/dev/null \
+                          | grep -v '^[[:space:]]*#' || true)"
+  if printf '%s\n' "$HERMES_EXCLUDES_TEXT" | grep -Fq -- "'backups/'"; then
+    pass "deployed backup.sh excludes backups/ from capture"
+  else
+    fail "deployed backup.sh does NOT exclude backups/ from capture" \
+         "The deployed ${DEPLOYED_BACKUP_SH} predates the fix. Deploy the current backup/ tree (git pull && ./install.sh)."
+  fi
+  unset HERMES_EXCLUDES_TEXT
+fi
+unset DEPLOYED_BACKUP_SH
 
 # ---------------------------------------------------------------------------
 # 8. Data
