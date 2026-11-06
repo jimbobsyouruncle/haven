@@ -129,6 +129,7 @@
 - scripts/check-hermes-nonroot.sh - FILE: scripts/check-hermes-nonroot.sh
 - scripts/check-no-ip-literals.sh - Report environment-specific IPv4 literals in tracked code (WARN MODE).
 - scripts/check-no-masked-literals.sh - Fail when a display-mask placeholder stands in for a real value.
+- scripts/ci-parity.sh - Replay the repository-owned static gates from CI, locally, before you push.
 - scripts/deploy-forced-command.sh
 - scripts/deploy-image-gate.sh - FILE: scripts/deploy-image-gate.sh
 - scripts/deploy-instance.sh
@@ -155,6 +156,7 @@
 - scripts/test-check-git-remotes.sh
 - scripts/test-check-no-ip-literals.sh - Fixture test for scripts/check-no-ip-literals.sh.
 - scripts/test-check-no-masked-literals.sh - Fixture test for scripts/check-no-masked-literals.sh.
+- scripts/test-ci-parity.sh - Offline fixture harness for scripts/ci-parity.sh.
 - scripts/test-deploy-build-gate.sh - FILE: scripts/test-deploy-build-gate.sh
 - scripts/test-deploy-forced-command.sh
 - scripts/test-deploy-image-gate.sh
