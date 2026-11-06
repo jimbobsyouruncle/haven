@@ -32,6 +32,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The backup fixture suite reads the pre-fix backup.sh from the base
+          # commit; a depth-1 checkout does not contain it.
+          fetch-depth: 0
 
       - name: Shell syntax check
         # "bash -n" parses a script without running it. Catches typos and

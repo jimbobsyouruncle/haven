@@ -794,7 +794,7 @@ if [[ -n "$PREFIX_BACKUP" ]]; then
   assert "case v1: pre-fix run prints no staged report" \
     bash -c "! grep -qE '^  Staged [0-9?]+ MB:' '$TMPROOT/out'"
 else
-  echo "SKIP: case v1: base commit script not available in this clone" >&2
+  echo "SKIP: case v1: base commit script not available in this clone (a shallow checkout: CI checks out with fetch-depth 0 for exactly this reason)" >&2
 fi
 
 rm -rf "$CAPTURE"
