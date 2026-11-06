@@ -74,7 +74,9 @@
 #   * A gate that exits non-zero fails the run (exit 1) and is named.
 #   * A step this runner cannot classify is NOT skipped: it fails the run with
 #     "UNCLASSIFIED GATE" until someone classifies it.
-#   * There is no `|| true` path anywhere in this script.
+#   * A failing gate never stops the run early, so one push reports every
+#     failure. The exit code comes only from the accumulated failure count:
+#     no gate status is discarded anywhere.
 #
 # USAGE
 #   bash scripts/ci-parity.sh [--root DIR] [--generator PATH] [--full]
@@ -411,7 +413,12 @@ handle_steps() {
       continue
     fi
 
-    run_gate "$label" "$gate_body" || true
+    # run_gate records the failure itself; swallowing only the return status
+    # keeps the loop going so every remaining gate is still reported in one run.
+    # The exit code of the whole script is decided solely by GATE_FAILURES.
+    if ! run_gate "$label" "$gate_body"; then
+      :
+    fi
   done < <(parse_steps "$wf")
 }
 
