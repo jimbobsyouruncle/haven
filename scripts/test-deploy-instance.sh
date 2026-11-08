@@ -276,18 +276,22 @@ echo "== systemd-analyze verify, with both stub directions =="
 # `... is not executable: No such file or directory` tail for a /opt/hybrid-ai
 # command rather than the literal file base.
 run_verify() {
-  local unit="$1" out rc line hostpath_ok=1
+  local unit="$1" out rc line hostpath_ok=1 saw_hostpath=0
   out="$(systemd-analyze verify "$unit" 2>&1)"
   rc=$?
   (( rc == 0 )) && return 0
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     case "$line" in
-      *": Command /opt/hybrid-ai/"*" is not executable: No such file or directory") ;;
+      *": Command /opt/hybrid-ai/"*" is not executable: No such file or directory")
+        saw_hostpath=1 ;;
+      /usr/lib/systemd/system/*": Support for option CPUAccounting= has been removed and it is ignored")
+        # Known warning from runner-installed units, not this repository.
+        ;;
       *) hostpath_ok=0 ;;
     esac
   done <<< "$out"
-  if (( hostpath_ok )); then
+  if (( hostpath_ok && saw_hostpath )); then
     printf 'skip: %s (host paths not installed)\n' "$unit"
     return 0
   fi
@@ -330,6 +334,35 @@ STUB
     bad "host-path + unrelated diagnostic must be a hard failure"
   else
     ok "host-path + one unrelated diagnostic -> failure, exit 1"
+  fi
+  # Runner-owned CPUAccounting deprecation does not invalidate our unit.
+  cat > "${STUBDIR}/systemd-analyze" <<'STUB'
+#!/usr/bin/env bash
+base="$(basename -- "${@: -1}")"
+printf '%s: Command /opt/hybrid-ai/scripts/deploy-instance.sh is not executable: No such file or directory\n' "$base"
+printf '/usr/lib/systemd/system/walinuxagent.service:21: Support for option CPUAccounting= has been removed and it is ignored\n'
+exit 1
+STUB
+  chmod +x "${STUBDIR}/systemd-analyze"
+  if PATH="${STUBDIR}:$PATH" run_verify "$UNIT_FILE" >/dev/null; then
+    ok "host-path + runner CPUAccounting warning -> skip, exit 0"
+  else
+    bad "runner CPUAccounting warning must not break verification"
+  fi
+
+  # Unknown warnings in installed units remain a hard failure.
+  cat > "${STUBDIR}/systemd-analyze" <<'STUB'
+#!/usr/bin/env bash
+base="$(basename -- "${@: -1}")"
+printf '%s: Command /opt/hybrid-ai/scripts/deploy-instance.sh is not executable: No such file or directory\n' "$base"
+printf '/usr/lib/systemd/system/walinuxagent.service:21: Unknown key Bogus in section [Service]\n'
+exit 1
+STUB
+  chmod +x "${STUBDIR}/systemd-analyze"
+  if PATH="${STUBDIR}:$PATH" run_verify "$UNIT_FILE" >/dev/null 2>&1; then
+    bad "unexpected installed-unit warning must fail verification"
+  else
+    ok "unexpected installed-unit warning -> failure, exit 1"
   fi
   rm -rf "$STUBDIR"
 fi
