@@ -59,7 +59,7 @@
 #                          May be deleted by the owner.
 #
 #   You must also add an ACL rule in Tailscale allowing tag:ci to reach the Pi
-#   on port 22. Full walkthrough in .github/README.md.
+#   on port 22. Full walkthrough in .github/CICD.md.
 # ---------------------------------------------------------------------------
 
 name: Deploy Control Plane
