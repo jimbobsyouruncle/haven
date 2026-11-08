@@ -378,12 +378,15 @@ BLOCKER="$WORKDIR/blocker"
 printf 'not a directory\n' > "$BLOCKER"
 rm -rf "$VDIR"
 run_verify "$TREE_A" "__absent__"
-NORMAL_STDOUT="$OUT_STDOUT"
+# The verifier prints a current timestamp in its opening status line.
+# Compare that line's shape separately so crossing a second boundary cannot
+# make the optional-verdict-write isolation check flaky.
+NORMAL_STDOUT="$(sed -E 's/ at [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/ at <timestamp>/' <<<"$OUT_STDOUT")"
 NORMAL_RC="$RC"
 NORMAL_LINES="$(grep -c '' <<<"$OUT_STDERR" || true)"
 run_verify "$TREE_A" "__absent__" "$BLOCKER/deploy-verdicts"
 LINES="$(grep -c '' <<<"$OUT_STDERR" || true)"
-if [[ "$RC" -eq "$NORMAL_RC" && "$OUT_STDOUT" == "$NORMAL_STDOUT" ]]; then
+if [[ "$RC" -eq "$NORMAL_RC" && "$(sed -E 's/ at [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/ at <timestamp>/' <<<"$OUT_STDOUT")" == "$NORMAL_STDOUT" ]]; then
   # Exactly ONE new stderr line, naming the reason; nothing else changes.
   if [[ ! -e "$BLOCKER/deploy-verdicts/$SHA_A.json" ]] \
      && [[ "$LINES" -le $(( NORMAL_LINES + 1 )) ]] \
