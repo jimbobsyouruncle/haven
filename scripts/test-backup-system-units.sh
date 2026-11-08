@@ -15,9 +15,10 @@
 #   It also runs `systemd-analyze verify` the RIGHT way. On systemd >= 245,
 #   verify exits non-zero when an ExecStart= binary is absent, and /opt/hybrid-ai
 #   exists on no builder host or CI runner. So: if every diagnostic line is the
-#   missing-host-path form, print a skip and pass; ANY other diagnostic -- alone
-#   or mixed with the host-path line -- is a hard failure. Both directions are
-#   proved with a stub systemd-analyze placed FIRST on PATH.
+#   missing-host-path form, print a skip and pass. Ignore only the known
+#   CPUAccounting= deprecation warning from unrelated runner system units.
+#   ANY other diagnostic is a hard failure. Both directions are proved
+#   with a stub systemd-analyze placed FIRST on PATH.
 #
 #   It also covers the two residual system-mode defects:
 #     * D2 -- the upload and check units must pin HYBRID_AI_STACK_ENV_FILE at the
@@ -631,7 +632,8 @@ echo "== systemd-analyze verify =="
 
 # The real verify, in a helper so the stub test can reuse the same logic. The
 # rule lives here once:
-#   * every diagnostic is the missing-host-path form -> skip, pass
+#   * missing /opt/hybrid-ai executables for this unit -> skip, pass
+#   * unrelated runner CPUAccounting= deprecations   -> ignore
 #   * any other diagnostic (alone or mixed)          -> fail
 #   * systemd-analyze absent                         -> skip, pass
 run_verify() {
@@ -641,17 +643,24 @@ run_verify() {
   if (( rc == 0 )); then
     return 0
   fi
-  # Every non-empty line must be the host-path diagnostic for THIS unit.
-  local base line hostpath_ok=1
+  # Only this unit's missing /opt/hybrid-ai executable can be ignored.
+  # systemd-analyze on CI may also warn about unrelated *installed* units
+  # (e.g. the runner's XFS scrub services). Those warnings must not turn
+  # verified repository units into false failures.
+  local base line hostpath_ok=1 saw_hostpath=0
   base="$(basename -- "$unit")"
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     case "$line" in
-      "${base}:"*"is not executable: No such file or directory") ;;
+      "${base}: Command /opt/hybrid-ai/"*"is not executable: No such file or directory")
+        saw_hostpath=1 ;;
+      /usr/lib/systemd/system/*": Support for option CPUAccounting= has been removed and it is ignored")
+        # systemd diagnostic from host-provided units, not this repository.
+        ;;
       *) hostpath_ok=0 ;;
     esac
   done <<< "$out"
-  if (( hostpath_ok )); then
+  if (( hostpath_ok && saw_hostpath )); then
     printf 'skip: %s (host paths not installed)\n' "$base"
     return 0
   fi
@@ -699,6 +708,35 @@ STUB
     bad "host-path + unrelated diagnostic must be a hard failure"
   else
     ok "host-path + one unrelated diagnostic -> failure, exit 1"
+  fi
+  # 4. An unrelated runner deprecation plus the host-path line still skips.
+  cat > "${STUBDIR}/systemd-analyze" <<'STUB'
+#!/usr/bin/env bash
+base="$(basename -- "${@: -1}")"
+printf '%s: Command /opt/hybrid-ai/backup/backup.sh is not executable: No such file or directory\n' "$base"
+printf '/usr/lib/systemd/system/xfs_scrub_all.service:26: Support for option CPUAccounting= has been removed and it is ignored\n'
+exit 1
+STUB
+  chmod +x "${STUBDIR}/systemd-analyze"
+  if PATH="${STUBDIR}:$PATH" run_verify "$CAP" >/dev/null; then
+    ok "host-path + unrelated runner deprecation -> skip, exit 0"
+  else
+    bad "runner deprecation must not break host-path verification"
+  fi
+
+  # 5. A different warning in the same installed unit is still a failure.
+  cat > "${STUBDIR}/systemd-analyze" <<'STUB'
+#!/usr/bin/env bash
+base="$(basename -- "${@: -1}")"
+printf '%s: Command /opt/hybrid-ai/backup/backup.sh is not executable: No such file or directory\n' "$base"
+printf '/usr/lib/systemd/system/xfs_scrub_all.service:26: Unknown key Bogus in section [Service]\n'
+exit 1
+STUB
+  chmod +x "${STUBDIR}/systemd-analyze"
+  if PATH="${STUBDIR}:$PATH" run_verify "$CAP" >/dev/null 2>&1; then
+    bad "unrelated unexpected systemd diagnostic must fail"
+  else
+    ok "host-path + unrelated unexpected systemd diagnostic -> failure, exit 1"
   fi
   rm -rf "$STUBDIR"
 fi
