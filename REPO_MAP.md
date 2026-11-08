@@ -12,6 +12,7 @@
 - .gitattributes
 - .gitignore
 - .ip-literal-allowlist
+- AGENTS.md - AGENTS.md — Hybrid-AI → Haven agent operating contract
 - LICENSE
 - README.md - hybrid-ai
 - SECURITY.md - Security
@@ -23,7 +24,7 @@
 - install.sh - FILE: install.sh
 ## .github
 
-- .github/README.md
+- .github/CICD.md
 - .github/dependabot.yml
 ## .github/workflows
 
@@ -82,6 +83,9 @@
 - docs/agent-context-index-design.md - On-demand agent-context navigation: design and evidence
 - docs/tls-acme-design.md - TLS termination and ACME design (jarvis.lan -> daemonhub.dev)
 - docs/tls-renewal-health.md - TLS renewal health, audit and alerting
+## docs/haven
+
+- docs/haven/ARCHITECTURE.md - Haven — Architecture Design
 ## hermes
 
 - hermes/Dockerfile

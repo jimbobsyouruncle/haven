@@ -8,7 +8,7 @@
 #   This covers GitHub Actions ONLY. It does not touch the container image
 #   digests (the semgrep container, the compose/Dockerfile image tags), the
 #   `httpx` pin, the shared-actions `ref:`, or the tailscale `version:`
-#   input. Those are updated by hand and called out in .github/README.md.
+#   input. Those are updated by hand and called out in .github/CICD.md.
 # ---------------------------------------------------------------------------
 version: 2
 updates:

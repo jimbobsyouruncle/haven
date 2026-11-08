@@ -49,7 +49,7 @@ generator fails closed with exit 1 rather than truncating.
 | Committer | `.github/workflows/agent-context-committer.yml:93,98,108,119,136,153` | loop guard, no-op guard, `git add` and PR body name the two files; the commit message at `:137` is generic (`chore(agent-context): refresh maps for ${SHA}`) and names none; regenerates at `--max-bytes 24576` | four independent filename lists plus the staging list |
 | Agent instructions | `openhands/AGENTS.md:15-17` | "read `REPO_MAP.md` and `CODE_INDEX.md` ... first, then open only those files", unconditionally, for whatever repository is the target | unconditional mandatory read |
 | Instruction entry point | `openhands/README.md:246` | tells the operator to start a conversation with "Read `/workspace/openhands/AGENTS.md` and follow it" | inherits the unconditional read |
-| Human docs | `README.md:307-336`, `.github/README.md:127-146` | describe both files, the budget and the regeneration command | prose, not enforced |
+| Human docs | `README.md:307-336`, `.github/CICD.md:127-146` | describe both files, the budget and the regeneration command | prose, not enforced |
 | Design precedent | `docs/tls-acme-design.md:1892` | lists both maps as generated artefacts to regenerate | prose |
 
 The committer performs an automatic squash-merge of its own refresh PR after
@@ -299,7 +299,7 @@ have to do, so the owner can budget it before anyone writes code.
 | `agent-context.yml` | pin `ref:` and the two script calls | new pin; unchanged scripts if the file set is unchanged |
 | `agent-context-committer.yml` | loop guard, no-op guard, `git add`, PR body — four filename lists | all four, plus the staging list, must name the new set; a partial change silently creates an empty refresh PR |
 | `openhands/AGENTS.md:15` | unconditional read of both maps | routing-aware instruction, or it points at files that no longer exist |
-| `README.md`, `.github/README.md` | describe two files and one budget | describe the new set and the same budget |
+| `README.md`, `.github/CICD.md` | describe two files and one budget | describe the new set and the same budget |
 
 The committer is the dangerous one. Its loop guard treats a push containing
 only map files as its own refresh. If the new file set is not in that guard,
@@ -410,7 +410,7 @@ Every tracked README, with the decision for this commit:
 | README | Updated? | Rationale |
 |---|---|---|
 | `README.md` | yes | its "Agent context maps" section describes the two files; one line now points at this design |
-| `.github/README.md` | yes | same section, same reason; it also documents the workflow list |
+| `.github/CICD.md` | yes | same section, same reason; it also documents the workflow list |
 | `openhands/README.md` | no | no `REPO_MAP`/`CODE_INDEX` claim; its `AGENTS.md` mentions are about instruction delivery, not map format |
 | `auth/README.md` | no | no map claim |
 | `backup/README.md` | no | no map claim |
