@@ -58,9 +58,11 @@ layout-file parsing and backup-tile verdicts. Final-head required CI/SAST and
 tests are authoritative for what they execute; skipped checks are not passes.
 
 E01–E20 remain assigned to their relevant preparation, cutover and verification
-gates in [EXTERNAL.md](EXTERNAL.md). #148 may proceed independently on safe
-presentation/docs changes. #149 remains open for readiness/runbook/integration
-evidence; #150 requires reviewed preparation merges, green checks and explicit
+gates in [EXTERNAL.md](EXTERNAL.md). #148 presentation changes merged in PR #157.
+#149 still owns readiness/runbook/integration evidence despite its observed
+closed tracking state; this document does not change issue metadata. The
+[readiness handoff](READINESS.md) records existing check/deploy evidence and
+the remaining gates. #150 requires reviewed preparation merges, green checks and explicit
 owner go/no-go. #151 supplies post-cutover evidence. Successful PR checks do
 not establish live deployment or infrastructure health.
 

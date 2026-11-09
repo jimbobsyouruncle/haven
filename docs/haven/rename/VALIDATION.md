@@ -5,7 +5,7 @@
 The owner subsequently accepted #147 as complete public-source audit evidence
 and recorded that decision on #147 and epic #146. Earlier keep-open statements
 below describe the original audit handoff and are superseded by that explicit
-decision. The 125 manual-review entries and E01–E20 remain later-phase gates,
+decision. Unresolved manual-review entries and E01–E20 remain later-phase gates,
 not reasons to reopen #147. Required final-head PR checks are authoritative for
 their actual execution; post-merge/deployment evidence is checked separately
 when needed, and skipped checks are not passes.
@@ -16,7 +16,41 @@ handoff. It does not claim full #149 completion or live cutover verification.
 
 This report distinguishes reproducible public-source evidence from pending external verification. No production security or restore claim follows from source inspection.
 
+## Issue #149 readiness documentation validation
+
+The approved deliverable adds [READINESS.md](READINESS.md) and reconciles the
+existing handoff documents without changing runtime code or workflows.
+Local validation on 2026-11-09:
+
+- Immutable audit `--check`: passed; inventory, summary and manifest unchanged.
+- CSV reconciliation: passed; 17 distinct previously decided manual-review IDs
+  are in the 125-record baseline, leaving 108; all 29 rename-class IDs are
+  accounted for exactly once in the readiness disposition table.
+- Relative documentation links and approved file scope: passed.
+- Pinned map regeneration/freshness: passed; REPO_MAP.md 12,227 bytes and
+  CODE_INDEX.md 23,349 bytes, both below 24,576; CODE_INDEX.md unchanged.
+- All seven map freshness/error fixtures: passed.
+- Static CI parity: passed, 14 evaluated gates, zero failures. Full shell
+  suites, dependency-installing tests and real Caddy/Compose checks remain
+  CI-owned; ShellCheck, Semgrep and CodeQL require this PR's check results.
+- Diff whitespace check: passed. No new runtime tests are needed for this
+  documentation-only change; no host, restore or live worker check ran.
+
+Current-head CI results belong in the PR description. Existing implementation
+evidence is linked below and in READINESS.md; it does not substitute for this
+PR's applicable required checks or the still-pending operational gates.
+
 ## Issue #148 presentation validation
+
+Final head `b5ffe9ae8ee371f443848259d9fc34c4aef1f22b` passed the required
+[map check](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42703035002)
+and [SAST/source gate](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42703034861).
+PR #157 merged as `873b41610fc710cb2c8dcde8632f841709e89e2f`; its
+[post-merge deployment](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42705394288)
+passed. The Hermes image smoke was skipped by the successful existing change
+detector; no fresh ARM64 runtime or external readiness is established.
+See [READINESS.md](READINESS.md) for the acceptance matrix, 17 explicit
+manual-review decisions, remaining 108 unresolved records and operational gates.
 
 See [PRESENTATION.md](PRESENTATION.md) for the bounded scope, nine explicit
 manual-review decisions and disposition of all 145 baseline occurrences in

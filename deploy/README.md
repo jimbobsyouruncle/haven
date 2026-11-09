@@ -61,6 +61,13 @@ deployed rollback requires separately approved restoration of the known-good
 revision and its installed standalone verifier. Never delete data or rename
 the repository as an automatic rollback.
 
+The [Haven readiness and cutover runbook](../docs/haven/rename/READINESS.md)
+links the existing merged implementation/check/deployment evidence and the
+remaining #149/#150/#151 gates. It covers named evidence owners, automation
+freeze/resume, selector propagation review, go/no-go, stop/rollback and the
+post-cutover handoff. Documentation approval does not authorize activation;
+backup restore and worker compatibility evidence remain required.
+
 ---
 
 ## What card F installs (one bootstrap, on the host)
