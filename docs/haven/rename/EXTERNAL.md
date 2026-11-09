@@ -29,7 +29,7 @@ Nothing in this checklist is verified by the public source inventory. Source doc
 
 - Accept the proposed preservation of runtime names, environment settings, host paths/accounts/units, cookie names, snapshot tags, Caddy domains/storage and separate image packages for this epic.
 - Assign owners and authorization/evidence routes for E01–E20. Public-source inspection alone cannot complete these gates.
-- Resolve the 124 conservative manual-review inventory records in #148/#149 before editing them; preserve unexplained entries until resolved.
+- Resolve the 125 conservative manual-review inventory records in #148/#149 before editing them; preserve unexplained entries until resolved.
 - Decide whether human review should be technically required in GitHub rules, and whether the map bot's automatic merging remains desired. This audit changes neither.
 - Define freeze/resume procedure, permissible downtime, rollback threshold and post-cutover observation interval.
 - Keep #147 open for full acceptance until external evidence is supplied, or explicitly approve a split between public-source completion and externally owned verification. Do not silently narrow the issue's acceptance criteria.

@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+from urllib.parse import urlsplit
 
 BASELINE = "c2286bcd266e1924797fc787a677e6f8aa2d94da"
 ROOT = Path(__file__).resolve().parents[3]
@@ -21,6 +22,31 @@ FIELDS = ["id", "kind", "path", "line", "column", "token", "classification", "ru
 
 def git(*args: str) -> bytes:
     return subprocess.check_output(["git", "-C", str(ROOT), *args])
+
+
+def has_ghcr_reference(line: str) -> bool:
+    """Recognize HTTPS/OCI references by parsed hostname, never a URL substring.
+
+    Source lines may wrap references in Markdown, quotes or Compose syntax.
+    Candidate extraction keeps userinfo and deceptive host suffixes intact so
+    parsing can reject them instead of finding a trusted-looking inner string.
+    This is audit classification only; it performs no network requests.
+    """
+    candidates = re.findall(
+        r"(?<![\w./:@-])(?:https?://)?[\w.:%@-]+/[^\s`\"'<>()[\]{},;]+",
+        line, re.IGNORECASE,
+    )
+    for candidate in candidates:
+        try:
+            parsed = urlsplit(candidate if "://" in candidate else "https://" + candidate)
+            if (parsed.scheme == "https" and parsed.hostname == "ghcr.io"
+                    and parsed.username is None and parsed.password is None
+                    and parsed.port in (None, 443) and parsed.path != "/"):
+                return True
+        except ValueError:
+            # Malformed authorities/ports are not registry evidence.
+            continue
+    return False
 
 
 def classify(path: str, line: str, match: re.Match[str], kind: str) -> tuple[str, str, str, str, str, str]:
@@ -46,7 +72,7 @@ def classify(path: str, line: str, match: re.Match[str], kind: str) -> tuple[str
     if token.lower().replace("-", "_") == "hybrid_ai" and re.match(r"_[A-Za-z0-9]", right):
         return ("compatibility alias", "P05", "Environment setting, function or symbol is an existing interface.", "Retain spelling and precedence; deprecate only with consumer evidence.", "149", "preserve")
     if token.lower() == "hybrid":
-        if "image" in lower or "ghcr.io" in lower or "hybrid." in lower:
+        if "image" in lower or has_ghcr_reference(line) or "hybrid." in lower:
             return ("preserve", "P06", "Derived image identity/tag is not the main repository name.", "Keep package/tag; test publisher and pull consumers without renaming.", "149", "preserve")
         if any(x in lower for x in ("architecture", "local", "cloud", "inference", "hybrid mode", "hybrid setup")):
             return ("preserve", "P07", "Semantic hybrid terminology describes architecture or behavior.", "Retain technical meaning; reviewer checks context at pinned line.", "148", "preserve")

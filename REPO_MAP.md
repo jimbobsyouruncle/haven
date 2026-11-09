@@ -96,6 +96,7 @@
 - docs/haven/rename/inventory.csv
 - docs/haven/rename/source-manifest.json
 - docs/haven/rename/summary.json
+- docs/haven/rename/test_audit.py - Offline regression cases for registry-reference classification in the audit.
 ## hermes
 
 - hermes/Dockerfile

@@ -15,6 +15,7 @@ Baseline: `c2286bcd266e1924797fc787a677e6f8aa2d94da`, public `main` observed on 
 | [inventory.csv](inventory.csv) | One record per matching content/filename occurrence, with position, classification, reason, action, owning issue and source-line hash. |
 | [summary.json](summary.json) | Reconciled counts and classification totals. |
 | [source-manifest.json](source-manifest.json) | Every baseline tracked regular file, Git blob ID and SHA-256. |
+| [test_audit.py](test_audit.py) | Offline regression cases for valid registry references, deceptive hosts and classification outcomes. |
 | [audit.py](audit.py) | Deterministic reproduction/check command; only `--write` writes the three generated audit artifacts. |
 | [DEPENDENCIES.md](DEPENDENCIES.md) | Coupled consumers, risks, proposed sequencing and rollback boundaries. |
 | [EXTERNAL.md](EXTERNAL.md) | External dependency checklist, evidence owners and separate authorization gates. |
@@ -38,6 +39,8 @@ To inspect context for a CSV record, read the indicated public file at the pinne
 git show c2286bcd266e1924797fc787a677e6f8aa2d94da:scripts/run-post-deploy-verify.sh
 ```
 
+Run the registry-classification regression cases with `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s docs/haven/rename -p 'test_*.py' -v`. Registry evidence uses parsed HTTPS hostnames, rejects userinfo and nonstandard ports, and recognizes both HTTPS URLs and scheme-less OCI references.
+
 Coverage: **173 tracked files; 4,431 content occurrences on 3,543 lines across 137 files; 22 filename occurrences across 22 paths (21 legacy-name paths plus one standalone-hybrid image-test path)**. Of the content occurrences, 4,191 match the legacy product forms; the additional 240 are standalone `hybrid` matches, including architecture terminology and image identities. These are lexical counts, not counts of required edits. Indirect dependencies such as `github.repository`, clone-name derivation and GitHub settings need the separate registers.
 
 ## Classification policy
@@ -51,7 +54,7 @@ Every record has one of the issue's four classifications. Ordered rules in `audi
 | compatibility alias | Existing path, setting, symbol, service, network, log/cookie identity, unit or backup selector. Retain for this epic; a later migration requires consumer tests and separate approval. This label does not claim an alias adapter already exists. |
 | manual review | Ambiguous branding/technical meaning, diagnostic interface or executable example. No edit until the reviewer resolves its consumer and records the decision. |
 
-Current totals, including filenames: 29 rename; 824 preserve; 3,476 compatibility alias; 124 manual review. The manual-review population is explicitly outstanding; classification does not close those decisions. Most documentation triage is intentionally conservative because the same guide mixes prose with operational commands. Technical `hybrid`, separate `runpod-hybrid-worker`, package names, and historical evidence are not mass-replaced.
+Current totals, including filenames: 29 rename; 823 preserve; 3,476 compatibility alias; 125 manual review. The manual-review population is explicitly outstanding; classification does not close those decisions. Most documentation triage is intentionally conservative because the same guide mixes prose with operational commands. Technical `hybrid`, separate `runpod-hybrid-worker`, package names, and historical evidence are not mass-replaced.
 
 ## Issue boundaries and next gate
 
