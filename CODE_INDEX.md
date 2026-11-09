@@ -450,6 +450,9 @@
 - probe_can_read()
 - find_unreadable()
 
+## scripts/lib/repository-identity.sh
+- hybrid_ai_repository_slug()
+
 ## scripts/lib/tailscale-resolve.sh
 - mesh_range_ok()
 - resolve_mesh_address()
@@ -562,6 +565,7 @@
 - main()
 
 ## scripts/run-post-deploy-verify.sh
+- hybrid_ai_repository_slug()
 - usage_refuse()
 - verdict_dir()
 - verdict_warn()
@@ -955,6 +959,9 @@
 - skip()
 - check()
 - run_find_unreadable()
+
+## scripts/test-repository-identity.sh
+- (no symbols)
 
 ## scripts/test-reset-passwords.sh
 - ok()

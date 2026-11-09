@@ -25,6 +25,14 @@ All source anchors below refer to public baseline `c2286bcd266e1924797fc787a677e
 
 ## Proposed sequencing and PR boundaries
 
+Owner decision recorded on #147/#146 accepts the public-source audit as
+complete. External E01–E20 and the 125 manual-review decisions carry forward;
+they do not reopen #147 or block unrelated development. The first #149
+compatibility preparation implements process-only old/new repository identity
+selection for D02/D03; see [COMPATIBILITY.md](COMPATIBILITY.md). Defaults stay
+on the old identity. Live activation, environment propagation and external
+verification remain separately approved later-phase gates.
+
 1. **#147 audit PR:** these artifacts and regenerated navigation maps only. Review occurrence classes and external evidence requests. No runtime changes.
 2. **#149 compatibility PR:** prepare executable old/new URL handling and matching negative/positive fixtures; keep old identity active. Independent security review before implementation.
 3. **#148 presentation/docs PR:** resolve prose/manual-review records and labels, retain compatibility contracts. Canonical link activation is prepared but timed to #150.

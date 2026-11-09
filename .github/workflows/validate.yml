@@ -95,6 +95,10 @@ jobs:
         # offline: restic, docker and systemctl are stubbed on PATH.
         run: bash scripts/test-backup.sh
 
+      - name: Repository identity tests
+        # Offline selector validation and standalone verifier consistency.
+        run: bash scripts/test-repository-identity.sh
+
       - name: Shared path helper tests
         # Offline. Proves defaults equal today's paths, that an env-file value
         # is parsed and never executed, that every refused value is refused,

@@ -31,6 +31,9 @@
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
+# Cases control the selector explicitly; ignore the invoking shell setting.
+unset HYBRID_AI_REPOSITORY_SLUG
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 BOOTSTRAP="${SCRIPT_DIR}/bootstrap.sh"
@@ -794,6 +797,25 @@ EXTRA_ENV=(GIT_ORIGIN_URL="https://github.com/someone/other.git")
 rc=0; run_bootstrap "$R" "$WORK/r_foreign.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
 check "a foreign origin is refused with 4" "4" "$rc"
 
+# Explicit Haven clone/fetch and exact-origin validation; host paths stay old.
+R="$(new_root)"
+EXTRA_ENV=(HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven GIT_ORIGIN_URL=https://github.com/jimbobsyouruncle/haven.git)
+rc=0; run_bootstrap "$R" "$WORK/r_haven.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
+check "Haven-selected fresh bootstrap succeeds" "0" "$rc"
+have "Haven-selected bootstrap clones canonical URL" "$(cat "$GIT_LOG")" "clone --no-tags https://github.com/jimbobsyouruncle/haven.git"
+EXTRA_ENV=(HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven GIT_ORIGIN_URL=https://github.com/jimbobsyouruncle/haven.git)
+rc=0; run_bootstrap "$R" "$WORK/r_haven_again.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
+check "Haven-selected existing checkout succeeds" "0" "$rc"
+have "Haven-selected bootstrap fetches canonical URL" "$(cat "$GIT_LOG")" "fetch --prune --no-tags https://github.com/jimbobsyouruncle/haven.git"
+EXTRA_ENV=(HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven)
+rc=0; run_bootstrap "$R" "$WORK/r_haven_wrong.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
+check "Haven selection still rejects an origin for the other identity" "4" "$rc"
+for origin in https://user:pass@github.com/jimbobsyouruncle/haven.git https://github.com/someone/other.git; do
+  EXTRA_ENV=(HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven GIT_ORIGIN_URL="$origin")
+  rc=0; run_bootstrap "$R" "$WORK/r_haven_unsafe.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
+  check "Haven selection rejects credential-bearing/foreign origin" "4" "$rc"
+done
+
 # 5 -- polkit too old.
 R="$(new_root)"; mkdir -p "$R/etc/polkit-1/rules.d"
 EXTRA_ENV=(POLKIT_VERSION=0.105)
@@ -1223,7 +1245,8 @@ if git -C "$REPO" rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
   # deploy-wiring re-apply card (deploy/hybrid-ai-deploy@.service, comment-only),
   # and for the alias-restoration card (status/Caddyfile, which restored the
   # /openwebui and /chat 302 aliases). The capture unit is frozen and stays
-  # listed.
+  # listed. HAVEN-003 explicitly authorizes scripts/deploy-instance.sh, so
+  # only that path is removed for the repository-identity preparation.
   diff_out="$(git -C "$REPO" diff --stat origin/main -- \
     backup/backup-containers.sh \
     backup/system/hybrid-ai-backup-capture.service \
@@ -1231,7 +1254,6 @@ if git -C "$REPO" rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
     backup/system/hybrid-ai-backup-check.timer \
     backup/hybrid-ai-backup.service backup/hybrid-ai-backup.timer \
     backup/hybrid-ai-check.service backup/hybrid-ai-check.timer \
-    scripts/deploy-instance.sh \
     deploy/50-hybrid-ai-deploy.rules 2>/dev/null)"
   check "the out-of-scope files are byte-identical to origin/main" "" "$diff_out"
 else

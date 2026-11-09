@@ -24,6 +24,9 @@ set -Eeuo pipefail
 #   1  one or more cases failed
 # ---------------------------------------------------------------------------
 
+# Cases control the selector explicitly; ignore the invoking shell setting.
+unset HYBRID_AI_REPOSITORY_SLUG
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 SCRIPT="${SCRIPT_DIR}/deploy-instance.sh"
@@ -141,6 +144,31 @@ if has_line "$GIT_LOG" "reset --hard $SHA"; then
 else
   bad "did not reset to the sha"
 fi
+
+echo "== explicit repository selection and legacy override =="
+: > "$GIT_LOG"; : > "$DEPLOY_MARKER"
+rc="$(run_instance "$WORK/haven.out" HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven)"
+if [[ "$rc" == 0 ]] && has_line "$GIT_LOG" "fetch --prune --no-tags https://github.com/jimbobsyouruncle/haven.git"; then
+  ok "explicit Haven selection fetches the new canonical URL"
+else
+  bad "Haven selection did not fetch its canonical URL"
+fi
+: > "$GIT_LOG"
+rc="$(run_instance "$WORK/override.out" HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven HYBRID_AI_DEPLOY_PUBLIC_REMOTE=https://github.com/jimbobsyouruncle/hybrid-ai.git)"
+if [[ "$rc" == 0 ]] && has_line "$GIT_LOG" "fetch --prune --no-tags https://github.com/jimbobsyouruncle/hybrid-ai.git"; then
+  ok "existing public remote override takes precedence over selector"
+else
+  bad "existing public remote override lost precedence"
+fi
+for remote in http://github.com/jimbobsyouruncle/haven.git https://user:pass@github.com/jimbobsyouruncle/haven.git; do
+  : > "$GIT_LOG"
+  rc="$(run_instance "$WORK/unsafe.out" HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven HYBRID_AI_DEPLOY_PUBLIC_REMOTE="$remote")"
+  if [[ "$rc" == 5 ]] && ! has_line "$GIT_LOG" "fetch "; then
+    ok "unsafe override rejected before fetch with Haven selected"
+  else
+    bad "unsafe override was not rejected before fetch"
+  fi
+done
 
 echo "== refusals (distinct exit codes) =="
 # Bad sha: 2 -- run with a bad sha argument directly.
