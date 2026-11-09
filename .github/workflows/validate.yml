@@ -53,9 +53,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Haven launcher smoke tests
-        run: bash scripts/test-haven-launcher.sh
-
       - name: Python syntax check
         # status/app.py is bind-mounted straight into the container with no
         # build step, so a syntax error there ships undetected.

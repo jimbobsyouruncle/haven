@@ -148,7 +148,6 @@
 - runpod/README.md - runpod/ — Cloud Inference Plane
 ## scripts
 
-- scripts/README-haven.md - Haven local Codex launcher
 - scripts/bootstrap.sh
 - scripts/check-agent-context.sh - Check that the checked-in agent context maps are fresh.
 - scripts/check-git-remotes.sh - FILE: scripts/check-git-remotes.sh
@@ -161,7 +160,6 @@
 - scripts/deploy-instance.sh
 - scripts/deploy-remote.sh
 - scripts/deploy-trigger.sh
-- scripts/haven - FILE: scripts/haven
 - scripts/no-masked-literals-baseline.txt
 - scripts/prune-conversations.sh - FILE: scripts/prune-conversations.sh
 - scripts/prune-docker-cache.sh - FILE: scripts/prune-docker-cache.sh
@@ -203,7 +201,6 @@
 - scripts/test-doctor-sandbox-image.sh - FILE: scripts/test-doctor-sandbox-image.sh
 - scripts/test-doctor-startup-grace.sh - FILE: scripts/test-doctor-startup-grace.sh
 - scripts/test-env-pin-migration.sh - FILE: scripts/test-env-pin-migration.sh
-- scripts/test-haven-launcher.sh - FILE: scripts/test-haven-launcher.sh
 - scripts/test-hermes-nonroot-preflight.sh - FILE: scripts/test-hermes-nonroot-preflight.sh
 - scripts/test-hybrid-ai-env.sh - FILE: scripts/test-hybrid-ai-env.sh
 - scripts/test-install-auth-env-leak.sh - FILE: scripts/test-install-auth-env-leak.sh

@@ -279,7 +279,7 @@ Inventory only credential names, owners, consumers, scopes and dependencies—**
 
 ### GitHub backlog and epic lifecycle
 
-GitHub Issues/Projects are proposed as the canonical cross-repository backlog. Codex performs owner-scoped implementation; a future Hermes PM may plan and groom issues under least privilege, without self-granted merge/deploy authority. The local `haven new-epic` presents prioritized, deduplicated candidate epics and child issues; `haven next` verifies epic closure eligibility before proposing another issue. Both commands are **read-only**; epic creation, issue updates and closure require explicit separate owner approval. See [ADR-0004](adr/0004-github-epic-governance.md) and [launcher guide](../../scripts/README-haven.md).
+GitHub Issues/Projects are proposed as the canonical cross-repository backlog. Codex performs owner-scoped implementation; a future Hermes PM may plan and groom issues under least privilege, without self-granted merge/deploy authority. The developer-local `haven new-epic` presents prioritized, deduplicated candidate epics and child issues; `haven next` verifies epic closure eligibility before proposing another issue. Both commands are **read-only**; epic creation, issue updates and closure require explicit separate owner approval. See [ADR-0004](adr/0004-github-epic-governance.md) and locally managed `~/.local/bin/haven` launcher.
 
 ### RunPod worker contract
 

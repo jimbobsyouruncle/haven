@@ -107,7 +107,7 @@ When reviewing an epic or selecting its next issue:
 
 A Closure Card enumerates all child issues (including deferred/transferred), linked PRs and CI evidence, any unmet criteria, cross-repo dependencies and proposed GitHub changes. A deferral is nonblocking only when explicitly owner-approved and tracked with a successor issue, owner and milestone. End with `Awaiting approval to close epic #NUMBER.` A closure approval is separate from implementation approval.
 
-For discovery, `haven new-epic` reads architecture, ADRs, migration plans and live GitHub issues/PRs, deduplicates existing work, and presents a prioritized shortlist of epics with child issue acceptance tests. It never creates GitHub issues without explicit owner approval. See `scripts/README-haven.md`.
+For discovery, `haven new-epic` reads architecture, ADRs, migration plans and live GitHub issues/PRs, deduplicates existing work, and presents a prioritized shortlist of epics with child issue acceptance tests. It never creates GitHub issues without explicit owner approval. See the locally managed `~/.local/bin/haven` launcher.
 
 For Haven epic #146, preserve the owner's acceptance of #147's public-source audit as completed: unresolved manual-review records belong to #148/#149, and external verification gates belong to the appropriate #149/#150/#151 milestones.
 
@@ -189,4 +189,4 @@ A private RunPod endpoint remains cloud-hosted; protect data in transit and at r
 
 A development task is complete only when scoped implementation, applicable validation, security review, the PR artifact and readiness conditions above, relevant upgrade/rollback notes and approval requirements are satisfied. Existing successful CI evidence counts; owner-only later-phase operations remain assigned to their approved milestones. Report unknowns and blocked tests explicitly. Never claim the current Pi deployment has been changed or verified based solely on repository inspection.
 
-**Related design:** `docs/haven/ARCHITECTURE.md`, `docs/haven/DECISIONS.md`, `docs/haven/MIGRATION.md`, and `scripts/README-haven.md`. This file is the repository-root operating contract, not a grant of permissions.
+**Related design:** `docs/haven/ARCHITECTURE.md`, `docs/haven/DECISIONS.md`, `docs/haven/MIGRATION.md`, and the locally managed `~/.local/bin/haven` launcher. This file is the repository-root operating contract, not a grant of permissions.

@@ -15,4 +15,4 @@ This is the index of design commitments, **not** evidence of deployed functional
 
 Status vocabulary: **approved** means explicit owner decision on principle; **proposed** means not ratified; **implemented** requires code and relevant passing tests; **deployed** requires applicable runtime evidence. These states are not interchangeable. Explicit owner decisions and enforced security policy take precedence over proposed ADRs. Record a proposed superseding ADR rather than silently changing approved requirements.
 
-See [migration gates](MIGRATION.md), [root agent instructions](../../AGENTS.md), and [local launcher](../../scripts/README-haven.md).
+See [migration gates](MIGRATION.md), [root agent instructions](../../AGENTS.md), and locally managed `~/.local/bin/haven` launcher.
