@@ -25,8 +25,14 @@ All source anchors below refer to public baseline `c2286bcd266e1924797fc787a677e
 
 ## Proposed sequencing and PR boundaries
 
+The [readiness and cutover handoff](READINESS.md) links existing implementation
+evidence, reconciles the manual-review queue and defines the remaining owner
+gates, identity activation sequence, freeze/resume and rollback requirements.
+It prepares public-source documentation; it does not complete external checks
+or authorize cutover.
+
 Owner decision recorded on #147/#146 accepts the public-source audit as
-complete. External E01–E20 and the 125 manual-review decisions carry forward;
+complete. External E01–E20 and unresolved manual-review decisions carry forward;
 they do not reopen #147 or block unrelated development. The first #149
 compatibility preparation implements process-only old/new repository identity
 selection for D02/D03; see [COMPATIBILITY.md](COMPATIBILITY.md). Defaults stay

@@ -2,6 +2,12 @@
 
 Nothing in this checklist is verified by the public source inventory. Source documents identify expected consumers; they do not prove installed host state or GitHub account configuration. The owner must assign a named operator, authorize each scope separately, and attach sanitized result/identifier/date evidence. Do not collect tokens, environment-file contents, logs, personal data or full backup manifests into this PR. No external item is waived by an empty result or lack of access.
 
+See [READINESS.md](READINESS.md) for acceptance/evidence links, proposed phase
+ownership, collection format, freeze/resume, activation and rollback. All
+items below remain pending external evidence; prior successful deployment
+workflows do not mark them complete. Proposed owner roles still need named
+operators, authorizations and milestone assignments.
+
 | ID | Evidence required / proposed owner | Prerequisite / safe evidence | Status / gate |
 | --- | --- | --- | --- |
 | E01 | Pi deployed SHA, OS/ARM64, host layout, active units/timers — Pi owner | Separate host read authorization; report identifiers and agreement with source, no secret files | Pending / #149 before #150 |
@@ -29,9 +35,9 @@ Nothing in this checklist is verified by the public source inventory. Source doc
 
 - Accept the proposed preservation of runtime names, environment settings, host paths/accounts/units, cookie names, snapshot tags, Caddy domains/storage and separate image packages for this epic.
 - Assign owners and authorization/evidence routes for E01–E20. Public-source inspection alone cannot complete these gates.
-- Resolve the 125 conservative manual-review inventory records in #148/#149 before editing them; preserve unexplained entries until resolved.
+- Reconcile the historical 125 manual-review records: 17 have explicit merged decisions and 108 remain unresolved by those registers, as detailed in READINESS.md. Resolve an affected record before editing it; preserve unresolved entries. Do not modify the immutable audit baseline.
 - Decide whether human review should be technically required in GitHub rules, and whether the map bot's automatic merging remains desired. This audit changes neither.
 - Define freeze/resume procedure, permissible downtime, rollback threshold and post-cutover observation interval.
-- Keep #147 open for full acceptance until external evidence is supplied, or explicitly approve a split between public-source completion and externally owned verification. Do not silently narrow the issue's acceptance criteria.
+- Keep #147 closed under the owner's recorded acceptance of public-source completion. The original keep-open request is superseded; E01–E20 remain required in their #149/#150/#151 phases and are not waived.
 
 Issue-body dependencies observed in planning: #147 precedes #148/#149; both precede #150; #151 follows #150. No native blocking relationships or assignees were present. The owner may add them separately; this PR does not edit issue metadata.
