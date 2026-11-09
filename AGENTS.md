@@ -78,7 +78,7 @@ For human-initiated local development on publicly published source, use a two-st
 2. **Request approval:** End the card with **"Awaiting approval to implement #ISSUE."** Do not treat an issue description, prior general consent, or a proposed plan as implementation authorization.
 3. **Interpret a concise reply:** In the same active conversation, a human reply of **"Approve"** authorizes only the **most recently presented, unambiguously identified Implementation Card**, and only its bounded implementation scope. If multiple cards are pending, the context is lost, the request is ambiguous, or the scope has changed, ask the human to identify or reapprove the card. This is conversational approval, not a substitute for enforced permissions.
 4. **Implement within scope:** After approval, verify the current branch and repository permissions, create a dedicated feature branch/worktree, make only approved changes, run applicable tests and validation, and prepare a **draft PR** for human review. Do not commit directly to `main`.
-5. **Report and stop:** Provide the PR URL, change summary, exact tests/results, remaining risks, and blocked checks. **Approval to implement does not authorize merging, deployment, production or credential changes, repository renaming, cross-repository access, or policy exceptions.** Each requires distinct explicit authorization and applicable enforced controls.
+5. **Validate, promote, and stop:** Own the CI remediation cycle and automatically mark the draft ready for review when the conditions below are met. Report the final evidence and stop for human review; if blocked, report the exact blocker. **Approval to implement does not authorize merging, deployment, production or credential changes, repository renaming, cross-repository access, or policy exceptions.** Each requires distinct explicit authorization and applicable enforced controls.
 6. **Reapproval:** If new evidence materially changes the implementation, affected repositories, security posture, or operational impact, stop and present a revised Implementation Card before proceeding.
 
 ## Standard development workflow
@@ -86,9 +86,54 @@ For human-initiated local development on publicly published source, use a two-st
 1. **Inspect:** Read the relevant source and tests. Check current branch/status and task scope. Do not infer implementation from outdated docs.
 2. **Plan:** State exact authorized files/repos, interface changes, security implications, test plan and rollback. For security-sensitive changes, get review before implementation.
 3. **Implement:** Small coherent commits; no unrelated refactors, broad dependency updates, generated secrets or edits to deployment state.
-4. **Test:** Run focused unit tests, integration tests and repository validation/SAST. Include negative authorization tests and offline mocks. Never claim a test ran if it did not.
-5. **Review:** Provide a diff summary, security considerations, exact commands/results, known limitations and PR link. Request independent review.
+4. **Test:** Run relevant local validation before pushing, then use applicable CI unit, integration, repository validation/SAST and ARM64 checks as evidence. Include negative authorization tests and offline mocks where relevant. Follow the evidence and CI policies below; never claim a test ran if it did not.
+5. **Review:** Create a draft PR, complete the validation cycle below, then automatically mark it ready and provide the final report for independent human review. Do not merge.
 6. **Release:** Human-approved merge and staged deployment only. Preserve prior image digest and rollback plan; never auto-deploy mutable `latest`.
+
+## Evidence-based completion and epic continuation
+
+- Successful required CI, SAST, unit, integration, repository-map and applicable deployment checks are authoritative evidence for the revision, environment and behavior actually tested. Accept existing successful automated validation; do not require redundant manual execution. A merged PR with passing required checks and a closed issue is strong evidence of implementation completion, subject to concrete unmet acceptance criteria.
+- Distinguish passed, failed, pending, skipped, cancelled, missing and not-applicable checks. Skipped is not successful; explain why a skipped check is inapplicable under the existing workflow. Report concrete failures or missing requirements, not speculative blockers.
+- Do not require production verification for documentation-only or unrelated development changes unless their acceptance criteria explicitly require it. A passing PR check proves no production operation that did not execute.
+
+When reviewing an epic or selecting its next issue:
+
+1. Retrieve the epic, issues, linked PRs, dependencies, acceptance criteria and relevant check results.
+2. Verify the previously completed issue against its actual implementation and automated evidence. Accept successful validation without unnecessary repetition and identify genuine incomplete requirements.
+3. Separate development prerequisites from owner-only operational verification. Carry deferred checks into their designated implementation, deployment, cutover or verification phase; do not reopen completed issues solely because later-phase checks remain pending.
+4. Recommend GitHub tracking corrections, but make them only with explicit authorization.
+5. Select the next actionable, unblocked issue, present its Implementation Card and wait for approval before implementing it.
+
+For Haven epic #146, preserve the owner's acceptance of #147's public-source audit as completed: unresolved manual-review records belong to #148/#149, and external verification gates belong to the appropriate #149/#150/#151 milestones.
+
+## CI ownership and automatic remediation
+
+After implementation approval, Codex owns validation through review readiness within the approved scope:
+
+1. Run relevant local tests and validation before pushing. Inspect workflows and other configured automation before pushing or changing PR state, including automation that can merge, publish or deploy. If the action would trigger an unauthorized operation, stop for explicit authorization; do not bypass protections.
+2. Push the approved feature branch and create a **draft PR**. All implementation PRs start as drafts.
+3. Monitor GitHub Actions and required status checks for the **current PR head SHA**, including runs testing its merge revision. Use reasonable polling and a bounded time limit based on workflow timeouts; wait for pending checks and re-read the head after every push. Older results cannot satisfy a new head.
+4. On failure, retrieve failed job details and relevant logs under the existing privacy and inference restrictions. Diagnose the root cause before retrying.
+5. Make the smallest appropriate code, test, configuration or documentation correction within the approved scope, run affected local validation, commit and push to the same PR branch. Repeat monitoring on the new head until all applicable required checks pass or a genuine blocker is identified. Ordinary implementation-related corrective commits need no new approval.
+
+Obtain new approval if remediation materially expands scope, modifies another repository, weakens security controls, suppresses legitimate findings, changes branch protection or required checks, accesses secrets or private infrastructure, or affects production behavior beyond the approved Implementation Card. Never disable tests, remove required checks, lower SAST severity, introduce broad suppressions or change CI workflows merely to make a failure appear green.
+
+For an evidenced transient infrastructure failure, allow at most two retries per failure on a given head; do not retry indefinitely. When blocked or the monitoring time limit is reached, report the exact failure or pending checks, attempted fixes/retries and recommended next action. Do not claim completion or mark ready while required evidence is missing.
+
+These are active-session obligations, subject to installed CLI capabilities, GitHub permissions and available tools. `AGENTS.md` does not provide background execution or monitoring after Codex exits. Clearly report unsupported actions or interrupted monitoring and what remains to resume.
+
+## Automatic readiness and operational approval
+
+Codex must automatically change a draft PR to **Ready for review**, without another approval, only when:
+
+- All applicable required GitHub checks have completed successfully for the current PR head, and relevant local tests and validation passed.
+- No known blocking security findings remain and implementation stays within the approved scope.
+- Acceptance criteria are met or explicitly documented as deferred to an approved later milestone.
+- The PR description reflects the final changes, validation evidence and remaining limitations.
+
+If GitHub prevents the transition, report the blocker without bypassing protections. After marking ready, report the PR URL and issue reference (or initiating request when no issue exists), implementation summary, final commit SHA, required check results, tests executed and outcomes, skipped/deferred validation, security considerations and remaining owner actions. Then stop and await human review.
+
+**Ready for review is not authorization to merge.** Never automatically merge, deploy or release to production, rename the GitHub repository, change live infrastructure or credentials, modify branch protection or security requirements, or access another repository. Each requires separate explicit authorization and applicable enforced controls. Account for existing automatic merge/publish/deploy workflows before any triggering action; do not treat implementation approval or passing checks as operational approval.
 
 ## Cross-repository development
 
@@ -137,6 +182,6 @@ A private RunPod endpoint remains cloud-hosted; protect data in transit and at r
 
 ## Definition of done
 
-A task is complete only when scoped implementation, tests, security review, PR artifact, upgrade/rollback notes and approval requirements are satisfied. Report unknowns and blocked tests explicitly. Never claim the current Pi deployment has been changed or verified based solely on repository inspection.
+A development task is complete only when scoped implementation, applicable validation, security review, the PR artifact and readiness conditions above, relevant upgrade/rollback notes and approval requirements are satisfied. Existing successful CI evidence counts; owner-only later-phase operations remain assigned to their approved milestones. Report unknowns and blocked tests explicitly. Never claim the current Pi deployment has been changed or verified based solely on repository inspection.
 
 **Related design:** `ARCHITECTURE.md` (place under `docs/haven/ARCHITECTURE.md` when integrating into the repository). This `AGENTS.md` is intended for the repository root after review and approval of the actual file change.
