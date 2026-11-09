@@ -170,6 +170,12 @@
 - status
 - proxy
 
+## docs/haven/rename/audit.py
+- def git(*args)
+- def classify(path, line, match, kind)
+- def render()
+- def main()
+
 ## doctor.sh
 - section()
 - pass()

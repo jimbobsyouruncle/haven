@@ -86,6 +86,16 @@
 ## docs/haven
 
 - docs/haven/ARCHITECTURE.md - Haven — Architecture Design
+## docs/haven/rename
+
+- docs/haven/rename/DEPENDENCIES.md - Rename dependencies, risks and execution gates
+- docs/haven/rename/EXTERNAL.md - External evidence checklist — pending authorization
+- docs/haven/rename/README.md - HAVEN-001 public-source rename audit
+- docs/haven/rename/VALIDATION.md - Validation and acceptance evidence
+- docs/haven/rename/audit.py - Reproduce the public, immutable #147 rename inventory; never inspect local state.
+- docs/haven/rename/inventory.csv
+- docs/haven/rename/source-manifest.json
+- docs/haven/rename/summary.json
 ## hermes
 
 - hermes/Dockerfile

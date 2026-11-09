@@ -1,0 +1,867 @@
+[
+  {
+    "path": ".env.example",
+    "blob": "e6a45fd8117a9a2cde17e130fc6f6d7279d9efe0",
+    "sha256": "a9dca87af2bbcd487d38f0ac4fda59f1e1135c7904ca3c894783fdcf0e075227"
+  },
+  {
+    "path": ".gitattributes",
+    "blob": "37b3a41183518e50974e1cd1082b0cd83a3c65f3",
+    "sha256": "f52e34cced3a5004cd6de18c6b8a35c032bb0b18006c441e40192a25886873b9"
+  },
+  {
+    "path": ".github/CICD.md",
+    "blob": "93f86030ee3cf0dc2dd93a5823ffe52c34d7c321",
+    "sha256": "e102c8fdd9d37ca62031d15b78260726d06345f82a7e78378ebd59c1b1255760"
+  },
+  {
+    "path": ".github/dependabot.yml",
+    "blob": "b5298cd523c79048524bc6ea29a43edfd86163a0",
+    "sha256": "95f57af0520b9098e4ff4fd780af735f68d3e41e5247e9dc866154a3d1a1ef58"
+  },
+  {
+    "path": ".github/workflows/agent-context-committer.yml",
+    "blob": "e722d35778c290af1a6b3a6d1044600c9607da6e",
+    "sha256": "8c7ac095512400e02ebf12620f25f7b654b18f2a33082e2dce2efe3bd302ba0f"
+  },
+  {
+    "path": ".github/workflows/agent-context.yml",
+    "blob": "67b802fcd0c8c26999207c8e9e77db4361d2dfc6",
+    "sha256": "e9a437bfa61c3d155fb139797d74079add3440c94e6188d0ceb130beb06e8484"
+  },
+  {
+    "path": ".github/workflows/deploy.yml",
+    "blob": "16ab64640431693b11fa3a6aa90f3b2afde8938a",
+    "sha256": "48cabf4087e0253ba99c5b6a90c170f4f29c48b9f169325cbda4d1a7b68e156b"
+  },
+  {
+    "path": ".github/workflows/sandbox-image.yml",
+    "blob": "8010ac4dc4f72af8679d2528e4193ab85171fcee",
+    "sha256": "70700d7fa56c9b149e7a4e007d9502099bd76dd01a8360de9729987c8d8d4f0b"
+  },
+  {
+    "path": ".github/workflows/sast-checks.yml",
+    "blob": "474e5d215c191530b12de70cd519d4a6c7d4b6f3",
+    "sha256": "c98ef14ebabe0a2ab8307e783a08274578c49c55334f6fe0b3b09c822b514f56"
+  },
+  {
+    "path": ".github/workflows/validate.yml",
+    "blob": "5c496bc5a8d4ae28e2c70f0201d192cee37186c3",
+    "sha256": "da5b8d3076a4fc39e33fa8809e739488c80d81e8c460b0a51e207ebc4406f237"
+  },
+  {
+    "path": ".gitignore",
+    "blob": "21ef6a0c8ae12c036ca66a086b757b9839e197c5",
+    "sha256": "0b461e962e2f06f34a0c2c0c9cfb316abe5e5963366323baaafea073de9e6ea9"
+  },
+  {
+    "path": ".ip-literal-allowlist",
+    "blob": "e17ca97d4ea022e4348c64cbf68eced733aecfe9",
+    "sha256": "c6a5d87fb68ffe0359d630f7e4b172cb8ab9091aa53d2107086e8b3b95fd25aa"
+  },
+  {
+    "path": "AGENTS.md",
+    "blob": "5606d4077592fca7f56b092d6fc63985f8327465",
+    "sha256": "c87154785ae3f4a5726d6b768fe81b2a1e976e29f4caff004910f6e7735c32cb"
+  },
+  {
+    "path": "CODE_INDEX.md",
+    "blob": "1b89a4810b08cfd102358566dca63bd453b34c63",
+    "sha256": "c6fc145f0bc3aef46c5c2d8567648d0fbd9cd8ae6747d7212e5166ac93950f5e"
+  },
+  {
+    "path": "LICENSE",
+    "blob": "d9853ccb764810b2062cc18993ef9ddf49891dd4",
+    "sha256": "8c035343f648f33c63e79ca9284aa49f65df825a37ec520ab90c051c4f25f012"
+  },
+  {
+    "path": "README.md",
+    "blob": "1e8bf4dd8f51cf0ae0ea83db67fcbb90e05db2fc",
+    "sha256": "d19cd3c413e5c03555252f2deb41ed7c679fb8d4c6c7a70d8b472d1878c3cbed"
+  },
+  {
+    "path": "REPO_MAP.md",
+    "blob": "8c4d224d44003e313a6b3224b9f84fd11754f794",
+    "sha256": "981d413aa08bac68f8474926ff298957c9db4aa24091c5ad3050e3e6a463044e"
+  },
+  {
+    "path": "SECURITY.md",
+    "blob": "d8429f7902c92dc2958404c1225bf7bd7017ae39",
+    "sha256": "9da27cc12e705240259b974cd5376542002d99510c3b3bad3e84a5b0185fad24"
+  },
+  {
+    "path": "SECURITY_SUMMARY.md",
+    "blob": "cad1bcf45524555e9397269b855fc5b4a1abdb44",
+    "sha256": "23586e6f049deececd00ef74d8e3bcd879a9554cba4987713e667a4e64b70cee"
+  },
+  {
+    "path": "auth/Dockerfile",
+    "blob": "d1e60a3efd76ee7f96d6a97f89977a193be76946",
+    "sha256": "7dc5af363e687c89ff9d100317331682cc28cba59cb767eaccc40ea07b530478"
+  },
+  {
+    "path": "auth/README.md",
+    "blob": "db219ce473fa7eb016f5fab0d6e6449fb5f8567b",
+    "sha256": "461ec8d547afea3c77f9a36327dcf804dcfc4f19a8abe853c6b1877938d211bd"
+  },
+  {
+    "path": "auth/app.py",
+    "blob": "e6427af97098fd3e5ae7a720b9b10f46247406d9",
+    "sha256": "349067d2179e87559b471135388db6fd14db9c465592846235595f8f7186a451"
+  },
+  {
+    "path": "auth/requirements-test.txt",
+    "blob": "785723ee91e595d594112ad73ce63d445ecc8e1a",
+    "sha256": "2364e622edb619c5f95ccbacd483e237b28d888233df7a00ee03322403b3a484"
+  },
+  {
+    "path": "auth/test_auth.py",
+    "blob": "89fc7e33966cb97b78f879e5ef8648926eaa20a8",
+    "sha256": "959deefced41a9f8e82eac71e241221176f50248641ea895fe341466a8f503a0"
+  },
+  {
+    "path": "backup/README.md",
+    "blob": "ef9ebd5c440ac3cdfacffb0c862badcdc2b01553",
+    "sha256": "5875e988b7b12762ec0e1d90d6d6bda515d4b1a086c893ca12e1641101218abd"
+  },
+  {
+    "path": "backup/backup-containers.sh",
+    "blob": "53b92c48ae231d908e4c8a5300a1d6f69fed4ec9",
+    "sha256": "26161c60f11ce91073b4d1017a526967f1919fc3ffa115654c845cf783510679"
+  },
+  {
+    "path": "backup/backup.sh",
+    "blob": "79a02e1a98fa364efbe082c98ca68a45e458b15a",
+    "sha256": "36e7ee622284085b43c726560a712c9fb50ca9ab8aa571198067c5e705c33056"
+  },
+  {
+    "path": "backup/hybrid-ai-backup.service",
+    "blob": "942bac8bf706769489f34cf89a2395ed0810dcaf",
+    "sha256": "b088aa1a160a6ce11dd411aa6afa44fde30ef3dc1b2e12657e878da90c0a196e"
+  },
+  {
+    "path": "backup/hybrid-ai-backup.timer",
+    "blob": "2e508ff3c007831e4e50fd41352c35f80a97d010",
+    "sha256": "64dd805add6e4a35942974f667b78f6871bcb9ab54191005fa7caf11c4d718f5"
+  },
+  {
+    "path": "backup/hybrid-ai-check.service",
+    "blob": "790c6cb36b863b3e644edcba89d48753c1e623d1",
+    "sha256": "4469a0a4789fd0a0ec097033b503b312d27a158b038c8f15d2b0898ea50ce878"
+  },
+  {
+    "path": "backup/hybrid-ai-check.timer",
+    "blob": "a504685d624f83ef331fe6dc4003b219221f6035",
+    "sha256": "dc6e08f2727edc5554be71d9c26d895240699149687624d4ba7a4fb4de96a4dd"
+  },
+  {
+    "path": "backup/restore.sh",
+    "blob": "6714113c23f90a954c1b72be1add9df267b77948",
+    "sha256": "c6cc9fd135c183bea89294f24a28d4b31a9bdd062f3c39022c839d2897132dfc"
+  },
+  {
+    "path": "backup/system/hybrid-ai-backup-capture.service",
+    "blob": "ee2aa32a14e656f9f2ad8fa9c5c772f5283973fe",
+    "sha256": "c14ffb66091fb85bce251d01d15c1279fb415d4518402bc72949573676ee5424"
+  },
+  {
+    "path": "backup/system/hybrid-ai-backup-capture.timer",
+    "blob": "8fbddb25a5692787c53db09e9fb1ef5063cf1e8d",
+    "sha256": "cec1d2f0fbcf8b52729d871d72d142f10e43ff01416bf16c2306d6eb5fd2e412"
+  },
+  {
+    "path": "backup/system/hybrid-ai-backup-check.service",
+    "blob": "972f11e19b90d13c9fd0af165b6fd4c7c9a6e034",
+    "sha256": "1887ff869cfcade9b508e8acdc4731000427e41b31d39eb49e9fc55643b89c59"
+  },
+  {
+    "path": "backup/system/hybrid-ai-backup-check.timer",
+    "blob": "bbbb6ed0b103127deab7f40948931bf7c10a8dce",
+    "sha256": "999a7d6a23329a79fd34a3156f89384369550201e87f8b482dde6f0d8a762d31"
+  },
+  {
+    "path": "backup/system/hybrid-ai-backup-upload.service",
+    "blob": "5af0c58153413660913a1231478a84b8c641599a",
+    "sha256": "0eb057306a645e1afb50bf2f83127a256ca1adaa36a53f7c90dc0070b2c95b9e"
+  },
+  {
+    "path": "caddy/Dockerfile",
+    "blob": "14865619251005e88f6461cd94c08192b0c1c2fa",
+    "sha256": "f7273d4180bf5afbb61747851520a886598aa78cef5d5675a2aff1e9a388c001"
+  },
+  {
+    "path": "collect-diagnostics.sh",
+    "blob": "2e018887ddce53d233718f2aef03bbde717f29e6",
+    "sha256": "62bfde99315730b03d4574e3a5c9bd49db2ed7430e2705a65f23d452b770b723"
+  },
+  {
+    "path": "deploy/50-hybrid-ai-deploy.rules",
+    "blob": "9196e491c915d8fe6d92ee788b30fedc6a0cdd23",
+    "sha256": "098b94e5a03543823d6c1271c820f3b81699b2b110ee9c62502925d12968b62f"
+  },
+  {
+    "path": "deploy/README.md",
+    "blob": "9988e5cb9575817292c80303e44ca7eddf1c6650",
+    "sha256": "37b01a164e9d60ef12aaf98ca56087de7442805202e02501154987f4d3d8e4f4"
+  },
+  {
+    "path": "deploy/hybrid-ai-deploy@.service",
+    "blob": "5772dd3db0b38532a7476fc8eed646fd7432390c",
+    "sha256": "8eaa42e3e3db8df44be9d7a9e848f8070255b946f736f93de2bcec712c3c8c09"
+  },
+  {
+    "path": "deploy/hybrid-ai-docker-prune.service",
+    "blob": "e52b3fcefcaff289f3f9e2a234c36e9850629493",
+    "sha256": "3fe7cb219bfbf5c7587a5d8e2e51afbf456a24c496407d46c896be4571071d63"
+  },
+  {
+    "path": "deploy/hybrid-ai-docker-prune.timer",
+    "blob": "464dbdbf0853ac90c315fe18a21f5ebc3df6bd0c",
+    "sha256": "47a77b919c8012d17203669201bc51bbf795d4cbd6e14ab28e97a5e5e27341ce"
+  },
+  {
+    "path": "deploy/hybrid-ai-firewall.service",
+    "blob": "89de3e5ca0aff68a8db2c9b95027e96393efd2e2",
+    "sha256": "09d93e52c727054484fdb3830dc5fc56d525faae18641bf3a55c29ba3f06c2d5"
+  },
+  {
+    "path": "deploy/hybrid-ai-prune.service",
+    "blob": "96104a7baa7cf06fea39acb3d51d1c9f6a8c747d",
+    "sha256": "d3954d9c4e1fa14aa5decf11f3bca09a5f62451a382bf159f0948387f2172863"
+  },
+  {
+    "path": "deploy/hybrid-ai-prune.timer",
+    "blob": "3a49a027720af5af1b9b10c04d9b4e4c448a0aee",
+    "sha256": "369dafb46a1007f41133bda3b9141ed1bf12ca36fa3741be193f36900f81d9d3"
+  },
+  {
+    "path": "deploy/hybrid-ai-tls-check.service",
+    "blob": "19051c4b4eceead81f5343ea9530066f29c7729c",
+    "sha256": "1ae86cfd386e9daa453a3a95b8952763b675714166e2b4793d72b6300c8d4529"
+  },
+  {
+    "path": "deploy/hybrid-ai-tls-check.timer",
+    "blob": "924c473ccd511004ef77035c824e4ecdc968eaf6",
+    "sha256": "a29458d1a36f47ac4f65a5f0703322cdd7ac4584da38fb0b91117a6391ce87a3"
+  },
+  {
+    "path": "deploy/logrotate/hybrid-ai-tls",
+    "blob": "0df9fa0ca343df2742a467c5741ead0d03546f54",
+    "sha256": "1290bb564212ea26f94dca8032bd07fe6b980763a37d8cb26ad9855fa1301ecd"
+  },
+  {
+    "path": "docker-compose.yml",
+    "blob": "5ef147a79ea10a363fe400a2e9f70ce7fad042bc",
+    "sha256": "8b318c3b50d70c9821973b208baf3fb6d61dc76ef927c4b8ccf3e6c334433a2f"
+  },
+  {
+    "path": "docker-compose.yml.tmpl",
+    "blob": "ed289bf0c3d0d02d8a028883905d856a85f46798",
+    "sha256": "b5c1973de80895076aec23935e69fb510452704439f8898e4a3a940edde7c8e4"
+  },
+  {
+    "path": "docs/BUILDER_PUBLISH_SMOKE_TEST.md",
+    "blob": "25e52f816992aeb918df9ca35c46669d87d4a93e",
+    "sha256": "69ce1068013b063c2f50a2e26a09a6217cdcc79590ec0eab6076d39fb47f6fc8"
+  },
+  {
+    "path": "docs/TROUBLESHOOTING.md",
+    "blob": "3956e5f155dede4a3ff8999b43e77a39ffc9adf3",
+    "sha256": "cbf4d4881a96a6dc3ba8eed415bf429430e0745ca3d9cbbe800bc9054d450224"
+  },
+  {
+    "path": "docs/agent-context-index-design.md",
+    "blob": "dd66942dd2519667696d0ac42b5fd456c6da5c21",
+    "sha256": "c2d4239ba6b55c2c3c720bde343038c788b2bc4a6a1cede2d971ee40394e1854"
+  },
+  {
+    "path": "docs/haven/ARCHITECTURE.md",
+    "blob": "fc3188eb36e1ca3ba173b1feee5569c48e7e3216",
+    "sha256": "41adf4cf6e9be78d9efc685b77d798b63357cdb2917b6f9cbdccd0c50aa9354f"
+  },
+  {
+    "path": "docs/tls-acme-design.md",
+    "blob": "9bddc3d70f9b57801c64b91c280b4602b5593ec5",
+    "sha256": "d1dca07f565bf840bce116f84802f44bb085abf29682099753119d872107a005"
+  },
+  {
+    "path": "docs/tls-renewal-health.md",
+    "blob": "b527663f69fa49945c50f4ed9dace6c04232c304",
+    "sha256": "de267f5a5956238a96e9d0ca70dd53536b7fc70d9caabad86c551df5129cee30"
+  },
+  {
+    "path": "doctor.sh",
+    "blob": "f726e620a038a2d11c205895b748557bd8f99a19",
+    "sha256": "c111e93b03826a3c54045f2382164d4d4af23c0d9dfa23210d7d16d409a276d5"
+  },
+  {
+    "path": "hermes/Dockerfile",
+    "blob": "9b8f4fb87c011ab573276bf225ce25bc0c6d598e",
+    "sha256": "87deb0cec86e04a7bd3a45d7b1d5fed7c2c7abc7baf8fe3ff35d5d065606c0d6"
+  },
+  {
+    "path": "hermes/README.md",
+    "blob": "574c97308db3b3f640a229a5210ab28f29d08b27",
+    "sha256": "0ac52d3ba1c939ba39c42336709b484f5cfa788a634d14f1cf229de8f47a3d97"
+  },
+  {
+    "path": "hermes/agent-hooks/secret-guard.py",
+    "blob": "09f8aeefdee4eb712a853d224ab61f182876a9ca",
+    "sha256": "b6419cc2b55276be93a0063dc51f739a2dc14c65868506a031d5e8f5bc4202ce"
+  },
+  {
+    "path": "hermes/docker-compose.hermes.yml",
+    "blob": "fd54206136b6d7a1e6697e809fca2743dc382be7",
+    "sha256": "ebee94af068b8a0b86c94016fc00c863b2863241c87227d77632156715d281e6"
+  },
+  {
+    "path": "hermes/patches/0001-kanban-prompt-body-chars.patch",
+    "blob": "b33caac394057d081675df785a21591c2fbcc982",
+    "sha256": "041207e350173586014723a22634aaa76c8ae33132a32e6557f5cf90c09b58f4"
+  },
+  {
+    "path": "install.sh",
+    "blob": "a91f2ae9e836ce75206305d059d35220c31bcf3f",
+    "sha256": "7b87b8190f52543d6cb0aefd3c17bbf91476bdcae5fe848e844c22032711b582"
+  },
+  {
+    "path": "openhands/AGENTS.md",
+    "blob": "ed2109d82043983f52818de786c86b9eb8e4c107",
+    "sha256": "efa28c3e22566d9793fd8e74f30697e68d4172f28efac492998dde4e120e812f"
+  },
+  {
+    "path": "openhands/README.md",
+    "blob": "a8df8adbf8abe02b464dd4e45075676532fcd066",
+    "sha256": "b9af7e46b8b8ad22abe5b604a7be9fa71c0c7021d9910f2919459aeff1691a46"
+  },
+  {
+    "path": "openhands/agent-server/Dockerfile",
+    "blob": "cbe89470c1ac651ebcb5ff1c538a4f8fc348ca9a",
+    "sha256": "1729ac8a50a20ef061f76fbbfa797eea2a1ce0468a97e119aed3e2f9d3e04f16"
+  },
+  {
+    "path": "openhands/docker-compose.openhands.yml",
+    "blob": "085c1eb2d3691d13a148a8171ac707c571d8a0fb",
+    "sha256": "f1268dc88c51ce75279903049c0ab1226d3cafc34dd26b3008fe5f7fe2b1c818"
+  },
+  {
+    "path": "openhands/prompts/feature.md",
+    "blob": "154423b96d80e972543df9405ce58a18f15f151e",
+    "sha256": "9f27826a18452032b5c60e3b1187dd87a29e37cc813efe572754396fb7ae597b"
+  },
+  {
+    "path": "openhands/prompts/fix-from-diagnostics.md",
+    "blob": "7749c40bd041bdfea24877a2f0a1716e99662fc2",
+    "sha256": "c4a14e1a67a4a72d9f16db4cd5d9c35323a04fd939da49ad89318091288fbd73"
+  },
+  {
+    "path": "openhands/prompts/security-review.md",
+    "blob": "f963a97c6218099cc9e7ea75475f507f7a4041d8",
+    "sha256": "bf3cf215dd987299177f4476b166d7ffc1d342c88796cbadcca3eb9932c61e6c"
+  },
+  {
+    "path": "openhands/sandbox-gitconfig",
+    "blob": "7801d49857e26eacfd8c5640b8b8999e49cfcab8",
+    "sha256": "bed32281447eda59db1a9517f181abe8ffa332c63c9f9839c93204bc86b6badf"
+  },
+  {
+    "path": "openhands/scripts/openhands-control.sh",
+    "blob": "87d849b3019ddb1465d0392afd503a4c05686f6e",
+    "sha256": "8c6919df65624a35484ee4eade27f0f40681022c252f566b26f577ef5d6d2e64"
+  },
+  {
+    "path": "openwebui/README.md",
+    "blob": "a49c966f0aed1aec018f9ba8b4a8af29bb07441c",
+    "sha256": "af258a2e423bfa8a6ac4c02787c8824baf6f2ede7d4cb13c55bc7e41ee13b63c"
+  },
+  {
+    "path": "openwebui/build_pipe.py",
+    "blob": "a2e83d6e58acf6e5ece1ae07aa98d81d9aadaca3",
+    "sha256": "3f14231dbbfdbb25aa7ada2041ad5ef93baa5750ead2d1df9230574823a6d3f7"
+  },
+  {
+    "path": "openwebui/pipe_wrapper.py",
+    "blob": "8e0f5d7d114ba94e804aa66d49d3d3ef838ec1be",
+    "sha256": "9097389191bfb703becad4018ee61f8a4989880e7fe48bf48212cba3f17d3f0a"
+  },
+  {
+    "path": "openwebui/runpod_core.py",
+    "blob": "504fe784542e40cbc65f9af6dd1451a4ab5fb4cf",
+    "sha256": "cbaddc25a541b2a9f28fcdffc19d9a10d148bff7b8f360906aa02ff942790297"
+  },
+  {
+    "path": "openwebui/runpod_pipe.py",
+    "blob": "bb0f2e9d9a836fcc74716f988a627d8e2882c14f",
+    "sha256": "20070c301e3774f91d5e9adc728412f4fb94c522303a41a92847ea281e7331d9"
+  },
+  {
+    "path": "openwebui/test_refactor.py",
+    "blob": "572aee1ad293a5ad510223944857cff8dce1a578",
+    "sha256": "a47005f8d9a40ee2fa9a10b2292515a170e67354309aadd6be65a8e8844d0fee"
+  },
+  {
+    "path": "runpod/README.md",
+    "blob": "a1218a3ffe381983c3aacda7bdc861b60b8c64bc",
+    "sha256": "08faf28693542286e86b86b2c419c23b730dd9d0871512ab03b865cd8ab26a6e"
+  },
+  {
+    "path": "scripts/bootstrap.sh",
+    "blob": "a63bb06b539ef6f86d31972bc5baeec35e7b5f3f",
+    "sha256": "a27c7f88463c7f0628867e8529576bd85eb9b699bc4de1e05ea4c99e38d0676f"
+  },
+  {
+    "path": "scripts/check-agent-context.sh",
+    "blob": "822b485c6f3db0fb5069e956a0cd7f88c722d5a7",
+    "sha256": "04d07c4985c2e91a1e501e5b691d81e5d9305271887e9fc3178e87c384a47f07"
+  },
+  {
+    "path": "scripts/check-git-remotes.sh",
+    "blob": "99631e9be8465f75e0cb780a7bc4540739fdbe8e",
+    "sha256": "a0a64aefa092fcc62be03aa605ad156d1c33e1efe003820655ead5e7f264beab"
+  },
+  {
+    "path": "scripts/check-hermes-nonroot.sh",
+    "blob": "176800f193f5d411b78cc86615a541ef6fe33cbc",
+    "sha256": "91bb8275dbf4930afcc28a923e14349254c33c8f4bdb879c4af03d5fba11bd21"
+  },
+  {
+    "path": "scripts/check-no-ip-literals.sh",
+    "blob": "dcaede69221b591a7291ab03943d17dfa7cff47c",
+    "sha256": "0960d80693c3d8427af37855f909471aa8445c129cb0ece8f6267a6fd9d8da3f"
+  },
+  {
+    "path": "scripts/check-no-masked-literals.sh",
+    "blob": "b2046c52eab9a7821836e946a2564becef4efa26",
+    "sha256": "af131b4e2f4e9c0308e4ded72bd13089950f3b78d4513e2a7291f8152799fadc"
+  },
+  {
+    "path": "scripts/ci-parity.sh",
+    "blob": "396dbd0e4744229019bb9c1fd52f84f085fb3822",
+    "sha256": "e6d5c5d3ea8c766a9825e9cc12bbec9751091665020dbb1a6d7db42eca0681a3"
+  },
+  {
+    "path": "scripts/deploy-forced-command.sh",
+    "blob": "fe9170c812797bbcf961de4bd504d257825675a8",
+    "sha256": "23a66d3388723c74f47ce414adf65e9f028ed9f96459c3b4dcfec2fbf32bc793"
+  },
+  {
+    "path": "scripts/deploy-image-gate.sh",
+    "blob": "fb6891565d582ada3bba67670405a0a61535fbcc",
+    "sha256": "e91cf44b74e787ed5163f440b885ce99a4512d1fd0bb01312fe55c5034b5be90"
+  },
+  {
+    "path": "scripts/deploy-instance.sh",
+    "blob": "31475aa3ecfb5ce38bf69600ece4a42de532c903",
+    "sha256": "2c5a5ac17fd11aaa7a290fe3dc351423ce1c10dae40729cbc0353e3900cfc4b1"
+  },
+  {
+    "path": "scripts/deploy-remote.sh",
+    "blob": "a19df50fec0122ddf9cdbfae8f63824975950fce",
+    "sha256": "6c466b1a34ac75f7e484115dbc581cb45fb5b60e999e2080e168f8d4fbd9a988"
+  },
+  {
+    "path": "scripts/deploy-trigger.sh",
+    "blob": "c4622918e18282655e458dbc54ef3e8216ad4825",
+    "sha256": "ef24ad2608d3358ce3508cbe4ab3ad09d937ebcf9c64753489cd3f8acdb69acd"
+  },
+  {
+    "path": "scripts/lib/build-gate.sh",
+    "blob": "c1adc320ba1836b9f45993601f55146e4ae92ebb",
+    "sha256": "abf4d18f1379e518a33214086de0407fca8275402f4435e2650f67290388d70b"
+  },
+  {
+    "path": "scripts/lib/hybrid-ai-env.sh",
+    "blob": "6d8631aeedcabdc282273936c2f1ea2c7b7b61eb",
+    "sha256": "a99d2f4dc492c7d531f9d19c07e3697e9d71eb575067ccb62e2f3396d1ab19e5"
+  },
+  {
+    "path": "scripts/lib/read-probe.sh",
+    "blob": "9ba70b93412eb5259fe55e884261f602d77e7c18",
+    "sha256": "c7104e69d0959a04564fba4143b66c8105af06be7f03370c5d34fbb1fb6b9f06"
+  },
+  {
+    "path": "scripts/lib/tailscale-resolve.sh",
+    "blob": "c1ff7be56793591a1c58a757714e556e553346ee",
+    "sha256": "73cdd39e8c554a7265d5dfe6ab2b6a83e18eb7ca7e921353d1656319675066b8"
+  },
+  {
+    "path": "scripts/lib/tls.sh",
+    "blob": "d6d1d044b97063afff4f09ed4d2a25a320de8bcc",
+    "sha256": "5d8c92e92f3969a5a3f4cd430338cfe207b2e80e23eb1d9482d2013f918bf25c"
+  },
+  {
+    "path": "scripts/no-masked-literals-baseline.txt",
+    "blob": "d394281e7cf795a9ad10ecd1ca7301a4d1b12e0c",
+    "sha256": "2587f7f3a113a13b6e0080306e7fb61782eb319394d3f4d6c10134a25f500df4"
+  },
+  {
+    "path": "scripts/prune-conversations.sh",
+    "blob": "06d5e801a10894cb2067992ac62fefd7ad184e40",
+    "sha256": "3d05749e65a7d66163e230a1b1f88fdf543a9548ebb2de0ffb380895a5a08a15"
+  },
+  {
+    "path": "scripts/prune-docker-cache.sh",
+    "blob": "a0a956fe81905313b3f36d32f9ae56ac5844c413",
+    "sha256": "612a8acba5539847b0a08191e363bc872006238c07d79f04c4c40f3df50c13ae"
+  },
+  {
+    "path": "scripts/reset-passwords.sh",
+    "blob": "120f132fa7d67af29fcaa98059dc00680b041b4c",
+    "sha256": "b1463ae25debc21863ff42782778525300d02297279d34b3a22ca688b5af0209"
+  },
+  {
+    "path": "scripts/run-post-deploy-verify.sh",
+    "blob": "ac394b9831b57a494efff412e302f98d8a459948",
+    "sha256": "fc119c1d354b5f9980035ea5dd9aa8f0a32c87023ec40311c62867a4d0b2b098"
+  },
+  {
+    "path": "scripts/sandbox-firewall.sh",
+    "blob": "4f7d27b76707f1a35eb6bc4b1e38528b22f1cc3f",
+    "sha256": "421a5cb6018b9c17aa36b8f06a3bc21cfc4eb868245e5920a5797d99d2a7af97"
+  },
+  {
+    "path": "scripts/setup-agent-workspace.sh",
+    "blob": "dfc0e5281f7ab7519dec92f0f8f5270099f6485e",
+    "sha256": "17e2da5a4261afb33c242b39e2610e5de5728fd34275f73d916fac38266a4413"
+  },
+  {
+    "path": "scripts/sync-agent-repos.sh",
+    "blob": "85a68308d9bb98f0abc3b0ae31ec60e82128c584",
+    "sha256": "8e7133a17c3de50db09cf0e9cb203e5c9c14d862aeb319efe5dbde3c7ea789ff"
+  },
+  {
+    "path": "scripts/test-agent-image-hybrid-cutover.sh",
+    "blob": "8ad25e535d415c01598c6e7423a9d8bbc10a030c",
+    "sha256": "6ed6501b1c7b040ac014cdd26af946feb03e5a6a20365bcdb242981c2913f226"
+  },
+  {
+    "path": "scripts/test-agent-image-repo-migration.sh",
+    "blob": "5090dd7b66f7b14432a8b55757342ec26e63eb3f",
+    "sha256": "7999a64bf6babb2d1039a95a76b46e10d5c6e1eef474670b0720211509099aca"
+  },
+  {
+    "path": "scripts/test-auth-render.sh",
+    "blob": "5d4922f2f53619a98d1173621cb117f335c775cb",
+    "sha256": "bbfef67e50ed35d866133c79a3dce39883a2917c138795a15b4843f62fc9bd25"
+  },
+  {
+    "path": "scripts/test-b77-port80-dynamic.sh",
+    "blob": "14844e211eb8c45c2a15562c482cb5b3bc3c3a87",
+    "sha256": "7799bf7ebf4ed05f9326d1c8a7d2ebe7d0578b022491fa434ac77bdaef9cb49f"
+  },
+  {
+    "path": "scripts/test-backup-containers.sh",
+    "blob": "ad5b852d2642da9a8dc42f193ce9f1ecf24fde74",
+    "sha256": "1c5efcab1a21d047fbec06c29a17d83babdc5da28c6c708aea7660ee1b1eec95"
+  },
+  {
+    "path": "scripts/test-backup-mode-timers.sh",
+    "blob": "c6e0949177233977c36a545d748e5c1a409b8060",
+    "sha256": "b1a3f3b4cb41abc9d06afc3a4372fae62be54a2d27d8c105e00ccf5e430d20b9"
+  },
+  {
+    "path": "scripts/test-backup-system-units.sh",
+    "blob": "454606d4ad74178ece0f2a856df6b4c70f41587b",
+    "sha256": "efd1d15a2fb38e77e83e30726f529ca2dec8859af41ccc193fcc4051653ada2a"
+  },
+  {
+    "path": "scripts/test-backup.sh",
+    "blob": "1a1f0cc8d291525d863b33eb1c7febf51a52db33",
+    "sha256": "7aef51aee394969639ee6768137f3dc9ab3c62e77643b7cf3fc7f44ca2cd83f2"
+  },
+  {
+    "path": "scripts/test-bootstrap.sh",
+    "blob": "99f633ef49a4a2b767cea62377fd6ba1cad13252",
+    "sha256": "f4368cae8194c2023ebcbea8aa774f8dc0d258dd06ba1367a1269ab73a937e84"
+  },
+  {
+    "path": "scripts/test-check-agent-context.sh",
+    "blob": "3738ea653ee254b1be5049ecc88b7e8244b0c744",
+    "sha256": "9861ea20e9d368bdf53d193f32406db05cf0b28c02de8fc0e186954d23dcfb4c"
+  },
+  {
+    "path": "scripts/test-check-git-remotes.sh",
+    "blob": "85edbae2d3e21f36ae89e71be4e97ffe24394261",
+    "sha256": "448745ab7158b47018929e98e2b852a4d65a11403c6edc3b17b829275040e1f1"
+  },
+  {
+    "path": "scripts/test-check-no-ip-literals.sh",
+    "blob": "3b40753bcadad9d0c651998fd84fa566dcb945ef",
+    "sha256": "f8a3f11d928341fa6c5f1bbfec6ae4cdfa245957d48e8ba9922fd6bbee69c050"
+  },
+  {
+    "path": "scripts/test-check-no-masked-literals.sh",
+    "blob": "9796e283f849e7e7763ec93d2cdfd934db7dddaa",
+    "sha256": "d92da9af640d65473ae57ba7b9723fc8058012de3d7df64826075ae2ae7f40bb"
+  },
+  {
+    "path": "scripts/test-ci-parity.sh",
+    "blob": "3a7d171279c70472fe3f4e99b48b18ed93ccc1f5",
+    "sha256": "19994d00e0b56b664935ad66d5b628527d9dbb17c301e05ea379928f41b0af14"
+  },
+  {
+    "path": "scripts/test-deploy-build-gate.sh",
+    "blob": "1037fd3fe1bb612cb0731721d448c136a905e430",
+    "sha256": "7934ed7be691e22b914219e6a80c981718a0aa36252fc3a01c84f4b7a621ea0e"
+  },
+  {
+    "path": "scripts/test-deploy-forced-command.sh",
+    "blob": "07cab0ff0eb781b569f36a5bce945de9e05b2547",
+    "sha256": "7eb3b177c1782c6ecaac5dfaa9b60cdd8310e62111c77581845963360c9992a1"
+  },
+  {
+    "path": "scripts/test-deploy-image-gate.sh",
+    "blob": "865f179720eeb0c1deb9e06fe4127ce730cca84b",
+    "sha256": "62b512313c2305a105ab0867fe1d0092338ef4573772b7f70d427e061b6a25b0"
+  },
+  {
+    "path": "scripts/test-deploy-instance.sh",
+    "blob": "db6fb38c236c7fd80401361d1a039296b40871bb",
+    "sha256": "cd38ba24be1fedb301c8be02f7e81053b0812108e1b46fc69e320c5fa736cebc"
+  },
+  {
+    "path": "scripts/test-deploy-remote.sh",
+    "blob": "f2c0a63ed4c73adfe713bf079f0346d34f56f0ab",
+    "sha256": "9e0bcfbeef2aef10c80fe82e57c475438d0ee7045dec6d1d4bc469b2eae17b41"
+  },
+  {
+    "path": "scripts/test-deploy-trigger.sh",
+    "blob": "a839071d0709f341d6b576f25db0e7f1967c8ae2",
+    "sha256": "7163f90e9cce7ebc09907cf6d43609cdeff4072c410093618586e7ce9d183fe9"
+  },
+  {
+    "path": "scripts/test-deploy-wiring-install.sh",
+    "blob": "b3a5c5db13c1dcb6b3647ee6ce9ceb3051963fef",
+    "sha256": "afd7c4363784e41bca304c80f59453734fe822d58f88ed6648915eaf48eb57d0"
+  },
+  {
+    "path": "scripts/test-doctor-b87-tooling.sh",
+    "blob": "0b3995b2a640793693b6a7361e54ed2f2e6cec53",
+    "sha256": "49a359848f089e846db6b9586d1d53235903ab611612c18cfb468cd5fee88839"
+  },
+  {
+    "path": "scripts/test-doctor-backup-counts.sh",
+    "blob": "e8291eae43d80cfb81b2032ba91d4c0b555951bd",
+    "sha256": "45b5397b10bed66cabb34a8e102c9fa762011dd8b6584ca58a78f08a5ecbc460"
+  },
+  {
+    "path": "scripts/test-doctor-backup-probe.sh",
+    "blob": "3b592add9562c0e5deaacb0a217c696b594f760f",
+    "sha256": "0d0dc010fe581855b95ec1512119dbb0814244d62cbf19e6572d40abf626f1ab"
+  },
+  {
+    "path": "scripts/test-doctor-lease-less.sh",
+    "blob": "dfdebdb9dca48635c5171ced6a9a4906df65cf73",
+    "sha256": "616e21f5403afde5693fc79fd150b8826155c3103f7eade74ec9b7f9286b06a5"
+  },
+  {
+    "path": "scripts/test-doctor-post-deploy-log.sh",
+    "blob": "06e94ba1bb48d5705cc2f51493a74a7f41f850d1",
+    "sha256": "d19caff1f8919cfa6b56cb33cf466c78e4df3ad99d585e9202bbb803a7a6caad"
+  },
+  {
+    "path": "scripts/test-doctor-proxy-b77.sh",
+    "blob": "e0553630b0acee182ce6f79dd1f1b4fbe048de98",
+    "sha256": "673c72f6ec18b0294f1dc0fed04c8a88d35642f6542b3e1787729015eb38073d"
+  },
+  {
+    "path": "scripts/test-doctor-resolv-conf.sh",
+    "blob": "884881e268b20fb4cc6cce9dcba518f05940575d",
+    "sha256": "d42967bed9919e404237833f3086eeeb76c4022e265414c63892fd13229914ca"
+  },
+  {
+    "path": "scripts/test-doctor-runpod-key.sh",
+    "blob": "daa5413af0c1470fa4155767aef5352b9bbf6f10",
+    "sha256": "c1f4d90ab4c85acd8accd0443f9c2fc2de7bf975d384c801aad72f4518f5ee51"
+  },
+  {
+    "path": "scripts/test-doctor-sandbox-firewall.sh",
+    "blob": "0c47dc98ffa49c2032d3990c9827db6eb65f013b",
+    "sha256": "b11e90abaa4ae751bc5cca7a4f48d2eab6ae85a77b0464caf7a5100989529d98"
+  },
+  {
+    "path": "scripts/test-doctor-sandbox-image.sh",
+    "blob": "c8ea11f4489b64d6312bef463eed2fe636a26812",
+    "sha256": "ddb4b8815992a0a2e2dda1be2e70b386da8ca548926401356846dc64a5916366"
+  },
+  {
+    "path": "scripts/test-doctor-startup-grace.sh",
+    "blob": "5542a9f61986bffb5bffb61942e8ddeaad1b5fd8",
+    "sha256": "339eb22a6fcec0b0477eddf0d1c0946ddf74608e46fc765b9213105ba4221559"
+  },
+  {
+    "path": "scripts/test-env-pin-migration.sh",
+    "blob": "0188f0073e10787c0dba1676bd5e1f05f18ae2d6",
+    "sha256": "4a6c20384ca949592a4fb7a92a7ea75c554d0cb9ec793e63656a5fb019a52663"
+  },
+  {
+    "path": "scripts/test-hermes-nonroot-preflight.sh",
+    "blob": "c3729794189d1a5bd141d9da8bd6b6a1461e7643",
+    "sha256": "cf233dac616a4df38f5291535ad51995fd5832e0d8cf1e437db238bfbce7e47b"
+  },
+  {
+    "path": "scripts/test-hybrid-ai-env.sh",
+    "blob": "b2374e0e16907d5beacb7a845652e795443b7897",
+    "sha256": "bf746bf2c98b8d027c27367bedfbcc41bf80d4aea105816eb78914a1fde8d800"
+  },
+  {
+    "path": "scripts/test-install-auth-env-leak.sh",
+    "blob": "ac2d2777ba6f91e45fb9acda8bd9049ec7ac9554",
+    "sha256": "1834efc16c7acf8b12d97688e960801181a8e6d2e9abd1edc14a8f0962bfe0c5"
+  },
+  {
+    "path": "scripts/test-install-health.sh",
+    "blob": "c38095f209a8ef8665dfb5cc5941dc2fcc75299a",
+    "sha256": "ac92feb645ac63f1ac0fed3f601bf456645d21fab47f47c58813cde4764b5866"
+  },
+  {
+    "path": "scripts/test-install-tailscale-migration.sh",
+    "blob": "a506c53f5d3548812a8191fd0d5d5aa9e06435f7",
+    "sha256": "3da953422485ec364294b4ece24790a065451509190d67f5f0fcb6afe67e4863"
+  },
+  {
+    "path": "scripts/test-post-deploy-verify-log-env.sh",
+    "blob": "d7a2bb9dc5375c93ef8f0d1574490d98dfe939d8",
+    "sha256": "dd6708de91bd6ba4de02abdb5491faa45298d5c9c3562402d97b5f6c1e8de0a2"
+  },
+  {
+    "path": "scripts/test-prune-conversations.sh",
+    "blob": "bfbcfba01d6af8e16c8b6b489cce7acdf96c3044",
+    "sha256": "68ba1f260109b37d121e7e1f07b572c3e227142120f42e1f98ab199fb67114a3"
+  },
+  {
+    "path": "scripts/test-prune-docker-cache.sh",
+    "blob": "564b244d7f5cf546b6b030384ca6ffeef5d754ae",
+    "sha256": "dcfe20d5e8ba2c923ac74575413836d1fabe00f3d874ed7c85466a1faa88f67a"
+  },
+  {
+    "path": "scripts/test-read-probe.sh",
+    "blob": "615d5e1b2a69950b2471c5eb13f17519da303a4c",
+    "sha256": "36687be3a0c2c38bb315a4a76735f2dadfadf3b52629d61acaca8b991ca75e46"
+  },
+  {
+    "path": "scripts/test-reset-passwords.sh",
+    "blob": "218591349467961b561fb8b4c903247214419af1",
+    "sha256": "ba680f3bd5b6d35a813bfe24b62de8e2d97e168966fad0de827b7ceb3385005f"
+  },
+  {
+    "path": "scripts/test-run-post-deploy-verify.sh",
+    "blob": "ebdfe4b76d407cf28061a498f36ed28564201d09",
+    "sha256": "49f8e50f82163864b1d2a3398a5af43b68b268a506fe8d25d487832240cd5ced"
+  },
+  {
+    "path": "scripts/test-sandbox-firewall.sh",
+    "blob": "0f6baae3ce880983b3fa5ce3812ead791d41878f",
+    "sha256": "6aa4ec565cce04f91d479be037ebc95c018d26c77a4ac0a58ccf449bad457b87"
+  },
+  {
+    "path": "scripts/test-secret-guard.sh",
+    "blob": "d72dfca06c9dd0461f420957d2957afd226ea0b3",
+    "sha256": "0c90b57e1de5eab877eb201d5b8147dc2964dbfc55db05e89ddde786b489a10e"
+  },
+  {
+    "path": "scripts/test-status-backup-log-env.sh",
+    "blob": "aa052def0f79c8f3db704930cf74f40eb23c55b9",
+    "sha256": "6605a95a70c385b0c91dd7f7a7c79dcfeb455b793d6afb8993dd046821a4835f"
+  },
+  {
+    "path": "scripts/test-status-backup-probe.sh",
+    "blob": "82878a6a0419c1214b99d81653fd17c58572dfb3",
+    "sha256": "b259ecad3a665171ce9982988787e7cab42ee9be29f9b185a004289c42f4111b"
+  },
+  {
+    "path": "scripts/test-sync-agent-repos.sh",
+    "blob": "430b7243a529cf2c3e69c947b904ad4a17ffb35f",
+    "sha256": "4de5b9c113e1ec3a437463ca4eb25521d49e91fa58dc6e062ee80e9ccb0724af"
+  },
+  {
+    "path": "scripts/test-tls-caddy-validation.sh",
+    "blob": "832724f96b9e215571fefb2199496c230b0b76f1",
+    "sha256": "84a417157d3cc5ca957937e56aa2ae11e2bfd120e3cfc91b07d1a6a70bd2c88d"
+  },
+  {
+    "path": "scripts/test-tls-check.sh",
+    "blob": "da1514c54f4f00911a8c2b44abf254e3c8d0d563",
+    "sha256": "51bb35e827ebbb42fd0cfc47fe9f3b1717267dd44225724ae19cb697ba7ba247"
+  },
+  {
+    "path": "scripts/test-tls-dry-run-renewal.sh",
+    "blob": "a38a7dc01967354eb2657e41b6229d2b4d46fc83",
+    "sha256": "f89069f784b0124cd724687e503b179a550a2f5498c56c6eb4a8ff24bb9e73cd"
+  },
+  {
+    "path": "scripts/test-tls-installer-render.sh",
+    "blob": "35a7334a8c14951a3da3250b1286b3ac2503e8ef",
+    "sha256": "df90bfda7a8be05b085d2c8225b18175b601c79671003d8281cafdfda6fb783d"
+  },
+  {
+    "path": "scripts/test-uninstall.sh",
+    "blob": "387d611b44a99f1038b1b9b9dad86c6138fa47ec",
+    "sha256": "f3b0e07a94b4cce792563ba0bc836839e8096d37e1ae7c0cba077c9dea882018"
+  },
+  {
+    "path": "scripts/tls-alert.sh",
+    "blob": "b5634fe2965f49c5fad9d1f9211b985112fe5a45",
+    "sha256": "fc8640ef8ed68b714cc3ede91d9110f7d6c638be94b661bbe53a8c7b8f147aaf"
+  },
+  {
+    "path": "scripts/tls-audit.sh",
+    "blob": "c9e4e1af1383c61e0e5543639f3ba776f63ead7e",
+    "sha256": "6fa2384c2980d0f928caa384697774534f8926e1fc4831e3ff4c26cbb544a1ea"
+  },
+  {
+    "path": "scripts/tls-check.sh",
+    "blob": "a21225864b1e68b807d1783dc548c5d2a0df31a5",
+    "sha256": "2d03771360745f02a4149f68ac66ccede1f9a3e191ded2cbe003c49e26f973f5"
+  },
+  {
+    "path": "scripts/tls-dry-run-renewal.sh",
+    "blob": "3859a795b9da71551a04f816f869237965561e22",
+    "sha256": "4c97b291f857d0daca0c8abef76d77c8de8168468581010d941fceb2e25d2092"
+  },
+  {
+    "path": "scripts/uninstall.sh",
+    "blob": "0e1d31c2447ab638fe99adecbcb38804e06ff6c9",
+    "sha256": "ea5e92430512924bd7e12fe9b728c7acddca89bdf93602a3a886edea05efbd45"
+  },
+  {
+    "path": "status/Caddyfile",
+    "blob": "e33c04274526675a1012ffa3122387233096c413",
+    "sha256": "77a9d3f907d6d1f928065ceb8bc11b1ea818bf323742e57b095358a2c030c339"
+  },
+  {
+    "path": "status/Caddyfile.tmpl",
+    "blob": "d7b4052e4b46362ba98ef196b2a006a651fd9aa9",
+    "sha256": "dcfd8958db3c56b0b8439643304d6a6ab8374bff56461cfcb2cf82ab955134d3"
+  },
+  {
+    "path": "status/README.md",
+    "blob": "cf53c3832be79d6a866357ea35baf37e30c20be1",
+    "sha256": "b753162b6a3b36a4a69715215e5feff26809c152a827fd60e04eae8106a0707d"
+  },
+  {
+    "path": "status/app.py",
+    "blob": "e702b511fa5daf9e1424802c95921738859f1485",
+    "sha256": "c3b370b9884d97c00805328e7ece9202d373cf0ba1670f2040d3798fe4ca6640"
+  },
+  {
+    "path": "status/test_backup_probe.py",
+    "blob": "03e12866820a3acdc0aa758c59db3897a39ded4d",
+    "sha256": "a31e4487d889525633cab78df105de95377f51874e5404284f226c60f23d5ee1"
+  },
+  {
+    "path": "status/test_deploy_verification.py",
+    "blob": "32ff71dc7ef6a2cf27847c4e55d758e4cee36ae8",
+    "sha256": "bcfb6d4dcce3eaf9097b4f6aea430f472ee6e0461d4a0ca0a05a843685d8f7b1"
+  },
+  {
+    "path": "status/test_hub_urls.py",
+    "blob": "f1287eabebf2f23951e6b776d33f1f7ee563749b",
+    "sha256": "2cb854069a7e72b4b16cd1c23039019aafe72df516708e0d2a59426b49bf4dd9"
+  },
+  {
+    "path": "status/test_pod_probe.py",
+    "blob": "b265452a7cda025ef88b8faa99e1e6bec6ba58da",
+    "sha256": "19b81025595d3b5dbf99ae07109c0f6f87907ed24c0c42c50b7bde8eb81b68e1"
+  }
+]
