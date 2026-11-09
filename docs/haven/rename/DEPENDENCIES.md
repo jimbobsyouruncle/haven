@@ -33,6 +33,12 @@ selection for D02/D03; see [COMPATIBILITY.md](COMPATIBILITY.md). Defaults stay
 on the old identity. Live activation, environment propagation and external
 verification remain separately approved later-phase gates.
 
+The #148 [presentation register](PRESENTATION.md) records the visible labels,
+per-reference retention decisions and validation plan. PR #155 completed only
+the executable identity portion of #149. Its closed issue state does not
+supply the remaining readiness/runbook/integration evidence. Owner tracking
+reconciliation is separate; #150 retains every prerequisite below.
+
 1. **#147 audit PR:** these artifacts and regenerated navigation maps only. Review occurrence classes and external evidence requests. No runtime changes.
 2. **#149 compatibility PR:** prepare executable old/new URL handling and matching negative/positive fixtures; keep old identity active. Independent security review before implementation.
 3. **#148 presentation/docs PR:** resolve prose/manual-review records and labels, retain compatibility contracts. Canonical link activation is prepared but timed to #150.

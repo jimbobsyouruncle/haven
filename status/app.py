@@ -1029,7 +1029,7 @@ def render_html(data: Dict[str, Any]) -> str:
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>hybrid-ai status</title><style>{_CSS}</style></head><body><div class="wrap">
+<title>Haven status</title><style>{_CSS}</style></head><body><div class="wrap">
 
 <nav>
   <a href="/hub">Hub</a>
@@ -1037,7 +1037,7 @@ def render_html(data: Dict[str, Any]) -> str:
   <a href="{html.escape(base_url())}">Open WebUI</a>
 </nav>
 <header>
-  <h1>hybrid-ai status</h1>
+  <h1>Haven status</h1>
   <div class="btns">
     <button id="dl">Download diagnostic</button>
     <button class="ghost" onclick="location.reload()">Refresh</button>
@@ -1068,7 +1068,7 @@ def render_html(data: Dict[str, Any]) -> str:
   <div class="btns"><button id="dl2">Download diagnostic bundle</button></div>
 </div>
 
-<footer>hybrid-ai · <a href="/hub">Hub</a> · <a href="{html.escape(base_url())}">Open WebUI</a></footer>
+<footer>Haven · <a href="/hub">Hub</a> · <a href="{html.escape(base_url())}">Open WebUI</a></footer>
 </div>
 <script>
 async function download(btn){{
@@ -1144,13 +1144,13 @@ def render_hub(data: Dict[str, Any]) -> str:
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>hybrid-ai hub</title><style>{_CSS}</style></head><body><div class="wrap">
+<title>Haven hub</title><style>{_CSS}</style></head><body><div class="wrap">
 <nav>
   <a href="/hub" class="on">Hub</a>
   <a href="{html.escape(base_url('status'))}">Status</a>
   <a href="{html.escape(base_url())}">Open WebUI</a>
 </nav>
-<header><h1>hybrid-ai service hub</h1></header>
+<header><h1>Haven service hub</h1></header>
 <div class="sub">{domain_caption()} · {html.escape(data['generated'])}</div>
 <div class="banner {data['overall']}">{_BANNER[data['overall']]}</div>
 <div class="tiles">{cards}</div>
@@ -1162,7 +1162,7 @@ def render_hub(data: Dict[str, Any]) -> str:
   <div class="row"><span class="nm">Ollama API</span><span class="dt"><code>{html.escape(base_url())}/ollama/</code></span></div>
   <div class="row"><span class="nm">Health Summary</span><span class="dt"><code>{html.escape(base_url())}/health</code></span></div>
 </div>
-<footer>hybrid-ai</footer>
+<footer>Haven</footer>
 </div></body></html>"""
 
 
