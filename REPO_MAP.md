@@ -14,7 +14,7 @@
 - .ip-literal-allowlist
 - AGENTS.md - AGENTS.md — Hybrid-AI → Haven agent operating contract
 - LICENSE
-- README.md - hybrid-ai
+- README.md - Haven
 - SECURITY.md - Security
 - SECURITY_SUMMARY.md - Security summary
 - collect-diagnostics.sh - FILE: collect-diagnostics.sh
@@ -91,6 +91,7 @@
 - docs/haven/rename/COMPATIBILITY.md - HAVEN-003 repository identity compatibility preparation
 - docs/haven/rename/DEPENDENCIES.md - Rename dependencies, risks and execution gates
 - docs/haven/rename/EXTERNAL.md - External evidence checklist — pending authorization
+- docs/haven/rename/PRESENTATION.md - HAVEN-002 presentation and compatibility decisions
 - docs/haven/rename/README.md - HAVEN-001 public-source rename audit
 - docs/haven/rename/VALIDATION.md - Validation and acceptance evidence
 - docs/haven/rename/audit.py - Reproduce the public, immutable #147 rename inventory; never inspect local state.

@@ -4,6 +4,13 @@
 **Baseline:** `jimbobsyouruncle/hybrid-ai`, inspected read-only on 2026-11-07. No runtime security claims or deployments are implied.  
 **Primary platform:** Raspberry Pi 5, 16 GB, 64-bit Raspberry Pi OS, NVMe; cloud inference; eight configured personas across three human accounts.
 
+Haven is the product name during migration. The source repository remains
+`jimbobsyouruncle/hybrid-ai` until the approved #150 cutover; the baseline
+attribution and source links below retain that identity. This document describes
+the target architecture. Renaming presentation labels does not implement its
+multi-user authorization, isolation or inference policy. See the
+[presentation decisions](rename/PRESENTATION.md).
+
 ## 1. Decisions and objectives
 
 1. One reusable **Coder persona** can work across many projects; **project and task session**, not persona, enforce repository and inference authorization.

@@ -92,7 +92,24 @@ def render(tls_enabled, tls_domain):
         sys.exit(1)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod.render_hub(DATA), mod.render_html(DATA)
+    hub, status = mod.render_hub(DATA), mod.render_html(DATA)
+    # Branding must work with every existing TLS/domain selection. Keep the
+    # diagnostic download interface and HTTP server identity compatible.
+    for label, page, title, heading in (
+        ("hub", hub, "Haven hub", "Haven service hub"),
+        ("status", status, "Haven status", "Haven status"),
+    ):
+        check(f"{tls_enabled}/{tls_domain}: {label} title",
+              re.findall(r"<title>(.*?)</title>", page), [title])
+        check(f"{tls_enabled}/{tls_domain}: {label} heading",
+              re.findall(r"<h1>(.*?)</h1>", page), [heading])
+        check(f"{tls_enabled}/{tls_domain}: {label} footer",
+              bool(re.search(r"<footer>Haven(?: ·|</footer>)", page)), True)
+    check("diagnostic download retains its legacy filename",
+          "a.download = 'hybrid-ai-diagnostic-' + stamp + '.txt';" in status, True)
+    check("HTTP server identity stays compatible", mod.Handler.server_version,
+          "hybrid-ai-status")
+    return hub, status
 
 
 # The hub prints every service name; the status page links only the apex

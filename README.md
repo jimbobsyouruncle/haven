@@ -1,4 +1,9 @@
-# hybrid-ai
+# Haven
+
+Haven is the product name. The repository remains `jimbobsyouruncle/hybrid-ai`
+until the separately approved rename and cutover in #150. Clone URLs, badges,
+environment variables, service names and host paths retain their working
+compatibility names. See the [presentation and compatibility decisions](docs/haven/rename/PRESENTATION.md).
 
 **A private, self-hosted AI platform that runs small models locally on a Raspberry Pi and borrows a cloud GPU only when it needs one — then shuts it off automatically.**
 

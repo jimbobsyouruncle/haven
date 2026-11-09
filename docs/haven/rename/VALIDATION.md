@@ -16,6 +16,47 @@ handoff. It does not claim full #149 completion or live cutover verification.
 
 This report distinguishes reproducible public-source evidence from pending external verification. No production security or restore claim follows from source inspection.
 
+## Issue #148 presentation validation
+
+See [PRESENTATION.md](PRESENTATION.md) for the bounded scope, nine explicit
+manual-review decisions and disposition of all 145 baseline occurrences in
+the three modified product/source documents. The immutable audit is unchanged.
+
+Local validation on 2026-11-09:
+
+| Check | Result |
+| --- | --- |
+| `PYTHONDONTWRITEBYTECODE=1 python3 status/test_hub_urls.py` | PASS: 86 assertions, zero failures; Haven labels, existing TLS/domain/tunnel URLs, legacy diagnostic filename and server identity |
+| Regression proof against the original application in a temporary fixture tree | PASS: all 36 new branding assertions reject the original labels; compatibility assertions still pass |
+| Application diff review | PASS: exactly six rendered labels change; all other application source bytes retained |
+| Decision-register reconciliation against immutable CSV | PASS: all 145 scoped baseline IDs accounted for exactly once |
+| Relative Markdown links in README, architecture and audit documents | PASS: local targets resolve |
+| `python3 docs/haven/rename/audit.py --check` | PASS: inventory, summary and source manifest reproduce |
+| Pinned map regeneration and freshness | PASS: REPO_MAP.md 11,613 bytes; CODE_INDEX.md 23,349 bytes; both below 24,576 bytes |
+| Map-check fixture suite | PASS: all seven cases |
+| `bash scripts/ci-parity.sh --generator /tmp/haven-147-agent-context-generate.py` | PASS: 14 evaluated gates, zero failures |
+| `git diff --check` | PASS |
+
+Static parity includes deployment probe (34 assertions), GPU probe (24),
+syntax, pipe freshness, source/security invariants and map freshness. Its full
+shell suites are deferred to CI. Dependency-installing tests, real Caddy/Compose,
+ShellCheck, Semgrep and CodeQL remain CI-owned; the PR records current-head
+results. No fresh ARM64 runtime, host access, RunPod integration or backup
+restore is claimed. E01–E20 retain their existing later-phase gates. Merge and
+deployment require separate owner approval.
+
+Earlier final-head evidence remains available without repeating those tests:
+[PR #154](https://github.com/jimbobsyouruncle/hybrid-ai/pull/154) completed #147
+with [map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42682650732)
+and [security/test](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42682650838)
+checks passing. [PR #155](https://github.com/jimbobsyouruncle/hybrid-ai/pull/155)
+completed only the #149 identity compatibility portion, with
+[map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42694494676) and
+[security/test](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42694494506)
+checks passing. Its [post-merge deployment workflow](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42695975376)
+also passed; this is evidence for that executed workflow, not completion of
+the external evidence register or current production verification.
+
 ## Issue #147 acceptance criteria
 
 | Criterion | Evidence | Status |
@@ -25,7 +66,7 @@ This report distinguishes reproducible public-source evidence from pending exter
 | Production-breaking risks and required approvals documented | D01–D16 consumer register, E01–E20 evidence gates, stop/rollback procedure and owner decisions | Documented; operational evidence/go-no-go not supplied |
 | No runtime changes or GitHub repository rename performed | Diff limited to docs/haven/rename and generated navigation maps; no workflow dispatch, issue mutation, merge, rename or deployment | Required scope invariant, checked before publication |
 
-Do not use a closing keyword for #147 in the PR. The full issue remains open because untracked configuration, live Pi/registry/RunPod/integration verification and owner review require separate authorization/evidence.
+Historical handoff: the original audit requested that #147 remain open for external evidence. The subsequent owner decision above supersedes that request: #147 is complete; the external evidence remains assigned to later phases.
 
 ## Validation procedure
 
