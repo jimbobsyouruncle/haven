@@ -247,7 +247,7 @@ These are source observations, not runtime verification. Do not overwrite legacy
 
 ## 12. Open design decisions
 
-1. Confirm actual RunPod repository and its inference-server API, models and authentication.
+1. The separate RunPod source repository is confirmed as `jimbobsyouruncle/runpod-hybrid-worker`; its actual API, models, authentication and compatibility remain to be validated.
 2. Select IdP (Authentik/Kanidm) after Pi capacity, OIDC/MAS and passkey tests.
 3. Validate rootless Podman networking, firewall enforcement and the trusted provisioner design on Pi OS.
 4. Verify per-engine RunPod custom endpoint compatibility, telemetry behavior and license/provider restrictions.
@@ -264,3 +264,23 @@ These are source observations, not runtime verification. Do not overwrite legacy
 - https://github.com/jimbobsyouruncle/hybrid-ai/blob/main/status/Caddyfile.tmpl
 - https://github.com/jimbobsyouruncle/hybrid-ai/blob/main/backup/README.md
 - https://github.com/jimbobsyouruncle/hybrid-ai/blob/main/.github/workflows/sast-checks.yml
+
+## 14. Design governance, persona migration and GitHub workflow
+
+[DECISIONS.md](DECISIONS.md) distinguishes explicitly approved principles from proposed designs and unverified implementations. [MIGRATION.md](MIGRATION.md) records candidate workstreams and evidence gates; [root AGENTS.md](../../AGENTS.md) governs implementation cards, CI remediation and review readiness. None of these documents grants runtime permissions.
+
+### Independent CISO and digest continuity
+
+The owner requires an independent Haven CISO persona preserving the existing Hermes CISO **daily security digest**, including schedule, recipients, format and research sources. Verify actual profile, scheduler and mail configuration on the host before migration; do not infer them from repository content. CISO receives scoped read-only security research and recipient-allowlisted email sending, without default GitHub write or deploy. Coder must not inherit CISO mail-send rights. This is a **target migration requirement**, not verified functionality. See [ADR-0003](adr/0003-ciso-persona.md).
+
+### Legacy credential transition
+
+Inventory only credential names, owners, consumers, scopes and dependencies—**never values** in docs, issues, prompts or logs. Classify CISO/Coder/infrastructure/other, preserve existing integrations, and move toward independent short-lived broker-issued persona/task credentials with rotation, revocation, recovery and negative authorization tests. Cloudflare DNS, backup and host-admin secrets stay infrastructure-owned. Any live migration or rotation needs separate owner approval and rollback. See [ADR-0002](adr/0002-persona-credentials.md).
+
+### GitHub backlog and epic lifecycle
+
+GitHub Issues/Projects are proposed as the canonical cross-repository backlog. Codex performs owner-scoped implementation; a future Hermes PM may plan and groom issues under least privilege, without self-granted merge/deploy authority. The local `haven new-epic` presents prioritized, deduplicated candidate epics and child issues; `haven next` verifies epic closure eligibility before proposing another issue. Both commands are **read-only**; epic creation, issue updates and closure require explicit separate owner approval. See [ADR-0004](adr/0004-github-epic-governance.md) and [launcher guide](../../scripts/README-haven.md).
+
+### RunPod worker contract
+
+The separate [runpod-hybrid-worker repository](https://github.com/jimbobsyouruncle/runpod-hybrid-worker) requires its own CI, pinned image artifacts, authenticated streaming/inference contract, compatibility probes and negative egress tests. The worker README's deployment examples are not proof that Haven's proposed dedicated-RunPod-only security enforcement is deployed.

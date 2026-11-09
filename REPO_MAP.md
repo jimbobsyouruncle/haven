@@ -86,6 +86,14 @@
 ## docs/haven
 
 - docs/haven/ARCHITECTURE.md - Haven — Architecture Design
+- docs/haven/DECISIONS.md - Haven architecture decision register
+- docs/haven/MIGRATION.md - Haven platform migration and evidence gates
+## docs/haven/adr
+
+- docs/haven/adr/0001-project-scoped-coder.md - ADR-0001 — Project-scoped Coder and restricted inference
+- docs/haven/adr/0002-persona-credentials.md - ADR-0002 — Persona credentials and legacy migration
+- docs/haven/adr/0003-ciso-persona.md - ADR-0003 — Independent CISO persona
+- docs/haven/adr/0004-github-epic-governance.md - ADR-0004 — GitHub epics and agent governance
 ## docs/haven/rename
 
 - docs/haven/rename/COMPATIBILITY.md - HAVEN-003 repository identity compatibility preparation
@@ -140,6 +148,7 @@
 - runpod/README.md - runpod/ — Cloud Inference Plane
 ## scripts
 
+- scripts/README-haven.md - Haven local Codex launcher
 - scripts/bootstrap.sh
 - scripts/check-agent-context.sh - Check that the checked-in agent context maps are fresh.
 - scripts/check-git-remotes.sh - FILE: scripts/check-git-remotes.sh
@@ -152,6 +161,7 @@
 - scripts/deploy-instance.sh
 - scripts/deploy-remote.sh
 - scripts/deploy-trigger.sh
+- scripts/haven - FILE: scripts/haven
 - scripts/no-masked-literals-baseline.txt
 - scripts/prune-conversations.sh - FILE: scripts/prune-conversations.sh
 - scripts/prune-docker-cache.sh - FILE: scripts/prune-docker-cache.sh
@@ -193,6 +203,7 @@
 - scripts/test-doctor-sandbox-image.sh - FILE: scripts/test-doctor-sandbox-image.sh
 - scripts/test-doctor-startup-grace.sh - FILE: scripts/test-doctor-startup-grace.sh
 - scripts/test-env-pin-migration.sh - FILE: scripts/test-env-pin-migration.sh
+- scripts/test-haven-launcher.sh - FILE: scripts/test-haven-launcher.sh
 - scripts/test-hermes-nonroot-preflight.sh - FILE: scripts/test-hermes-nonroot-preflight.sh
 - scripts/test-hybrid-ai-env.sh - FILE: scripts/test-hybrid-ai-env.sh
 - scripts/test-install-auth-env-leak.sh - FILE: scripts/test-install-auth-env-leak.sh

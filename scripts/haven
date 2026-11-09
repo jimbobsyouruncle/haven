@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# FILE: scripts/haven
+# Local developer Codex launcher; never grants repo or infrastructure permissions.
+set -euo pipefail
+
+REPO="${HAVEN_REPO:-$HOME/development/haven/hybrid-ai}"
+REMOTE="origin"
+EPIC="${HAVEN_EPIC:-146}"
+REPO_NAME="jimbobsyouruncle/hybrid-ai"
+
+usage() {
+    echo "Usage: haven [next [EPIC_NUMBER]|new-epic|status|help]"
+    echo "  haven                Refresh Git and launch Codex"
+    echo "  haven next [number]  Review epic; propose closure or next issue"
+    echo "  haven new-epic       Review architecture and propose prioritized epics"
+    echo "  haven status         Show Git status"
+    echo "  haven help           Show this help"
+}
+MODE="${1:-start}"
+case "$MODE" in start|next|new-epic|status|help) ;; *) usage; exit 2 ;; esac
+if [[ "$MODE" == "next" ]]; then
+    if (( $# > 2 )); then usage; exit 2; fi
+    EPIC="${2:-$EPIC}"
+    if [[ ! "$EPIC" =~ ^[1-9][0-9]*$ ]]; then
+        echo "ERROR: Epic number must be a positive integer." >&2; exit 2
+    fi
+elif (( $# > 1 )); then usage; exit 2; fi
+if [[ "$MODE" == "help" ]]; then usage; exit 0; fi
+command -v git >/dev/null 2>&1 || { echo "ERROR: Git is not installed." >&2; exit 1; }
+if [[ "$MODE" != "status" ]]; then
+    command -v codex >/dev/null 2>&1 || { echo "ERROR: Codex is not installed or not in PATH." >&2; exit 1; }
+fi
+if [[ ! -d "$REPO/.git" && ! -f "$REPO/.git" ]]; then
+    echo "ERROR: Haven checkout not found: $REPO" >&2; exit 1
+fi
+cd "$REPO"
+BRANCH="$(git symbolic-ref --quiet --short HEAD)" || {
+    echo "ERROR: Detached HEAD. No changes made." >&2; exit 1
+}
+printf '\n==================================\n Haven Developer Launcher\n==================================\n\n'
+printf 'Repository: %s\nBranch:     %s\nMode:       %s\n\n' "$REPO_NAME" "$BRANCH" "$MODE"
+if [[ "$MODE" == "status" ]]; then git status -sb; exit 0; fi
+if [[ -n "$(git status --porcelain)" ]]; then
+    echo "WARNING: Uncommitted changes detected."
+    echo "Skipping Git updates to preserve local work."
+else
+    echo "Fetching latest GitHub changes..."
+    if git fetch "$REMOTE"; then
+        if git show-ref --verify --quiet "refs/remotes/$REMOTE/main"; then
+            if [[ "$BRANCH" == "main" ]]; then
+                echo "Fast-forwarding main..."
+                if ! git merge --ff-only "$REMOTE/main"; then
+                    echo "WARNING: Main could not fast-forward; no automatic merge/rebase."
+                fi
+            else
+                echo "Refreshing local main reference..."
+                if git show-ref --verify --quiet refs/heads/main; then
+                    if git merge-base --is-ancestor main "$REMOTE/main"; then
+                        if git branch -f main "$REMOTE/main"; then
+                            echo "Local main reference updated."
+                        else echo "WARNING: Could not update local main."; fi
+                    else echo "WARNING: Local main has diverged."; fi
+                else echo "WARNING: Local main not found."; fi
+                echo "Feature branch preserved: $BRANCH"
+                echo "No merge or rebase performed."
+            fi
+        else echo "WARNING: origin/main not found."; fi
+    else echo "WARNING: Fetch failed; continuing without Git refresh."; fi
+fi
+printf '\nCurrent branch: %s\n\n' "$(git branch --show-current)"
+if [[ "$MODE" == "new-epic" ]]; then
+    echo "Starting Haven Epic Discovery (read-only)..."
+    PROMPT=$(cat <<PROMPT_EOF
+Human-initiated READ-ONLY architecture/backlog review for public repository $REPO_NAME.
+Follow AGENTS.md and read docs/haven/ARCHITECTURE.md, DECISIONS.md,
+MIGRATION.md and adr/*.md. Treat target design as not necessarily implemented.
+Use current GitHub issues, epics, comments, PRs, dependencies and CI evidence.
+Check relevant current code for implementation claims. Consider public,
+explicitly authorized jimbobsyouruncle/runpod-hybrid-worker dependencies;
+if unavailable, state the limitation and do not access private material.
+
+1. Inventory existing epics and issues, open PRs, completed work, accepted
+   decisions, blockers and deferred owner-only gates. Deduplicate candidates.
+2. Identify unimplemented architecture, security hard gates and missing tests.
+   Distinguish approved requirements, proposed ADRs and unknowns.
+3. Present a PRIORITIZED shortlist of up to five candidate new epics.
+   For EACH: priority/rationale, overlap with existing issues, objective,
+   child issues with acceptance criteria and negative security tests,
+   dependencies, impacted repos, risk, effort, rollout/rollback, ADR links
+   and proposed GitHub labels/milestones.
+4. Recommend one candidate for owner consideration with proposed issue
+   hierarchy; explain sequencing tradeoffs. Do not create anything.
+
+Do not edit files, branches, GitHub issues/Projects, credentials, infrastructure
+or deployments. Do not merge or rename repositories. End exactly with:
+Awaiting approval to create proposed epic and issues.
+A later approval must identify the chosen epic and bounded scope.
+PROMPT_EOF
+)
+    exec codex "$PROMPT"
+fi
+if [[ "$MODE" == "next" ]]; then
+    echo "Starting Haven Epic Continuation and Closure Review..."
+    PROMPT=$(cat <<PROMPT_EOF
+Human-initiated READ-ONLY planning for public repository $REPO_NAME.
+Follow AGENTS.md and docs/haven/ARCHITECTURE.md, DECISIONS.md,
+MIGRATION.md and applicable ADRs. Review epic #$EPIC, all children,
+dependencies, comments, PRs, acceptance criteria and current CI results.
+
+PHASE 1 — VERIFY: Check previous completed issue, merged PR diff and
+required CI/SAST, tests, map and applicable deploy evidence. Accept green
+checks for what they actually tested; distinguish passed, failed, skipped
+and missing. Never claim owner-only runtime verification was executed.
+PHASE 2 — RECONCILE: Report stale issue statuses, checkboxes, dependencies,
+missing evidence and unresolved manual-review items. Recommend GitHub
+corrections without making them.
+PHASE 3 — EPIC CLOSURE GATE: Enumerate EVERY child issue, including closed,
+open, transferred and deferred work. If any required child is unresolved,
+explain blockers and proceed to Phase 4. If all are resolved, verify epic
+acceptance criteria, cross-repo dependencies, final-head CI, cutover and
+rollback gates, and owner-only operations. Deferred requirements are
+nonblocking ONLY with explicit owner acceptance and a tracked successor
+issue, owner and milestone. Present a Closure Card listing each issue,
+evidence, open follow-ups, caveats and proposed status updates. End with:
+Awaiting approval to close epic #$EPIC.
+Do NOT close or modify the epic in this read-only review.
+PHASE 4 — NEXT ISSUE (only if epic remains open): Choose the next unblocked
+issue by dependencies. For rename epic #146, preserve owner acceptance
+of #147 and carry unresolved work into #148/#149/#150/#151. Present an
+Implementation Card with progress, previous evidence, proposed issue,
+scope/files/branch, risks, tests, dependencies, PR and owner-only actions.
+End with:
+Awaiting approval to implement #ISSUE.
+
+No file changes, branches, GitHub mutations, merge, deployment, credentials,
+infrastructure operations or repository rename. Approval to implement and
+approval to close an epic are separate actions under AGENTS.md.
+PROMPT_EOF
+)
+    exec codex "$PROMPT"
+fi
+echo "Starting Codex..."
+exec codex
