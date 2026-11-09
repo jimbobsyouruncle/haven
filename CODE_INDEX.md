@@ -170,6 +170,19 @@
 - status
 - proxy
 
+## docs/haven/rename/audit.py
+- def git(*args)
+- def has_ghcr_reference(line)
+- def classify(path, line, match, kind)
+- def render()
+- def main()
+
+## docs/haven/rename/test_audit.py
+- class RegistryReferenceTests(TestCase)
+  - def test_registry_references(self)
+  - def test_deceptive_or_malformed_references(self)
+  - def test_registry_evidence_affects_classification(self)
+
 ## doctor.sh
 - section()
 - pass()

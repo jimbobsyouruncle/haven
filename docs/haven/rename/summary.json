@@ -1,0 +1,35 @@
+{
+  "baseline": "c2286bcd266e1924797fc787a677e6f8aa2d94da",
+  "classifications": {
+    "compatibility alias": 3476,
+    "manual review": 125,
+    "preserve": 823,
+    "rename": 29
+  },
+  "content_occurrences": 4431,
+  "excluded_binary_files": [],
+  "filename_occurrences": 22,
+  "legacy_content_occurrences": 4191,
+  "matched_content_files": 137,
+  "matched_content_lines": 3543,
+  "pattern": "hybrid[-_ ]ai|\\bhybrid\\b",
+  "rules": {
+    "M01": 45,
+    "M02": 31,
+    "M04": 43,
+    "M05": 6,
+    "P01": 22,
+    "P02": 33,
+    "P03": 45,
+    "P04": 1,
+    "P05": 2323,
+    "P06": 162,
+    "P07": 2,
+    "P08": 580,
+    "P09": 1131,
+    "R01": 22,
+    "R02": 7
+  },
+  "scope": "Immutable public baseline only; local/untracked/external state excluded.",
+  "tracked_files": 173
+}
