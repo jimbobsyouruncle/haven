@@ -20,6 +20,9 @@ set -Eeuo pipefail
 #   1  one or more cases failed
 # ---------------------------------------------------------------------------
 
+# Cases control the selector explicitly; ignore the invoking shell setting.
+unset HYBRID_AI_REPOSITORY_SLUG
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VERIFY_SCRIPT="$SCRIPT_DIR/run-post-deploy-verify.sh"
 
@@ -43,6 +46,7 @@ fail() { printf 'FAIL: %s\n' "$1"; failures=$((failures + 1)); }
 # code. It never opens a socket.
 cat > "$BINDIR/curl" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "${CURL_CALL_LOG:?}"
 out=""
 url=""
 while [[ $# -gt 0 ]]; do
@@ -64,7 +68,7 @@ if [[ "$url" == *"/status/api"* ]]; then
 fi
 [[ -n "$out" ]] && printf '%s' "${CURL_STUB_BODY:-}" > "$out"
 printf '%s' "${CURL_STUB_CODE:-200}"
-exit 0
+exit "${CURL_STUB_RC:-0}"
 EOF
 
 # jq: answer only the filters the verifier uses. Rows come from JQ_STUB_ROWS; the
@@ -105,6 +109,19 @@ esac
 EOF
 
 chmod +x "$BINDIR/curl" "$BINDIR/jq"
+REAL_DATE="$(command -v date)"
+export REAL_DATE
+cat > "$BINDIR/date" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${VERIFY_FAKE_CLOCK:-0}" == 1 && "$*" == +%s ]]; then
+  if [[ -e "$VERIFY_CLOCK_MARKER" ]]; then printf '3601\n';
+  else : > "$VERIFY_CLOCK_MARKER"; printf '0\n'; fi
+else
+  exec "$REAL_DATE" "$@"
+fi
+EOF
+chmod +x "$BINDIR/date"
+export CURL_CALL_LOG="$WORKDIR/curl.argv" VERIFY_CLOCK_MARKER="$WORKDIR/clock"
 export PATH="$BINDIR:$PATH"
 
 # --- Throwaway git trees ----------------------------------------------------
@@ -171,7 +188,7 @@ run_verify() {
     env_args+=(HYBRID_AI_ENV_FILE_FALLBACK="$WORKDIR/no-such-layout.env")
   fi
 
-  rm -f "$GIT_CALL_LOG"
+  rm -f "$GIT_CALL_LOG" "$CURL_CALL_LOG" "$VERIFY_CLOCK_MARKER"
   set +e
   # Scrub the gate's inputs so a value leaked into the caller's environment
   # cannot make a case pass: the layout file must be the only source here.
@@ -467,6 +484,43 @@ if [[ -f "$VDIR_FILE" ]]; then
 else
   fail "no verdict file to check ownership on: out '$OUT'"
 fi
+
+echo "== repository identity, standalone installation and fail-closed HTTP =="
+export CURL_STUB_CODE=200 JQ_STUB_ROWS=$'1\tcompleted\tsuccess\n'
+run_verify "$TREE_A" "__absent__"
+if grep -Fq "https://api.github.com/repos/jimbobsyouruncle/hybrid-ai/actions/runs?head_sha=$SHA_A" "$CURL_CALL_LOG"; then
+  pass "default verifier API identity remains hybrid-ai"
+else fail "default API identity changed"; fi
+# Simulate install.sh copying only this executable into /usr/local/sbin.
+SOURCE_VERIFY="$VERIFY_SCRIPT"
+mkdir -p "$WORKDIR/sbin"
+cp "$VERIFY_SCRIPT" "$WORKDIR/sbin/run-post-deploy-verify.sh"
+VERIFY_SCRIPT="$WORKDIR/sbin/run-post-deploy-verify.sh"
+export HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 0 ]] && grep -qx PASS <<< "$OUT_STDOUT" && grep -Fq "https://api.github.com/repos/jimbobsyouruncle/haven/actions/runs?head_sha=$SHA_A" "$CURL_CALL_LOG"; then
+  pass "standalone installed verifier selects Haven without a sibling helper"
+else fail "standalone Haven verifier failed: $OUT"; fi
+for code in 301 302 403 404 500; do
+  export CURL_STUB_CODE="$code"
+  run_verify "$TREE_A" "__absent__"
+  if [[ "$RC" == 1 ]] && grep -qxF "FAIL: github api returned HTTP $code" <<< "$OUT_STDOUT" && ! grep -Eq -- '(^| )(-L|--location)( |$)' "$CURL_CALL_LOG"; then
+    pass "HTTP $code fails closed without following redirects"
+  else fail "HTTP $code did not fail closed"; fi
+done
+export CURL_STUB_CODE=200 CURL_STUB_RC=28
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 1 ]] && grep -qxF 'FAIL: curl could not reach the github api' <<< "$OUT_STDOUT"; then
+  pass "curl timeout fails verification"
+else fail "curl timeout was not a failure"; fi
+unset CURL_STUB_RC
+export VERIFY_FAKE_CLOCK=1 JQ_STUB_ROWS=''
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 1 ]] && grep -qxF "TIMEOUT: no completed run for $SHA_A after 60 minutes" <<< "$OUT_STDOUT"; then
+  pass "empty run list reaches deadline without a real wait"
+else fail "empty run deadline did not fail: $OUT"; fi
+unset VERIFY_FAKE_CLOCK HYBRID_AI_REPOSITORY_SLUG
+VERIFY_SCRIPT="$SOURCE_VERIFY"
 
 echo "== done =="
 if [[ "$failures" -ne 0 ]]; then

@@ -88,6 +88,7 @@
 - docs/haven/ARCHITECTURE.md - Haven — Architecture Design
 ## docs/haven/rename
 
+- docs/haven/rename/COMPATIBILITY.md - HAVEN-003 repository identity compatibility preparation
 - docs/haven/rename/DEPENDENCIES.md - Rename dependencies, risks and execution gates
 - docs/haven/rename/EXTERNAL.md - External evidence checklist — pending authorization
 - docs/haven/rename/README.md - HAVEN-001 public-source rename audit
@@ -200,6 +201,7 @@
 - scripts/test-prune-conversations.sh - FILE: scripts/test-prune-conversations.sh
 - scripts/test-prune-docker-cache.sh - FILE: scripts/test-prune-docker-cache.sh
 - scripts/test-read-probe.sh - FILE: scripts/test-read-probe.sh
+- scripts/test-repository-identity.sh - Offline selector tests, including refusals before any consumer side effects.
 - scripts/test-reset-passwords.sh - FILE: scripts/test-reset-passwords.sh
 - scripts/test-run-post-deploy-verify.sh
 - scripts/test-sandbox-firewall.sh
@@ -222,6 +224,7 @@
 - scripts/lib/build-gate.sh - FILE: scripts/lib/build-gate.sh
 - scripts/lib/hybrid-ai-env.sh - FILE: scripts/lib/hybrid-ai-env.sh
 - scripts/lib/read-probe.sh - FILE: scripts/lib/read-probe.sh
+- scripts/lib/repository-identity.sh - Source-only repository identity selection. Process environment only: never
 - scripts/lib/tailscale-resolve.sh - FILE: scripts/lib/tailscale-resolve.sh
 - scripts/lib/tls.sh - FILE: scripts/lib/tls.sh
 ## status

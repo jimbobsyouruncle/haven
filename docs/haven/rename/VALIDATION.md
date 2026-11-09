@@ -1,5 +1,19 @@
 # Validation and acceptance evidence
 
+## Subsequent owner decision and compatibility preparation
+
+The owner subsequently accepted #147 as complete public-source audit evidence
+and recorded that decision on #147 and epic #146. Earlier keep-open statements
+below describe the original audit handoff and are superseded by that explicit
+decision. The 125 manual-review entries and E01–E20 remain later-phase gates,
+not reasons to reopen #147. Required final-head PR checks are authoritative for
+their actual execution; post-merge/deployment evidence is checked separately
+when needed, and skipped checks are not passes.
+
+[COMPATIBILITY.md](COMPATIBILITY.md) records the bounded #149 repository
+identity contract, affected inventory decisions, fixtures and operational
+handoff. It does not claim full #149 completion or live cutover verification.
+
 This report distinguishes reproducible public-source evidence from pending external verification. No production security or restore claim follows from source inspection.
 
 ## Issue #147 acceptance criteria

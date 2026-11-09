@@ -132,9 +132,13 @@ DEPLOY_HOME="$(host_path /var/lib/hybrid-ai-deploy)"
 BACKUP_HOME="$(host_path /var/lib/hybrid-ai-backup)"
 LOGIN_DEFS="$(host_path /etc/login.defs)"
 
-# The PUBLIC https remote, by name only. Same canonical URL deploy-instance.sh
-# fetches from. Never a value from a file.
-PUBLIC_REMOTE="https://github.com/jimbobsyouruncle/hybrid-ai.git"
+# Select before host mutation. Only an explicit process environment setting
+# changes the default; paths/accounts remain compatibility names.
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/repository-identity.sh
+source "${SCRIPT_DIR}/lib/repository-identity.sh"
+REPO_SLUG="$(hybrid_ai_repository_slug)" || exit 2
+PUBLIC_REMOTE="https://github.com/${REPO_SLUG}.git"
 
 # Account names. Names only -- never a credential.
 STACK_ACCOUNT="hybrid-ai"

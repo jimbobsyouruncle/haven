@@ -23,6 +23,46 @@ bootstrap below.
 
 ---
 
+## Haven repository identity preparation (#149)
+
+Bootstrap, deployment fetch and the standalone post-deploy verifier accept the
+process environment setting `HYBRID_AI_REPOSITORY_SLUG`. When unset, it selects
+`jimbobsyouruncle/hybrid-ai`; the only other accepted value is
+`jimbobsyouruncle/haven`. Empty values, arbitrary repositories and URL syntax
+are rejected before network or deployment activity. Canonical clone URLs use
+`https://github.com/<selected-slug>.git`; verification uses
+`https://api.github.com/repos/<selected-slug>/actions/runs` for the requested SHA.
+
+This prepares a later cutover; it does not activate one. The setting is **not**
+loaded from the layout/stack env file, written by bootstrap, or installed into
+systemd. An SSH client's environment does not configure the system service;
+systemd and the transient verifier must each receive the selected identity
+through separately approved operational configuration at #150. Keep all
+consumers on the same identity. Bootstrap still requires the checkout's origin
+to exactly match its selected canonical HTTPS URL; it never rewrites a remote.
+
+`HYBRID_AI_DEPLOY_PUBLIC_REMOTE` retains its existing precedence for deployment
+fetch only, including existing HTTPS/userinfo validation. It does not configure
+bootstrap or the verifier. Align any existing override explicitly at cutover.
+The new selector itself cannot select a foreign repository. The pre-existing
+remote override continues to accept other credential-free HTTPS remotes; this
+PR does not broaden or tighten that separate interface.
+
+Host paths, system accounts, unit names, backup identities and image packages
+retain their compatibility names. API redirects remain errors; the verifier
+does not follow them or turn failed/skipped runs into passes. No live Pi,
+RunPod, restore, registry or external integration check follows from offline
+fixtures. See [compatibility evidence and cutover handoff](../docs/haven/rename/COMPATIBILITY.md).
+
+Any merge of this preparation may trigger the deployment workflow. Owner
+coordination and explicit approval of deployment/freeze remain separate from
+approval to build a draft PR. Before deployment, rollback is a reviewed revert;
+deployed rollback requires separately approved restoration of the known-good
+revision and its installed standalone verifier. Never delete data or rename
+the repository as an automatic rollback.
+
+---
+
 ## What card F installs (one bootstrap, on the host)
 
 Card F is one idempotent, root-run script, `scripts/bootstrap.sh`. It installs

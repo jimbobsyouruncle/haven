@@ -48,6 +48,9 @@ set -Eeuo pipefail
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/repository-identity.sh
+source "${SCRIPT_DIR}/lib/repository-identity.sh"
+REPO_SLUG="$(hybrid_ai_repository_slug)" || exit 2
 # shellcheck source=scripts/lib/hybrid-ai-env.sh
 source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
 
@@ -56,7 +59,7 @@ DEPLOY_LOG_DIR="${HYBRID_AI_LOG_DIR}/deploy"
 LOCK_FILE="${HYBRID_AI_DEPLOY_LOCK_FILE:-/run/lock/hybrid-ai-deploy.lock}"
 # The PUBLIC https remote, by name only -- never a value in the tree. The
 # default is this repository's canonical https URL.
-PUBLIC_REMOTE="${HYBRID_AI_DEPLOY_PUBLIC_REMOTE:-https://github.com/jimbobsyouruncle/hybrid-ai.git}"
+PUBLIC_REMOTE="${HYBRID_AI_DEPLOY_PUBLIC_REMOTE:-https://github.com/${REPO_SLUG}.git}"
 
 die() { # code message...
   local code="$1"; shift

@@ -46,7 +46,22 @@ set -Eeuo pipefail
 #   2  usage error: bad argument, unknown option, or a malformed SHA
 # ---------------------------------------------------------------------------
 
-REPO_SLUG="jimbobsyouruncle/hybrid-ai"
+# Embedded for the standalone /usr/local/sbin installation. The identity
+# fixture suite checks this block against scripts/lib/repository-identity.sh.
+# BEGIN repository identity selector
+hybrid_ai_repository_slug() {
+  case "${HYBRID_AI_REPOSITORY_SLUG-jimbobsyouruncle/hybrid-ai}" in
+    jimbobsyouruncle/hybrid-ai|jimbobsyouruncle/haven)
+      printf '%s' "${HYBRID_AI_REPOSITORY_SLUG-jimbobsyouruncle/hybrid-ai}"
+      ;;
+    *)
+      printf 'repository identity: HYBRID_AI_REPOSITORY_SLUG must select an approved repository\n' >&2
+      return 2
+      ;;
+  esac
+}
+# END repository identity selector
+REPO_SLUG="$(hybrid_ai_repository_slug)" || exit 2
 POLL_SECONDS=30
 DEADLINE_SECONDS=3600
 USER_AGENT="hybrid-ai-post-deploy-verify"
