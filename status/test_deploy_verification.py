@@ -124,6 +124,13 @@ try:
     else:
         bad(f"PASS -> detail missing short sha/timestamp: {tile['detail']!r}")
 
+    # New WARN results preserve compatibility with older PASS/FAIL logs.
+    write(f"waiting for {SHA_PASS} at {TS}\nWARN: optional evidence missing\n")
+    tile = app.probe_deploy_verification()
+    shape(tile)
+    check("WARN -> state warn", tile["state"], "warn")
+    check("WARN -> explicit verdict retained", "WARN:" in tile["detail"], True)
+
     # (2) FAIL -> fail quoting the verdict -----------------------------------
     print("\n== (2) FAIL verdict ==")
     write(f"waiting for {SHA_FAIL} at {TS}\nFAIL: run 9 conclusion failure\n")

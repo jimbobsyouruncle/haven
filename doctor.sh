@@ -1984,7 +1984,7 @@ unset TLS_ENABLED_VAL TLS_IS_ON
 # ---------------------------------------------------------------------------
 # scripts/deploy-remote.sh starts scripts/run-post-deploy-verify.sh in a
 # transient unit after every deploy. Each run appends a header line
-# `waiting for <sha> at <ts>`, then exactly one verdict: `PASS`, `FAIL: <detail>`
+# `waiting for <sha> at <ts>`, then one verdict: `PASS`, `WARN: <detail>`, `FAIL: <detail>`
 # or `TIMEOUT: <detail>`. The log is appended across deploys, so the LAST
 # `waiting for` line names the run of interest and the first verdict line after
 # it is that run's outcome. The log is read as data, never as code.
@@ -1999,7 +1999,7 @@ unset TLS_ENABLED_VAL TLS_IS_ON
 #   exists, 0 bytes               -> warn: the verifier never wrote anything
 #   no parseable waiting line     -> warn
 #   verdict PASS                  -> pass, naming the short sha and timestamp
-#   verdict FAIL / TIMEOUT        -> warn, quoting the verdict and short sha
+#   verdict WARN / FAIL / TIMEOUT -> warn, quoting the verdict and short sha
 #   no verdict, wait > 65 minutes -> warn: the run was abandoned
 #   no verdict, wait within 65 min-> skip note (still running)
 #   unparseable wait timestamp    -> skip note, exit unchanged
@@ -2032,7 +2032,7 @@ elif [[ -s "$PDV_LOG" ]]; then
       PDV_SEEN_WAITING=1
     elif (( PDV_SEEN_WAITING )) && [[ -z "$PDV_VERDICT" ]]; then
       case "$PDV_LINE" in
-        PASS|FAIL:*|TIMEOUT:*) PDV_VERDICT="${PDV_LINE//[[:cntrl:]]/}" ;;
+        PASS|WARN:*|FAIL:*|TIMEOUT:*) PDV_VERDICT="${PDV_LINE//[[:cntrl:]]/}" ;;
       esac
     fi
   done < "$PDV_LOG"

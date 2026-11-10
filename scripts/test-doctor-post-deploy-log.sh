@@ -309,6 +309,15 @@ else
   fail "pass verdict: summary failures ${FAILED}, baseline ${BASE_FAILED}"
 fi
 
+# WARN is a completed verdict, never a running/abandoned run or a clean PASS.
+printf 'waiting for %s at %s\nWARN: optional evidence missing\n' "$SHA_PASS" "$TS_OLD" > "$LOGDIR/warn.log"
+run_doctor warn "$LOGDIR/warn.log"
+if grep -q "post-deploy verification reported 'WARN: optional evidence missing'" "$OUT" \
+   && [[ "$FAILED" == "$BASE_FAILED" ]] \
+   && [[ "$WARNED" -eq $(( BASE_WARNED + 1 )) ]]; then
+  pass "WARN verdict is complete and adds one warning without a failure"
+else fail "WARN verdict was not recognized"; fi
+
 # --- (2) FAIL verdict -----------------------------------------------------
 run_doctor fail "$LOG_FAIL"
 RC_FAIL=$RC
