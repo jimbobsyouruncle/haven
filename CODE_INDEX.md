@@ -572,8 +572,8 @@
 ## scripts/run-post-deploy-verify.sh
 - hybrid_ai_repository_slug()
 - usage_refuse()
+- record_gate()
 - verdict_dir()
-- verdict_warn()
 - write_verdict()
 - finish()
 - resolve_app_dir()

@@ -527,7 +527,7 @@ def probe_deploy_verification() -> Dict[str, Any]:
 
     The log is appended across deploys: each run writes one
     `waiting for <sha> at <ts>` header and then one verdict line (`PASS`,
-    `FAIL: <detail>` or `TIMEOUT: <detail>`). The LAST waiting line names the
+    `WARN: <detail>`, `FAIL: <detail>` or `TIMEOUT: <detail>`). The LAST waiting line names the
     run of interest and the first verdict line after it is its outcome -- the
     same parse semantics doctor.sh uses. Nothing but the sha, the timestamp
     and the verdict is ever emitted, and every string passes redact().
@@ -564,7 +564,7 @@ def probe_deploy_verification() -> Dict[str, Any]:
             seen = True
         elif seen and verdict is None:
             stripped = re.sub(r"[\x00-\x1f\x7f]", "", line)
-            if stripped in ("PASS",) or stripped.startswith(("FAIL:", "TIMEOUT:")):
+            if stripped in ("PASS",) or stripped.startswith(("WARN:", "FAIL:", "TIMEOUT:")):
                 verdict = stripped
 
     if not seen:
@@ -577,7 +577,7 @@ def probe_deploy_verification() -> Dict[str, Any]:
     if verdict == "PASS":
         return {"name": name, "state": "ok",
                 "detail": f"verified {short} · {stamp}", "hint": ""}
-    return {"name": name, "state": "fail",
+    return {"name": name, "state": "warn" if verdict.startswith("WARN:") else "fail",
             "detail": f"{redact(verdict)} for {short}",
             "hint": "journalctl -u 'hybrid-ai-post-deploy-verify-*'"}
 

@@ -583,3 +583,73 @@ was captured.
 | Integrity check fails | Repository corruption | Do not prune. Try `restic repair index`, and treat existing snapshots as suspect |
 | Backup is slow | First run uploads everything | Subsequent runs are incremental and typically finish in seconds |
 | `wrong password or no key found` | Wrong repository password | There is no recovery. This is why it goes in a password manager |
+
+## Post-deploy verification coverage and receipt ownership
+
+`scripts/run-post-deploy-verify.sh` checks workflow conclusions, deployed HEAD,
+backup-log presence, host filesystem readability as the configured status
+identity, and the live Backups tile. It does not run a backup, a repository
+integrity audit, or a restore. Existing successful backup/restore evidence remains
+valid independently of a skipped verifier probe.
+
+The standalone installed executable reads only process settings and the
+non-secret layout file (`HYBRID_AI_ENV_FILE_FALLBACK`, normally
+`/etc/hybrid-ai/hybrid-ai.env`) as data. It never sources that file or reads
+`stack.env`/credentials. Explicit `BACKUP_LOG` takes precedence; system mode
+otherwise uses `/var/log/hybrid-ai-backup/backup.log`, matching the units'
+`LogsDirectory`. User mode uses `HYBRID_AI_LOG_DIR/backup.log` when configured;
+without either setting its backup-log probe is explicitly skipped.
+
+Coverage policy:
+
+- Workflow conclusions and deployed HEAD are always required.
+- All three backup probes are required in system mode. In user mode they are
+  optional unless `HYBRID_AI_VERIFY_BACKUP_GATES=required` is set in the process
+  environment or non-secret layout. `optional` cannot downgrade system mode.
+  Invalid modes/policies fail. A detected broken log or contradictory/failing
+  tile remains a failure even when coverage is optional.
+- A required probe with WARN or SKIPPED evidence produces overall FAIL/exit 1.
+  Optional WARN/SKIPPED evidence produces overall WARN/exit 0. Clean PASS/exit 0
+  requires every probe to pass. Workflow wait expiration retains TIMEOUT/exit 1.
+- The JSON receipt retains the original eight fields, adds `schema_version: 2`
+  and `gates`, and uses PASS/WARN/FAIL/SKIPPED for per-gate evidence. Each gate
+  records `required`, `state`, and a fixed diagnostic `reason`. Probes not reached
+  after an earlier failure are SKIPPED. No raw logs or API bodies are recorded.
+  Doctor and the status tile accept old PASS/FAIL/TIMEOUT logs and new WARN logs;
+  WARN is displayed as a warning, never as success or a still-running check.
+
+The transient verifier is a trusted host operation running as root. Receipt
+ownership follows Compose's **numeric** `HYBRID_AI_UID:HYBRID_AI_GID`, resolved
+from process settings then the non-secret layout, with the existing legacy
+`0:0` default. A host account named `hermes` is neither required nor created.
+The container's `/etc/passwd` name does not establish a host identity. This is
+consistent with the existing numeric non-root migration; it does not implement
+Haven's proposed worker isolation or change the container user. Only the receipt
+directory and new receipt are assigned that ownership, with the existing 0755
+and 0644 modes. Files are staged and renamed atomically; symlink receipt targets
+are refused. A non-root local invocation can publish only under its own
+configured UID/GID. Receipt publication is optional; a publication failure is
+reported in the host log as WARN unless the result is already FAIL/TIMEOUT.
+No JSON receipt is promised when its destination cannot be written. An older
+receipt for the same SHA may remain; check its timestamp and the latest host
+log before interpreting retry evidence.
+
+The status readability probe drops capabilities and uses the configured
+`HYBRID_AI_UID` (or `STATUS_UID`, legacy 1000), primary `DOCKER_GID` (otherwise
+host docker group's GID, legacy 999), and `BACKUP_GROUP_GID` (otherwise the
+system-mode `hybrid-ai-backup` group's GID). It proves host DAC readability for
+that identity; it does not prove the running container has those settings or
+that its mount is correct. The live tile is separate evidence. No socket access
+is used by the verifier. Missing privilege-dropping support or identity evidence
+is SKIPPED and subject to the policy above.
+
+Rollout is through the existing, separately approved deployment/install path.
+No manual account, permission, credential, or infrastructure change is needed
+for this source change. After deployment, the owner should inspect the new
+SHA's log and JSON receipt and confirm actual ownership and gate evidence.
+The status probe retains the existing loopback HTTP route and does not follow
+redirects or bypass authentication. A TLS redirect, authentication response,
+unavailable API, or absent tile leaves that probe SKIPPED and fails system-mode
+verification; it must not be treated as failed backup execution. Any route or
+identity change needs its own operational review. Rollback is a reviewed revert
+and separately approved redeploy; no production verification is claimed by CI.

@@ -12,13 +12,13 @@ set -Eeuo pipefail
 #   It waits for the GitHub Actions run(s) for one commit SHA to complete, then
 #   checks that every one of them concluded "success", then checks that the
 #   deployed tree still sits on that same commit. It writes ONE result line:
-#   PASS, FAIL (with the reason) or TIMEOUT.
+#   PASS, WARN, FAIL (with the reason) or TIMEOUT.
 #
-#   It also records that verdict as JSON in the mounted data dir, because the
-#   host log is not mounted in the container: one file per deploy SHA at
+#   It also records that verdict as JSON for Hermes consumers through the
+#   existing data mount: one file per deploy SHA at
 #   ${HYBRID_AI_DATA_DIR:-/var/lib/hybrid-ai}/hermes_data/deploy-verdicts/
-#   <sha>.json. A failure to write the file is a warning on stderr only. It
-#   never changes the result line or the exit code.
+#   <sha>.json. Optional missing evidence produces WARN (exit 0); mandatory
+#   missing evidence produces FAIL (exit 1). See backup/README.md for policy.
 #
 # WHY IT EXISTS:
 #   The deploy workflow reports on the work it started, not on the result of the
@@ -40,7 +40,8 @@ set -Eeuo pipefail
 #   it is ever printed. Tests point APP_DIR at a throwaway checkout.
 #
 # EXIT CODES:
-#   0  PASS   every run succeeded and the deployed tree is on the SHA
+#   0  PASS   all gates passed
+#   0  WARN   mandatory gates passed; optional evidence missing or warning
 #   1  FAIL   a run failed, the API refused, or the tree is on another commit
 #   1  TIMEOUT (also non-zero) no completed run inside the 60 minute deadline
 #   2  usage error: bad argument, unknown option, or a malformed SHA
@@ -72,122 +73,87 @@ usage_refuse() {
   exit 2
 }
 
-# Where the JSON verdict for this SHA goes. Resolved at call time so a test can
-# point it at a throwaway dir; the default follows the data-dir convention.
+# Gate evidence contains fixed diagnostic strings, never file contents or API bodies.
+GATES='{"workflow_runs":{"required":true,"state":"SKIPPED","reason":"not reached"},"deployed_head":{"required":true,"state":"SKIPPED","reason":"not reached"}}'
+record_gate() { # <name> <required:true|false> <state> <reason>
+  GATES="$(jq -nc --argjson gates "$GATES" --arg name "$1" \
+    --argjson required "$2" --arg state "$3" --arg reason "$4" \
+    '$gates + {($name): {required: $required, state: $state, reason: $reason}}')" || exit 1
+}
+
 verdict_dir() {
-  printf '%s' "${HYBRID_AI_DEPLOY_VERDICT_DIR:-${HYBRID_AI_DATA_DIR:-/var/lib/hybrid-ai}/hermes_data/deploy-verdicts}"
+  printf '%s' "${HYBRID_AI_DEPLOY_VERDICT_DIR:-${DATA_DIR}/hermes_data/deploy-verdicts}"
 }
 
-# At most ONE stderr line per run: the caller's verdict must not be buried, and
-# a retry inside one finish() must not print twice.
-VERDICT_WARNED=0
-verdict_warn() { # <reason>
-  if (( VERDICT_WARNED == 0 )); then
-    VERDICT_WARNED=1
-    printf 'run-post-deploy-verify: %s\n' "$1" >&2
-  fi
-  return 0
-}
-
-# Records the verdict as one JSON object per deploy SHA for the container, which
-# cannot see the host log. Every step returns 0 on failure and says so once on
-# stderr: this must never change finish's stdout line or exit code.
+# Records a per-SHA receipt using the numeric identity used by Compose. No
+# passwd lookup, host account creation, recursive chown or permission widening.
+# The directory/file modes retain the existing 0755/0644 receipt contract.
 write_verdict() { # <verdict> <rc> [detail]
   local verdict="$1" rc="$2" detail="${3:-}"
-  local dir at head="" app_dir="" json ids_json="null" tmp="" target=""
-  local hermes_ok=1
-
-  dir="$(verdict_dir 2>/dev/null)" || return 0
-  if [[ -z "$dir" ]]; then
-    verdict_warn "no verdict directory resolved; the verdict file was not written"
-    return 0
+  local dir at head="" json ids_json="null" tmp target
+  local owner_uid owner_gid
+  dir="$(verdict_dir)"
+  owner_uid="${HYBRID_AI_UID:-$(layout_value HYBRID_AI_UID)}"
+  owner_gid="${HYBRID_AI_GID:-$(layout_value HYBRID_AI_GID)}"
+  owner_uid="${owner_uid:-0}"; owner_gid="${owner_gid:-0}"
+  if [[ ! "$owner_uid" =~ ^[0-9]+$ || ! "$owner_gid" =~ ^[0-9]+$ ]]; then
+    return 1
   fi
-
-  at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" || return 0
-
-  # head: the tree's commit when it is readable, else JSON null.
-  if [[ -n "${APP_DIR:-}" ]]; then
-    app_dir="$APP_DIR"
-    head="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null)" || head=""
-  fi
-
-  # run_ids: the polled ids when at least one was polled, else JSON null.
-  if (( ${#RUN_IDS[@]} > 0 )); then
-    if ! ids_json="$(printf '%s\n' "${RUN_IDS[@]}" | jq -R . | jq -s -c . 2>/dev/null)"; then
-      ids_json="null"
-    fi
-  fi
-
-  if ! json="$(jq -nc \
-      --arg sha "$SHA" \
-      --arg verdict "$verdict" \
-      --argjson rc "$rc" \
-      --arg at "$at" \
-      --arg head "$head" \
-      --arg app_dir "$app_dir" \
-      --arg detail "$detail" \
-      --argjson run_ids "$ids_json" \
-      '{sha: $sha, verdict: $verdict, rc: $rc, at: $at,
-        head: (if $head == "" then null else $head end),
-        app_dir: (if $app_dir == "" then null else $app_dir end),
-        detail: $detail,
-        run_ids: $run_ids}' 2>/dev/null)"; then
-    verdict_warn "could not build the verdict JSON for ${SHA}"
-    return 0
-  fi
-
-  # The transient unit runs as root; a root-owned file in the data dir is what
-  # doctor warns about, so hand both the dir and the file to hermes.
-  id -u hermes >/dev/null 2>&1 || hermes_ok=0
-
-  if (( hermes_ok )); then
-    if ! install -d -o hermes -g hermes -m 0755 "$dir" 2>/dev/null; then
-      verdict_warn "could not create the verdict directory ${dir}"
-      return 0
-    fi
+  [[ ! -L "$dir" ]] || return 1
+  # A non-root local invocation can publish only as its own configured identity.
+  if [[ "$(id -u)" == 0 ]]; then
+    install -d -o "$owner_uid" -g "$owner_gid" -m 0755 "$dir" 2>/dev/null || return 1
   else
-    if ! install -d -m 0755 "$dir" 2>/dev/null; then
-      verdict_warn "could not create the verdict directory ${dir}"
-      return 0
-    fi
+    [[ "$(id -u)" == "$owner_uid" && "$(id -g)" == "$owner_gid" ]] || return 1
+    install -d -m 0755 "$dir" 2>/dev/null || return 1
   fi
-
   target="${dir}/${SHA}.json"
-  if ! tmp="$(mktemp "${dir}/.${SHA}.XXXXXX" 2>/dev/null)"; then
-    verdict_warn "could not create a temporary file in ${dir}"
-    return 0
+  [[ ! -L "$target" ]] || return 1
+  tmp="$(mktemp "${dir}/.${SHA}.XXXXXX" 2>/dev/null)" || return 1
+  at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" || { rm -f -- "$tmp"; return 1; }
+  head="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null)" || head=""
+  if (( ${#RUN_IDS[@]} > 0 )); then
+    ids_json="$(printf '%s\n' "${RUN_IDS[@]}" | jq -R . | jq -s -c .)" || { rm -f -- "$tmp"; return 1; }
   fi
-  if ! printf '%s\n' "$json" > "$tmp" 2>/dev/null; then
-    rm -f -- "$tmp" 2>/dev/null || true
-    verdict_warn "could not write the verdict JSON into ${dir}"
-    return 0
+  if ! json="$(jq -nc \
+      --arg sha "$SHA" --arg verdict "$verdict" --argjson rc "$rc" \
+      --arg at "$at" --arg head "$head" --arg app_dir "$APP_DIR" \
+      --arg detail "$detail" --argjson run_ids "$ids_json" --argjson gates "$GATES" \
+      '{schema_version: 2, sha: $sha, verdict: $verdict, rc: $rc, at: $at,
+        head: (if $head == "" then null else $head end), app_dir: $app_dir,
+        detail: $detail, run_ids: $run_ids, gates: $gates}' 2>/dev/null)" \
+      || ! printf '%s\n' "$json" > "$tmp" \
+      || ! chmod 0644 "$tmp" \
+      || { [[ "$(id -u)" == 0 ]] && ! chown "$owner_uid:$owner_gid" "$tmp"; } \
+      || ! mv -fT -- "$tmp" "$target" 2>/dev/null; then
+    rm -f -- "$tmp"
+    return 1
   fi
-
-  if (( hermes_ok )); then
-    if ! install -m 0644 -o hermes -g hermes "$tmp" "$target" 2>/dev/null; then
-      rm -f -- "$tmp" 2>/dev/null || true
-      verdict_warn "could not install the verdict file ${target}"
-      return 0
-    fi
-  else
-    if ! install -m 0644 "$tmp" "$target" 2>/dev/null; then
-      rm -f -- "$tmp" 2>/dev/null || true
-      verdict_warn "could not install the verdict file ${target}"
-      return 0
-    fi
-    # Only after the file is in place, so a real failure is the line reported.
-    verdict_warn "the hermes account is absent: the verdict file is written without owner hermes, so doctor may warn"
-  fi
-
-  rm -f -- "$tmp" 2>/dev/null || true
-  return 0
 }
 
-# One result line on stdout, nothing else. Detail, when present, is folded into
-# that single line so the log stays greppable.
+# Keep FAIL/TIMEOUT authoritative. Optional skipped/warning evidence can never
+# become a clean PASS. JSON publication itself is optional and reported in log.
 finish() { # <PASS|FAIL|TIMEOUT> <rc> [detail]
   local verdict="$1" rc="$2" detail="${3:-}"
-  write_verdict "$verdict" "$rc" "$detail" || true
+  if [[ "$verdict" == PASS ]]; then
+    local coverage
+    coverage="$(jq -r '
+      if any(.[]; .required and .state != "PASS") then "FAIL"
+      elif any(.[]; .state != "PASS") then "WARN" else "PASS" end
+      ' <<<"$GATES")" || coverage=FAIL
+    case "$coverage" in
+      PASS) ;;
+      WARN) verdict=WARN; detail="optional verification evidence missing or warning" ;;
+      *) verdict=FAIL; rc=1; detail="mandatory verification evidence missing or unsuccessful" ;;
+    esac
+  fi
+  record_gate verdict_file false PASS "receipt published with configured numeric ownership"
+  if ! write_verdict "$verdict" "$rc" "$detail"; then
+    printf 'run-post-deploy-verify: could not publish verdict receipt with configured numeric ownership\n' >&2
+    if [[ "$verdict" == PASS || "$verdict" == WARN ]]; then
+      verdict=WARN; detail="optional verdict receipt could not be published"
+    fi
+  fi
   if [[ -n "$detail" ]]; then
     printf '%s: %s\n' "$verdict" "$detail"
   else
@@ -202,10 +168,19 @@ SHA="$2"
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
   || usage_refuse "--wait-for needs a 40-character lowercase hex commit SHA"
 
+printf 'waiting for %s at %s\n' "$SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 # Resolve APP_DIR in three steps. The layout file is read as DATA, one KEY=VALUE
 # line at a time -- it is NEVER sourced, and no value read from it is printed.
 # An unreadable EXISTING file fails closed and names the setting, never a value.
 HYBRID_AI_ENV_FILE_FALLBACK="${HYBRID_AI_ENV_FILE_FALLBACK:-/etc/hybrid-ai/hybrid-ai.env}"
+
+# Check this even with an APP_DIR environment override: otherwise an unreadable
+# system-mode layout could silently select optional user-mode verification.
+if [[ -e "$HYBRID_AI_ENV_FILE_FALLBACK" && ! -r "$HYBRID_AI_ENV_FILE_FALLBACK" ]]; then
+  printf 'FAIL: layout file is unreadable; refusing defaults\n'
+  exit 1
+fi
 
 resolve_app_dir() {
   local value="" line key
@@ -243,7 +218,7 @@ resolve_app_dir() {
   return 0
 }
 
-APP_DIR="$(resolve_app_dir)" || exit 1
+APP_DIR="$(resolve_app_dir)" || { printf 'FAIL: application directory could not be resolved\n'; exit 1; }
 API_URL="https://api.github.com/repos/${REPO_SLUG}/actions/runs?head_sha=${SHA}"
 
 # --- Backups tile gate ------------------------------------------------------
@@ -252,19 +227,18 @@ API_URL="https://api.github.com/repos/${REPO_SLUG}/actions/runs?head_sha=${SHA}"
 # that. It reads settings from the layout file as DATA (never sourced, values
 # never printed) and needs three things:
 #   (a) BACKUP_LOG is a regular, non-empty file;
-#   (b) the STATUS CONTAINER'S identity (uid 1000, primary gid 999, plus the one
+#   (b) the configured STATUS CONTAINER identity (legacy uid 1000/gid 999, plus
 #       supplementary BACKUP_GROUP_GID) can read it -- probed by DROPPING
 #       privileges from root with setpriv, because a root read proves nothing;
 #   (c) the live status API's Backups tile is not `warn` while the log holds a
 #       backup_success line.
-# Anything this cannot test leaves the verdict to the checks it CAN run, and
-# says so on stderr: a skipped probe is never reported as a pass.
+# Missing required evidence fails closed. Missing optional evidence produces
+# WARN and is recorded as SKIPPED, never PASS.
 GATE_REASON=""
-# Identity the status service actually runs as (docker-compose.yml `user:`).
-STATUS_RUN_UID="${VERIFY_STATUS_UID:-1000}"
-STATUS_RUN_GID="${VERIFY_STATUS_GID:-999}"
-
-gate_skip() { printf 'run-post-deploy-verify: skip: %s\n' "$1" >&2; }
+gate_skip() {
+  record_gate "$CURRENT_GATE" "$BACKUP_REQUIRED" SKIPPED "$1"
+  printf 'run-post-deploy-verify: skip: %s\n' "$1" >&2
+}
 
 # Read ONE key from the layout file, line by line, never sourcing it.
 layout_value() { # <KEY>
@@ -280,6 +254,31 @@ layout_value() { # <KEY>
   printf '%s' "$value"
 }
 
+# Standalone installation cannot source repository helpers. Resolve only
+# non-secret layout keys as data, matching the shared helper's mode defaults.
+DATA_DIR="${HYBRID_AI_DATA_DIR:-$(layout_value HYBRID_AI_DATA_DIR)}"
+DATA_DIR="${DATA_DIR:-/var/lib/hybrid-ai}"
+BACKUP_MODE="${HYBRID_AI_BACKUP_MODE:-$(layout_value HYBRID_AI_BACKUP_MODE)}"
+BACKUP_MODE="${BACKUP_MODE:-user}"
+BACKUP_POLICY="${HYBRID_AI_VERIFY_BACKUP_GATES:-$(layout_value HYBRID_AI_VERIFY_BACKUP_GATES)}"
+BACKUP_POLICY="${BACKUP_POLICY:-optional}"
+STATUS_RUN_UID="${VERIFY_STATUS_UID:-${HYBRID_AI_UID:-$(layout_value HYBRID_AI_UID)}}"
+STATUS_RUN_UID="${STATUS_RUN_UID:-${STATUS_UID:-$(layout_value STATUS_UID)}}"
+STATUS_RUN_UID="${STATUS_RUN_UID:-1000}"
+STATUS_RUN_GID="${VERIFY_STATUS_GID:-${DOCKER_GID:-$(layout_value DOCKER_GID)}}"
+STATUS_RUN_GID="${STATUS_RUN_GID:-$(getent group docker 2>/dev/null | cut -d: -f3 || true)}"
+STATUS_RUN_GID="${STATUS_RUN_GID:-999}"
+BACKUP_REQUIRED=false
+[[ "$BACKUP_MODE" == system || "$BACKUP_POLICY" == required ]] && BACKUP_REQUIRED=true
+for gate in backup_log backup_readability backup_tile; do
+  record_gate "$gate" "$BACKUP_REQUIRED" SKIPPED "not reached"
+done
+if [[ "$BACKUP_MODE" != system && "$BACKUP_MODE" != user ]] \
+   || [[ "$BACKUP_POLICY" != required && "$BACKUP_POLICY" != optional ]]; then
+  printf 'FAIL: invalid backup mode or verification policy\n'
+  exit 1
+fi
+
 # True when the log holds at least one success line, read as the caller (root in
 # the transient unit). Used only to decide whether a `warn` tile contradicts the
 # writer; a read failure here is "unknown", never "no success".
@@ -292,6 +291,7 @@ log_has_success() { # <path>
 B_READ_STATE=""
 probe_read_as_status() { # <path> <supplementary-gid>
   local path="$1" gid="$2"
+  CURRENT_GATE=backup_readability
   B_READ_STATE="skipped"
   if [[ "$(id -u)" != "0" ]]; then
     gate_skip "not root: cannot drop privileges to the status container's identity; readability not proven by this run"
@@ -301,7 +301,7 @@ probe_read_as_status() { # <path> <supplementary-gid>
     gate_skip "setpriv is unavailable: readability as the status identity not proven"
     return 0
   fi
-  if [[ ! "$gid" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$gid" =~ ^[0-9]+$ || ! "$STATUS_RUN_UID" =~ ^[0-9]+$ || ! "$STATUS_RUN_GID" =~ ^[0-9]+$ ]]; then
     gate_skip "BACKUP_GROUP_GID is not a numeric gid: readability as the status identity not proven"
     return 0
   fi
@@ -309,8 +309,10 @@ probe_read_as_status() { # <path> <supplementary-gid>
        --groups="$gid" --inh-caps=-all --bounding-set=-all -- \
        test -r "$path" 2>/dev/null; then
     B_READ_STATE="readable"
+    record_gate backup_readability "$BACKUP_REQUIRED" PASS "readable as status identity"
   else
     B_READ_STATE="unreadable"
+    record_gate backup_readability "$BACKUP_REQUIRED" FAIL "status identity cannot read backup log"
   fi
   return 0
 }
@@ -322,6 +324,7 @@ B_TILE=""
 probe_tile() { # <local-domain>
   local domain="$1" body code
   B_TILE=""
+  CURRENT_GATE=backup_tile
   if [[ -z "$domain" ]]; then
     gate_skip "LOCAL_DOMAIN is not set in the layout file: the status API was not queried"
     return 0
@@ -348,9 +351,21 @@ probe_tile() { # <local-domain>
 # Returns 1 and fills GATE_REASON when the release leaves the tile blind while
 # the writer's log reports success.
 check_backup_tile() {
-  local log gid domain
+  local log gid domain log_dir
+  CURRENT_GATE=backup_log
   log="${BACKUP_LOG:-$(layout_value BACKUP_LOG)}"
+  if [[ -z "$log" ]]; then
+    if [[ "$BACKUP_MODE" == system ]]; then
+      log=/var/log/hybrid-ai-backup/backup.log
+    else
+      log_dir="${HYBRID_AI_LOG_DIR:-$(layout_value HYBRID_AI_LOG_DIR)}"
+      [[ -z "$log_dir" ]] || log="${log_dir}/backup.log"
+    fi
+  fi
   gid="${BACKUP_GROUP_GID:-$(layout_value BACKUP_GROUP_GID)}"
+  if [[ -z "$gid" && "$BACKUP_MODE" == system ]]; then
+    gid="$(getent group hybrid-ai-backup 2>/dev/null | cut -d: -f3 || true)"
+  fi
   domain="${LOCAL_DOMAIN:-$(layout_value LOCAL_DOMAIN)}"
 
   GATE_REASON=""
@@ -360,8 +375,10 @@ check_backup_tile() {
   fi
   if [[ ! -f "$log" || ! -s "$log" ]]; then
     GATE_REASON="the backup log is not a regular, non-empty file"
+    record_gate backup_log "$BACKUP_REQUIRED" FAIL "$GATE_REASON"
     return 1
   fi
+  record_gate backup_log "$BACKUP_REQUIRED" PASS "regular non-empty backup log"
   probe_read_as_status "$log" "$gid"
   if [[ "$B_READ_STATE" == "unreadable" ]]; then
     GATE_REASON="the status container's identity cannot read the backup log"
@@ -370,8 +387,17 @@ check_backup_tile() {
   probe_tile "$domain"
   if [[ "$B_TILE" == "warn" ]] && log_has_success "$log"; then
     GATE_REASON="the backup log records event=backup_success but the Backups tile reports warn"
+    record_gate backup_tile "$BACKUP_REQUIRED" FAIL "$GATE_REASON"
     return 1
   fi
+  case "$B_TILE" in
+    ok) record_gate backup_tile "$BACKUP_REQUIRED" PASS "Backups tile reports ok" ;;
+    warn) record_gate backup_tile "$BACKUP_REQUIRED" WARN "Backups tile reports warn" ;;
+    fail) GATE_REASON="Backups tile reports fail"
+      record_gate backup_tile "$BACKUP_REQUIRED" FAIL "$GATE_REASON"; return 1 ;;
+    "") ;; # probe_tile already recorded why it was skipped
+    *) record_gate backup_tile "$BACKUP_REQUIRED" SKIPPED "Backups tile state is invalid" ;;
+  esac
   return 0
 }
 
@@ -457,7 +483,6 @@ conclusion_list() {
   printf '%s' "$out"
 }
 
-printf 'waiting for %s at %s\n' "$SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 START_TS="$(date +%s)"
 while :; do
@@ -465,6 +490,7 @@ while :; do
 
   case "$PROBE_STATE" in
     error)
+      record_gate workflow_runs true FAIL "$PROBE_ERROR"
       finish FAIL 1 "$PROBE_ERROR"
       ;;
     completed)
@@ -477,13 +503,16 @@ while :; do
       unset idx
 
       if (( ! all_success )); then
+        record_gate workflow_runs true FAIL "one or more workflow conclusions were not success"
         if (( ${#RUN_IDS[@]} == 1 )); then
           finish FAIL 1 "run ${RUN_IDS[0]} conclusion ${RUN_CONCLUSION[0]:-none}"
         fi
         finish FAIL 1 "run conclusions: $(conclusion_list)"
       fi
 
+      record_gate workflow_runs true PASS "all returned workflow runs succeeded"
       # The workflow is green. Now prove the host is actually on that commit.
+      record_gate deployed_head true FAIL "deployed HEAD unreadable or mismatched"
       deployed_head=""
       if ! deployed_head="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null)"; then
         finish FAIL 1 "cannot read HEAD of the deployed tree at ${APP_DIR} (expected ${SHA})"
@@ -495,9 +524,8 @@ while :; do
         finish FAIL 1 "deployed tree is on ${deployed_head}, expected ${SHA}"
       fi
 
-      # The tree is right. Last gate: the Backups tile must not be blind while
-      # the writer's log holds a success. A probe that could not run leaves the
-      # verdict to the probes that did (a skip note on stderr, never a pass).
+      record_gate deployed_head true PASS "deployed HEAD matches requested SHA"
+      # The tree is right. Record backup coverage before aggregating policy.
       if ! check_backup_tile; then
         finish FAIL 1 "${GATE_REASON}"
       fi
@@ -507,6 +535,7 @@ while :; do
   esac
 
   if (( $(date +%s) - START_TS >= DEADLINE_SECONDS )); then
+    record_gate workflow_runs true FAIL "workflow wait timed out"
     finish TIMEOUT 1 "no completed run for ${SHA} after $(( DEADLINE_SECONDS / 60 )) minutes"
   fi
 
