@@ -268,19 +268,25 @@ Paths (both resolved in `scripts/lib/hybrid-ai-env.sh`):
 |---|---|
 | Verifier | `/usr/local/sbin/run-post-deploy-verify.sh`, installed root:root 0755 by `install.sh` |
 | Log | `/var/log/hybrid-ai-post-deploy-verify.log`, appended by the transient unit |
-| Verdict JSON | `${HYBRID_AI_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json`, owned `hermes:hermes` 0644 in a 0755 dir; the container reads it at `/root/.hermes/deploy-verdicts/`. A write failure is a warning only and never changes the verdict |
+| Verdict JSON | `${HYBRID_AI_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json`, owned by configured numeric `HYBRID_AI_UID:HYBRID_AI_GID` (legacy default `0:0`), 0644 in a 0755 dir; the container reads it at `/root/.hermes/deploy-verdicts/`. Publication failure produces WARN unless already FAIL/TIMEOUT; no host `hermes` account is required. |
 
 After the tree check the verifier also runs the **Backups tile gate**. It reads
 `BACKUP_LOG`, `BACKUP_GROUP_GID` and `LOCAL_DOMAIN` from the layout file as data
 (never sourced, values never printed), asserts the log is a regular non-empty
 file, probes readability **as the status container's identity** by dropping from
-root with `setpriv` (uid 1000, primary gid 999, supplementary
-`BACKUP_GROUP_GID`) — a root read is never claimed as a pass — and queries
+root with `setpriv` (configured status UID/primary GID and supplementary
+`BACKUP_GROUP_GID`, with legacy defaults) — a root read is never claimed as a pass — and queries
 `GET /status/api` through Caddy's `status.{$LOCAL_DOMAIN}` route with
 `--resolve` to loopback. It FAILs (exit 1) when the Backups tile is `warn` while
 the writer's log holds `event=backup_success`, and when the log is missing or
-empty. A probe it cannot run prints a `skip:` note on stderr and leaves the
-verdict to the probes that did run.
+empty. A probe it cannot run records SKIPPED and prints a `skip:` note on stderr.
+All three backup probes are mandatory in system mode; user mode may require
+them explicitly. Missing or warning required coverage fails closed. Optional
+SKIPPED/WARN coverage produces overall WARN/exit 0, never a clean PASS. These
+probes do not execute a backup, integrity check or restore. See the canonical
+[coverage and ownership policy](../backup/README.md#post-deploy-verification-coverage-and-receipt-ownership)
+for identity resolution and receipt details, and the
+[Haven evidence guide](../docs/haven/evidence-completion.md) for issue completion.
 
 The hook is a warning, never a gate. All three paths leave the deploy's exit
 code untouched: scheduled, scheduling failed
