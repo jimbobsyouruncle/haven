@@ -439,12 +439,8 @@ services:
       HYBRID_AI_AUTH_COOKIE_SECRET: ${HYBRID_AI_AUTH_COOKIE_SECRET:-}
       HYBRID_AI_AUTH_COOKIE_MAX_AGE: ${HYBRID_AI_AUTH_COOKIE_MAX_AGE:-86400}
       TLS_DOMAIN: ${TLS_DOMAIN:-}
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://[IP_ADDRESS]:8080/healthz >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+    # Inherit auth/Dockerfile's Python loopback probe and timing settings.
+    # A Compose override previously targeted an unresolved display placeholder.
     logging:
       driver: "json-file"
       options:

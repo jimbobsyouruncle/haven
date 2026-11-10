@@ -72,3 +72,31 @@ python3 -m unittest discover -s auth -p 'test_*.py' -v
 ```
 
 Everything runs offline over loopback: no Docker and no network.
+
+## Docker health probe (#160)
+
+The auth service inherits the Python probe in `auth/Dockerfile`: an
+unauthenticated IPv4 loopback request to port 8080 at `/healthz`, with a
+two-second request timeout. Docker runs it every 30 seconds, with a three-second
+timeout, five-second start period and three retries. The standard deployment
+uses the application's wildcard IPv4 bind and default port; no host port is
+published. This probe does not depend on hostname resolution, IPv6 or `wget`.
+
+Owner evidence on 2026-11-10 showed that the deployed Compose override instead
+executed `wget` against a literal bracketed address placeholder at port 8080.
+Docker recorded repeated exit code 1 with empty output (the command redirected
+both output streams), while the owner's loopback `wget` and Python requests
+succeeded with HTTP 200. The same placeholder appeared in the source template.
+Removing that override restores the image probe rather than substituting a
+host address. This fixes the evidenced probe target defect; it does not establish
+that production has been repaired.
+
+After separately approved merge and deployment, the owner should confirm the
+effective health command is the image's Python probe and Docker reports healthy
+after several probe intervals. Verify the health endpoint and normal gated
+access; record only health status, exit codes and revision/image identity.
+Do not share environment dumps, credentials or session cookies. Custom
+`AUTH_IMAGE` images must supply an equivalent health check. Roll back through
+the normal reviewed deployment process using the prior revision and image;
+the old revision may restore this unhealthy probe. No live remediation is
+performed by this source change.

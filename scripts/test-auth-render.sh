@@ -394,6 +394,20 @@ else
   fail "fail-closed check fired with TLS off (it must only guard the auth variant)"
 fi
 
+# Render the production Compose template, too: auth must inherit the image's
+# health probe rather than override it with a host-dependent target/tool.
+for variants in "on dns auth" "on auth"; do
+  tls_prepare_render_values "$variants"
+  tls_render_to_file "${HYBRID_AI_APP_DIR}/docker-compose.yml.tmpl" "$variants" "$WORK/compose"
+  auth_service="$(awk '/^  auth:/{f=1; next} f && /^[^ ]/{exit} f && /^  [^ ]/{exit} f{print}' "$WORK/compose")"
+  if [[ -n "$auth_service" ]] && ! grep -q 'healthcheck:' <<<"$auth_service" \
+     && grep -q 'context: ./auth' <<<"$auth_service"; then
+    pass "Compose ($variants) inherits the auth image health probe"
+  else
+    fail "Compose ($variants) does not inherit the auth image health probe"
+  fi
+done
+
 if (( FAILED )); then
   printf '\nsome checks failed\n' >&2
   exit 1

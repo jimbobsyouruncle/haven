@@ -8,6 +8,8 @@ import hashlib
 import hmac
 import http.client
 import os
+from pathlib import Path
+import shlex
 import subprocess
 import sys
 import threading
@@ -338,6 +340,37 @@ class StartupTests(unittest.TestCase):
         finally:
             proc.terminate()
             proc.wait(timeout=10)
+
+
+class ImageHealthcheckTests(ServerCase):
+    """Execute the image's probe against the real handler on a scratch port."""
+
+    def probe(self, port):
+        dockerfile = Path(__file__).with_name("Dockerfile").read_text()
+        healthcheck = dockerfile.split("HEALTHCHECK ", 1)[1].split("\n\n", 1)[0]
+        command = healthcheck.split("CMD ", 1)[1].strip()
+        # Keep the shipped interpreter, URL host, path, timeout and status
+        # predicate; only the port changes to avoid reserving production 8080.
+        command = command.replace(":8080/healthz", f":{port}/healthz")
+        return subprocess.run(
+            shlex.split(command), capture_output=True, timeout=5, check=False
+        )
+
+    def test_image_probe_accepts_unauthenticated_health(self):
+        self.assertEqual(self.probe(self.port).returncode, 0)
+
+    def test_image_probe_rejects_unavailable_server(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.assertNotEqual(self.probe(self.port).returncode, 0)
+
+    def test_image_probe_rejects_unhealthy_response(self):
+        def unhealthy(handler):
+            handler.send_response(503)
+            handler.end_headers()
+
+        self.server.RequestHandlerClass.do_GET = unhealthy
+        self.assertNotEqual(self.probe(self.port).returncode, 0)
 
 
 if __name__ == "__main__":
