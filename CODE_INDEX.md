@@ -88,6 +88,11 @@
   - def child_env(self, **overrides)
   - def test_env_exits(self)
   - def test_valid_env_runs(self)
+- class ImageHealthcheckTests(ServerCase)
+  - def probe(self, port)
+  - def test_image_probe_accepts_unauthenticated_health(self)
+  - def test_image_probe_rejects_unavailable_server(self)
+  - def test_image_probe_rejects_unhealthy_response(self)
 
 ## backup/backup-containers.sh
 - log()
