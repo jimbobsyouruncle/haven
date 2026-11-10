@@ -88,12 +88,14 @@
 - docs/haven/ARCHITECTURE.md - Haven — Architecture Design
 - docs/haven/DECISIONS.md - Haven architecture decision register
 - docs/haven/MIGRATION.md - Haven platform migration and evidence gates
+- docs/haven/evidence-completion.md - Haven evidence-based issue completion
 ## docs/haven/adr
 
 - docs/haven/adr/0001-project-scoped-coder.md - ADR-0001 — Project-scoped Coder and restricted inference
 - docs/haven/adr/0002-persona-credentials.md - ADR-0002 — Persona credentials and legacy migration
 - docs/haven/adr/0003-ciso-persona.md - ADR-0003 — Independent CISO persona
 - docs/haven/adr/0004-github-epic-governance.md - ADR-0004 — GitHub epics and agent governance
+- docs/haven/adr/0005-evidence-based-completion.md - ADR-0005 — Evidence-based issue completion
 ## docs/haven/rename
 
 - docs/haven/rename/COMPATIBILITY.md - HAVEN-003 repository identity compatibility preparation
