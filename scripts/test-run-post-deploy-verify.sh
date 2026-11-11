@@ -23,6 +23,7 @@ set -Eeuo pipefail
 # Cases control the selector explicitly; ignore the invoking shell setting.
 unset HYBRID_AI_REPOSITORY_SLUG HYBRID_AI_BACKUP_MODE HYBRID_AI_VERIFY_BACKUP_GATES
 unset HYBRID_AI_DATA_DIR HYBRID_AI_LOG_DIR DOCKER_GID STATUS_UID
+unset HYBRID_AI_STACK_ENV_FILE
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VERIFY_SCRIPT="$SCRIPT_DIR/run-post-deploy-verify.sh"
@@ -182,6 +183,8 @@ GIT_CALL_LOG="$WORKDIR/git-calls.argv"
 run_verify() {
   local app="$1" layout="$2" vdir="${3:-$WORKDIR/verdicts}"
   local env_args=() owner_args=() receipt_args=()
+  [[ ! -v TEST_LOCAL_DOMAIN ]] || receipt_args+=(LOCAL_DOMAIN="$TEST_LOCAL_DOMAIN")
+  [[ ! -v TEST_STACK_FILE ]] || receipt_args+=(HYBRID_AI_STACK_ENV_FILE="$TEST_STACK_FILE")
   if [[ "${TEST_OWNER_LAYOUT:-0}" == 1 ]]; then
     owner_args=(-u HYBRID_AI_UID -u HYBRID_AI_GID)
   fi
@@ -199,7 +202,7 @@ run_verify() {
   if [[ "$vdir" == __layout__ ]]; then
     owner_args+=(-u HYBRID_AI_DEPLOY_VERDICT_DIR)
   else
-    receipt_args=(HYBRID_AI_DEPLOY_VERDICT_DIR="$vdir")
+    receipt_args+=(HYBRID_AI_DEPLOY_VERDICT_DIR="$vdir")
   fi
 
   rm -f "$GIT_CALL_LOG" "$CURL_CALL_LOG" "$VERIFY_CLOCK_MARKER"
@@ -208,7 +211,7 @@ run_verify() {
   # cannot make a case pass: the layout file must be the only source here.
   # HYBRID_AI_DEPLOY_VERDICT_DIR keeps every case out of the real data dir.
   env -u BACKUP_LOG -u BACKUP_GROUP_GID -u LOCAL_DOMAIN -u VERIFY_STATUS_UID \
-    -u VERIFY_STATUS_GID "${owner_args[@]}" "${env_args[@]}" GIT_CALL_LOG="$GIT_CALL_LOG" \
+    -u VERIFY_STATUS_GID -u HYBRID_AI_STACK_ENV_FILE "${owner_args[@]}" "${env_args[@]}" GIT_CALL_LOG="$GIT_CALL_LOG" \
     "${receipt_args[@]}" \
     "$VERIFY_SCRIPT" --wait-for "$SHA_A" > "$WORKDIR/out" 2> "$WORKDIR/err"
   RC=$?
@@ -549,6 +552,79 @@ if grep -q -- "--reuid=$HYBRID_AI_UID" "$VERIFY_PRIV_LOG" \
    && grep -q -- '--groups=982 --inh-caps=-all --bounding-set=-all' "$VERIFY_PRIV_LOG"; then
   pass "status probe uses configured numeric UID and drops capabilities"
 else fail "wrong status probe identity: $(cat "$VERIFY_PRIV_LOG")"; fi
+# Split-layout regression: the host keeps runtime LOCAL_DOMAIN in stack.env.
+STACK="$WORKDIR/stack.env"
+write_layout "$TREE_A"
+printf 'HYBRID_AI_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\nHYBRID_AI_STACK_ENV_FILE=%s\n' "$STACK" >> "$LAYOUT"
+printf 'LOCAL_DOMAIN="stack.example.test"\nUNRELATED=%s\n' "\$(touch $WORKDIR/executed)" > "$STACK"
+run_verify "__unset__" "$LAYOUT"
+if [[ "$RC" == 0 ]] && grep -qx PASS <<<"$OUT_STDOUT" \
+   && grep -qF 'http://status.stack.example.test/status/api' "$CURL_CALL_LOG" \
+   && [[ ! -e "$WORKDIR/executed" ]]; then
+  pass "split layout reads literal domain only from configured stack without executing it"
+else fail "split-layout resolution failed: $OUT"; fi
+
+printf 'LOCAL_DOMAIN=layout.example.test\n' >> "$LAYOUT"
+run_verify "__unset__" "$LAYOUT"
+if grep -qF 'http://status.layout.example.test/status/api' "$CURL_CALL_LOG"; then
+  pass "layout domain retains precedence over stack"
+else fail "layout domain precedence lost"; fi
+export TEST_LOCAL_DOMAIN=process.example.test
+run_verify "__unset__" "$LAYOUT"
+if grep -qF 'http://status.process.example.test/status/api' "$CURL_CALL_LOG"; then
+  pass "process domain retains precedence over layout and stack"
+else fail "process domain precedence lost"; fi
+unset TEST_LOCAL_DOMAIN
+
+write_layout "$TREE_A"
+printf 'HYBRID_AI_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\nHYBRID_AI_STACK_ENV_FILE=%s\n' "$WORKDIR/absent.env" >> "$LAYOUT"
+export TEST_STACK_FILE="$STACK"
+run_verify "__unset__" "$LAYOUT"
+if [[ "$RC" == 0 ]] && grep -qF 'http://status.stack.example.test/status/api' "$CURL_CALL_LOG"; then
+  pass "process stack path overrides layout stack path"
+else fail "stack path precedence lost: $OUT"; fi
+unset TEST_STACK_FILE
+run_verify "__unset__" "$LAYOUT"
+if [[ "$RC" == 1 ]] && "$REAL_JQ" -e '.gates.backup_tile.required and .gates.backup_tile.state == "SKIPPED"' "$VDIR_FILE" >/dev/null \
+   && ! grep -qF '/status/api' "$CURL_CALL_LOG"; then
+  pass "missing configured stack fails required coverage without a tile request"
+else fail "missing stack did not fail closed: $OUT"; fi
+
+export TEST_STACK_FILE="$STACK"
+printf 'LOCAL_DOMAIN=%s\n' "\$(touch $WORKDIR/executed)" > "$STACK"
+run_verify "__unset__" "$LAYOUT"
+if [[ "$RC" == 1 && ! -e "$WORKDIR/executed" ]] \
+   && ! grep -qF '/status/api' "$CURL_CALL_LOG" \
+   && ! grep -qF "$WORKDIR/executed" <<<"$OUT"; then
+  pass "shell expression domain is neither executed, requested nor printed"
+else fail "unsafe domain handling: $OUT"; fi
+unset TEST_STACK_FILE
+
+# An unreadable stack must not turn missing mandatory evidence into PASS.
+printf 'LOCAL_DOMAIN=stack.example.test\n' > "$STACK"
+chmod 000 "$STACK"
+export TEST_STACK_FILE="$STACK"
+if [[ ! -r "$STACK" ]]; then
+  run_verify "__unset__" "$LAYOUT"
+  if [[ "$RC" == 1 ]] && ! grep -qF '/status/api' "$CURL_CALL_LOG"; then
+    pass "unreadable stack fails required coverage without printing contents"
+  else fail "unreadable stack did not fail closed: $OUT"; fi
+else
+  echo "NOT_APPLICABLE: root can read the mode-000 stack fixture"
+fi
+chmod 600 "$STACK"
+for invalid_domain in '' 'https://example.test' 'bad/name' '-bad.test' 'bad..test'; do
+  printf 'LOCAL_DOMAIN=%s\n' "$invalid_domain" > "$STACK"
+  run_verify "__unset__" "$LAYOUT"
+  if [[ "$RC" == 1 ]] && ! grep -qF '/status/api' "$CURL_CALL_LOG"; then
+    pass "empty or malformed stack domain fails required coverage before tile request"
+  else fail "invalid stack domain did not fail closed: $OUT"; fi
+done
+unset TEST_STACK_FILE
+
+# Restore the legacy single-file fixture and explicit log override.
+write_layout "$TREE_A"
+printf 'HYBRID_AI_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\nLOCAL_DOMAIN=example.test\nHYBRID_AI_UID=%s\n' "$HYBRID_AI_UID" >> "$LAYOUT"
 # Explicit BACKUP_LOG overrides the system default.
 printf 'BACKUP_LOG=/fixture/explicit.log\n' >> "$LAYOUT"
 run_verify "__unset__" "$LAYOUT"

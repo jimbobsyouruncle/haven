@@ -286,8 +286,11 @@ Paths (both resolved in `scripts/lib/hybrid-ai-env.sh`):
 | Verdict JSON | `${HYBRID_AI_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json`, owned by configured numeric `HYBRID_AI_UID:HYBRID_AI_GID` (legacy default `0:0`), 0644 in a 0755 dir; the container reads it at `/root/.hermes/deploy-verdicts/`. Publication failure produces WARN unless already FAIL/TIMEOUT; no host `hermes` account is required. |
 
 After the tree check the verifier also runs the **Backups tile gate**. It reads
-`BACKUP_LOG`, `BACKUP_GROUP_GID` and `LOCAL_DOMAIN` from the layout file as data
-(never sourced, values never printed), asserts the log is a regular non-empty
+`BACKUP_LOG` and `BACKUP_GROUP_GID` from process settings or the layout as data.
+`LOCAL_DOMAIN` uses process, layout, then the configured stack file, in that
+order. The standalone verifier extracts only that runtime key from the stack,
+without sourcing files or printing values. Missing/unreadable configuration or
+invalid domains cannot satisfy a required tile gate. It asserts the log is a regular non-empty
 file, probes readability **as the status container's identity** by dropping from
 root with `setpriv` (configured status UID/primary GID and supplementary
 `BACKUP_GROUP_GID`, with legacy defaults) — a root read is never claimed as a pass — and queries

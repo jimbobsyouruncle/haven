@@ -594,8 +594,14 @@ valid independently of a skipped verifier probe.
 
 The standalone installed executable reads only process settings and the
 non-secret layout file (`HYBRID_AI_ENV_FILE_FALLBACK`, normally
-`/etc/hybrid-ai/hybrid-ai.env`) as data. It never sources that file or reads
-`stack.env`/credentials. Explicit `BACKUP_LOG` takes precedence; system mode
+`/etc/hybrid-ai/hybrid-ai.env`) as data. For `LOCAL_DOMAIN` only, resolution
+is process environment, then layout, then the configured
+`HYBRID_AI_STACK_ENV_FILE` (process path before layout path; absent path defaults
+to the layout file for legacy installations). Only that allowlisted runtime
+setting is extracted from the stack file; neither file is sourced, evaluated or
+printed. Missing/unreadable stack files and invalid domain values leave the tile
+probe SKIPPED, so required coverage still fails closed. No permission changes
+are needed. Explicit `BACKUP_LOG` takes precedence; system mode
 otherwise uses `/var/log/hybrid-ai-backup/backup.log`, matching the units'
 `LogsDirectory`. User mode uses `HYBRID_AI_LOG_DIR/backup.log` when configured;
 without either setting its backup-log probe is explicitly skipped.

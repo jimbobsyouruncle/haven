@@ -240,18 +240,36 @@ gate_skip() {
   printf 'run-post-deploy-verify: skip: %s\n' "$1" >&2
 }
 
-# Read ONE key from the layout file, line by line, never sourcing it.
-layout_value() { # <KEY>
-  local key="$1" line value=""
-  [[ -r "$HYBRID_AI_ENV_FILE_FALLBACK" ]] || return 0
+# Read ONE allowlisted key from a configuration file as literal data.
+file_value() { # <file> <KEY>; literal data only, never shell evaluation
+  local file="$1" key="$2" line value=""
+  [[ -f "$file" && -r "$file" ]] || return 0
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line#"${line%%[![:space:]]*}"}"
     [[ "$line" == "$key="* ]] || continue
     value="${line#*=}"
     value="${value%\"}"; value="${value#\"}"
     value="${value%\'}"; value="${value#\'}"
-  done < "$HYBRID_AI_ENV_FILE_FALLBACK"
+  done < "$file"
   printf '%s' "$value"
+}
+
+layout_value() { # <KEY>
+  file_value "$HYBRID_AI_ENV_FILE_FALLBACK" "$1"
+}
+
+# Runtime configuration belongs in the configured stack file on split-layout
+# hosts. Read only LOCAL_DOMAIN; never source the credential-bearing file.
+resolve_local_domain() {
+  local stack domain
+  domain="${LOCAL_DOMAIN:-$(layout_value LOCAL_DOMAIN)}"
+  if [[ -z "$domain" ]]; then
+    stack="${HYBRID_AI_STACK_ENV_FILE:-$(layout_value HYBRID_AI_STACK_ENV_FILE)}"
+    stack="${stack:-$HYBRID_AI_ENV_FILE_FALLBACK}"
+    [[ "$stack" == /* ]] || return 0
+    domain="$(file_value "$stack" LOCAL_DOMAIN)"
+  fi
+  printf '%s' "$domain"
 }
 
 # Standalone installation cannot source repository helpers. Resolve only
@@ -326,7 +344,12 @@ probe_tile() { # <local-domain>
   B_TILE=""
   CURRENT_GATE=backup_tile
   if [[ -z "$domain" ]]; then
-    gate_skip "LOCAL_DOMAIN is not set in the layout file: the status API was not queried"
+    gate_skip "LOCAL_DOMAIN is unavailable from process, layout or configured stack: the status API was not queried"
+    return 0
+  fi
+  # Refuse URL syntax, shell expressions and malformed DNS labels before curl.
+  if [[ ${#domain} -gt 253 || ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
+    gate_skip "LOCAL_DOMAIN is invalid: the status API was not queried"
     return 0
   fi
   body="$(mktemp)"
@@ -366,7 +389,7 @@ check_backup_tile() {
   if [[ -z "$gid" && "$BACKUP_MODE" == system ]]; then
     gid="$(getent group hybrid-ai-backup 2>/dev/null | cut -d: -f3 || true)"
   fi
-  domain="${LOCAL_DOMAIN:-$(layout_value LOCAL_DOMAIN)}"
+  domain="$(resolve_local_domain)"
 
   GATE_REASON=""
   if [[ -z "$log" ]]; then
