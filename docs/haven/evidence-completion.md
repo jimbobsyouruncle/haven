@@ -62,6 +62,8 @@ These synthetic review cases are the policy regression suite. Exercise input →
 | R14 | Relevant integration/configuration changed after accepted observation | Identify invalidated criterion and smallest mandatory verification; operational execution still needs authorization |
 | R15 | Required gate SKIPPED/WARN, cancelled/neutral or timed_out | Preserve raw observation; cannot label VERIFIED without other valid coverage; only queued/running remains PENDING |
 | R16 | All required children resolved; epic acceptance or security gate remains unmet | No epic closure; identify owning gate. Otherwise present Closure Card and await separate approval |
+| R17 | Receipt SHA/head differs, provenance is unknown or an older receipt survives failed publication | NOT VERIFIED for affected runtime claim; inspect matching existing evidence before requesting new execution |
+| R18 | Receipt PASS but a required PR check is absent | Receipt cannot establish the missing check; retrieve current-head evidence or report the exact PR-readiness gap |
 
 Review acceptance requires checking all cases against the final policy, including negative outcomes. This suite is reusable across epics. It does not execute the external launcher or mutate GitHub.
 
