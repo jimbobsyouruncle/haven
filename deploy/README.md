@@ -66,7 +66,9 @@ links the existing merged implementation/check/deployment evidence and the
 remaining #149/#150/#151 gates. It covers named evidence owners, automation
 freeze/resume, selector propagation review, go/no-go, stop/rollback and the
 post-cutover handoff. Documentation approval does not authorize activation;
-backup restore and worker compatibility evidence remain required.
+the accepted [backup/restore evidence](../docs/haven/rename/READINESS.md#accepted-backup-evidence-and-operational-limits)
+is reused within its recorded scope. Worker compatibility and remaining
+operational attestations are still required; no repeat restore is requested.
 
 ---
 

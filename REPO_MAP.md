@@ -101,6 +101,7 @@
 - docs/haven/rename/COMPATIBILITY.md - HAVEN-003 repository identity compatibility preparation
 - docs/haven/rename/DEPENDENCIES.md - Rename dependencies, risks and execution gates
 - docs/haven/rename/EXTERNAL.md - External evidence checklist — pending authorization
+- docs/haven/rename/MANUAL-DECISIONS.md - Remaining manual-review decisions for Haven readiness
 - docs/haven/rename/PRESENTATION.md - HAVEN-002 presentation and compatibility decisions
 - docs/haven/rename/READINESS.md - HAVEN-003 readiness and cutover handoff
 - docs/haven/rename/README.md - HAVEN-001 public-source rename audit

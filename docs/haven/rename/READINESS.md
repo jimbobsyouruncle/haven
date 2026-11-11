@@ -3,8 +3,9 @@
 Issue #149; epic #146. This is the owner-approved **public-source documentation
 portion** of readiness preparation. It does not complete #149, authorize #150,
 or attest to current production state. No host, backup, credentials, external
-settings or worker repository were accessed. The source reviewed is public
-`main` at `5dc84dd24c076d4b653bd508ba65deaf98100219`.
+integration settings or worker repository were accessed. GitHub rule metadata
+was read without changing settings. The source reviewed is public
+`main` at `93f1c6b3a414b25c94090b10e858c9d6e8f91c05` (reviewed 2026-11-11 UTC).
 
 ## Acceptance and existing evidence
 
@@ -14,17 +15,27 @@ records. Later decisions supplement that baseline; they do not rewrite it.
 
 | #149 acceptance criterion | Evidence / remaining requirement | Status |
 | --- | --- | --- |
-| Required CI, SAST, tests and maps pass | Final-head checks for #155 and #157 below; this documentation PR must obtain its own required checks | Prior implementation passed; current PR evidence belongs in its description |
-| Deployment smoke and worker integration checks documented | Successful deploy workflows below; E01–E05, E14–E16 require the separately authorized operational evidence in EXTERNAL.md | Partial; worker and restore hard gates remain pending |
-| New URL dependencies identified and actions prepared | D01–D16, compatibility selector, occurrence reconciliation and activation sequence below | Public-source plan documented; external consumer inventory remains pending |
+| Required CI, SAST, tests and maps pass | Final-head checks for #155/#157/#159/#162/#163 below; this reconciliation PR must obtain its own checks | PASS for listed revisions; current PR evidence belongs in its description |
+| Deployment smoke and worker integration checks documented | Successful synchronous deploy workflows below; owner backup/restore evidence accepted; newer asynchronous verifier outcome and E15 worker contract/synthetic results missing | PENDING: live worker integration and remaining operational coverage; E04 VERIFIED within recorded scope |
+| New URL dependencies identified and actions prepared | D01–D16, selector, all 125 manual-review dispositions and activation sequence below | Public-source preparation VERIFIED; external consumer attestations and exact selector propagation plan PENDING |
 | Rollback and go/no-go reviewed | Procedure below; named operator, reviewed recovery artifacts, downtime threshold and owner acceptance still required | Prepared for review; no operational sign-off claimed |
-| Preparation PR merged before #150 | #155 and #157 merged; this readiness PR also needs human review and merge approval | Not yet satisfied for this deliverable |
+| Preparation PR merged before #150 | #155/#157/#159/#162/#163 merged into main; this reconciliation PR remains a separate deliverable | VERIFIED for existing preparation merges; PENDING for this PR and any separately approved activation implementation |
 
 | Work | Final PR head / merge | Executed evidence |
 | --- | --- | --- |
 | #147 audit, [PR #154](https://github.com/jimbobsyouruncle/hybrid-ai/pull/154) | `74eaf77e4f00803f807edc8c8d71a75a479568f3` / `ccd924d19ba898ebe6892088e6b44eeb65a7eb08` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42682650732) and [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42682650838) passed; owner accepted public-source scope |
 | #149 identity preparation, [PR #155](https://github.com/jimbobsyouruncle/hybrid-ai/pull/155) | `4f6d6464d4ca04e62db6ef5e9566aa0dbc29bf1e` / `a2a4863006d995c0b62ae882428fbb6d7e48b530` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42694494676), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42694494506) and [post-merge deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42695975376) passed |
 | #148 presentation, [PR #157](https://github.com/jimbobsyouruncle/hybrid-ai/pull/157) | `b5ffe9ae8ee371f443848259d9fc34c4aef1f22b` / `873b41610fc710cb2c8dcde8632f841709e89e2f` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42703035002), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42703034861) and [post-merge deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42705394288) passed |
+| #149 runbook, [PR #159](https://github.com/jimbobsyouruncle/hybrid-ai/pull/159) | `a015b279279cf340538e968d1a8544f153beac02` / `ba22a1b8751052e5bcd25d885a708c005cafb001` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42714528099), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42714528721) PASS; documentation deployment NOT_APPLICABLE |
+| #160 auth probe, [PR #162](https://github.com/jimbobsyouruncle/hybrid-ai/pull/162) | `b91ca48e807382d648d00c86068da1942ab424c7` / `c126abc62e10c6953f4307ccd55e3aa75da63b2c` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42860415665), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42860415752) PASS; [deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42868756044) success, 2026-11-10 17:48–17:59 UTC; explicit live auth-health criterion PENDING |
+| #161 verifier, [PR #163](https://github.com/jimbobsyouruncle/hybrid-ai/pull/163) | `42bf3ffdb3fd6d2c9acdcb186f33f761ac7d03de` / `90e68ad30d7b148c84a4ad158a5b7e81f0684ab4` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42916843574), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42916843542) PASS; [deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42918641980) success, 2026-11-10 22:53–23:07 UTC; asynchronous verifier outcome missing |
+
+All listed PRs merged into `main`. PR heads and actual merge SHAs above are
+different revisions; the deployment links identify the merge SHA they tested.
+Do not use older PR results to satisfy this reconciliation PR's current-head
+readiness. For #163 the queried synthetic merge revision
+`b0642a0c403c09cedc5aed5933e451f0b86366f4` had no separately attached checks;
+its actual merge revision has the successful deployment validation above.
 
 These final-head SAST runs passed ShellCheck, Semgrep, CodeQL (Python/Actions)
 and source validation, including offline fixtures and real Caddy/Compose
@@ -45,9 +56,12 @@ tests merely for redundant evidence.
 
 The following **17 distinct manual-review records** have explicit decisions
 in merged [COMPATIBILITY.md](COMPATIBILITY.md) and
-[PRESENTATION.md](PRESENTATION.md). Of the historical 125, **108 remain
-unresolved by those registers**. This arithmetic is not a new blanket approval
-of remaining references. Preserve unresolved references before consumer review.
+[PRESENTATION.md](PRESENTATION.md). The supplemental
+[MANUAL-DECISIONS.md](MANUAL-DECISIONS.md) reviews the other **108 records**,
+with exact IDs, pinned source consumers, rationale, reviewer/date and phase
+ownership. Together they account for all **125 records** without changing the
+immutable baseline. Supplemental decisions require this PR's human review;
+public-source preservation does not satisfy operational consumer gates.
 
 | Decision register | Manual-review IDs | Disposition |
 | --- | --- | --- |
@@ -67,15 +81,40 @@ IDs refer to baseline positions, not current line numbers.
 | A02969, A03100, A03207–A03208, A03213 | Legacy bootstrap/deploy fixture expectations retained; explicit Haven cases added in #155 |
 | A00199–A00200, A00235–A00236, A00366, A00967, A01362–A01368 | README badges/clone examples, SECURITY source link, deploy API example and architecture links retain the active slug; #150 owns reviewed canonical URL activation, #151 verifies links |
 
-For the remaining 108 manual-review records, retain the baseline `owner_issue`
-as the original triage assignment and use D01–D16 for consumer coordination
-between #148/#149. A named reviewer must record exact IDs, consumer, decision,
-evidence and later issue/phase before an affected edit. They remain an open
-queue, not completed classification decisions or permission to remove aliases.
-Before #150, account for each record as reviewed preservation or an approved
-tracked action; any deferral beyond the epic needs explicit owner acceptance,
-a successor issue, named owner and milestone. No such beyond-epic deferral is
-approved here.
+The supplemental register retains existing compatibility identities, derived
+image terminology, attribution and current-clone guidance. It makes no
+runtime edits. Clone/grant/documentation alignment is explicitly assigned to
+#150/#151; registry, host and integration evidence stays in E01–E20.
+No beyond-epic deferral or alias removal is approved. Keep baseline
+`owner_issue` values as historical triage rather than rewriting the audit.
+
+## Accepted backup evidence and operational limits
+
+The [owner's #149 evidence](https://github.com/jimbobsyouruncle/hybrid-ai/issues/149)
+identifies Pi `jarvis`, checkout/deployed SHA
+`873b41610fc710cb2c8dcde8632f841709e89e2f`, and a 2026-11-09 verifier PASS.
+That result has an explicit backup-log SKIPPED gate and Hermes ownership
+warning; preserve those qualifications. It does not establish the newer
+#163 verifier's system-mode mandatory log/readability/tile outcomes.
+
+On 2026-11-10 capture/upload exited 0; snapshot `65235d97` was tagged
+`complete:true`, with 20 databases. Sampled restic checks covered 5% of packs,
+not a full-pack audit. The isolated scratch restore completed at 16:27:50Z:
+4.006 GiB, 14,812 files/directories, 5m01s, **20/20 SQLite integrity checks**.
+E04 is VERIFIED for that recorded completeness/integrity/restore scope.
+No full bare-metal rebuild, application recovery or RPO/RTO guarantee follows.
+Scratch-directory cleanup remains unconfirmed and is not a reason to rerun
+restore. No relevant backup/capture/restore source changes are introduced by
+#162, #163 or this documentation change. Reuse the evidence unless a concrete
+changed configuration, contradictory result or required freshness invalidates
+its specific claim. Historical failed deployments do not invalidate later
+successful evidence.
+
+#160's source probe correction and regression/CI evidence are complete, with
+successful deployment automation; its explicit sustained live-health criterion
+remains open. #161's development criteria are complete and owner-approved
+closed; its matching live receipt remains readiness evidence, not a reason to
+reopen the development issue. Neither issue is automatically a #148 blocker.
 
 ## Evidence collection and ownership
 
@@ -96,9 +135,8 @@ its approved inference/storage route; use a sanitized attestation here.
 | #151 verification | E07, E11, E14, E16, E20 | Required checks, registry/workspace/TLS operation, agreed observation interval, first successful backup and cleanup approval |
 
 E04 scratch restore and E15 worker compatibility are explicit **hard gates**.
-For E04 the authorized backup owner records snapshot identifier, complete
-capture/integrity result, scratch-restore result and duration without exporting
-data. For E15 obtain a versioned owner-supplied API/auth/model/image/network
+E04 already has the accepted bounded evidence above; do not repeat it merely
+because an older register said pending. For E15 obtain a versioned owner-supplied API/auth/model/image/network
 contract plus synthetic integration results, or authorize a separate worker
 repository task. This documentation task does not access that repository.
 Source fixtures do not substitute for either gate. The architecture's proposed
@@ -190,12 +228,34 @@ five children and epic-wide acceptance. Beyond-epic deferrals require explicit
 owner acceptance plus a successor issue, owner and milestone. Epic closure
 still requires its own Closure Card and approval.
 
-## Tracking handoff
+## Owner action gate and tracking handoff
 
-Planning observed #148 open despite merged #157, and #149 closed despite
-#155's explicit partial scope. Recommend recording #148 evidence, reopening
-#149 for remaining readiness, linking native dependencies and assigning named
-owners/milestones. These are recommendations only; this PR updates no issues.
-Full #149 completion awaits operational evidence and review. This documentation
-deliverable may become ready for review after its own applicable CI passes,
-without claiming that the #150 operational prerequisites are complete.
+| Classification | Action / expected non-secret evidence | Owner / phase |
+| --- | --- | --- |
+| VERIFIED | #147 audit; #148 presentation completion; #161 development completion; listed CI/deployment runs; bounded E04 backup/restore evidence | Existing public records; #148 and #161 closed with explicit owner approval on 2026-11-11 UTC |
+| REQUIRED NOW | Review this documentation PR and supplemental source decisions; no host operation is required to validate this deliverable | Human PR reviewer / #149 development |
+| REQUIRED LATER | Identify latest installed revision/environment and inspect existing matching verifier evidence: full sha/head, time, overall verdict and each required gate's state; confirm provenance before proposing a receipt-path command | Authorized Pi owner / #149 before #150; no rerun automatically requested |
+| REQUIRED LATER | Supply versioned worker API/auth/model/image/network contract and synthetic integration results, or separately authorize a worker-repository task | Named worker owner still unassigned / E15, #149 hard gate |
+| REQUIRED LATER | Complete remaining EXTERNAL.md preparation attestations; review exact selector propagation, recovery image availability, freeze/resume, downtime threshold and rollback ownership | Named operators/approvals still pending / #149–#150 |
+| REQUIRED LATER | Record explicit #150 go/no-go, cutover receipts and #151 observation/first-backup results | Owner / #150 then #151 |
+| OPTIONAL | Confirm cleanup of the accepted scratch restore directory; consider separate tracking/rules-policy corrections | Owner; no cleanup, settings change or issue mutation included here |
+
+The development gate is CLEAR once this PR's applicable checks pass and human
+review accepts the bounded deliverable. The operational gate remains NO-GO:
+missing external readiness, worker and activation evidence is not waived.
+Do not ask for credentials, raw private logs, another backup/restore or a new
+deployment merely to refresh this document. Exact runtime commands require
+confirmed paths/identity and separately authorized host scope first.
+
+#148 and #161 were closed under separate explicit owner authorization; their
+public issue bodies record completion and remaining phase limits. #149 remains
+closed as found despite outstanding operational criteria. Reopening #149,
+updating the epic checkboxes, linking native dependencies and assigning named
+owners/milestones remain recommendations requiring separate approval; this
+implementation changes no further issue metadata. GitHub's epic subissue list
+returned empty during review; the issue-body sequence still governs:
+#147 → #148/#149 → separately approved #150 → #151. Neither #146 nor #150
+is complete. #147's accepted audit completion remains unchanged.
+
+Rollback of this reconciliation is a reviewed documentation revert. It changes
+no runtime state, permissions, workflow behavior or selector propagation.
