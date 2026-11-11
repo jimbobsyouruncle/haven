@@ -5,7 +5,7 @@ portion** of readiness preparation. It does not complete #149, authorize #150,
 or attest to current production state. No host, backup, credentials, external
 integration settings or worker repository were accessed. GitHub rule metadata
 was read without changing settings. The source reviewed is public
-`main` at `5e641a118db8154c6c753f8365d2b7526aa75273` (reviewed 2026-11-11 UTC).
+`main` at `681c961c68e8b2e98cbafd39a2c671acca36558e` (reviewed 2026-11-11 UTC).
 
 ## Acceptance and existing evidence
 
@@ -15,11 +15,11 @@ records. Later decisions supplement that baseline; they do not rewrite it.
 
 | #149 acceptance criterion | Evidence / remaining requirement | Status |
 | --- | --- | --- |
-| Required CI, SAST, tests and maps pass | Final-head checks for #155/#157/#159/#162/#163/#165/#166 below; this reconciliation PR must obtain its own checks | VERIFIED for listed revisions (executed checks PASS); current PR evidence belongs in its description |
-| Deployment smoke and worker integration checks documented | Successful synchronous deploy workflows below; owner backup/restore evidence accepted; owner-evidenced newer verifier FAIL (required tile SKIPPED; correction below) and E15 worker contract/synthetic results missing | PENDING: live worker integration and remaining operational coverage; E04 VERIFIED within recorded scope |
+| Required CI, SAST, tests and maps pass | Final-head checks for #155/#157/#159/#162/#163/#165/#166/#167/#168 below; this reconciliation PR must obtain its own checks | VERIFIED for listed revisions (executed checks PASS); current PR evidence belongs in its description |
+| Deployment smoke and worker integration checks documented | Successful synchronous deploy workflows below; owner backup/restore evidence accepted; historical #166 verifier FAIL (required tile SKIPPED); #168 correction deployed by automation, matching runtime outcome and E15 worker contract/synthetic results missing | PENDING: live worker integration and remaining operational coverage; E04 VERIFIED within recorded scope |
 | New URL dependencies identified and actions prepared | D01–D16, selector, all 125 manual-review dispositions and activation sequence below | Public-source preparation and deploy-to-verifier selector handoff implemented; external attestations and host activation review PENDING |
 | Rollback and go/no-go reviewed | Procedure below; named operator, reviewed recovery artifacts, downtime threshold and owner acceptance still required | PENDING operational review; no sign-off claimed |
-| Preparation PR merged before #150 | #155/#157/#159/#162/#163/#165/#166 merged into main; this reconciliation PR remains a separate deliverable | VERIFIED for existing preparation merges; PENDING for this PR and any separately approved activation implementation |
+| Preparation PR merged before #150 | #155/#157/#159/#162/#163/#165/#166/#167/#168 merged into main; this reconciliation PR remains a separate deliverable | VERIFIED for existing preparation merges; PENDING for this PR and any separately approved activation implementation |
 
 | Work | Final PR head / merge | Executed evidence |
 | --- | --- | --- |
@@ -31,6 +31,8 @@ records. Later decisions supplement that baseline; they do not rewrite it.
 | #161 verifier, [PR #163](https://github.com/jimbobsyouruncle/hybrid-ai/pull/163) | `42bf3ffdb3fd6d2c9acdcb186f33f761ac7d03de` / `90e68ad30d7b148c84a4ad158a5b7e81f0684ab4` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42916843574), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42916843542) PASS; [deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42918641980) success, 2026-11-10 22:53–23:07 UTC; asynchronous verifier outcome missing |
 | #149 evidence reconciliation, [PR #165](https://github.com/jimbobsyouruncle/hybrid-ai/pull/165) | `937bc0f595b781c46dc2f8cd4adf31e5bddeb00e` / `58e9dfd053864c5999652c7a20542bd23a104179` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42948515870), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42948515887) PASS; merged 2026-11-11 11:21 UTC; documentation deployment NOT_APPLICABLE |
 | #149 selector handoff, [PR #166](https://github.com/jimbobsyouruncle/hybrid-ai/pull/166) | `0f6af3fc815d9268b1253241d966771acecf13bd` / `5e641a118db8154c6c753f8365d2b7526aa75273` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43023135406), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43023135591) PASS; merged 2026-11-11 13:26 UTC; [deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43029110310) success, 13:26:15–13:39:37 UTC; matching asynchronous verifier outcome FAIL: required tile SKIPPED; see owner evidence below |
+| #149 evidence reconciliation, [PR #167](https://github.com/jimbobsyouruncle/hybrid-ai/pull/167) | `6f46fe382307c05b1827f33ce0edda31f80c37f5` / `c1fb4dd971255cde40f04d462e8abb73f0782b5d` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43038844945), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43038844417) PASS; merged 2026-11-11 14:50:47 UTC; documentation deployment NOT_APPLICABLE |
+| #149 verifier domain resolution, [PR #168](https://github.com/jimbobsyouruncle/hybrid-ai/pull/168) | `689e0ec8b9660cb3cdc134226ddc89365ee68a28` / `681c961c68e8b2e98cbafd39a2c671acca36558e` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43049003890), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43049003583) PASS; merged 2026-11-11 15:57:47 UTC; [deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43053540322) success, 15:57:51–16:08:35 UTC; matching asynchronous verifier outcome PENDING |
 
 All listed PRs merged into `main`. PR heads and actual merge SHAs above are
 different revisions; the deployment links identify the merge SHA they tested.
@@ -275,9 +277,9 @@ still requires its own Closure Card and approval.
 
 | Classification | Action / expected non-secret evidence | Owner / phase |
 | --- | --- | --- |
-| VERIFIED | #147 audit; #148 presentation completion; #160 accepted operational completion; #161 development completion; #165/#166 preparation merges and listed CI/deployment runs; bounded E04 backup/restore evidence | Existing public records; #148, #160 and #161 closed with explicit owner approval on 2026-11-11 UTC |
+| VERIFIED | #147 audit; #148 presentation completion; #160 accepted operational completion; #161 development completion; #165–#168 preparation merges and listed CI/deployment runs; bounded E04 backup/restore evidence | Existing public records; #148, #160 and #161 closed with explicit owner approval on 2026-11-11 UTC |
 | REQUIRED NOW | Review this documentation PR; no host operation is required to validate this deliverable | Human PR reviewer / #149 development |
-| REQUIRED LATER | After separately approved deployment of the domain-resolution correction, inspect matching verifier evidence; current installed revision has owner-evidenced FAIL, as recorded below | Authorized Pi owner / #149 before #150; no rerun automatically requested |
+| REQUIRED LATER | Inspect existing matching verifier evidence for #168 merge SHA `681c961c68e8b2e98cbafd39a2c671acca36558e` after its successful deployment automation; outcome is missing, while the recorded #166 FAIL remains historical evidence for its exact revision | Authorized Pi owner / #149 before #150; no rerun automatically requested |
 | REQUIRED LATER | Supply versioned worker API/auth/model/image/network contract and synthetic integration results, or separately authorize a worker-repository task | Named worker owner still unassigned / E15, #149 hard gate |
 | REQUIRED LATER | Complete remaining EXTERNAL.md preparation attestations; review exact selector propagation, recovery image availability, freeze/resume, downtime threshold and rollback ownership | Named operators/approvals still pending / #149–#150 |
 | REQUIRED LATER | Record explicit #150 go/no-go, cutover receipts and #151 observation/first-backup results | Owner / #150 then #151 |
@@ -285,7 +287,9 @@ still requires its own Closure Card and approval.
 
 REQUIRED LATER rows are required to advance operational #149 readiness before
 #150, but do not block this documentation PR. They are not optional deferrals.
-For the existing verifier evidence, the authorized Pi operator first confirms
+To advance operational readiness, the next evidence action is inspection of the
+existing #168 verifier result; it does not block this documentation deliverable.
+For that evidence, the authorized Pi operator first confirms
 the installed checkout revision and actual configured receipt directory, then
 inspects the latest matching host log block and schema-v2 receipt. Supply only
 environment, full SHA/head, UTC time, verdict/exit code, required gate states and
@@ -333,9 +337,10 @@ shows the verifier previously consulted only process/layout for that setting.
 The approved correction reads only this literal runtime key from the configured
 stack file after existing process/layout overrides. It preserves mandatory
 coverage and the existing HTTP route/authentication behavior. Offline regression
-coverage is source evidence, not a live tile PASS. A later separately approved
-deployment and matching verifier observation are still required; HTTP/TLS/auth
-coverage could reveal another operational gap once the domain is resolved.
+coverage is source evidence, not a live tile PASS. PR #168 merged this correction
+and deployment automation subsequently succeeded for its actual merge SHA. A
+matching verifier observation remains required; HTTP/TLS/auth coverage could
+reveal another operational gap once the domain is resolved.
 
 This evidence supersedes the missing-outcome description above for this exact
 installed revision: its verifier outcome is now evidenced FAIL, not PENDING.
@@ -343,3 +348,37 @@ E01 host/layout inventory remains partial, E04 backup/restore evidence remains
 accepted, and E15 worker integration plus other external and rollback sign-offs
 remain outstanding. Keep #160/#161 completed and #150 NO-GO. No runtime repair,
 backup/restore rerun, credential/permission change or cutover is performed.
+
+## Post-merge #168 reconciliation — 2026-11-11 UTC
+
+The final-head map and security/source checks above passed for #168. The actual
+merge SHA `681c961c68e8b2e98cbafd39a2c671acca36558e` then passed the deployment
+workflow's source-validation and Deploy over Tailscale jobs; the latter finished
+at 16:08:35 UTC. This establishes successful deployment automation for that
+revision on the configured Pi target, not an independently observed current
+checkout or the asynchronous verifier's result. No matching live receipt/log
+outcome was available in the reviewed public evidence. That criterion is
+PENDING (missing evidence), not PASS or an observed failure of #168.
+
+The earlier receipt's FAIL remains authoritative for `5e641a118db8154c6c753f8365d2b7526aa75273`
+and its recorded time/environment. It must not be copied onto the newer revision
+or erased by the newer workflow success. No newer observation is invented here.
+The #168 final-head source-validation steps all succeeded; Hermes ARM64 smoke
+execution remained SKIPPED under the successful unchanged-image detector, with
+its execution criterion NOT_APPLICABLE to that diff.
+
+The authorized Pi owner should inspect existing evidence only: first confirm
+installed SHA/environment and the actual configured receipt directory, then
+inspect the corresponding latest receipt and log block for the full #168 merge
+SHA. Supply sanitized environment, SHA/head, UTC time, verdict/exit code, run IDs,
+required gate states/reasons and numeric ownership/mode. Required gates must
+PASS to satisfy coverage; preserve FAIL, WARN, SKIPPED or missing outcomes as
+reported. Do not infer a path from defaults, request raw private logs, rerun the
+verifier or redeploy merely to obtain evidence. Exact host commands require a
+confirmed path/identity and separately authorized host scope.
+
+No host observation is needed to validate this documentation update. E04 and
+owner-approved #147/#148/#160/#161 completion remain accepted. E15 and remaining
+external, activation and rollback sign-offs still block operational #149
+readiness before #150; #151 retains post-cutover verification. No issue closure,
+tracking mutation, deployment or cutover is authorized by this reconciliation.
