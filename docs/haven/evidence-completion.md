@@ -4,12 +4,13 @@
 
 ## Review procedure
 
-1. Read the issue's acceptance criteria, phase, dependencies, linked PRs and owner-approved deferrals. Inspect actual source and merge records. Record implemented, merged, deployed, runtime-verified and completed separately. Use unknown where evidence is unavailable; a closed checkbox or issue is not a test result.
-2. Inspect existing evidence before requesting anything new: required checks and constituent jobs/steps, tested revision, workflow conditions, deployment results, artifacts where available, and existing verifier receipts or owner-recorded results within the task's data permissions. An aggregate green check proves its configured gates, not every possible test. Check required-check configuration where accessible; report unavailable requirements without guessing.
-3. Produce a compact criterion table: criterion/phase; evidence reference; tested SHA; environment and time; observed coverage; status; outstanding action/owner. This is a review presentation, not a new persisted receipt schema. Use the statuses defined in AGENTS.md and retain raw GitHub conclusions. Separate execution status SKIPPED from a justified NOT_APPLICABLE criterion. WARN is not a clean PASS; assess which criterion its qualification affects. A required unsuccessful or missing result remains blocking.
-4. Explain revision relationships. PR checks may test a synthetic merge SHA; a squash merge has a different SHA. Record the PR head and tested merge revision, actual merge commit and deployed SHA when relevant. Source/merge comparison can establish unchanged coverage for issue review; it cannot satisfy current-head PR readiness with older checks. A runtime result applies to its named environment, revision and observed configuration, not every host or later deployment.
-5. Reconcile every linked issue against its own criteria, including merged PRs whose issues remain open. Recommend closure only when evidence satisfies that issue's required gates. Otherwise identify the exact unmet criterion and its owner/phase. Preserve accepted later-phase deferrals and epic #146's accepted #147 audit disposition. Present the appropriate issue/epic Closure Card and await separate owner approval before changing tracking.
-6. Request only the smallest observation still missing. Name the criterion or concrete risk that warrants runtime verification. State why existing evidence is insufficient and what would invalidate reusable evidence. Documentation and development-only criteria normally need no production checks. Never turn a later deployment/cutover gate into a prerequisite for an already completed development phase.
+1. Read live issue/PR state, accepted owner dispositions and execution order. GitHub records workflow decisions; source/checks/receipts establish bounded technical facts. Identify changes since accepted review before inspecting completed work again. Closed issues with accepted completion are not reopened for stale checkboxes.
+2. Identify the exact criterion and owning lifecycle stage. Search existing evidence before asking for tests. Review tested revision, coverage, provenance and relevant implementation/configuration changes. An aggregate green check proves configured executed gates, not all runtime behavior. Invalidated or missing mandatory coverage needs a specific reason and the smallest additional observation.
+3. Present only relevant changes and unresolved gates in a compact table: criterion/stage, evidence, revision, sanitized environment/time, observed outcome, gate classification and owner/action. Use VERIFIED, REQUIRED NOW, REQUIRED LATER, OPTIONAL or NOT APPLICABLE separately from PASS, FAILED, WARN, SKIPPED, NOT VERIFIED, PENDING and raw GitHub conclusions. Do not turn unsuccessful mandatory security controls into accepted completion.
+4. Distinguish PR head, synthetic merge, actual merge and deployed revisions. Explain why unchanged behavior supports evidence reuse. Keep implementation readiness, PR readiness, merge readiness, deployment readiness, operational verification, cutover readiness, issue closure and epic closure distinct. Current-head PR checks cannot be replaced by historical results.
+5. Select the next open unblocked issue in approved order. Operational cutover decisions belong to their execution issue; accepted development can remain completed. Assess all children and epic-wide gates when closure is plausible, not on every invocation. Present the appropriate Implementation, Cutover or Closure Card. Approval for one stage does not authorize merge, deployment, cutover or closure.
+6. For REQUIRED NOW, give the criterion, reviewed evidence, insufficiency, technical risk, minimal owner action, expected sanitized evidence and clearing condition. Otherwise state `OWNER ACTION GATE: CLEAR`. Do authorized remote reads yourself; never require private identifiers, endpoints, usernames or raw configuration/logs. Unchanged worker operation needs no fresh test absent an affected contract or mandatory gap.
+7. Review mode makes no working-tree/Git changes or issue mutations. Explicit reconciliation authorization permits bounded issue updates, not implementation or operations. Preserve historical comments/evidence, update dispositions in place, compare live body before writing and skip identical updates. Use stable decision references, responsible roles, evidence, next action and reconsideration conditions. Repeated unchanged reviews produce no duplicate updates/comments.
 
 ## What existing evidence proves
 
@@ -41,23 +42,29 @@ Expected: matching `sha`/`head`, appropriate timestamp and PASS for each require
 
 ## Regression scenarios
 
-These review cases exercise policy decisions. Existing executable suites test the underlying verifier and display behavior; prose assertions would not prove that an agent reasons correctly.
+These synthetic review cases are the policy regression suite. Exercise input → expected decision during review; they do not claim automated proof of agent reasoning. Use the existing offline suites below for underlying verifier behavior, not a new framework or a fake prose-matching test. No real backlog identifiers or current operational state belong in this suite.
 
-| Scenario | Expected review outcome |
-| --- | --- |
-| Documentation PR has required current-head CI/SAST PASS; no deployment run | Development criteria satisfied; deployment NOT_APPLICABLE with reason; no production commands |
-| Merged PR passes applicable checks; linked issue remains open | Reconcile every criterion; recommend closure if all satisfied; await owner approval; do not mutate issue |
-| PR merged but acceptance explicitly requires live authentication behavior | Implemented/merged can be established; runtime criterion remains outstanding until matching evidence exists |
-| Hermes smoke SKIPPED because unchanged paths exclude the image | Preserve SKIPPED execution; criterion NOT_APPLICABLE only after verifying detector/scope; no redundant manual smoke |
-| Optional backup probe SKIPPED and verifier WARN/exit 0 | Optional coverage gap recorded; no clean PASS and no conclusion that backups failed |
-| Required gate SKIPPED, missing, WARN, or wait TIMEOUT | Criterion blocked; TIMEOUT retains its original result and is not PENDING forever |
-| Check cancelled, neutral, or queued/running | Preserve conclusion; cancelled/neutral are not PASS; queued/running is PENDING |
-| Receipt SHA/head mismatch, wrong environment, or stale receipt after failed publication | No valid proof for the requested runtime claim; inspect existing corresponding evidence before rerunning anything |
-| Receipt PASS but required PR check is absent | Receipt does not establish that missing check; retrieve matching check evidence or report the gap |
-| Restore already evidenced for a named snapshot/environment; verifier cannot query tile | Restore evidence remains valid; isolate tile coverage gap; no repeated restore |
-| Artifact expired but surviving job results/owner evidence cover the criterion | Reuse sufficient surviving evidence; expiration alone does not require repeating tests |
-| Relevant backup configuration changed after the accepted restore | Explain which restore claim is invalidated and the minimum justified verification; obtain operational authorization before execution |
-| Issue closed but a concrete acceptance criterion lacks evidence | Report the outstanding criterion and recommend a tracking correction; do not automatically reopen |
-| Accepted development work has tracked, owner-approved later cutover verification | Preserve phase completion and successor ownership; do not reopen the earlier issue solely for the later gate |
+| Case | Synthetic input | Expected decision / regression failure |
+| --- | --- | --- |
+| R01 | Closed task ALPHA has accepted completion evidence and stale unchecked criteria | Preserve accepted completion; reconcile stale text only if authorized. Reopening/retesting solely for checkboxes fails |
+| R02 | Owner accepted ALPHA completion; optional cleanup remains | OPTIONAL cleanup, no completion blocker; decision remains scoped and cannot waive failing mandatory security |
+| R03 | Current-head CI/SAST PASS covers development criteria; no deployment required | VERIFIED development, deployment NOT APPLICABLE with reason; no redundant owner tests |
+| R04 | Deploy succeeds; separate optional verifier probe WARN/SKIPPED | Preserve deployment result and warning scope; no universal runtime PASS or automatic backup failure |
+| R05 | Mandatory live-auth criterion lacks matching evidence | REQUIRED NOW at operational stage, NOT VERIFIED; list reviewed evidence, insufficiency, risk, minimal observation and clearing condition |
+| R06 | Owner attests existing worker operation; unchanged source contract/offline coverage | Reuse bounded attestation, no private instance/endpoint/host/username request; do not invent a fresh integration PASS |
+| R07 | ALPHA completed; BETA is next open issue with resolved dependencies | Select BETA; no full completed-issue or epic audit without invalidation signal |
+| R08 | Development complete; cutover and post-cutover observations separately owned | Preserve development; future-stage gates REQUIRED LATER; present Cutover Card when cutover is current |
+| R09 | PR current-head check fails due to change, then correction pushed | Diagnose, local validation, rerun current-head checks; older green results cannot promote; mark Ready when applicable checks pass |
+| R10 | External CI outage persists at same head | At most two evidenced transient retries per failure/head, bounded by workflow timeout; report exact blocker and keep Draft while required checks missing |
+| R11 | Read-only next/architecture review starts on dirty/diverged checkout | Remote metadata reads only; no pull/merge/reset/rebase/branch/commit/source edits, no issue writes absent authorization; preserve local work |
+| R12 | Authorized reconciliation repeated with unchanged evidence/body | Compare current disposition and skip writes; no new comment or timestamp-only body churn; report no change |
+| R13 | Evidence artifact expires but surviving job/owner records cover criterion | Reuse sufficient evidence; expiration alone does not force new tests |
+| R14 | Relevant integration/configuration changed after accepted observation | Identify invalidated criterion and smallest mandatory verification; operational execution still needs authorization |
+| R15 | Required gate SKIPPED/WARN, cancelled/neutral or timed_out | Preserve raw observation; cannot label VERIFIED without other valid coverage; only queued/running remains PENDING |
+| R16 | All required children resolved; epic acceptance or security gate remains unmet | No epic closure; identify owning gate. Otherwise present Closure Card and await separate approval |
+| R17 | Receipt SHA/head differs, provenance is unknown or an older receipt survives failed publication | NOT VERIFIED for affected runtime claim; inspect matching existing evidence before requesting new execution |
+| R18 | Receipt PASS but a required PR check is absent | Receipt cannot establish the missing check; retrieve current-head evidence or report the exact PR-readiness gap |
 
-Local executable coverage: `bash scripts/test-run-post-deploy-verify.sh`, `python3 status/test_deploy_verification.py`, and `bash scripts/test-doctor-post-deploy-log.sh`. These are offline fixtures, not new production backup/restore verification. Rollback of this policy is a reviewed documentation revert; it requires no runtime rollout.
+Review acceptance requires checking all cases against the final policy, including negative outcomes. This suite is reusable across epics. It does not execute the external launcher or mutate GitHub.
+
+Local executable coverage: `bash scripts/test-run-post-deploy-verify.sh`, `python3 status/test_deploy_verification.py`, and `bash scripts/test-doctor-post-deploy-log.sh`. These are offline fixtures, not production backup/restore verification. Run map freshness and its fixtures with the workflow-pinned generator, whitespace/local-link checks and applicable required PR CI/SAST. Rollback is a reviewed documentation revert; no runtime rollout is required.
