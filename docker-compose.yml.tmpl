@@ -265,6 +265,12 @@ services:
     command: ["python", "-u", "/app/app.py"]
     volumes:
       - ./status/app.py:/app/app.py:ro
+      # Only the Backups tile state, via a private Unix socket. No TCP port.
+      - type: bind
+        source: ${HYBRID_AI_DATA_DIR:?HYBRID_AI_DATA_DIR must be set - run ./install.sh}/status-verifier
+        target: /run/status-verifier
+        bind:
+          create_host_path: false
       # Read-only Docker socket: needed for container state and log tails.
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Measured, never read for content.
@@ -282,6 +288,7 @@ services:
       - ${HYBRID_AI_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}:/data/post-deploy-verify.log:ro
     environment:
       STATUS_PORT: "8088"
+      STATUS_BACKUP_SOCKET: /run/status-verifier/backup.sock
       LOCAL_DOMAIN: ${LOCAL_DOMAIN:?LOCAL_DOMAIN must be set}
       # Public hostnames only, and both are non-secret: the same values the
       # proxy renders its certificate sites from. They let the hub print the

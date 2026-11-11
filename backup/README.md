@@ -592,19 +592,41 @@ identity, and the live Backups tile. It does not run a backup, a repository
 integrity audit, or a restore. Existing successful backup/restore evidence remains
 valid independently of a skipped verifier probe.
 
-The standalone installed executable reads only process settings and the
-non-secret layout file (`HYBRID_AI_ENV_FILE_FALLBACK`, normally
-`/etc/hybrid-ai/hybrid-ai.env`) as data. For `LOCAL_DOMAIN` only, resolution
-is process environment, then layout, then the configured
-`HYBRID_AI_STACK_ENV_FILE` (process path before layout path; absent path defaults
-to the layout file for legacy installations). Only that allowlisted runtime
-setting is extracted from the stack file; neither file is sourced, evaluated or
-printed. Missing/unreadable stack files and invalid domain values leave the tile
-probe SKIPPED, so required coverage still fails closed. No permission changes
-are needed. Explicit `BACKUP_LOG` takes precedence; system mode
-otherwise uses `/var/log/hybrid-ai-backup/backup.log`, matching the units'
-`LogsDirectory`. User mode uses `HYBRID_AI_LOG_DIR/backup.log` when configured;
-without either setting its backup-log probe is explicitly skipped.
+The standalone installed executable reads process settings and the non-secret
+layout file (`HYBRID_AI_ENV_FILE_FALLBACK`, normally
+`/etc/hybrid-ai/hybrid-ai.env`) as literal data. It no longer needs the runtime
+stack file or domain settings to retrieve the tile. Explicit `BACKUP_LOG` takes
+precedence; system mode otherwise uses `/var/log/hybrid-ai-backup/backup.log`,
+matching the units' `LogsDirectory`. User mode uses
+`HYBRID_AI_LOG_DIR/backup.log` when configured; without either setting its
+backup-log probe is explicitly skipped.
+
+The tile transport is a private Unix socket, not the authenticated browser API.
+`install.sh` provisions `${HYBRID_AI_DATA_DIR}/status-verifier` as mode 0700,
+owned by the configured status UID and Docker primary GID; it refuses a symlink
+and changes no existing log permissions for this transport. Compose bind-mounts
+only that directory writable into status at `/run/status-verifier`, with host
+path auto-creation disabled. The existing non-root status process creates
+`backup.sock` mode 0600 and serves only `GET /backup`, returning
+`{"name":"Backups","state":"ok|warn|fail"}`. It uses the same live
+`probe_backups()` logic and container identity as the browser tile, without
+returning log contents, diagnostic details, other tiles or credentials. Other
+paths/methods are refused. No TCP port, Caddy auth exception, host account or
+additional Docker socket access is added. The existing status Docker socket
+mount remains an independent migration risk; this transport does not extend it.
+
+The host verifier validates directory/socket type, numeric ownership and modes
+before a bounded `curl --unix-socket` request; proxies and redirect following
+are disabled. Only HTTP 200 with the exact minimal response shape and a known
+state is accepted. Missing/unsafe sockets, timeouts, redirects, authentication
+responses and malformed output leave tile evidence SKIPPED and fail mandatory
+coverage. The status process refuses unsafe directories, non-socket/symlink
+paths and already active sockets; it recovers its own stale socket after a
+crash. Graceful shutdown removes only its own socket. Standalone status runs
+without `STATUS_BACKUP_SOCKET` keep their HTTP-only development behavior;
+Compose always supplies the socket path. A pre-transport deployment has no
+socket and cannot satisfy a new verifier's required tile gate: deploy the
+installer, Compose and status/verifier source together under separate approval.
 
 Coverage policy:
 

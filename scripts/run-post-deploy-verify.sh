@@ -258,20 +258,6 @@ layout_value() { # <KEY>
   file_value "$HYBRID_AI_ENV_FILE_FALLBACK" "$1"
 }
 
-# Runtime configuration belongs in the configured stack file on split-layout
-# hosts. Read only LOCAL_DOMAIN; never source the credential-bearing file.
-resolve_local_domain() {
-  local stack domain
-  domain="${LOCAL_DOMAIN:-$(layout_value LOCAL_DOMAIN)}"
-  if [[ -z "$domain" ]]; then
-    stack="${HYBRID_AI_STACK_ENV_FILE:-$(layout_value HYBRID_AI_STACK_ENV_FILE)}"
-    stack="${stack:-$HYBRID_AI_ENV_FILE_FALLBACK}"
-    [[ "$stack" == /* ]] || return 0
-    domain="$(file_value "$stack" LOCAL_DOMAIN)"
-  fi
-  printf '%s' "$domain"
-}
-
 # Standalone installation cannot source repository helpers. Resolve only
 # non-secret layout keys as data, matching the shared helper's mode defaults.
 DATA_DIR="${HYBRID_AI_DATA_DIR:-$(layout_value HYBRID_AI_DATA_DIR)}"
@@ -335,46 +321,43 @@ probe_read_as_status() { # <path> <supplementary-gid>
   return 0
 }
 
-# Query the live status API through the route the Caddyfile names:
-# http://status.$LOCAL_DOMAIN/status/api, resolved to loopback. Sets B_TILE to
-# the Backups state, or empty when no verdict could be read.
+# Query only the Backups state on the private status-owned Unix socket.
+# No Caddy redirects, session credentials, TCP listener or Docker API access.
 B_TILE=""
-probe_tile() { # <local-domain>
-  local domain="$1" body code
+probe_tile() {
+  local socket_dir="${DATA_DIR}/status-verifier" socket_path body code
+  socket_path="${socket_dir}/backup.sock"
   B_TILE=""
   CURRENT_GATE=backup_tile
-  if [[ -z "$domain" ]]; then
-    gate_skip "LOCAL_DOMAIN is unavailable from process, layout or configured stack: the status API was not queried"
-    return 0
-  fi
-  # Refuse URL syntax, shell expressions and malformed DNS labels before curl.
-  if [[ ${#domain} -gt 253 || ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
-    gate_skip "LOCAL_DOMAIN is invalid: the status API was not queried"
+  if [[ "$DATA_DIR" != /* || -L "$socket_dir" || -L "$socket_path" ]] \
+     || [[ ! -d "$socket_dir" || ! -S "$socket_path" ]] \
+     || [[ "$(stat -c '%a:%u' "$socket_dir" 2>/dev/null)" != "700:${STATUS_RUN_UID}" ]] \
+     || [[ "$(stat -c '%a:%u' "$socket_path" 2>/dev/null)" != "600:${STATUS_RUN_UID}" ]]; then
+    gate_skip "the private Backups socket is missing or has unsafe ownership or permissions"
     return 0
   fi
   body="$(mktemp)"
-  code="$(curl -sS --max-time 10 -A "$USER_AGENT" \
-      --resolve "status.${domain}:80:127.0.0.1" \
-      -o "$body" -w '%{http_code}' \
-      "http://status.${domain}/status/api" 2>/dev/null || true)"
-  if [[ "$code" != 2* ]]; then
+  if ! code="$(curl -q -sS --max-time 10 --max-filesize 4096 -A "$USER_AGENT" \
+      --noproxy '*' --unix-socket "$socket_path" \
+      -o "$body" -w '%{http_code}' "http://localhost/backup" 2>/dev/null)" \
+      || [[ "$code" != 200 ]]; then
     rm -f -- "$body"
-    gate_skip "the status API was unreachable: the Backups tile was not checked"
+    gate_skip "the private Backups socket did not return HTTP 200"
     return 0
   fi
-  B_TILE="$(jq -r '.checks[]? | select(.name == "Backups") | .state' "$body" 2>/dev/null || true)"
+  B_TILE="$(jq -er 'select(type == "object" and keys == ["name", "state"]
+    and .name == "Backups" and (.state == "ok" or .state == "warn" or .state == "fail"))
+    | .state' "$body" 2>/dev/null)" || B_TILE=""
   rm -f -- "$body"
   if [[ -z "$B_TILE" ]]; then
-    gate_skip "the status API returned no Backups tile: the tile was not checked"
-    return 0
+    gate_skip "the private Backups socket returned an invalid tile response"
   fi
-  return 0
 }
 
 # Returns 1 and fills GATE_REASON when the release leaves the tile blind while
 # the writer's log reports success.
 check_backup_tile() {
-  local log gid domain log_dir
+  local log gid log_dir
   CURRENT_GATE=backup_log
   log="${BACKUP_LOG:-$(layout_value BACKUP_LOG)}"
   if [[ -z "$log" ]]; then
@@ -389,7 +372,6 @@ check_backup_tile() {
   if [[ -z "$gid" && "$BACKUP_MODE" == system ]]; then
     gid="$(getent group hybrid-ai-backup 2>/dev/null | cut -d: -f3 || true)"
   fi
-  domain="$(resolve_local_domain)"
 
   GATE_REASON=""
   if [[ -z "$log" ]]; then
@@ -407,7 +389,7 @@ check_backup_tile() {
     GATE_REASON="the status container's identity cannot read the backup log"
     return 1
   fi
-  probe_tile "$domain"
+  probe_tile
   if [[ "$B_TILE" == "warn" ]] && log_has_success "$log"; then
     GATE_REASON="the backup log records event=backup_success but the Backups tile reports warn"
     record_gate backup_tile "$BACKUP_REQUIRED" FAIL "$GATE_REASON"

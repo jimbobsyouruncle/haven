@@ -580,7 +580,6 @@
 - gate_skip()
 - file_value()
 - layout_value()
-- resolve_local_domain()
 - log_has_success()
 - probe_read_as_status()
 - probe_tile()
@@ -1230,6 +1229,13 @@
   - def _send(self, code, body, ctype, extra)
   - def do_GET(self)
   - def do_POST(self)
+- class BackupVerifierHandler(BaseHTTPRequestHandler)
+  - def log_message(self, format, *args)
+  - def do_GET(self)
+- class BackupVerifierServer(UnixStreamServer)
+  - def get_request(self)
+  - def handle_error(self, request, client_address)
+- def backup_verifier_socket(path)
 - def main()
 
 ## status/test_backup_probe.py
@@ -1241,6 +1247,21 @@
 - def shape(tile)
 - def ts_hours_ago(hours)
 - def probe_backups_as(uid, gid)
+
+## status/test_backup_socket.py
+- class BackupSocketTests(TestCase)
+  - def setUp(self)
+  - def request(self, path, method)
+  - def write_success(self, age)
+  - def test_live_state_and_minimal_output(self)
+  - def test_no_other_api_or_methods(self)
+  - def test_probe_errors_do_not_leak(self)
+  - def test_stale_socket_recovery_and_active_refusal(self)
+  - def test_refuse_nonprivate_foreign_and_symlink_directory(self)
+  - def test_do_not_replace_files_or_symlinks(self)
+  - def test_cleanup_preserves_replacement(self)
+  - def test_partial_request_times_out(self)
+  - def test_verifier_with_real_curl(self)
 
 ## status/test_deploy_verification.py
 - def ok(msg)

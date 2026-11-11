@@ -314,3 +314,27 @@ It also means no build step: `app.py` is mounted read-only into the stock `pytho
 `status/` — including your `Caddyfile` with any allowlist changes — is captured in every backup under `host/status/`. `restore.sh` offers to put your customised version back if it differs from what is in git. Your proxy configuration survives a rebuild onto new hardware.
 
 To disable the status page entirely, remove the `status` and `proxy` services from `docker-compose.yml` and re-run `./install.sh`. Nothing else depends on them.
+
+## Private Backups verification socket
+
+Compose configures `STATUS_BACKUP_SOCKET=/run/status-verifier/backup.sock` in
+the status process. The installer provisions its dedicated host bind directory,
+`${HYBRID_AI_DATA_DIR}/status-verifier`, with mode 0700 owned by the status UID;
+the socket has mode 0600. Only status and the trusted root host verifier can
+access it through ordinary filesystem permissions. Other processes running as
+that UID or root are within this trust boundary; it is not an isolation control
+against a compromised status identity.
+
+`GET /backup` over this Unix socket returns only the Backups name and current
+`ok`, `warn` or `fail` state from `probe_backups()`. It exposes no diagnostics,
+log bodies, hints or general status API. All other paths/methods are refused;
+probe exceptions produce an empty HTTP 503. Requests have a read timeout, and
+requests/probe errors are not logged. No TCP listener or authentication bypass
+is added to Caddy. The existing browser API remains gated normally.
+
+Unsafe directory ownership/mode, symlinks, non-socket files and active sockets
+are refused. Only an owned, inactive stale socket is replaced on startup;
+shutdown removes its own socket without deleting a replacement. A missing or
+unusable socket cannot pass required post-deploy coverage. Run
+`python3 status/test_backup_socket.py` for real local-socket and curl integration
+tests using synthetic logs; no Docker or external service is contacted.

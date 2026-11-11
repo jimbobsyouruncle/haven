@@ -16,7 +16,7 @@ records. Later decisions supplement that baseline; they do not rewrite it.
 | #149 acceptance criterion | Evidence / remaining requirement | Status |
 | --- | --- | --- |
 | Required CI, SAST, tests and maps pass | Final-head checks for #155/#157/#159/#162/#163/#165/#166/#167/#168 below; this reconciliation PR must obtain its own checks | VERIFIED for listed revisions (executed checks PASS); current PR evidence belongs in its description |
-| Deployment smoke and worker integration checks documented | Successful synchronous deploy workflows below; owner backup/restore evidence accepted; historical #166 verifier FAIL (required tile SKIPPED); #168 correction deployed by automation, matching runtime outcome and E15 worker contract/synthetic results missing | PENDING: live worker integration and remaining operational coverage; E04 VERIFIED within recorded scope |
+| Deployment smoke and worker integration checks documented | Successful synchronous deploy workflows below; owner backup/restore evidence accepted; historical #166 verifier FAIL (required tile SKIPPED); #168 owner receipt also FAIL (required tile SKIPPED through HTTP/TLS/login redirects); approved private transport correction requires separate deployment/runtime evidence; E15 worker contract/synthetic results missing | PENDING: live worker integration and remaining operational coverage; E04 VERIFIED within recorded scope |
 | New URL dependencies identified and actions prepared | D01–D16, selector, all 125 manual-review dispositions and activation sequence below | Public-source preparation and deploy-to-verifier selector handoff implemented; external attestations and host activation review PENDING |
 | Rollback and go/no-go reviewed | Procedure below; named operator, reviewed recovery artifacts, downtime threshold and owner acceptance still required | PENDING operational review; no sign-off claimed |
 | Preparation PR merged before #150 | #155/#157/#159/#162/#163/#165/#166/#167/#168 merged into main; this reconciliation PR remains a separate deliverable | VERIFIED for existing preparation merges; PENDING for this PR and any separately approved activation implementation |
@@ -382,3 +382,40 @@ owner-approved #147/#148/#160/#161 completion remain accepted. E15 and remaining
 external, activation and rollback sign-offs still block operational #149
 readiness before #150; #151 retains post-cutover verification. No issue closure,
 tracking mutation, deployment or cutover is authorized by this reconciliation.
+
+## Owner #168 runtime result and approved private transport correction
+
+The owner confirmed `/opt/hybrid-ai` on `jarvis` at
+`681c961c68e8b2e98cbafd39a2c671acca36558e`. Its schema-v2 receipt at
+2026-11-11T16:09:33Z matches both `sha` and `head`, with run IDs `43053540207`
+and `43053540322`. Workflow conclusions, deployed HEAD, backup-log presence,
+status-identity readability and numeric receipt publication PASS. Overall
+verdict is **FAIL**, exit 1: required `backup_tile` is SKIPPED because the
+status API was unreachable. This supersedes the earlier missing-result/PENDING
+statements for this exact revision; it is not a new backup failure. The newest
+corresponding full log block has not been independently inspected here.
+
+Owner read-only probes found HTTP 308 from
+`http://status.daemonhub.dev/status/api` to the same path over HTTPS, then HTTP
+302 to `https://daemonhub.dev/auth/login` with normal certificate validation.
+Source confirms that the verifier demanded a 2xx HTTP browser response without
+following redirects. Domain resolution is fixed by #168; authenticated browser
+routing remains incompatible with that probe. No session or credential was
+supplied, no authentication was disabled, and no verifier/backup was rerun.
+
+The owner approved a bounded private Unix socket correction for #149. Status
+will return only the Backups name/state from its existing live probe through a
+mode-0600 socket in a status-owned mode-0700 directory. Installer/Compose wire
+that dedicated directory; the verifier validates its permissions and exact
+response, with missing/invalid evidence still failing required coverage. Caddy
+and browser authentication remain unchanged. Source tests/CI and the new PR's
+review readiness establish development evidence only; matching runtime evidence
+requires a separately approved deployment. See the [transport policy](../../../backup/README.md#post-deploy-verification-coverage-and-receipt-ownership)
+and [rollout/rollback](../../../deploy/README.md#private-backups-transport-rollout-and-rollback).
+
+The next development action is review of this bounded correction. The next
+runtime gate, after approved deployment, is its matching receipt, not another
+backup/restore. Accepted E04 and #147/#148/#160/#161 completion remain intact.
+E15 and all remaining external/activation/rollback attestations still apply;
+#149 operational completion and #150 remain blocked. No issue-state update,
+merge, deployment, permission change on `jarvis` or rename is performed here.

@@ -10,7 +10,9 @@ run is distinct from the owner-observed asynchronous verifier FAIL: required
 backup tile coverage was SKIPPED because the domain was stored in the stack
 rather than layout. #168 merged the bounded correction and its deployment
 automation passed for `681c961c68e8b2e98cbafd39a2c671acca36558e` at
-16:08:35 UTC on 2026-11-11; matching asynchronous verifier evidence is PENDING.
+16:08:35 UTC on 2026-11-11; the owner subsequently supplied its matching
+16:09:33Z receipt: FAIL, required tile SKIPPED through HTTP/TLS/login redirects.
+The approved private-socket correction still requires separate deployment/runtime evidence.
 The older FAIL does not establish the newer outcome. See READINESS.md. Other items remain
 pending or partially covered; a successful deployment does not complete the
 external checklist. Proposed roles
@@ -18,7 +20,7 @@ still need named operators, authorizations and milestone assignments.
 
 | ID | Evidence required / proposed owner | Prerequisite / safe evidence | Status / gate |
 | --- | --- | --- | --- |
-| E01 | Pi deployed SHA, OS/ARM64, host layout, active units/timers — Pi owner | Separate host read authorization; report identifiers and agreement with source, no secret files | PENDING for complete host/layout/unit agreement; recorded `jarvis` SHA and newer successful deploy runs provide bounded partial evidence, not complete host/layout/unit attestation; owner inspection on 2026-11-11 confirms installed `5e641a118db8154c6c753f8365d2b7526aa75273`, aarch64 and matching verifier FAIL due to required tile SKIPPED; #168 deployment automation subsequently passed for `681c961c68e8b2e98cbafd39a2c671acca36558e`, but independently observed current HEAD and matching verifier outcome remain PENDING; see READINESS.md |
+| E01 | Pi deployed SHA, OS/ARM64, host layout, active units/timers — Pi owner | Separate host read authorization; report identifiers and agreement with source, no secret files | PENDING for complete host/layout/unit agreement; recorded `jarvis` SHA and newer successful deploy runs provide bounded partial evidence, not complete host/layout/unit attestation; owner inspection on 2026-11-11 confirms installed `5e641a118db8154c6c753f8365d2b7526aa75273`, aarch64 and matching verifier FAIL due to required tile SKIPPED; #168 deployment automation passed for `681c961c68e8b2e98cbafd39a2c671acca36558e`; owner subsequently confirmed installed HEAD and matching receipt at 16:09:33Z: FAIL, required tile SKIPPED due to HTTP/TLS/login redirects. Approved private-socket source correction is separate from deployment/runtime verification; see READINESS.md |
 | E02 | Deployment forced command, account, polkit, unit/path agreement — Pi owner | Separate host authorization; pass/fail for expected contract, not key material | Pending / #149 |
 | E03 | Deployed images and rollback availability — Pi/registry owner | Separate access; record digest/platform/availability, not credentials | Pending / #149 |
 | E04 | Current backup completeness, snapshot selection and scratch restore — backup owner | Separate backup/data authorization and suitable inference policy; report snapshot ID, result and restore time only | VERIFIED for owner-recorded snapshot `65235d97`, complete capture, sampled integrity and isolated restore, 20/20 SQLite checks, 5m01s on 2026-11-10; [evidence and limits](READINESS.md#accepted-backup-evidence-and-operational-limits). No repeat requested |
@@ -68,3 +70,14 @@ first successful backup after cutover and the agreed observation interval;
 pre-cutover evidence cannot satisfy a future event. No cutover approval is
 recorded by this reconciliation. #148/#161 closure does not complete #149 or
 waive external gates.
+
+### Subsequent owner #168 evidence
+
+The earlier missing #168 verifier outcome is now known: matching `jarvis`
+receipt at 2026-11-11T16:09:33Z is FAIL because required tile coverage was
+SKIPPED; other recorded gates PASS. Owner probes establish HTTP 308 to HTTPS
+and then HTTP 302 to login. See READINESS.md's owner #168 result section.
+The approved private Backups Unix socket correction preserves browser auth
+and required coverage. Its implementation/CI do not establish deployment or a
+new runtime PASS. E01 remains partial; E04 remains accepted with no repeat
+requested; E15 and other outstanding attestations still block #150.

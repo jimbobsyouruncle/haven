@@ -55,25 +55,30 @@ ENDPOINTS:
 
 from __future__ import annotations
 
+import errno
 import html
 import http.client
 import json
 import os
 import re
 import socket
+import socketserver
 import sqlite3
+import stat
 import threading
 import time
 import urllib.parse
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 
 # --- Configuration (all non-secret) -----------------------------------------
 LISTEN_PORT = int(os.getenv("STATUS_PORT", "8088"))
+BACKUP_SOCKET = os.getenv("STATUS_BACKUP_SOCKET", "")
 LOCAL_DOMAIN = os.getenv("LOCAL_DOMAIN", "yourhostname.com")
 # Public hostnames only, and both are non-secret. The container still receives
 # no credential of any kind.
@@ -1244,17 +1249,100 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, b"not found", "text/plain; charset=utf-8")
 
 
-def main() -> None:
-    server = ThreadingHTTPServer(("0.0.0.0", LISTEN_PORT), Handler)
-    server.daemon_threads = True
-    print(f"[status] listening on :{LISTEN_PORT}", flush=True)
-    print(f"[status] watching docker socket {DOCKER_SOCK}", flush=True)
+class BackupVerifierHandler(BaseHTTPRequestHandler):
+    """Private Unix socket: no diagnostics, logs, credentials or general API."""
+
+    def log_message(self, format: str, *args: Any) -> None:
+        pass  # No request content in logs.
+
+    def do_GET(self) -> None:
+        code, body = 404, b""
+        if self.path == "/backup":
+            try:
+                # Same live reader/identity as the browser tile, without its
+                # log details/hints or unrelated service probes/cache.
+                state = probe_backups()["state"]
+                if state not in ("ok", "warn", "fail"):
+                    raise ValueError("invalid backup state")
+                code = 200
+                body = json.dumps({"name": "Backups", "state": state}).encode()
+            except Exception:
+                code, body = 503, b""
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class BackupVerifierServer(socketserver.UnixStreamServer):
+    def get_request(self):
+        conn, address = super().get_request()
+        conn.settimeout(2)  # A partial local request cannot hold the reader forever.
+        return conn, address
+
+    def handle_error(self, request, client_address) -> None:
+        pass  # Never log request contents or probe exceptions.
+
+
+@contextmanager
+def backup_verifier_socket(path: str):
+    """Serve only inside a pre-provisioned 0700 directory owned by this UID."""
+    if not path:
+        yield  # Standalone development; Compose always configures the socket.
+        return
+    if not os.path.isabs(path):
+        raise ValueError("backup socket must use an absolute path")
+    parent = os.lstat(os.path.dirname(path))
+    if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != os.geteuid()
+            or stat.S_IMODE(parent.st_mode) != 0o700):
+        raise ValueError("backup socket directory must be private and owned by status")
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
+        old = os.lstat(path)
+    except FileNotFoundError:
+        old = None
+    if old is not None:
+        if not stat.S_ISSOCK(old.st_mode) or old.st_uid != os.geteuid():
+            raise ValueError("refusing non-socket or foreign backup socket")
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+            probe.settimeout(1)
+            try:
+                probe.connect(path)
+            except OSError as exc:
+                if exc.errno != errno.ECONNREFUSED:
+                    raise
+            else:
+                raise ValueError("backup socket is already active")
+        os.unlink(path)  # Only a stale socket in the validated private directory.
+    with BackupVerifierServer(path, BackupVerifierHandler) as server:
+        os.chmod(path, 0o600)
+        identity = os.lstat(path)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            server.shutdown()
+            thread.join()
+            try:
+                current = os.lstat(path)
+                if (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
+                    os.unlink(path)
+            except FileNotFoundError:
+                pass
+
+
+def main() -> None:
+    with backup_verifier_socket(BACKUP_SOCKET):
+        with ThreadingHTTPServer(("0.0.0.0", LISTEN_PORT), Handler) as server:
+            server.daemon_threads = True
+            print(f"[status] listening on :{LISTEN_PORT}", flush=True)
+            print(f"[status] watching docker socket {DOCKER_SOCK}", flush=True)
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
 
 
 if __name__ == "__main__":
