@@ -127,7 +127,7 @@ cat > "$BIN/chown" <<'EOF'
 #!/usr/bin/env bash
 # The new dedicated directory is an independent ownership operation, not a
 # cache repair. Keep its log separate so it cannot clear the cache fixture.
-if [[ "$#" == 2 && "$1" == 1000:999 && "$2" == "$FIXTURE_DATA_DIR/status-verifier" ]]; then
+if [[ "$#" == 2 && "$1" =~ ^1000:[0-9]+$ && "$2" == "$FIXTURE_DATA_DIR/status-verifier" ]]; then
   printf '%s\n' "$*" >> "${SOCKET_CHOWN_ARGV_LOG:?}"
   exit 0
 fi
@@ -641,6 +641,18 @@ echo "== the backup cache ownership reconcile runs on every system-mode install 
 # pass NO --no-start. The ownership walk is modelled (find -print -quit answers
 # from FOREIGN_MARKER, chown clears it) because the builder host has neither a
 # hybrid-ai-backup account nor root.
+# Regression for hosted runners whose Docker socket group is not 999.
+GID_MARKER="$WORK/gid-marker"
+printf 'foreign cache entry\n' > "$GID_MARKER"
+env FIXTURE_DATA_DIR="$WORK/data" SOCKET_CHOWN_ARGV_LOG="$WORK/socket-chown.argv" \
+  FOREIGN_MARKER="$GID_MARKER" CHOWN_ARGV_LOG="$CHOWN_ARGV" \
+  "$BIN/chown" 1000:113 "$WORK/data/status-verifier"
+if [[ -f "$GID_MARKER" ]] && grep -qxF "1000:113 $WORK/data/status-verifier" "$WORK/socket-chown.argv"; then
+  ok "a non-default socket GID does not clear the cache ownership marker"
+else
+  bad "a non-default socket GID was mistaken for a cache repair"
+fi
+rm -f "$GID_MARKER"
 CACHE_UNDER_TEST="$WORK/restic"
 UNIT_INSTALLED="$SYSD/$UNIT"
 # STEP 11 needs a syntactically valid backup.sh and system-mode credentials

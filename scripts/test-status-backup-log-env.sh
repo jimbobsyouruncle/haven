@@ -329,7 +329,7 @@ fi
 # Private transport provisioning is idempotent and never follows a symlink.
 check "status verifier directory is private" "700" \
       "$(stat -c '%a' "$WORK/data/status-verifier")"
-if grep -q '0:999 .*status-verifier' "$CHOWN_LOG"; then
+if grep -qxF "$(env_value "$STACK" STATUS_UID):$(env_value "$STACK" DOCKER_GID) $WORK/data/status-verifier" "$CHOWN_LOG"; then
   ok "root provisioning assigns the status numeric UID and primary GID"
 else
   bad "private socket directory identity was not assigned"
