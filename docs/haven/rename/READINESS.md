@@ -6,7 +6,7 @@ or attest to production behavior beyond the bounded owner evidence below.
 No host, backup, credentials, external
 integration settings or worker repository were accessed. GitHub rule metadata
 was read without changing settings. The source reviewed is public
-`main` at `d49160b1bb42f4f29a1fa66b1d6f921eb3ab7da0` (reviewed 2026-11-11 UTC).
+`main` at `ba7045aab7be83e33f30186e07d5664b0fea91ea` (reviewed 2026-11-11 UTC).
 
 ## Acceptance and existing evidence
 
@@ -17,7 +17,7 @@ records. Later decisions supplement that baseline; they do not rewrite it.
 | #149 acceptance criterion | Evidence / remaining requirement | Status |
 | --- | --- | --- |
 | Required CI, SAST, tests and maps pass | Final-head checks for #155/#157/#159/#162/#163/#165/#166/#167/#168/#169/#170 below; this reconciliation PR must obtain its own checks | VERIFIED for listed revisions (executed checks PASS); current PR evidence belongs in its description |
-| Deployment smoke and worker integration checks documented | Successful synchronous deploy workflows below; owner backup/restore evidence accepted; historical #166 verifier FAIL (required tile SKIPPED); #168 owner receipt also FAIL (required tile SKIPPED through HTTP/TLS/login redirects); private transport correction #170 has successful deployment automation and owner-confirmed installed HEAD; its matching owner-supplied schema-v2 receipt records PASS at 18:14:41Z for every required gate; E15 worker contract/synthetic results missing | PENDING: live worker integration and remaining operational coverage; E04 VERIFIED within recorded scope |
+| Deployment smoke and worker integration checks documented | Successful synchronous deploy workflows below; owner backup/restore evidence accepted; historical #166 verifier FAIL (required tile SKIPPED); #168 owner receipt also FAIL (required tile SKIPPED through HTTP/TLS/login redirects); private transport correction #170 has successful deployment automation and owner-confirmed installed HEAD; its matching owner-supplied schema-v2 receipt records PASS at 18:14:41Z for every required gate; E15 satisfied for rename preparation under the owner-approved disposition below | VERIFIED for documented deployment and E15 rename preparation; remaining operational packet PENDING; E04 VERIFIED within recorded scope |
 | New URL dependencies identified and actions prepared | D01–D16, selector, all 125 manual-review dispositions and activation sequence below | Public-source preparation and deploy-to-verifier selector handoff implemented; external attestations and host activation review PENDING |
 | Rollback and go/no-go reviewed | Procedure below; named operator, reviewed recovery artifacts, downtime threshold and owner acceptance still required | PENDING operational review; no sign-off claimed |
 | Preparation PR merged before #150 | #155/#157/#159/#162/#163/#165/#166/#167/#168/#169/#170 merged into main; this reconciliation PR remains a separate deliverable | VERIFIED for existing preparation merges; PENDING for this PR and any separately approved activation implementation |
@@ -164,8 +164,9 @@ reopen the development issue. Neither issue is automatically a #148 blocker.
 ## Evidence collection and ownership
 
 [EXTERNAL.md](EXTERNAL.md) is the authoritative E01–E20 request register.
-Its owner roles are proposed responsibilities, not named assignments or access
-grants. Each operator must receive separate authorization for their scope.
+The repository owner is responsible for E01–E20 under the approved issue
+disposition. Listed roles identify consumers, not access grants; execution
+operators still need authorization for their scope.
 Capture only: evidence ID, named operator, UTC date, revision/artifact identifier,
 pass/fail/pending/not-applicable with rationale, sanitized evidence link,
 approver and next gate. Do not attach environment contents, raw remotes,
@@ -174,18 +175,31 @@ its approved inference/storage route; use a sanitized attestation here.
 
 | Gate | Evidence IDs | Required handoff |
 | --- | --- | --- |
-| #149 preparation before #150 | E01–E05, E07, E09–E11, E13–E16, E18 | Pi/layout/units, rollback images, backup stability and restore, rules/checks, integrations, setting names/consumers, registry permissions, clones/workspaces, worker contract, TLS and external URL consumers |
+| #149 preparation before #150 | E01–E05, E07, E09–E11, E13–E16, E18 | Pi/layout/units, rollback images, backup stability and restore, rules/checks, integrations, setting names/consumers, registry permissions, clones/workspaces, accepted worker disposition, affected TLS and external URL consumers |
 | Before operational preparation merges | E06 | GitHub owner confirms actual production reviewer protection and approved freeze/resume procedure; environment declaration alone proves neither |
 | #150 cutover | E08, E09, E12, E13, E17, E19; revalidate E07 | Target availability and stable repo ID; external URL changes, clone/selector alignment, paused automation, approved window and rollback operator |
 | #151 verification | E07, E11, E14, E16, E20 | Required checks, registry/workspace/TLS operation, agreed observation interval, first successful backup and cleanup approval |
 
-E04 scratch restore and E15 worker compatibility are explicit **hard gates**.
-E04 already has the accepted bounded evidence above; do not repeat it merely
-because an older register said pending. For E15 obtain a versioned owner-supplied API/auth/model/image/network
-contract plus synthetic integration results, or authorize a separate worker
-repository task. This documentation task does not access that repository.
-Source fixtures do not substitute for either gate. The architecture's proposed
-RPO/RTO and isolation guarantees are not established by this rename work.
+E04 has accepted bounded backup/restore evidence. E15 is satisfied for rename
+preparation by the [owner-approved issue disposition](https://github.com/jimbobsyouruncle/hybrid-ai/issues/149),
+not by a new live integration test. The owner attests that the existing worker
+functions when started. The approved prior cross-repository review identified
+compatible model-list/chat/streaming interfaces and no main-repository slug
+dependency in the worker build/startup paths. Existing offline client tests
+passed in [source validation](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43085894990)
+at final PR head `8bc28837ef8ebc36ae89ef6d3850eb17d2a3eff9`.
+That review used main source `ba7045aab7be83e33f30186e07d5664b0fea91ea`
+and worker source `cf402976b09d8d155c62f5f4b83d174b35d3521f`;
+this documentation task does not access the worker repository.
+
+Preserve the worker repository/package, image, model, authentication and
+transport contracts. A fresh worker inventory, rebuild, separately supplied
+contract or synthetic test is not required solely for this identity-only rename.
+Optional authentication/reachability modes have source-level caveats, not observed
+failures of the owner-attested deployment. If cutover changes those interfaces,
+reassess the exact affected contract before execution without weakening security.
+Normal post-cutover worker observation belongs to #151. This disposition does
+not establish Haven's proposed RunPod-only enforcement, isolation or RPO/RTO.
 
 ## Automation and freeze plan
 
@@ -281,24 +295,24 @@ still requires its own Closure Card and approval.
 | Classification | Action / expected non-secret evidence | Owner / phase |
 | --- | --- | --- |
 | VERIFIED | #147 audit; #148 presentation completion; #160 accepted operational completion; #161 development completion; #165–#170 preparation merges and listed CI/deployment runs; owner-confirmed #170 installed HEAD and matching receipt PASS; bounded E04 backup/restore evidence | Existing public records; #148, #160 and #161 closed with explicit owner approval on 2026-11-11 UTC |
-| REQUIRED NOW | Review this documentation PR; no host operation is required to validate this deliverable | Human PR reviewer / #149 development |
+| REQUIRED NOW | Review this documentation PR; no host operation is required to validate this deliverable | Human PR reviewer / #150 preflight documentation |
 | VERIFIED | #170 receipt matches requested/deployed SHA and records PASS for all required gates at 18:14:41Z; latest log not independently inspected; #166/#168 FAIL results remain historical evidence for their own revisions | Owner-supplied sanitized receipt / #149; no rerun requested |
-| REQUIRED LATER | Supply versioned worker API/auth/model/image/network contract and synthetic integration results, or separately authorize a worker-repository task | Named worker owner still unassigned / E15, #149 hard gate |
-| REQUIRED LATER | Complete remaining EXTERNAL.md preparation attestations; review exact selector propagation, recovery image availability, freeze/resume, downtime threshold and rollback ownership | Named operators/approvals still pending / #149–#150 |
+| VERIFIED | E15 rename preparation: owner-attested working worker, approved source review and existing offline client tests; preserve unchanged contracts | Repository owner / E15; normal use after cutover belongs to #151 |
+| REQUIRED NOW to advance cutover planning | Supply the bounded packet: identity alignment, affected consumers, recovery availability and operational decisions | Repository owner / #150; not a prerequisite for this documentation PR |
 | REQUIRED LATER | Record explicit #150 go/no-go, cutover receipts and #151 observation/first-backup results | Owner / #150 then #151 |
 | OPTIONAL | Confirm cleanup of the accepted scratch restore directory; consider separate tracking/rules-policy corrections | Owner; no cleanup, settings change or issue mutation included here |
 
-REQUIRED LATER rows are required to advance operational #149 readiness before
-#150, but do not block this documentation PR. They are not optional deferrals.
+The bounded packet is required to advance operational readiness; execution and
+post-cutover observations remain REQUIRED LATER. Neither blocks validation of
+this documentation PR, and neither is an optional deferral.
 The owner has supplied the existing #170 receipt and confirmed the installed
 checkout revision and layout-derived receipt directory; see the bounded evidence
-below. Next obtain E15 and the remaining external/rollback attestations.
-E15 needs the versioned contract plus synthetic outcome with revision,
-environment and date. No raw logs, worker source or credentials are requested.
+below. Next obtain only the bounded operational packet below. No raw logs, worker
+source or credentials are requested.
 
 The development gate is CLEAR once this PR's applicable checks pass and human
 review accepts the bounded deliverable. The operational gate remains NO-GO:
-missing external readiness, worker and activation evidence is not waived.
+missing affected-consumer, activation and operational decisions are not waived.
 Do not ask for credentials, raw private logs, another backup/restore or a new
 deployment merely to refresh this document. Exact runtime commands require
 confirmed paths/identity and separately authorized host scope first.
@@ -342,8 +356,8 @@ after domain resolution; #170 implements its private transport correction.
 This evidence supersedes the missing-outcome description above for this exact
 installed revision: its verifier outcome is now evidenced FAIL, not PENDING.
 E01 host/layout inventory remains partial, E04 backup/restore evidence remains
-accepted, and E15 worker integration plus other external and rollback sign-offs
-remain outstanding. Keep #160/#161 completed and #150 NO-GO. No runtime repair,
+accepted, and the remaining affected external and rollback sign-offs remain outstanding.
+The later owner-approved E15 disposition above governs rename preparation. Keep #160/#161 completed and #150 NO-GO. No runtime repair,
 backup/restore rerun, credential/permission change or cutover is performed.
 
 ## Post-merge #168 reconciliation — historical result
@@ -427,17 +441,66 @@ no independent claim about later attempts or publication errors is made. No
 contradictory later evidence is known. #166/#168 FAIL results retain their exact
 revision/time scope and are not copied onto #170. This receipt neither executes
 nor replaces the accepted E04 backup/restore evidence and does not complete E01's
-host/layout/unit inventory or E15 worker integration.
+affected host/layout/identity review. E15 has the separate accepted disposition above.
 
 Successful automated deployment logs and this owner-supplied receipt count for
 what they actually observed. No verifier rerun, manual socket probe, auth-health
 repeat or new backup/restore is requested merely to refresh the evidence.
 
-Before #150, obtain E15's versioned worker contract/synthetic results and the
-remaining external, activation and rollback attestations. Existing suitable
+Before #150, obtain the bounded affected-consumer, activation and rollback
+attestations below; E15 preparation is already dispositioned. Existing suitable
 automation counts. No repeat auth-health, backup, integrity or restore test is
 justified by this reconciliation. #151 retains the distinct post-cutover
 integration observations and first successful backup. Accepted E04 and
 #147/#148/#160/#161 completion remain intact; #149 operational completion and
 #150 remain blocked. This documentation PR is not itself an operational gate
 and changes no runtime state, issue metadata, permissions or credentials.
+
+## #150 bounded execution preflight packet
+
+The [owner-approved reconciliation](https://github.com/jimbobsyouruncle/hybrid-ai/issues/150)
+supersedes broader pending-inventory requests in earlier historical sections.
+The repository owner is responsible for E01–E20, cutover coordination and
+rollback. Approval to prepare this documentation is not operational go/no-go.
+All unsupplied decisions below remain **PENDING**; no installed activation,
+target availability, window or downtime tolerance is inferred.
+
+| Packet item | Required non-secret decision / evidence | Status |
+| --- | --- | --- |
+| Revision and identity (E01, E02, E12, E13) | Select execution revision; confirm clone/bootstrap/root service/transient verifier alignment and whether a deployment remote override needs an action; record prior state and rollback mechanism | PENDING owner review; source support is implemented, installed Haven activation unverified |
+| Affected consumers (E05, E07, E09–E11, E13, E14, E16, E18) | Mark each applicable consumer unchanged, update-at-cutover or NOT_APPLICABLE with reason; name the responsible operator and action/result gate | PENDING owner disposition; only affected dependencies block cutover |
+| Recovery (E03, E04) | Confirm selected prior code/verifier revisions, immutable image artifacts and recovery snapshot remain available; reuse accepted restore evidence | PENDING artifact-availability confirmation; E04 recorded restore VERIFIED |
+| Operations (E06, E08, E17, E19, E20) | Confirm target availability and stable repository ID; approve window, freeze/resume coverage, downtime threshold, stop/rollback operator and observation interval | PENDING; no operational approval recorded |
+
+Submit only item/evidence ID, owner, UTC date, revision/artifact, environment,
+PASS/FAIL or justified NOT_APPLICABLE, planned action and next gate. Keep private
+configuration and logs on their approved route. Unchanged backup/certificate
+storage, broad host inventory, model tuning and unrelated hardening are not
+independent blockers without a demonstrated affected interface. Unknown
+applicability still needs a disposition. No backup/restore, auth-health,
+verifier or worker retest is requested absent a specific invalidation reason.
+
+The execution ledger must sequence: preserve prior identity/recovery state;
+record and approve the freeze (including main map-bot automatic merges,
+eligible deploys, image publishing and relevant external schedules); record
+separate owner go/no-go; rename while preserving repository ID, visibility and
+`main`; align canonical clone URLs, bootstrap process selector, root service
+process selector and any remote override; verify the explicitly forwarded
+transient-verifier identity; perform approved new-path checks before resuming.
+A layout-file edit or SSH-client export does not activate the root service.
+The proposed root-owned service drop-in, daemon reload, remote edits and any
+deployment require separate operational authorization, as described in
+[identity activation guidance](../../../deploy/README.md#haven-repository-identity-preparation-149).
+
+Stop on identity mismatch, missing required checks, unavailable recovery
+artifacts, a failed applicable gate or the approved downtime threshold. Record
+which ledger entries would be reversed and who may execute each reversal;
+rename-back, redeploy and data restore are separately authorized operations.
+No automatic rollback or data restore is authorized here.
+
+Handoff to #151 includes new-path clone/PR/check/deploy results, affected
+integrations, normal worker-use observations, the agreed sustained observation
+interval and first successful post-cutover backup. Record retained aliases,
+incidents and rollback decisions before proposing epic closure. The packet is
+ready for operational approval only when the pending decisions are supplied;
+#150 remains **NO-GO** until then and until separate explicit owner approval.
