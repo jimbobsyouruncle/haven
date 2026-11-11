@@ -17,7 +17,7 @@ records. Later decisions supplement that baseline; they do not rewrite it.
 | --- | --- | --- |
 | Required CI, SAST, tests and maps pass | Final-head checks for #155/#157/#159/#162/#163 below; this reconciliation PR must obtain its own checks | PASS for listed revisions; current PR evidence belongs in its description |
 | Deployment smoke and worker integration checks documented | Successful synchronous deploy workflows below; owner backup/restore evidence accepted; newer asynchronous verifier outcome and E15 worker contract/synthetic results missing | PENDING: live worker integration and remaining operational coverage; E04 VERIFIED within recorded scope |
-| New URL dependencies identified and actions prepared | D01–D16, selector, all 125 manual-review dispositions and activation sequence below | Public-source preparation VERIFIED; external consumer attestations and exact selector propagation plan PENDING |
+| New URL dependencies identified and actions prepared | D01–D16, selector, all 125 manual-review dispositions and activation sequence below | Public-source preparation and deploy-to-verifier selector handoff implemented; external attestations and host activation review PENDING |
 | Rollback and go/no-go reviewed | Procedure below; named operator, reviewed recovery artifacts, downtime threshold and owner acceptance still required | Prepared for review; no operational sign-off claimed |
 | Preparation PR merged before #150 | #155/#157/#159/#162/#163 merged into main; this reconciliation PR remains a separate deliverable | VERIFIED for existing preparation merges; PENDING for this PR and any separately approved activation implementation |
 
@@ -87,6 +87,24 @@ runtime edits. Clone/grant/documentation alignment is explicitly assigned to
 #150/#151; registry, host and integration evidence stays in E01–E20.
 No beyond-epic deferral or alias removal is approved. Keep baseline
 `owner_issue` values as historical triage rather than rewriting the audit.
+
+## Source selector handoff (#149)
+
+The subsequent selector-handoff change validates the deployment process's
+allowlisted repository identity before reading layout files or mutating the
+host, then explicitly passes that identity into the asynchronous verifier's
+transient unit. Offline fixtures cover the unset legacy default, both explicit
+identities, invalid/empty inputs before deployment side effects, exact launch
+arguments and the existing warning behavior when scheduling fails. The shared
+identity suite also checks all four consumers against its invalid-input matrix.
+
+This source preparation does not configure the root service, activate Haven,
+change remote-override precedence or establish live verification. See the
+activation sequence below and [deployment guidance](../../../deploy/README.md#haven-repository-identity-preparation-149).
+Review rollback as a source revert; any installed-revision rollback or service
+configuration change needs separate operational approval. Reverting this
+handoff removes explicit selector forwarding and must be assessed before any
+post-cutover rollback. Existing backup/restore evidence remains valid.
 
 ## Accepted backup evidence and operational limits
 
@@ -183,10 +201,13 @@ ledger of what was paused and restored.
    Bootstrap, root deployment service and transient verifier must agree on
    `HYBRID_AI_REPOSITORY_SLUG`; any deployment remote override must also agree.
    The selector is process-only: editing a layout file or exporting an SSH
-   client variable does not configure these services. The current transient
-   launch does not explicitly propagate the selector. Any required source or
-   host configuration change needs separately reviewed and approved scope;
-   do not claim this runbook implements propagation.
+   client variable does not configure these services. `deploy-remote.sh` now
+   validates and explicitly forwards the resolved process selector to the
+   transient verifier, including the legacy default when unset. The
+   [service configuration proposal](../../../deploy/README.md#haven-repository-identity-preparation-149)
+   requires separate host-owner review and approval; no drop-in or activation
+   is installed by this source change. Bootstrap's invocation and existing
+   remote overrides still need explicit alignment at cutover.
 4. **Explicit owner go:** Record action, repository ID `1380300964`, target
    `jimbobsyouruncle/haven`, revision, operators and window before renaming.
    Confirm target availability, public visibility and default branch `main`.

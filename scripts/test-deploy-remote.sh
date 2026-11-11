@@ -18,6 +18,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_SCRIPT="$SCRIPT_DIR/deploy-remote.sh"
+unset HYBRID_AI_REPOSITORY_SLUG
 
 if [[ ! -f "$DEPLOY_SCRIPT" ]]; then
   echo "FATAL: cannot find $DEPLOY_SCRIPT" >&2
@@ -317,6 +318,11 @@ else
 fi
 
 if [[ "$INVOCATIONS" -eq 1 ]]; then
+  if [[ "$(grep -cxF -- '--setenv=HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/hybrid-ai' "$SDRUN_LOG")" -eq 1 ]]; then
+    pass "unset selector -> transient verifier explicitly receives legacy default exactly once"
+  else
+    fail "unset selector -> transient verifier did not receive exactly one legacy default"
+  fi
   missing=""
   for needle in "--collect" "--service-type=exec" \
                 "StandardOutput=append:${VERIFY_LOG}" \
@@ -351,6 +357,40 @@ if [[ "$INVOCATIONS" -eq 1 ]]; then
 else
   fail "verifier present -> argv assertions skipped, systemd-run never ran"
 fi
+
+# Both explicit identities must survive the systemd manager environment boundary.
+for slug in jimbobsyouruncle/hybrid-ai jimbobsyouruncle/haven; do
+  rm -f "$SDRUN_LOG"
+  rc=0
+  HYBRID_AI_REPOSITORY_SLUG="$slug" \
+    HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
+    SYSTEMD_RUN_LOG="$SDRUN_LOG" \
+    run_deploy "$WORKDIR/identity.out" "$SHA" || rc=$?
+  if [[ "$rc" -eq 0 && -f "$SDRUN_LOG" ]] &&
+     [[ "$(grep -c -- '^--setenv=HYBRID_AI_REPOSITORY_SLUG=' "$SDRUN_LOG")" -eq 1 ]] &&
+     grep -qxF -- "--setenv=HYBRID_AI_REPOSITORY_SLUG=$slug" "$SDRUN_LOG"; then
+    pass "explicit $slug -> exactly one matching transient verifier selector"
+  else
+    fail "explicit $slug -> selector handoff failed"
+  fi
+done
+
+# Invalid selectors must fail before chmod, install or transient-unit launch.
+for slug in '' 'unapproved-selector-fixture' $'jimbobsyouruncle/haven\n'; do
+  rm -f "$MARKER" "$SDRUN_LOG"
+  chmod -x "$REPO/install.sh"
+  rc=0
+  HYBRID_AI_REPOSITORY_SLUG="$slug" \
+    HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
+    SYSTEMD_RUN_LOG="$SDRUN_LOG" \
+    run_deploy "$WORKDIR/invalid-identity.out" "$SHA" || rc=$?
+  if [[ "$rc" -eq 2 && ! -e "$MARKER" && ! -e "$SDRUN_LOG" && ! -x "$REPO/install.sh" ]] &&
+     [[ "$(cat "$WORKDIR/invalid-identity.out")" == 'repository identity: HYBRID_AI_REPOSITORY_SLUG must select an approved repository' ]]; then
+    pass "invalid selector -> exit 2, fixed diagnostic, no host mutation or verifier launch"
+  else
+    fail "invalid selector -> refusal or side-effect boundary failed"
+  fi
+done
 
 # Case: the verifier script is absent. The deploy must say so and stay green.
 rm -f "$MARKER" "$SDRUN_LOG"

@@ -4,6 +4,11 @@ set -Eeuo pipefail
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve before layout reads or host activity; the transient unit inherits
+# the systemd manager's environment rather than this process's environment.
+# shellcheck source=scripts/lib/repository-identity.sh
+source "${SCRIPT_DIR}/lib/repository-identity.sh"
+REPO_SLUG="$(hybrid_ai_repository_slug)" || exit 2
 # shellcheck source=scripts/lib/hybrid-ai-env.sh
 source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
 APP_DIR="$HYBRID_AI_APP_DIR"
@@ -183,13 +188,13 @@ esac
 # schedule" and "script absent" paths are warnings. The absent case is loud on
 # purpose -- it used to fail silently.
 if [ -x "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD" ]; then
-  # --setenv carries the resolved APP_DIR into the transient unit. Without it the
-  # unit inherits the systemd manager's environment, not this script's, so the
-  # verifier would fall back to its own default and check the wrong tree.
+  # --setenv carries the resolved APP_DIR and repository into the transient
+  # unit rather than relying on the manager's environment or verifier defaults.
   systemd-run --collect \
     --unit="hybrid-ai-post-deploy-verify-${EXPECTED_SHA:0:12}-$$" \
     --service-type=exec \
     --setenv=HYBRID_AI_APP_DIR="$APP_DIR" \
+    --setenv=HYBRID_AI_REPOSITORY_SLUG="$REPO_SLUG" \
     --property="StandardOutput=append:${HYBRID_AI_POST_DEPLOY_VERIFY_LOG}" \
     --property="StandardError=append:${HYBRID_AI_POST_DEPLOY_VERIFY_LOG}" \
     "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD" --wait-for "$EXPECTED_SHA" \

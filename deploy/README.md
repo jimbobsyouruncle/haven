@@ -35,11 +35,24 @@ are rejected before network or deployment activity. Canonical clone URLs use
 
 This prepares a later cutover; it does not activate one. The setting is **not**
 loaded from the layout/stack env file, written by bootstrap, or installed into
-systemd. An SSH client's environment does not configure the system service;
-systemd and the transient verifier must each receive the selected identity
-through separately approved operational configuration at #150. Keep all
-consumers on the same identity. Bootstrap still requires the checkout's origin
+systemd. An SSH client's environment does not configure the system service.
+`deploy-remote.sh` validates the process selector before layout reads or host
+activity and passes its resolved value explicitly with
+`systemd-run --setenv=HYBRID_AI_REPOSITORY_SLUG=<selected-slug>` to the
+transient verifier. This includes the legacy default when unset, so a different
+systemd manager environment cannot silently select another verifier repository.
+Keep all consumers on the same identity. Bootstrap still requires the checkout's origin
 to exactly match its selected canonical HTTPS URL; it never rewrites a remote.
+
+At #150, an authorized host owner must separately review and configure the
+root deployment service's process environment. A root-owned systemd drop-in for
+`hybrid-ai-deploy@.service` with `[Service]` and an explicit
+`Environment=HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven` is a proposed
+mechanism, not an installed configuration or authorization to apply it. Review
+existing drop-ins and remote overrides, record the prior state for rollback,
+and approve any daemon reload or subsequent deployment separately. Bootstrap's
+invocation must independently select the same identity. Editing the layout file
+or exporting a variable in the SSH client does not perform this activation.
 
 `HYBRID_AI_DEPLOY_PUBLIC_REMOTE` retains its existing precedence for deployment
 fetch only, including existing HTTPS/userinfo validation. It does not configure

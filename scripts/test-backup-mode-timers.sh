@@ -79,6 +79,7 @@ APPD="$WORK/app"
 mkdir -p "$APPD/scripts/lib" "$APPD/backup" "$APPD/openhands" "$APPD/hermes" \
          "$APPD/webui_data" "$APPD/hermes_data"
 cp "$REPO_SRC/scripts/lib/hybrid-ai-env.sh" "$APPD/scripts/lib/"
+cp "$REPO_SRC/scripts/lib/repository-identity.sh" "$APPD/scripts/lib/"
 cp "$REPO_SRC/scripts/lib/read-probe.sh" "$APPD/scripts/lib/"
 cp "$REPO_SRC/backup/backup.sh" "$APPD/backup/"
 cp "$REPO_SRC/backup/backup-containers.sh" "$APPD/backup/" 2>/dev/null || true
