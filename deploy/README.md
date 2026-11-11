@@ -287,17 +287,25 @@ Paths (both resolved in `scripts/lib/hybrid-ai-env.sh`):
 
 After the tree check the verifier also runs the **Backups tile gate**. It reads
 `BACKUP_LOG` and `BACKUP_GROUP_GID` from process settings or the layout as data.
-`LOCAL_DOMAIN` uses process, layout, then the configured stack file, in that
-order. The standalone verifier extracts only that runtime key from the stack,
-without sourcing files or printing values. Missing/unreadable configuration or
-invalid domains cannot satisfy a required tile gate. It asserts the log is a regular non-empty
-file, probes readability **as the status container's identity** by dropping from
-root with `setpriv` (configured status UID/primary GID and supplementary
-`BACKUP_GROUP_GID`, with legacy defaults) — a root read is never claimed as a pass — and queries
-`GET /status/api` through Caddy's `status.{$LOCAL_DOMAIN}` route with
-`--resolve` to loopback. It FAILs (exit 1) when the Backups tile is `warn` while
-the writer's log holds `event=backup_success`, and when the log is missing or
-empty. A probe it cannot run records SKIPPED and prints a `skip:` note on stderr.
+It asserts the log is a regular non-empty file and probes readability **as the
+status container's identity** by dropping from root with `setpriv` (configured
+status UID/primary GID and supplementary `BACKUP_GROUP_GID`, with legacy
+defaults); a root read is never claimed as a pass. The live tile state comes from
+`${HYBRID_AI_DATA_DIR}/status-verifier/backup.sock`: a mode-0600 Unix socket in
+a status-owned mode-0700 directory provisioned by the installer. The directory
+is the only new writable status mount, and Compose refuses to auto-create it.
+The socket exposes only the Backups name/state from the existing probe logic.
+Browser authentication and Caddy routes remain unchanged. No credential, TCP
+port or Docker API access is needed by the verifier, and no domain/stack-file
+lookup or fallback to the browser route occurs.
+
+Directory/socket ownership, types and modes must agree with the configured
+status UID before the verifier makes a bounded, proxy-free local request. Only
+HTTP 200 and the minimal validated JSON shape are accepted; redirect/auth/error
+responses, missing sockets, timeouts and malformed results cannot pass. It FAILs
+(exit 1) when the tile is `warn` while the writer's log holds
+`event=backup_success`, when the tile fails, or when the log is missing/empty.
+A probe it cannot run records SKIPPED and prints a fixed `skip:` diagnostic.
 All three backup probes are mandatory in system mode; user mode may require
 them explicitly. Missing or warning required coverage fails closed. Optional
 SKIPPED/WARN coverage produces overall WARN/exit 0, never a clean PASS. These
@@ -460,3 +468,22 @@ unit has no `Restart=` line and that the polkit rule contains the exact user,
 action, verb and unit regex. `scripts/test-bootstrap.sh` covers the host
 bootstrap that installs the account, the unit, the polkit rule and the SSH key
 line, entirely offline.
+
+### Private Backups transport rollout and rollback
+
+Deploy installer, Compose, status app and standalone verifier together only
+after owner approval. The installer creates/assigns only the dedicated socket
+directory; no by-hand chmod, host account, login session or Caddy exception is
+needed. Existing backup/restore evidence remains valid. After approved rollout,
+inspect the matching receipt's required gate results; source fixtures and CI
+are not live verification. The owner's #168 receipt on `jarvis` at
+2026-11-11T16:09:33Z was FAIL because required tile coverage was SKIPPED; owner
+read-only probes confirmed HTTP 308 to HTTPS, then HTTP 302 to the login page.
+This correction does not retroactively convert that result to PASS.
+
+Rollback requires a reviewed source revert and separately approved deployment
+of the matching installer/Compose/app/verifier revision. The old verifier may
+again fail its authenticated browser-route probe; do not suppress that failure.
+The dedicated directory can remain unused when the mount is reverted; deleting
+it or modifying live configuration is not part of this change. No backup data,
+snapshot, log, certificate or credential migration is involved.

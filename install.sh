@@ -870,6 +870,18 @@ mkdir -p "$HYBRID_AI_CADDY_DATA_DIR"
 chmod 700 "$HYBRID_AI_CADDY_DATA_DIR"
 mkdir -p "$HYBRID_AI_HERMES_DATA_DIR"
 
+# Private status-to-host verification transport. Never publish the status API
+# or grant the verifier access to Docker/session credentials.
+STATUS_VERIFY_DIR="${HYBRID_AI_DATA_DIR}/status-verifier"
+[[ ! -L "$STATUS_VERIFY_DIR" ]] || die "status verifier directory must not be a symlink"
+if [[ "$(id -u)" == 0 ]]; then
+  install -d -m 0700 "$STATUS_VERIFY_DIR"
+  chown "$STATUS_UID:$DOCKER_GID" "$STATUS_VERIFY_DIR"
+else
+  [[ "$(id -u)" == "$STATUS_UID" ]] || die "status verifier directory requires installation as the configured status UID or root"
+  install -d -m 0700 "$STATUS_VERIFY_DIR"
+fi
+
 mkdir -p "$OPENHANDS_STATE_DIR"
 chmod 700 "$OPENHANDS_STATE_DIR"
 

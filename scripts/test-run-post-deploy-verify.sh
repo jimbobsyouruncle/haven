@@ -54,7 +54,7 @@ url=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
-    --max-time|-A|--resolve) shift 2 ;;
+    --max-time|--max-filesize|-A|--resolve|--noproxy|--unix-socket) shift 2 ;;
     -w|-sS) shift ;;
     http*) url="$1"; shift ;;
     *) shift ;;
@@ -63,10 +63,14 @@ done
 # The status API is a different endpoint from the GitHub API: a case sets
 # CURL_TILE_CODE/CURL_TILE_BODY to control the Backups tile, or CURL_TILE_CODE=000
 # to make the service unreachable.
-if [[ "$url" == *"/status/api"* ]]; then
-  [[ -n "$out" ]] && printf '%s' "${CURL_TILE_BODY:-}" > "$out"
+if [[ "$url" == "http://localhost/backup" ]]; then
+  if [[ -n "${CURL_TILE_BODY+x}" ]]; then
+    printf '%s' "$CURL_TILE_BODY" > "$out"
+  else
+    printf '{"name":"Backups","state":"%s"}' "${JQ_STUB_TILE:-}" > "$out"
+  fi
   printf '%s' "${CURL_TILE_CODE:-200}"
-  exit 0
+  exit "${CURL_TILE_RC:-0}"
 fi
 [[ -n "$out" ]] && printf '%s' "${CURL_STUB_BODY:-}" > "$out"
 printf '%s' "${CURL_STUB_CODE:-200}"
@@ -99,14 +103,12 @@ for a in "$@"; do
   case "$a" in
     *'has("workflow_runs")'*) mode=has ;;
     *'workflow_runs[]'*) mode=rows ;;
-    *'Backups'*) mode=tile ;;
   esac
   break
 done
 case "$mode" in
   has) exit "${JQ_STUB_HAS_EXIT:-0}" ;;
   rows) printf '%b' "${JQ_STUB_ROWS:-}"; exit 0 ;;
-  tile) printf '%s' "${JQ_STUB_TILE:-}"; exit 0 ;;
   *) exec "${REAL_JQ:?}" "$@" ;;
 esac
 EOF
@@ -200,6 +202,7 @@ run_verify() {
   fi
 
   if [[ "$vdir" == __layout__ ]]; then
+    owner_args+=(-u HYBRID_AI_DATA_DIR)
     owner_args+=(-u HYBRID_AI_DEPLOY_VERDICT_DIR)
   else
     receipt_args+=(HYBRID_AI_DEPLOY_VERDICT_DIR="$vdir")
@@ -290,6 +293,16 @@ fi
 # pass), so the verdict is driven by (a) the file check and (c) the tile query,
 # which is exactly the contract.
 BLOG="$WORKDIR/backup.log"
+export HYBRID_AI_DATA_DIR="$WORKDIR/data"
+SOCKET_DIR="$HYBRID_AI_DATA_DIR/status-verifier"
+mkdir -p "$SOCKET_DIR"
+chmod 700 "$SOCKET_DIR"
+python3 - "$SOCKET_DIR/backup.sock" <<'PY_SOCKET'
+import socket, sys, os
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+    server.bind(sys.argv[1])
+os.chmod(sys.argv[1], 0o600)
+PY_SOCKET
 write_gate_layout() { # <app-dir> <log-path>
   printf 'HYBRID_AI_APP_DIR=%s\nBACKUP_LOG=%s\nBACKUP_GROUP_GID=982\nLOCAL_DOMAIN=example.test\n' \
     "$1" "$2" > "$LAYOUT"
@@ -322,7 +335,7 @@ fi
 export CURL_TILE_CODE=000 JQ_STUB_TILE=""
 run_verify "__unset__" "$LAYOUT"
 if [[ "$RC" -eq 0 ]] && grep -qE '^(PASS|WARN: optional verification evidence missing or warning)$' <<<"$OUT"; then
-  if grep -q 'skip: the status API was unreachable' <<<"$OUT"; then
+  if grep -q 'skip: the private Backups socket did not return HTTP 200' <<<"$OUT"; then
     pass "unreachable status API -> skip note and WARN"
   else
     fail "an unreachable API did not print a skip note: '$OUT'"
@@ -552,75 +565,65 @@ if grep -q -- "--reuid=$HYBRID_AI_UID" "$VERIFY_PRIV_LOG" \
    && grep -q -- '--groups=982 --inh-caps=-all --bounding-set=-all' "$VERIFY_PRIV_LOG"; then
   pass "status probe uses configured numeric UID and drops capabilities"
 else fail "wrong status probe identity: $(cat "$VERIFY_PRIV_LOG")"; fi
-# Split-layout regression: the host keeps runtime LOCAL_DOMAIN in stack.env.
-STACK="$WORKDIR/stack.env"
+# The private transport works independently of TLS/domain/stack configuration.
 write_layout "$TREE_A"
-printf 'HYBRID_AI_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\nHYBRID_AI_STACK_ENV_FILE=%s\n' "$STACK" >> "$LAYOUT"
-printf 'LOCAL_DOMAIN="stack.example.test"\nUNRELATED=%s\n' "\$(touch $WORKDIR/executed)" > "$STACK"
+printf 'HYBRID_AI_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\n' >> "$LAYOUT"
 run_verify "__unset__" "$LAYOUT"
 if [[ "$RC" == 0 ]] && grep -qx PASS <<<"$OUT_STDOUT" \
-   && grep -qF 'http://status.stack.example.test/status/api' "$CURL_CALL_LOG" \
-   && [[ ! -e "$WORKDIR/executed" ]]; then
-  pass "split layout reads literal domain only from configured stack without executing it"
-else fail "split-layout resolution failed: $OUT"; fi
-
-printf 'LOCAL_DOMAIN=layout.example.test\n' >> "$LAYOUT"
-run_verify "__unset__" "$LAYOUT"
-if grep -qF 'http://status.layout.example.test/status/api' "$CURL_CALL_LOG"; then
-  pass "layout domain retains precedence over stack"
-else fail "layout domain precedence lost"; fi
-export TEST_LOCAL_DOMAIN=process.example.test
-run_verify "__unset__" "$LAYOUT"
-if grep -qF 'http://status.process.example.test/status/api' "$CURL_CALL_LOG"; then
-  pass "process domain retains precedence over layout and stack"
-else fail "process domain precedence lost"; fi
-unset TEST_LOCAL_DOMAIN
-
-write_layout "$TREE_A"
-printf 'HYBRID_AI_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\nHYBRID_AI_STACK_ENV_FILE=%s\n' "$WORKDIR/absent.env" >> "$LAYOUT"
-export TEST_STACK_FILE="$STACK"
-run_verify "__unset__" "$LAYOUT"
-if [[ "$RC" == 0 ]] && grep -qF 'http://status.stack.example.test/status/api' "$CURL_CALL_LOG"; then
-  pass "process stack path overrides layout stack path"
-else fail "stack path precedence lost: $OUT"; fi
-unset TEST_STACK_FILE
-run_verify "__unset__" "$LAYOUT"
-if [[ "$RC" == 1 ]] && "$REAL_JQ" -e '.gates.backup_tile.required and .gates.backup_tile.state == "SKIPPED"' "$VDIR_FILE" >/dev/null \
-   && ! grep -qF '/status/api' "$CURL_CALL_LOG"; then
-  pass "missing configured stack fails required coverage without a tile request"
-else fail "missing stack did not fail closed: $OUT"; fi
-
-export TEST_STACK_FILE="$STACK"
-printf 'LOCAL_DOMAIN=%s\n' "\$(touch $WORKDIR/executed)" > "$STACK"
-run_verify "__unset__" "$LAYOUT"
-if [[ "$RC" == 1 && ! -e "$WORKDIR/executed" ]] \
-   && ! grep -qF '/status/api' "$CURL_CALL_LOG" \
-   && ! grep -qF "$WORKDIR/executed" <<<"$OUT"; then
-  pass "shell expression domain is neither executed, requested nor printed"
-else fail "unsafe domain handling: $OUT"; fi
-unset TEST_STACK_FILE
-
-# An unreadable stack must not turn missing mandatory evidence into PASS.
-printf 'LOCAL_DOMAIN=stack.example.test\n' > "$STACK"
-chmod 000 "$STACK"
-export TEST_STACK_FILE="$STACK"
-if [[ ! -r "$STACK" ]]; then
+   && grep -qF -- "--unix-socket $SOCKET_DIR/backup.sock" "$CURL_CALL_LOG" \
+   && grep -qF -- "--noproxy *" "$CURL_CALL_LOG" \
+   && ! grep -qF -- '--resolve' "$CURL_CALL_LOG"; then
+  pass "private Unix transport needs no domain or credential-bearing stack settings"
+else fail "private transport failed: $OUT"; fi
+for code in 000 302 308 401 403 500; do
+  export CURL_TILE_CODE="$code"
   run_verify "__unset__" "$LAYOUT"
-  if [[ "$RC" == 1 ]] && ! grep -qF '/status/api' "$CURL_CALL_LOG"; then
-    pass "unreadable stack fails required coverage without printing contents"
-  else fail "unreadable stack did not fail closed: $OUT"; fi
-else
-  echo "NOT_APPLICABLE: root can read the mode-000 stack fixture"
-fi
-chmod 600 "$STACK"
-for invalid_domain in '' 'https://example.test' 'bad/name' '-bad.test' 'bad..test'; do
-  printf 'LOCAL_DOMAIN=%s\n' "$invalid_domain" > "$STACK"
-  run_verify "__unset__" "$LAYOUT"
-  if [[ "$RC" == 1 ]] && ! grep -qF '/status/api' "$CURL_CALL_LOG"; then
-    pass "empty or malformed stack domain fails required coverage before tile request"
-  else fail "invalid stack domain did not fail closed: $OUT"; fi
+  if [[ "$RC" == 1 ]] && "$REAL_JQ" -e '.gates.backup_tile.state == "SKIPPED"' "$VDIR_FILE" >/dev/null \
+     && ! grep -Eq -- '(^| )(-L|--location)( |$)' "$CURL_CALL_LOG"; then
+    pass "tile HTTP $code fails required coverage without following redirects"
+  else fail "tile HTTP $code did not fail closed: $OUT"; fi
 done
-unset TEST_STACK_FILE
+export CURL_TILE_CODE=200 CURL_TILE_RC=28
+run_verify "__unset__" "$LAYOUT"
+if [[ "$RC" == 1 ]] && "$REAL_JQ" -e '.gates.backup_tile.state == "SKIPPED"' "$VDIR_FILE" >/dev/null; then
+  pass "partial response followed by curl timeout fails required coverage"
+else fail "tile curl failure passed: $OUT"; fi
+unset CURL_TILE_RC
+for body in 'not-json' '{}' '{"name":"Backups","state":"ok","detail":"private"}' \
+  '{"name":"Backups","state":"nonsense"}' '[{"name":"Backups","state":"ok"}]'; do
+  export CURL_TILE_BODY="$body"
+  run_verify "__unset__" "$LAYOUT"
+  if [[ "$RC" == 1 ]] && "$REAL_JQ" -e '.gates.backup_tile.state == "SKIPPED"' "$VDIR_FILE" >/dev/null; then
+    pass "malformed or overbroad tile response fails required coverage"
+  else fail "invalid tile response passed: $OUT"; fi
+done
+unset CURL_TILE_BODY
+for mode in 644 666; do
+  chmod "$mode" "$SOCKET_DIR/backup.sock"
+  run_verify "__unset__" "$LAYOUT"
+  if [[ "$RC" == 1 ]] && ! grep -qF 'http://localhost/backup' "$CURL_CALL_LOG"; then
+    pass "unsafe socket permissions refused before curl"
+  else fail "unsafe socket permissions were used: $OUT"; fi
+done
+chmod 600 "$SOCKET_DIR/backup.sock"
+chmod 755 "$SOCKET_DIR"
+run_verify "__unset__" "$LAYOUT"
+if [[ "$RC" == 1 ]] && ! grep -qF 'http://localhost/backup' "$CURL_CALL_LOG"; then
+  pass "non-private socket directory refused before curl"
+else fail "non-private directory was used: $OUT"; fi
+chmod 700 "$SOCKET_DIR"
+mv "$SOCKET_DIR/backup.sock" "$SOCKET_DIR/saved.sock"
+ln -s saved.sock "$SOCKET_DIR/backup.sock"
+run_verify "__unset__" "$LAYOUT"
+if [[ "$RC" == 1 ]] && ! grep -qF 'http://localhost/backup' "$CURL_CALL_LOG"; then
+  pass "symlink socket refused before curl"
+else fail "symlink socket was used: $OUT"; fi
+rm "$SOCKET_DIR/backup.sock"
+run_verify "__unset__" "$LAYOUT"
+if [[ "$RC" == 1 ]] && ! grep -qF 'http://localhost/backup' "$CURL_CALL_LOG"; then
+  pass "missing socket fails required coverage without fallback to Caddy"
+else fail "missing socket was not refused: $OUT"; fi
+mv "$SOCKET_DIR/saved.sock" "$SOCKET_DIR/backup.sock"
 
 # Restore the legacy single-file fixture and explicit log override.
 write_layout "$TREE_A"

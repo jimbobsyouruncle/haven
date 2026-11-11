@@ -326,6 +326,24 @@ else
   bad "STEP 7 did not chown to hybrid-ai-backup:hybrid-ai-backup"
 fi
 
+# Private transport provisioning is idempotent and never follows a symlink.
+check "status verifier directory is private" "700" \
+      "$(stat -c '%a' "$WORK/data/status-verifier")"
+if grep -qxF "$(env_value "$STACK" STATUS_UID):$(env_value "$STACK" DOCKER_GID) $WORK/data/status-verifier" "$CHOWN_LOG"; then
+  ok "root provisioning assigns the status numeric UID and primary GID"
+else
+  bad "private socket directory identity was not assigned"
+fi
+write_layout user
+rm -f "$STACK"
+mv "$WORK/data/status-verifier" "$WORK/data/saved-verifier"
+ln -s saved-verifier "$WORK/data/status-verifier"
+rc=0
+run_install "$LOG" || rc=$?
+check "symlink verifier directory is refused" "1" "$rc"
+check "symlink target permissions remain private" "700" \
+      "$(stat -c '%a' "$WORK/data/saved-verifier")"
+
 # ---------------------------------------------------------------------------
 echo
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"

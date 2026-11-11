@@ -188,6 +188,11 @@ jobs:
         # against a status/app.py without the probe.
         run: python3 status/test_deploy_verification.py
 
+      - name: Private Backups socket tests
+        # Real local Unix socket, no Docker or external network. Tests least
+        # privilege, endpoint scope, stale socket recovery and verifier curl.
+        run: python3 status/test_backup_socket.py
+
       - name: GPU pod wake-readiness tile tests
         # Offline, no Docker, no network. Proves status/app.py's GPU pod tile
         # reports WAKE READINESS, not pod reachability: an unresolved MagicDNS

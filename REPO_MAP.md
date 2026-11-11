@@ -247,6 +247,7 @@
 - status/README.md - status/ — Status Page
 - status/app.py - FILE: status/app.py
 - status/test_backup_probe.py - FILE: status/test_backup_probe.py
+- status/test_backup_socket.py - Real Unix-socket and host-verifier integration; synthetic logs, no Docker.
 - status/test_deploy_verification.py - FILE: status/test_deploy_verification.py
 - status/test_hub_urls.py - FILE: status/test_hub_urls.py
 - status/test_pod_probe.py - FILE: status/test_pod_probe.py
