@@ -16,7 +16,7 @@ records. Later decisions supplement that baseline; they do not rewrite it.
 | #149 acceptance criterion | Evidence / remaining requirement | Status |
 | --- | --- | --- |
 | Required CI, SAST, tests and maps pass | Final-head checks for #155/#157/#159/#162/#163/#165/#166 below; this reconciliation PR must obtain its own checks | VERIFIED for listed revisions (executed checks PASS); current PR evidence belongs in its description |
-| Deployment smoke and worker integration checks documented | Successful synchronous deploy workflows below; owner backup/restore evidence accepted; newer asynchronous verifier outcome and E15 worker contract/synthetic results missing | PENDING: live worker integration and remaining operational coverage; E04 VERIFIED within recorded scope |
+| Deployment smoke and worker integration checks documented | Successful synchronous deploy workflows below; owner backup/restore evidence accepted; owner-evidenced newer verifier FAIL (required tile SKIPPED; correction below) and E15 worker contract/synthetic results missing | PENDING: live worker integration and remaining operational coverage; E04 VERIFIED within recorded scope |
 | New URL dependencies identified and actions prepared | D01–D16, selector, all 125 manual-review dispositions and activation sequence below | Public-source preparation and deploy-to-verifier selector handoff implemented; external attestations and host activation review PENDING |
 | Rollback and go/no-go reviewed | Procedure below; named operator, reviewed recovery artifacts, downtime threshold and owner acceptance still required | PENDING operational review; no sign-off claimed |
 | Preparation PR merged before #150 | #155/#157/#159/#162/#163/#165/#166 merged into main; this reconciliation PR remains a separate deliverable | VERIFIED for existing preparation merges; PENDING for this PR and any separately approved activation implementation |
@@ -30,7 +30,7 @@ records. Later decisions supplement that baseline; they do not rewrite it.
 | #160 auth probe, [PR #162](https://github.com/jimbobsyouruncle/hybrid-ai/pull/162) | `b91ca48e807382d648d00c86068da1942ab424c7` / `c126abc62e10c6953f4307ccd55e3aa75da63b2c` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42860415665), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42860415752) PASS; [deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42868756044) success, 2026-11-10 17:48–17:59 UTC; later [owner-accepted live auth evidence](https://github.com/jimbobsyouruncle/hybrid-ai/issues/160#issuecomment-6798231892) completes #160 within the scope below |
 | #161 verifier, [PR #163](https://github.com/jimbobsyouruncle/hybrid-ai/pull/163) | `42bf3ffdb3fd6d2c9acdcb186f33f761ac7d03de` / `90e68ad30d7b148c84a4ad158a5b7e81f0684ab4` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42916843574), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42916843542) PASS; [deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42918641980) success, 2026-11-10 22:53–23:07 UTC; asynchronous verifier outcome missing |
 | #149 evidence reconciliation, [PR #165](https://github.com/jimbobsyouruncle/hybrid-ai/pull/165) | `937bc0f595b781c46dc2f8cd4adf31e5bddeb00e` / `58e9dfd053864c5999652c7a20542bd23a104179` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42948515870), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/42948515887) PASS; merged 2026-11-11 11:21 UTC; documentation deployment NOT_APPLICABLE |
-| #149 selector handoff, [PR #166](https://github.com/jimbobsyouruncle/hybrid-ai/pull/166) | `0f6af3fc815d9268b1253241d966771acecf13bd` / `5e641a118db8154c6c753f8365d2b7526aa75273` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43023135406), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43023135591) PASS; merged 2026-11-11 13:26 UTC; [deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43029110310) success, 13:26:15–13:39:37 UTC; matching asynchronous verifier outcome PENDING |
+| #149 selector handoff, [PR #166](https://github.com/jimbobsyouruncle/hybrid-ai/pull/166) | `0f6af3fc815d9268b1253241d966771acecf13bd` / `5e641a118db8154c6c753f8365d2b7526aa75273` | [Map](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43023135406), [SAST/source](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43023135591) PASS; merged 2026-11-11 13:26 UTC; [deploy](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43029110310) success, 13:26:15–13:39:37 UTC; matching asynchronous verifier outcome FAIL: required tile SKIPPED; see owner evidence below |
 
 All listed PRs merged into `main`. PR heads and actual merge SHAs above are
 different revisions; the deployment links identify the merge SHA they tested.
@@ -277,7 +277,7 @@ still requires its own Closure Card and approval.
 | --- | --- | --- |
 | VERIFIED | #147 audit; #148 presentation completion; #160 accepted operational completion; #161 development completion; #165/#166 preparation merges and listed CI/deployment runs; bounded E04 backup/restore evidence | Existing public records; #148, #160 and #161 closed with explicit owner approval on 2026-11-11 UTC |
 | REQUIRED NOW | Review this documentation PR; no host operation is required to validate this deliverable | Human PR reviewer / #149 development |
-| REQUIRED LATER | Identify latest installed revision/environment and inspect existing matching verifier evidence: full sha/head, time, overall verdict and each required gate's state; confirm provenance before proposing a receipt-path command | Authorized Pi owner / #149 before #150; no rerun automatically requested |
+| REQUIRED LATER | After separately approved deployment of the domain-resolution correction, inspect matching verifier evidence; current installed revision has owner-evidenced FAIL, as recorded below | Authorized Pi owner / #149 before #150; no rerun automatically requested |
 | REQUIRED LATER | Supply versioned worker API/auth/model/image/network contract and synthetic integration results, or separately authorize a worker-repository task | Named worker owner still unassigned / E15, #149 hard gate |
 | REQUIRED LATER | Complete remaining EXTERNAL.md preparation attestations; review exact selector propagation, recovery image availability, freeze/resume, downtime threshold and rollback ownership | Named operators/approvals still pending / #149–#150 |
 | REQUIRED LATER | Record explicit #150 go/no-go, cutover receipts and #151 observation/first-backup results | Owner / #150 then #151 |
@@ -314,3 +314,32 @@ is complete. #147's accepted audit completion remains unchanged.
 
 Rollback of this reconciliation is a reviewed documentation revert. It changes
 no runtime state, permissions, workflow behavior or selector propagation.
+
+## 2026-11-11 owner verifier evidence and bounded correction
+
+Owner-supplied sanitized inspection at 15:22:51 UTC identifies `jarvis`,
+`aarch64`, system backup mode and installed HEAD
+`5e641a118db8154c6c753f8365d2b7526aa75273`. Its schema-v2 receipt at
+13:40:34 UTC matches both requested SHA and deployed HEAD, with numeric
+ownership `999:983` and mode 0644 matching the configured identity.
+Workflow runs `43029110385` and `43029110310`, deployed HEAD, backup-log
+presence and status-identity readability PASS. Overall verdict is **FAIL**,
+exit 1: required `backup_tile` is SKIPPED because `LOCAL_DOMAIN` was unavailable
+in the layout. The matching log reports the same mandatory-coverage FAIL; the
+bounded log inspection returned no receipt-publication failure marker.
+
+The owner confirms `LOCAL_DOMAIN` is present in the stack file. Source review
+shows the verifier previously consulted only process/layout for that setting.
+The approved correction reads only this literal runtime key from the configured
+stack file after existing process/layout overrides. It preserves mandatory
+coverage and the existing HTTP route/authentication behavior. Offline regression
+coverage is source evidence, not a live tile PASS. A later separately approved
+deployment and matching verifier observation are still required; HTTP/TLS/auth
+coverage could reveal another operational gap once the domain is resolved.
+
+This evidence supersedes the missing-outcome description above for this exact
+installed revision: its verifier outcome is now evidenced FAIL, not PENDING.
+E01 host/layout inventory remains partial, E04 backup/restore evidence remains
+accepted, and E15 worker integration plus other external and rollback sign-offs
+remain outstanding. Keep #160/#161 completed and #150 NO-GO. No runtime repair,
+backup/restore rerun, credential/permission change or cutover is performed.
