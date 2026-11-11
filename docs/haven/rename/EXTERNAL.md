@@ -19,8 +19,8 @@ succeeded at 18:13:45 UTC. The owner confirmed that installed HEAD on jarvis.
 Its owner-supplied matching schema-v2 receipt at 18:14:41Z records PASS for all required gates; see READINESS.md for coverage and provenance limits.
 The older FAIL does not establish the newer outcome. See READINESS.md. Other items remain
 pending or partially covered; a successful deployment does not complete the
-external checklist. Proposed roles
-still need named operators, authorizations and milestone assignments.
+external checklist. The repository owner is responsible for E01–E20 under the approved issue
+disposition; execution operators, actions and authorizations remain to be recorded.
 
 | ID | Evidence required / proposed owner | Prerequisite / safe evidence | Status / gate |
 | --- | --- | --- | --- |
@@ -38,7 +38,7 @@ still need named operators, authorizations and milestone assignments.
 | E12 | Deployment, OpenHands and developer clone fetch/push remotes — clone owners | Separate local-config authorization; credential-safe normalized target/ID results only, never raw remote output | Pending / #150 |
 | E13 | Hermes reference clone/manifests/bookmarks/kanban repository references — Hermes owner | Separate profile/config scope; reconcile only this repository; preserve dirty work and stale clone until verified | Pending / #149 and #150 |
 | E14 | OpenHands workspace/state and repository integration — OpenHands owner | Separate host/profile authorization; preserve mounts/conversations, test approved repository operation | Pending / #149 and #151 |
-| E15 | RunPod worker API/auth/model/image/network contract — worker owner | Separate task/repository authorization or owner-supplied versioned contract; synthetic integration results | Pending / #149 hard gate; worker repository NOT accessed |
+| E15 | Preserve existing RunPod worker contract — repository owner | Owner-attested working deployment, approved prior source review and existing offline client tests; see READINESS.md | VERIFIED for rename preparation under owner-approved #149/#150 disposition; no fresh synthetic test required for unchanged identity-only migration; normal use observation / #151 |
 | E16 | Caddy certificate storage, renewal monitoring and domain health — Pi/TLS owner | Separate host/network approval; public handshake/result only; keep domains/issuer/token paths stable | Pending / #149 and #151 |
 | E17 | Scheduled sync, map bot, image publisher and deployment freeze — automation owners | Separate control approval; no workflow dispatch or enable/disable in this audit | Pending / #150 |
 | E18 | Outside documentation, Pages/custom domains, hosted action/reusable workflow consumers — integration owners | Separate consumer inventory; preserve old-name redirect; do not create replacement at old slug | Pending / #149 |
@@ -48,7 +48,7 @@ still need named operators, authorizations and milestone assignments.
 ## Outstanding owner decisions
 
 - Accept the proposed preservation of runtime names, environment settings, host paths/accounts/units, cookie names, snapshot tags, Caddy domains/storage and separate image packages for this epic.
-- Assign owners and authorization/evidence routes for E01–E20. Public-source inspection alone cannot complete these gates.
+- Repository owner responsibility for E01–E20 is recorded in the approved issue disposition. Record execution operators and authorization/evidence routes in the bounded preflight packet; public-source inspection alone cannot establish installed activation.
 - The supplemental [108 per-occurrence decisions](MANUAL-DECISIONS.md) merged in #165, alongside the 17 prior decisions: all 125 historical manual-review records are accounted for. External consumer acceptance remains outstanding; source preservation is distinct from external verification. Operational actions stay at their designated gates. Do not modify the immutable baseline.
 - Decide whether human review should be technically required in GitHub rules, and whether the map bot's automatic merging remains desired. This audit changes neither.
 - Define freeze/resume procedure, permissible downtime, rollback threshold and post-cutover observation interval.
@@ -64,8 +64,8 @@ additional owner diagnostic is required for this documentation deliverable.
 Before #150, named operators must supply only each remaining item's minimal
 sanitized attestation: evidence ID, operator, UTC date, revision/artifact ID,
 environment, coverage/outcome, approver and next gate. Keep raw runtime data
-on its approved route. For E15, a versioned contract plus synthetic results
-avoids granting this task the worker source tree. For newer verifier evidence,
+on its approved route. E15 rename preparation is satisfied by the approved
+disposition; no worker repository access or new test is required here. For newer verifier evidence,
 first confirm installed SHA/environment and receipt provenance; do not invent
 a data directory or rerun the verifier to compensate for missing access.
 
@@ -85,8 +85,8 @@ The approved private Backups Unix socket correction preserves browser auth
 and required coverage. Its implementation/CI and successful #170 deployment,
 together with the owner-confirmed installed HEAD, establish development and
 installation. The subsequently supplied matching schema-v2 receipt records asynchronous PASS for all required gates at 18:14:41Z; latest host log not independently inspected. E01
-remains partial; E04 remains accepted with no repeat requested; E15 and other
-outstanding attestations still block #150.
+remains partial; E04 remains accepted with no repeat requested; the bounded affected-consumer and operational
+attestations still block #150; E15 preparation is accepted.
 
 ### Evidence reuse before #150
 
@@ -96,7 +96,7 @@ asynchronous receipt when that outcome is required. The owner has now supplied
 #170's matching receipt: PASS, exit 0, every required gate PASS, with matching
 SHA/head and configured numeric ownership. See READINESS.md for its timestamp,
 run IDs, provenance and uninspected-log limit. Host/layout attestations and
-E15/external readiness remain separate requirements. Use
+affected external readiness remain separate requirements; E15 preparation is accepted. Use
 existing automated contract/integration results where suitable, with revision,
 environment, date and coverage. An unaffected consumer may be NOT_APPLICABLE
 only with a documented reason, not merely lack of access.
@@ -107,3 +107,22 @@ change window and explicit owner go/no-go. New path/clone and changed consumer
 results are cutover evidence; sustained observations and the first post-cutover
 backup remain #151. This documentation update is not a cutover prerequisite or
 permission to execute those operations.
+
+### Governing #150 preflight disposition
+
+The [owner-approved #150 disposition](https://github.com/jimbobsyouruncle/hybrid-ai/issues/150)
+and [bounded packet](READINESS.md#150-bounded-execution-preflight-packet) govern
+remaining requests. Review identity alignment and overrides, classify affected
+consumers, confirm selected recovery artifacts remain available, and record
+freeze/resume, target availability, window, downtime and stop/rollback decisions.
+Use existing evidence and minimal sanitized attestations. Broad unchanged-host,
+backup-storage, certificate-storage or worker inventories are not automatic
+rename prerequisites. Unknown applicability must be resolved with a reason.
+
+Earlier E01–E20 wording is an inventory of possible dependencies, not a demand
+to retest every subsystem. E15's former blanket fresh-contract/synthetic-test
+requirement is superseded. Worker optional-mode source caveats require reassessment
+only if an affected authentication/model/image/transport interface changes;
+this identity-only plan preserves those contracts and security controls.
+No decision packet or operational go/no-go has yet been supplied. E20's actual
+observation interval and first backup results remain post-cutover evidence.
