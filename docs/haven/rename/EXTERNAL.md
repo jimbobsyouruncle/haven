@@ -16,7 +16,7 @@ PR #170 merged the private-socket correction as
 `c81eb3e69ae9c26ef8e80e34c15a2a5eb02f2612`; deployment run
 [43073883258](https://github.com/jimbobsyouruncle/hybrid-ai/actions/runs/43073883258)
 succeeded at 18:13:45 UTC. The owner confirmed that installed HEAD on jarvis.
-Its matching asynchronous verifier outcome remains missing.
+Its owner-supplied matching schema-v2 receipt at 18:14:41Z records PASS for all required gates; see READINESS.md for coverage and provenance limits.
 The older FAIL does not establish the newer outcome. See READINESS.md. Other items remain
 pending or partially covered; a successful deployment does not complete the
 external checklist. Proposed roles
@@ -24,7 +24,7 @@ still need named operators, authorizations and milestone assignments.
 
 | ID | Evidence required / proposed owner | Prerequisite / safe evidence | Status / gate |
 | --- | --- | --- | --- |
-| E01 | Pi deployed SHA, OS/ARM64, host layout, active units/timers — Pi owner | Separate host read authorization; report identifiers and agreement with source, no secret files | PENDING for complete host/layout/unit agreement; recorded `jarvis` SHA and newer successful deploy runs provide bounded partial evidence, not complete host/layout/unit attestation; owner inspection on 2026-11-11 confirms installed `5e641a118db8154c6c753f8365d2b7526aa75273`, aarch64 and matching verifier FAIL due to required tile SKIPPED; #168 deployment automation passed for `681c961c68e8b2e98cbafd39a2c671acca36558e`; owner subsequently confirmed installed HEAD and matching receipt at 16:09:33Z: FAIL, required tile SKIPPED due to HTTP/TLS/login redirects. PR #170 deployment automation succeeded and owner confirmed installed HEAD `c81eb3e69ae9c26ef8e80e34c15a2a5eb02f2612` on jarvis (exact observation time not supplied); matching asynchronous verifier result remains missing; see READINESS.md |
+| E01 | Pi deployed SHA, OS/ARM64, host layout, active units/timers — Pi owner | Separate host read authorization; report identifiers and agreement with source, no secret files | PENDING for complete host/layout/unit agreement; recorded `jarvis` SHA and newer successful deploy runs provide bounded partial evidence, not complete host/layout/unit attestation; owner inspection on 2026-11-11 confirms installed `5e641a118db8154c6c753f8365d2b7526aa75273`, aarch64 and matching verifier FAIL due to required tile SKIPPED; #168 deployment automation passed for `681c961c68e8b2e98cbafd39a2c671acca36558e`; owner subsequently confirmed installed HEAD and matching receipt at 16:09:33Z: FAIL, required tile SKIPPED due to HTTP/TLS/login redirects. PR #170 deployment automation succeeded and owner confirmed installed HEAD `c81eb3e69ae9c26ef8e80e34c15a2a5eb02f2612` on jarvis (exact observation time not supplied); matching owner-supplied receipt at 18:14:41Z records PASS for all required gates with ownership 999:983, mode 0644; latest host log not inspected; see READINESS.md |
 | E02 | Deployment forced command, account, polkit, unit/path agreement — Pi owner | Separate host authorization; pass/fail for expected contract, not key material | Pending / #149 |
 | E03 | Deployed images and rollback availability — Pi/registry owner | Separate access; record digest/platform/availability, not credentials | Pending / #149 |
 | E04 | Current backup completeness, snapshot selection and scratch restore — backup owner | Separate backup/data authorization and suitable inference policy; report snapshot ID, result and restore time only | VERIFIED for owner-recorded snapshot `65235d97`, complete capture, sampled integrity and isolated restore, 20/20 SQLite checks, 5m01s on 2026-11-10; [evidence and limits](READINESS.md#accepted-backup-evidence-and-operational-limits). No repeat requested |
@@ -84,7 +84,7 @@ and then HTTP 302 to login. See READINESS.md's owner #168 result section.
 The approved private Backups Unix socket correction preserves browser auth
 and required coverage. Its implementation/CI and successful #170 deployment,
 together with the owner-confirmed installed HEAD, establish development and
-installation. They do not establish a new asynchronous verifier PASS. E01
+installation. The subsequently supplied matching schema-v2 receipt records asynchronous PASS for all required gates at 18:14:41Z; latest host log not independently inspected. E01
 remains partial; E04 remains accepted with no repeat requested; E15 and other
 outstanding attestations still block #150.
 
@@ -92,9 +92,11 @@ outstanding attestations still block #150.
 
 No manual functionality test is required after every push. Accept successful
 deployment logs for the gates actually executed and retrieve the existing
-asynchronous receipt when that outcome is required. For #170, only its matching
-verifier outcome remains missing from that bounded deployment claim; host/layout
-attestations and E15/external readiness remain separate requirements. Use
+asynchronous receipt when that outcome is required. The owner has now supplied
+#170's matching receipt: PASS, exit 0, every required gate PASS, with matching
+SHA/head and configured numeric ownership. See READINESS.md for its timestamp,
+run IDs, provenance and uninspected-log limit. Host/layout attestations and
+E15/external readiness remain separate requirements. Use
 existing automated contract/integration results where suitable, with revision,
 environment, date and coverage. An unaffected consumer may be NOT_APPLICABLE
 only with a documented reason, not merely lack of access.
