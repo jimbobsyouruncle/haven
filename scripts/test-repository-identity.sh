@@ -46,7 +46,7 @@ for invalid in '' someone/other jimbobsyouruncle/Haven \
   HYBRID_AI_REPOSITORY_SLUG="$invalid" hybrid_ai_repository_slug > "$WORK/out" 2> "$WORK/err" || rc=$?
   [[ "$rc" == 2 && ! -s "$WORK/out" ]]
   [[ "$(cat "$WORK/err")" == 'repository identity: HYBRID_AI_REPOSITORY_SLUG must select an approved repository' ]]
-  for script in bootstrap.sh deploy-instance.sh run-post-deploy-verify.sh; do
+  for script in bootstrap.sh deploy-instance.sh deploy-remote.sh run-post-deploy-verify.sh; do
     : > "$IDENTITY_CALLS"
     rc=0
     env PATH="$WORK/bin:$PATH" HYBRID_AI_REPOSITORY_SLUG="$invalid" \
