@@ -4,9 +4,11 @@ Nothing in this checklist is verified by the public source inventory. Source doc
 
 See [READINESS.md](READINESS.md) for acceptance/evidence links, proposed phase
 ownership, collection format, freeze/resume, activation and rollback. The
-2026-11-11 UTC reconciliation reuses owner-recorded E04 evidence and current
-GitHub evidence below. Other items remain pending or partially covered; a
-successful deployment does not complete the external checklist. Proposed roles
+2026-11-11 UTC reconciliation reuses owner-recorded E04 evidence, #160's accepted
+auth-health completion, and #165/#166 merge/CI evidence. #166's successful deploy
+run does not establish its asynchronous verifier outcome. Other items remain
+pending or partially covered; a successful deployment does not complete the
+external checklist. Proposed roles
 still need named operators, authorizations and milestone assignments.
 
 | ID | Evidence required / proposed owner | Prerequisite / safe evidence | Status / gate |
@@ -36,10 +38,11 @@ still need named operators, authorizations and milestone assignments.
 
 - Accept the proposed preservation of runtime names, environment settings, host paths/accounts/units, cookie names, snapshot tags, Caddy domains/storage and separate image packages for this epic.
 - Assign owners and authorization/evidence routes for E01–E20. Public-source inspection alone cannot complete these gates.
-- Review the supplemental [108 per-occurrence decisions](MANUAL-DECISIONS.md), alongside the 17 existing merged decisions: all 125 historical manual-review records are accounted for. Source preservation is distinct from external verification; operational actions stay at their designated gates. Do not modify the immutable baseline.
+- The supplemental [108 per-occurrence decisions](MANUAL-DECISIONS.md) merged in #165, alongside the 17 prior decisions: all 125 historical manual-review records are accounted for. External consumer acceptance remains outstanding; source preservation is distinct from external verification. Operational actions stay at their designated gates. Do not modify the immutable baseline.
 - Decide whether human review should be technically required in GitHub rules, and whether the map bot's automatic merging remains desired. This audit changes neither.
 - Define freeze/resume procedure, permissible downtime, rollback threshold and post-cutover observation interval.
 - Keep #147 closed under the owner's recorded acceptance of public-source completion. The original keep-open request is superseded; E01–E20 remain required in their #149/#150/#151 phases and are not waived.
+- Keep owner-approved #148/#160/#161 completion intact. #160's accepted runtime evidence does not verify all E01 host/layout/unit requirements or replace the newer verifier receipt. #149 remains closed with outstanding operational criteria; any issue-state or epic-checklist reconciliation needs separate approval.
 
 Issue-body dependencies observed in planning: #147 precedes #148/#149; both precede #150; #151 follows #150. No native blocking relationships or assignees were present. The owner may add them separately; this PR does not edit issue metadata.
 
