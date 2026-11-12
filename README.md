@@ -510,7 +510,7 @@ Follow [`runpod/README.md`](runpod/README.md). At the end you will have a pod ID
 
 It prompts for your local domain, OpenRouter API key, RunPod API key, and pod ID. It will generate your `.env` and start the stack — Ollama, Open WebUI, Hermes Agent, the status proxy, and OpenHands.
 
-The installer only *looks* for the GPU pod on your tailnet (a read-only `tailscale status`). It does **not** start the paid pod, and neither does the CI deploy, which runs `./install.sh --non-interactive` on every push to `main`. The pod starts on demand when you pick the cloud model in Open WebUI. To make the installer start an offline pod too, set `RUNPOD_AUTO_WAKE=1` (or `true`) in `.env`, or run `./install.sh --wake-runpod` for a single run. The default is `RUNPOD_AUTO_WAKE=0`.
+The installer only *looks* for the GPU pod on your tailnet (a read-only `tailscale status`). It does **not** start the paid pod, and neither does the CI deploy, which runs `./install.sh --non-interactive` only on an explicitly authorized manual production dispatch. The pod starts on demand when you pick the cloud model in Open WebUI. To make the installer start an offline pod too, set `RUNPOD_AUTO_WAKE=1` (or `true`) in `.env`, or run `./install.sh --wake-runpod` for a single run. The default is `RUNPOD_AUTO_WAKE=0`.
 
 ### Step 4 — Verify Local DNS
 
@@ -630,7 +630,7 @@ inside `scripts/deploy-instance.sh`, which the unit runs as root.
 
 It becomes fully active when the owner runs **card F**, `scripts/bootstrap.sh`,
 which installs the unit, the polkit rule, the scripts and the `authorized_keys`
-line on the host. Once that bootstrap has run, every push to `main` takes this
+line on the host. Once that bootstrap has run, an explicitly authorized manual dispatch takes this
 path. Until then the connection fails closed at SSH auth, with nothing run.
 
 The bootstrap installs those files once. `install.sh` re-applies the unit and the
@@ -750,7 +750,7 @@ sudo scripts/uninstall.sh --remove-data # tear down the software AND the data
 ```
 
 Disable the GitHub `deploy.yml` workflow before you decommission. It runs on
-every push to `main`, so any later push re-installs the stack.
+explicitly authorized manual dispatch for the exact main SHA. Merging or pushing does not reinstall the stack. Transactional deployment also requires protected owner recovery approval; see [ADR-0006](docs/haven/adr/0006-installation-root.md).
 
 ### What it removes
 
