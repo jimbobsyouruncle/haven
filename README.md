@@ -1,13 +1,12 @@
 # Haven
 
-Haven is the product name. The repository remains `jimbobsyouruncle/hybrid-ai`
-until the separately approved rename and cutover in #150. Clone URLs, badges,
-environment variables, service names and host paths retain their working
-compatibility names. See the [presentation and compatibility decisions](docs/haven/rename/PRESENTATION.md).
+Haven's canonical repository is `jimbobsyouruncle/haven`. Environment variables,
+service names and host paths retain their working compatibility names. See the
+[presentation and compatibility decisions](docs/haven/rename/PRESENTATION.md).
 
 **A private, self-hosted AI platform that runs small models locally on a Raspberry Pi and borrows a cloud GPU only when it needs one — then shuts it off automatically.**
 
-[![Deploy Control Plane](https://github.com/jimbobsyouruncle/hybrid-ai/actions/workflows/deploy.yml/badge.svg)](https://github.com/jimbobsyouruncle/hybrid-ai/actions/workflows/deploy.yml)
+[![Deploy Control Plane](https://github.com/jimbobsyouruncle/haven/actions/workflows/deploy.yml/badge.svg)](https://github.com/jimbobsyouruncle/haven/actions/workflows/deploy.yml)
 ![Platform](https://img.shields.io/badge/platform-Raspberry%20Pi%204%20%7C%205-c51a4a)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -463,16 +462,19 @@ the system accounts, the `/opt`, `/var/lib`, `/var/log` and `/etc` layout, the
 system-mode backup credential store, and the headless deploy account, then hands
 off to `install.sh`. It is idempotent: a second run changes nothing.
 
+The commands explicitly select the canonical repository; the unset selector
+retains its legacy default. Keep the existing checkout directory and host paths.
+
 **Fresh install** (a brand-new device with no existing data):
 
 ```bash
-sudo ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/hybrid-ai-deploy.pub
+sudo env HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/hybrid-ai-deploy.pub
 ```
 
 **Migration** (the current Pi, moving the existing data into the new layout):
 
 ```bash
-sudo ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/hybrid-ai-deploy.pub --from /home/pi/hybrid-ai
+sudo env HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/hybrid-ai-deploy.pub --from /home/pi/hybrid-ai
 ```
 
 `--from` moves the existing data — it never copies or merges. `--login-user`
@@ -485,7 +487,7 @@ options is refused. See [`deploy/README.md`](deploy/README.md) and
 ### Step 1 — Pi setup
 
 ```bash
-git clone [https://github.com/jimbobsyouruncle/hybrid-ai.git](https://github.com/jimbobsyouruncle/hybrid-ai.git)
+git clone https://github.com/jimbobsyouruncle/haven.git hybrid-ai
 cd hybrid-ai
 chmod +x install.sh doctor.sh collect-diagnostics.sh \
          backup/backup.sh backup/restore.sh \

@@ -33,7 +33,9 @@ are rejected before network or deployment activity. Canonical clone URLs use
 `https://github.com/<selected-slug>.git`; verification uses
 `https://api.github.com/repos/<selected-slug>/actions/runs` for the requested SHA.
 
-This prepares a later cutover; it does not activate one. The setting is **not**
+The canonical repository is now `jimbobsyouruncle/haven`; explicitly select it
+for new bootstrap invocations and deployment process configuration. The legacy
+unset default is retained for compatibility. The setting is **not**
 loaded from the layout/stack env file, written by bootstrap, or installed into
 systemd. An SSH client's environment does not configure the system service.
 `deploy-remote.sh` validates the process selector before layout reads or host
@@ -44,22 +46,25 @@ systemd manager environment cannot silently select another verifier repository.
 Keep all consumers on the same identity. Bootstrap still requires the checkout's origin
 to exactly match its selected canonical HTTPS URL; it never rewrites a remote.
 
-At #150, an authorized host owner must separately review and configure the
-root deployment service's process environment. A root-owned systemd drop-in for
-`hybrid-ai-deploy@.service` with `[Service]` and an explicit
-`Environment=HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven` is a proposed
-mechanism, not an installed configuration or authorization to apply it. Review
-existing drop-ins and remote overrides, record the prior state for rollback,
-and approve any daemon reload or subsequent deployment separately. Bootstrap's
-invocation must independently select the same identity. Editing the layout file
-or exporting a variable in the SSH client does not perform this activation.
+The [accepted cutover handoff](https://github.com/jimbobsyouruncle/haven/issues/151)
+records owner-attested alignment of the existing deployment service and clone.
+This is bounded evidence for that installation, not automatic configuration of
+another host. For a separately approved installation or configuration change,
+review the root service's process environment and existing drop-ins/overrides,
+record prior state, and explicitly set
+`Environment=HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven` under `[Service]`
+in a root-owned drop-in for `hybrid-ai-deploy@.service`. Any daemon reload or
+subsequent deployment requires its own authorization. Bootstrap's invocation
+must independently select the same identity. Editing the layout file or
+exporting a variable in the SSH client does not perform this activation.
 
 `HYBRID_AI_DEPLOY_PUBLIC_REMOTE` retains its existing precedence for deployment
 fetch only, including existing HTTPS/userinfo validation. It does not configure
-bootstrap or the verifier. Align any existing override explicitly at cutover.
+bootstrap or the verifier. Keep any existing override aligned with the selected
+canonical identity.
 The new selector itself cannot select a foreign repository. The pre-existing
-remote override continues to accept other credential-free HTTPS remotes; this
-PR does not broaden or tighten that separate interface.
+remote override continues to accept other credential-free HTTPS remotes; the
+selector does not broaden or tighten that separate interface.
 
 Host paths, system accounts, unit names, backup identities and image packages
 retain their compatibility names. API redirects remain errors; the verifier
@@ -67,21 +72,18 @@ does not follow them or turn failed/skipped runs into passes. No live Pi,
 RunPod, restore, registry or external integration check follows from offline
 fixtures. See [compatibility evidence and cutover handoff](../docs/haven/rename/COMPATIBILITY.md).
 
-Any merge of this preparation may trigger the deployment workflow. Owner
-coordination and explicit approval of deployment/freeze remain separate from
-approval to build a draft PR. Before deployment, rollback is a reviewed revert;
-deployed rollback requires separately approved restoration of the known-good
-revision and its installed standalone verifier. Never delete data or rename
-the repository as an automatic rollback.
+Feature-branch/PR validation does not deploy. Main-branch automation must be
+reviewed before publication or merge; a documentation PR does not authorize
+host changes or deployment. Rollback of documentation is a reviewed revert;
+runtime rollback requires separate approval of the known-good revision,
+installed standalone verifier and recovery artifacts.
 
-The [Haven readiness and cutover runbook](../docs/haven/rename/READINESS.md)
-links the existing merged implementation/check/deployment evidence and the
-remaining #149/#150/#151 gates. It covers named evidence owners, automation
-freeze/resume, selector propagation review, go/no-go, stop/rollback and the
-post-cutover handoff. Documentation approval does not authorize activation;
-the accepted [backup/restore evidence](../docs/haven/rename/READINESS.md#accepted-backup-evidence-and-operational-limits)
-is reused within its recorded scope. Worker compatibility and remaining
-operational attestations are still required; no repeat restore is requested.
+The [readiness runbook](../docs/haven/rename/READINESS.md) preserves historical
+preparation and evidence. Current accepted lifecycle decisions and remaining
+post-cutover gates are recorded in [#151](https://github.com/jimbobsyouruncle/haven/issues/151).
+Reuse accepted backup/restore and unchanged worker evidence within its recorded
+scope. New-path runtime verifier propagation awaits the next separately
+approved deployment; source forwarding support alone is not a runtime PASS.
 
 ---
 
@@ -92,7 +94,7 @@ the account, the files and the SSH key line on a host in a single command, and
 migrates the current Pi to the same layout:
 
 ```sh
-sudo ./scripts/bootstrap.sh --deploy-pubkey <key.pub> [--from <legacy-dir>]
+sudo env HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven ./scripts/bootstrap.sh --deploy-pubkey <key.pub> [--from <legacy-dir>]
 ```
 
 Everything after the bootstrap runs from the forced command and the unit. The
@@ -223,7 +225,8 @@ The deploy cannot verify its own build: the workflow run it belongs to is still
 in progress at that moment. So `scripts/deploy-remote.sh` starts
 `/usr/local/sbin/run-post-deploy-verify.sh` and lets it finish afterwards.
 
-What it does: poll `GET /repos/jimbobsyouruncle/hybrid-ai/actions/runs?head_sha=<sha>`
+What it does: poll `GET /repos/<selected-slug>/actions/runs?head_sha=<sha>`
+with `jimbobsyouruncle/haven` explicitly selected for the canonical repository,
 anonymously every 30 s for up to 60 minutes (curl and jq only, no token), wait
 until every run for that commit is `completed`, require every conclusion to be
 `success`, then compare `git -C <resolved deployment directory> rev-parse HEAD`
