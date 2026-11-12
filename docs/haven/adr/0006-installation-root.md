@@ -24,6 +24,8 @@ that checkout, including its rendered configuration, for rollback.
 Only the application root changes. `/etc/hybrid-ai`, `/var/lib/hybrid-ai`, logs,
 backup credentials/repositories, numeric ownership, service accounts, unit names,
 Compose project `hybrid-ai`, networks, containers and worker contracts remain.
+Stateful installer, maintenance, agent-control and uninstall Compose calls pin
+that project explicitly, and preflight refuses a different existing project.
 Layouts with durable data or secrets inside the code root require separate
 preparation and fail before activation; this migration never moves or deletes
 persistent data. No compatibility symlink is created.

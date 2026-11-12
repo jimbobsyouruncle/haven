@@ -191,7 +191,7 @@ check "full install: exit 0" "0" "$RC"
 have "full install: reports the existing install" "$OUT" "existing install"
 have "full install: runs the container removal step" "$OUT" "Removing the containers"
 EVLOG="$(cat "$EV")"
-EXPECT_DOWN="docker compose --env-file ${R}/etc/hybrid-ai/stack.env --project-directory ${R}/opt/hybrid-ai -f ${R}/opt/hybrid-ai/docker-compose.yml -f ${R}/opt/hybrid-ai/openhands/docker-compose.openhands.yml -f ${R}/opt/hybrid-ai/hermes/docker-compose.hermes.yml down --remove-orphans"
+EXPECT_DOWN="docker compose -p hybrid-ai --env-file ${R}/etc/hybrid-ai/stack.env --project-directory ${R}/opt/hybrid-ai -f ${R}/opt/hybrid-ai/docker-compose.yml -f ${R}/opt/hybrid-ai/openhands/docker-compose.openhands.yml -f ${R}/opt/hybrid-ai/hermes/docker-compose.hermes.yml down --remove-orphans"
 have "full install: exact compose argv in the event log" "$EVLOG" "$EXPECT_DOWN"
 have "full install: firewall unit stopped first" "$EVLOG" "systemctl disable --now hybrid-ai-firewall.service"
 have "full install: the app dir is gone" "$( [[ -e "$R/opt/hybrid-ai" ]] && echo present || echo gone )" "gone"
@@ -433,6 +433,7 @@ check "canonical: previous checkpoint kept" "present" "$( [[ -d "$R/opt/.haven-p
 check "canonical: journal kept" "present" "$( [[ -d "$R/var/lib/hybrid-ai-install-root" ]] && echo present || echo gone )"
 check "canonical: persistent data kept" "present" "$( [[ -e "$R/var/lib/hybrid-ai/keepme.txt" ]] && echo present || echo gone )"
 have_not "canonical: no volume deletion" "$(cat "$EV")" "--volumes"
+have "canonical: same Compose project after migration" "$(cat "$EV")" "docker compose -p hybrid-ai"
 
 # Repository-local durable state requires retaining the whole root.
 R="$(new_root local-data)"

@@ -1783,8 +1783,9 @@ if (( NO_START )); then
   exit 0
 fi
 
+# Keep the deployed stack identity when the installation directory changes.
 COMPOSE=(
-  docker compose
+  docker compose -p hybrid-ai
   --env-file "$ENV_FILE"
   --project-directory "$APP_DIR"
   -f "$APP_DIR/docker-compose.yml"

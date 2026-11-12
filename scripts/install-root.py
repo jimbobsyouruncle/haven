@@ -163,6 +163,11 @@ class Transaction:
     def proxy_preflight(self):
         # A move of the code bind mount can recreate the proxy. A running
         # container whose exact image is unresolved must not be disturbed (#186).
+        project = self.command(['docker', 'container', 'inspect', '--format',
+                                '{{index .Config.Labels "com.docker.compose.project"}}',
+                                'hybrid-ai-proxy'])
+        if project != 'hybrid-ai':
+            raise Refusal('existing Compose project requires owner reconciliation')
         image = self.command(['docker', 'container', 'inspect', '--format',
                               '{{.Image}}', 'hybrid-ai-proxy'])
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):

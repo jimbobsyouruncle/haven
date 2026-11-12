@@ -218,7 +218,7 @@ fi
 # THIS IS THE ONLY PLACE IN THIS REPOSITORY THAT RESTARTS THE PROXY, and it is
 # gated behind the staging CA check plus --yes above.
 note "restarting proxy (staging only)..."
-if ! docker compose -f "$COMPOSE_FILE" restart "$PROXY_SERVICE" >/dev/null 2>&1; then
+if ! docker compose -p hybrid-ai -f "$COMPOSE_FILE" restart "$PROXY_SERVICE" >/dev/null 2>&1; then
   fail "docker compose restart ${PROXY_SERVICE} failed."
   restore_hold
   exit 1

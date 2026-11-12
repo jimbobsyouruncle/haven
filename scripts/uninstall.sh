@@ -526,7 +526,7 @@ step_containers() {
   if [[ "$STATE" == "existing" ]]; then
     # The SAME compose shape install.sh uses: one env file, the project
     # directory, and the three files in the same order.
-    local -a compose=( docker compose --env-file "$STACK_ENV" --project-directory "$APP_DIR" \
+    local -a compose=( docker compose -p hybrid-ai --env-file "$STACK_ENV" --project-directory "$APP_DIR" \
       -f "$APP_DIR/docker-compose.yml" \
       -f "$APP_DIR/openhands/docker-compose.openhands.yml" \
       -f "$APP_DIR/hermes/docker-compose.hermes.yml" )

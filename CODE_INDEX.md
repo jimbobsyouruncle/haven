@@ -952,6 +952,8 @@
   - def test_canonical_failure_restores_checkout_inode(self)
   - def test_interrupted_activation_recovers_before_retry(self)
   - def test_proxy_gate_precedes_activation(self)
+  - def test_foreign_compose_project_is_not_taken_over(self)
+  - def test_agent_control_selects_same_project_from_both_roots(self)
   - def test_conflicting_and_symlinked_roots(self)
   - def test_untrusted_and_foreign_checkout(self)
   - def test_repo_local_data_requires_preparation(self)

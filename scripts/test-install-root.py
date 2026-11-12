@@ -43,6 +43,7 @@ class MigrationTests(unittest.TestCase):
         self.git(self.remote, 'branch', '-M', 'main')
         self.calls = []
         self.fail_install = self.proxy_missing = self.interrupt = False
+        self.project = 'hybrid-ai'
         self.tx = MODULE.Transaction(self.root, self.runner, os.getuid())
         self.tx.legacy.parent.mkdir()
         self.tx.units.mkdir(parents=True)
@@ -90,6 +91,8 @@ class MigrationTests(unittest.TestCase):
                 args[args.index('fetch') + 2] = str(self.remote)
             return subprocess.run(args, **kwargs)
         if args[0] == 'docker':
+            if any('com.docker.compose.project' in arg for arg in args):
+                return subprocess.CompletedProcess(args, 0, self.project, '')
             if self.proxy_missing and args[1] == 'image':
                 raise subprocess.CalledProcessError(1, args)
             return subprocess.CompletedProcess(args, 0, 'sha256:' + 'a' * 64, '')
@@ -202,6 +205,36 @@ class MigrationTests(unittest.TestCase):
         self.assertFalse(self.tx.app.exists())
         self.assertEqual(self.tx.layout.read_bytes(), self.layout_before)
         self.assertFalse(any(c[0] == 'bash' for c in self.calls))
+
+    def test_foreign_compose_project_is_not_taken_over(self):
+        self.project = 'another-project'
+        with self.assertRaises(MODULE.Refusal):
+            self.tx.deploy(self.sha)
+        self.assertEqual(self.tx.layout.read_bytes(), self.layout_before)
+        self.assertFalse(self.tx.app.exists())
+
+    def test_agent_control_selects_same_project_from_both_roots(self):
+        binary = self.root / 'bin'
+        binary.mkdir()
+        trace = self.root / 'compose-argv.json'
+        docker = binary / 'docker'
+        docker.write_text('#!/usr/bin/env python3\nimport json, os, sys\n'
+                          'with open(os.environ["ROOT_COMPOSE_LOG"], "w") as out:\n'
+                          '    json.dump(sys.argv[1:], out)\n')
+        docker.chmod(0o755)
+        control = Path(__file__).resolve().parent.parent / 'openhands/scripts/openhands-control.sh'
+        self.tx.app.mkdir()
+        for directory in (self.tx.legacy, self.tx.app):
+            env = os.environ.copy()
+            env.update(PATH=str(binary) + os.pathsep + env['PATH'],
+                       ROOT_COMPOSE_LOG=str(trace), HYBRID_AI_APP_DIR=str(directory),
+                       HYBRID_AI_ENV_FILE=str(self.tx.layout),
+                       HYBRID_AI_STACK_ENV_FILE=str(self.secret))
+            subprocess.run(['bash', str(control), 'status'], env=env, check=True, capture_output=True)
+            args = json.loads(trace.read_text())
+            self.assertEqual(args[:3], ['compose', '-p', 'hybrid-ai'])
+            self.assertEqual(args[args.index('--project-directory') + 1], str(directory))
+            self.assertEqual(args[-2:], ['ps', 'openhands'])
 
     def test_conflicting_and_symlinked_roots(self):
         self.tx.app.mkdir()
