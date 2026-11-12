@@ -121,7 +121,7 @@ _hybrid_ai_file_unreadable() {
 # Read ONE key from a file, line by line, never sourcing. Returns the LAST
 # match (last wins), matching install.sh's loader. Quotes are stripped.
 _hybrid_ai_file_get() {
-  local file="$1" key="$2" line candidate
+  local file="$1" key="$2" line candidate=""
   [[ -f "$file" ]] || return 0
   [[ -r "$file" ]] || {
     _hybrid_ai_file_unreadable "${_HYBRID_AI_FILE_SETTING:-HYBRID_AI_ENV_FILE}" "$file"
@@ -132,8 +132,8 @@ _hybrid_ai_file_get() {
     candidate="${BASH_REMATCH[1]}"
     candidate="${candidate%\"}"; candidate="${candidate#\"}"
     candidate="${candidate%\'}"; candidate="${candidate#\'}"
-    printf '%s' "$candidate"
   done < "$file"
+  printf '%s' "$candidate"
 }
 
 # Fail closed on an env file that exists but this process cannot read. Names the

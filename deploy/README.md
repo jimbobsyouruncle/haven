@@ -1,5 +1,58 @@
 # deploy/ — headless deploy (one commit, one unit)
 
+## Installation root migration
+
+Fresh bootstrap uses `/opt/haven`. Existing bootstrapped `/opt/hybrid-ai`
+installations migrate during the next **separately authorized normal deployment**.
+Do not move the directory manually or rerun bootstrap over an existing legacy
+installation. See [ADR-0006](../docs/haven/adr/0006-installation-root.md) and
+[implementation issue #187](https://github.com/jimbobsyouruncle/haven/issues/187).
+
+The dispatcher holds its existing exclusive lock while `scripts/install-root.py`
+fetches public main into a fresh staging checkout, verifies the exact requested
+SHA and ancestry, journals original control files, and activates `/opt/haven`.
+SSH keys/options and service/Compose identities are retained. Secrets and durable
+FHS storage keep their existing paths; repository-local persistent paths require
+separate preparation and cause a safe refusal. Symlinked/untrusted/foreign roots,
+conflicting directories and legacy-path systemd overrides also cause refusal.
+
+Before any installer activity that could recreate the proxy, the running exact
+proxy image must be locally resolvable. The retained [#186 prerequisite](https://github.com/jimbobsyouruncle/haven/issues/186#issuecomment-6835562964)
+still requires compatible accessible recovery or a separately validated and
+explicitly approved alternative. A running container, matching tag or Dockerfile
+alone cannot clear that gate. A refusal does not authorize a pull/build/restart.
+
+The root-only journal is `/var/lib/hybrid-ai-install-root/current.json`; it may
+contain saved secrets and key material, so **never publish its contents**. Earlier
+journals/checkouts are retained. Previous canonical code roots use unique
+`/opt/.haven-previous-*` names; failed candidates use `/opt/.haven-failed-*`.
+The initial legacy checkout remains a checkpoint. No permanent symlink, volume
+deletion, database move or automatic artifact cleanup is performed.
+
+The synchronous deploy must schedule its transient verifier successfully.
+Acceptance then requires a fresh schema-v2 receipt with requested and installed
+SHA, canonical layout/SSH/service wiring, doctor/application health and all other
+mandatory gates passing. Root verifier evidence, rather than the service-owned
+receipt alone, accepts the journal. Missing/failed verification leaves the
+transaction `awaiting_verifier` and blocks the next deployment.
+
+On synchronous failure, restore control files/root and retain the failed code.
+An interrupted `activating` journal is recovered on the next authorized deploy.
+An interrupted runtime handoff is deliberately held for operator diagnosis.
+For a separately authorized control-plane rollback, an operator can run the
+retained script with `python3 <retained-root>/scripts/install-root.py rollback
+<full-requested-SHA>`. It acquires the deployment lock, restores the previous
+control files/root and reloads systemd; it does **not** restart containers or
+restore data. If services were recreated, a separately authorized runtime
+recovery must use retained code/configuration and verified immutable images.
+The first legacy dispatcher had already reset code before entering this new
+script: its recorded ORIG_HEAD is revision evidence, not an untouched prior
+rendered checkout or proof of runtime recoverability.
+
+Uninstall resolves the selected layout root, retains data/secrets by default,
+and leaves legacy/previous/failed checkpoints and migration journals for explicit
+owner cleanup. No production migration is established by source tests or CI.
+
 This directory holds the in-repo pieces of a **headless deploy**. A dedicated,
 unprivileged `hybrid-ai-deploy` account gets a forced-command SSH entrypoint
 that can do exactly one thing: start the systemd unit
@@ -105,9 +158,9 @@ calls `sudo`.
    It has `/bin/sh` and a locked password, because sshd runs the forced command
    through the account's login shell; a nologin shell would refuse it.
    (`systemd` runs the unit as root, so the account is only the SSH identity.)
-2. **The forced-command script** — `/opt/hybrid-ai/scripts/deploy-forced-command.sh`
-   and its helpers under `/opt/hybrid-ai/scripts/`, readable and executable by
-   the account. `/opt/hybrid-ai` is a root-owned clone of the public https
+2. **The forced-command script** — `/opt/haven/scripts/deploy-forced-command.sh`
+   and its helpers under `/opt/haven/scripts/`, readable and executable by
+   the account. `/opt/haven` is a root-owned clone of the public https
    remote at `origin/main`.
 3. **The unit** — `deploy/hybrid-ai-deploy@.service`, copied to
    `/etc/systemd/system/hybrid-ai-deploy@.service` (root-owned), then
@@ -145,7 +198,7 @@ The key is pinned to the forced command and reduced to no forwarding of any
 kind with the `restrict` option:
 
 ```
-restrict,command="/opt/hybrid-ai/scripts/deploy-forced-command.sh" <key>
+restrict,command="/opt/haven/scripts/deploy-forced-command.sh" <key>
 ```
 
 `restrict` disables PTY, X11, agent, and port forwarding. The `command=` option
@@ -317,11 +370,10 @@ probes do not execute a backup, integrity check or restore. See the canonical
 for identity resolution and receipt details, and the
 [Haven evidence guide](../docs/haven/evidence-completion.md) for issue completion.
 
-The hook is a warning, never a gate. All three paths leave the deploy's exit
-code untouched: scheduled, scheduling failed
-(`::warning::post-deploy verification could not be scheduled`), and script
-absent (`::warning::post-deploy verification script is absent: <path>`). The
-absent case is loud on purpose -- it used to be silent.
+The hook must schedule successfully. Scheduling failure or a missing script
+produces `::error::` and deployment exit 5. A successfully scheduled verifier
+outlives the synchronous deploy and its receipt controls installation-root
+acceptance; scheduling alone is not a successful verification result.
 
 `--service-type=exec` is deliberate: it waits for `exec()` to succeed, so a
 launch failure is reported instead of lost. `--no-block` would suppress exactly
@@ -384,11 +436,11 @@ These are also listed in [`docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md)
 
 Two units run the conversation quarantine sweep. They are ordinary system units,
 not part of the headless deploy, and `hybrid-ai-prune.service` names
-`/opt/hybrid-ai/deploy/README.md` as its `Documentation=` target — this section.
+`/opt/haven/deploy/README.md` as its `Documentation=` target — this section.
 
 | Unit | What it does |
 |---|---|
-| `hybrid-ai-prune.service` | `Type=oneshot`, `User=root`, `ExecStart=/opt/hybrid-ai/scripts/prune-conversations.sh` |
+| `hybrid-ai-prune.service` | `Type=oneshot`, `User=root`, `ExecStart=/opt/haven/scripts/prune-conversations.sh` |
 | `hybrid-ai-prune.timer` | `OnCalendar=*-*-* 04:20:00`, `Persistent=true`, `Unit=hybrid-ai-prune.service` |
 
 It runs as root because the conversations tree under the OpenHands workspace is
@@ -434,7 +486,7 @@ through the service's `Documentation=` target.
 
 | Unit | What it does |
 |---|---|
-| `hybrid-ai-docker-prune.service` | `Type=oneshot`, `User=root`, `EnvironmentFile=-/opt/hybrid-ai/.env`, `After=docker.service`, `ExecStart=/opt/hybrid-ai/scripts/prune-docker-cache.sh` |
+| `hybrid-ai-docker-prune.service` | `Type=oneshot`, `User=root`, `EnvironmentFile=-/opt/haven/.env`, `After=docker.service`, `ExecStart=/opt/haven/scripts/prune-docker-cache.sh` |
 | `hybrid-ai-docker-prune.timer` | `OnCalendar=*-*-* 04:35:00`, `Persistent=true`, `Unit=hybrid-ai-docker-prune.service` |
 
 The timer caps the Docker build cache at 15 GB (override

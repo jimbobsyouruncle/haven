@@ -4,6 +4,13 @@ set -Eeuo pipefail
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# The previously installed dispatcher can enter this new script from the legacy
+# root after its reset. Enter the same journaled handoff as newer dispatchers.
+# Custom developer checkouts retain the existing offline/local behavior.
+if [[ "${HYBRID_AI_INSTALL_ROOT_HANDOFF:-}" != 1 &&
+      ( "$SCRIPT_DIR" == /opt/hybrid-ai/scripts || "$SCRIPT_DIR" == /opt/haven/scripts ) ]]; then
+  exec python3 "${SCRIPT_DIR}/install-root.py" deploy "${1:-}"
+fi
 # Resolve before layout reads or host activity; the transient unit inherits
 # the systemd manager's environment rather than this process's environment.
 # shellcheck source=scripts/lib/repository-identity.sh
@@ -154,7 +161,10 @@ else
 fi
 
 # Reclaim SD card space from superseded images.
-docker image prune -f >/dev/null 2>&1 || true
+# A staged deployment retains the previous immutable images for recovery.
+if [[ "${HYBRID_AI_INSTALL_ROOT_HANDOFF:-0}" != 1 ]]; then
+  docker image prune -f >/dev/null 2>&1 || true
+fi
 
 # --- Doctor verdict last, after the report and informational steps ----------
 case "$doctor_rc" in
@@ -184,9 +194,9 @@ esac
 # instead of silently lost (--no-block would suppress exactly that). --collect
 # lets the finished unit be garbage-collected.
 #
-# The deploy's own exit code never depends on the verifier: both the "could not
-# schedule" and "script absent" paths are warnings. The absent case is loud on
-# purpose -- it used to fail silently.
+# Scheduling is mandatory. Final acceptance is asynchronous because the
+# verifier waits for this deployment's workflow to finish; its root-owned
+# transaction state blocks progression until all mandatory gates pass.
 if [ -x "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD" ]; then
   # --setenv carries the resolved APP_DIR and repository into the transient
   # unit rather than relying on the manager's environment or verifier defaults.
@@ -195,10 +205,12 @@ if [ -x "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD" ]; then
     --service-type=exec \
     --setenv=HYBRID_AI_APP_DIR="$APP_DIR" \
     --setenv=HYBRID_AI_REPOSITORY_SLUG="$REPO_SLUG" \
+    --setenv=HYBRID_AI_VERIFY_INSTALL_ROOT="${HYBRID_AI_VERIFY_INSTALL_ROOT:-0}" \
     --property="StandardOutput=append:${HYBRID_AI_POST_DEPLOY_VERIFY_LOG}" \
     --property="StandardError=append:${HYBRID_AI_POST_DEPLOY_VERIFY_LOG}" \
     "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD" --wait-for "$EXPECTED_SHA" \
-    || echo "::warning::post-deploy verification could not be scheduled"
+    || { echo "::error::post-deploy verification could not be scheduled"; exit 5; }
 else
-  echo "::warning::post-deploy verification script is absent: ${HYBRID_AI_POST_DEPLOY_VERIFY_CMD}"
+  echo "::error::post-deploy verification script is absent: ${HYBRID_AI_POST_DEPLOY_VERIFY_CMD}"
+  exit 5
 fi

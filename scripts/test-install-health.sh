@@ -51,7 +51,7 @@ else
 fi
 
 # --- scratch app + layout ----------------------------------------------------
-APP="$WORK/app"
+APP="$WORK/haven"
 BIN="$WORK/bin"
 BIN_ROOT="$WORK/bin-root"
 SYSD="$WORK/systemd"
@@ -109,6 +109,12 @@ for d in docker git jq openssl sqlite3 rsync tailscale hostname nproc \
   # shellcheck disable=SC2016  # $0 must expand inside the generated stub
   printf '#!/usr/bin/env bash\nprintf "%%s stub\\n" "$0"\nexit 0\n' > "$BIN/$d"
 done
+cat > "$BIN/docker" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${DOCKER_COMPOSE_ARGV_LOG:-/dev/null}"
+printf '%s stub\n' "$0"
+exit 0
+EOF
 # sudo logs its argv and then swallows the call, exactly as before. The rest of
 # install.sh does use sudo (prepare_openhands_workspace), so this asserts about
 # the firewall step only, never "sudo was never called".
@@ -289,6 +295,7 @@ run_install() {
       FOREIGN_MARKER="${FOREIGN_MARKER:-}" \
       RECONCILE_ACCOUNT="${RECONCILE_ACCOUNT:-1}" \
       SUDO_ARGV_LOG="$SUDO_ARGV" \
+      DOCKER_COMPOSE_ARGV_LOG="$WORK/docker-compose.argv" \
       SYSTEMCTL_LOG="$SYSTEMCTL_ARGV" \
       CURL_ARGV_LOG="${CURL_ARGV_LOG:-$CURL_ARGV}" \
       FIX_STATUS_HTTPS_CODE="${FIX_STATUS_HTTPS_CODE:-200}" \
@@ -328,6 +335,11 @@ echo "== a healthy hermes-agent exits 0 and logs install_success =="
 rc=0
 run_install ok "$WORK/healthy.log" || rc=$?
 check "install.sh exits 0 when every service is healthy" "0" "$rc"
+if grep -q '^compose -p hybrid-ai .* up ' "$WORK/docker-compose.argv"; then
+  ok "installer keeps the hybrid-ai Compose project from a haven checkout"
+else
+  bad "installer derives a different Compose project from the new root"
+fi
 if grep -q 'EVENT .*event=install_success' "$INSTALL_LOG"; then
   ok "install_success was logged"
 else

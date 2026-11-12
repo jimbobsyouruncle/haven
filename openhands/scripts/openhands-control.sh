@@ -28,7 +28,7 @@ cd "$ROOT"
 
 [[ -f "$ENV_FILE" ]] || { echo "Missing env file ($ENV_FILE). Run ./install.sh first." >&2; exit 1; }
 
-COMPOSE=(docker compose
+COMPOSE=(docker compose -p hybrid-ai
          --env-file "$ENV_FILE"
          --project-directory "$ROOT"
          -f "$ROOT/docker-compose.yml"

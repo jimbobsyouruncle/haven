@@ -147,7 +147,13 @@ if ! git -C "$APP_DIR" merge-base --is-ancestor "$SHA" origin/main; then
   die 7 "commit is not an ancestor of origin/main; refusing to deploy"
 fi
 
-# --- 7. Reset and MANDATORY assert: HEAD must equal the commit --------------
+# Installed FHS roots stage a fresh, independently validated checkout. Keep fd 9
+# across the entire handoff. Never reset the active canonical tree in place.
+if [[ "$APP_DIR" == /opt/haven || "$APP_DIR" == /opt/hybrid-ai ]]; then
+  exec python3 "${SCRIPT_DIR}/install-root.py" deploy "$SHA"
+fi
+
+# --- 7. Custom/local checkout compatibility path ----------------------------
 if ! git -C "$APP_DIR" reset --hard "$SHA"; then
   die 8 "git reset --hard failed"
 fi

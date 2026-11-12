@@ -723,7 +723,7 @@ A split layout for a dedicated system account looks like this (commented example
 in `.env.example`):
 
 ```
-HYBRID_AI_APP_DIR=/opt/hybrid-ai
+HYBRID_AI_APP_DIR=/opt/haven
 HYBRID_AI_DATA_DIR=/var/lib/hybrid-ai
 HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
 HYBRID_AI_LOG_DIR=/var/log/hybrid-ai
@@ -756,7 +756,7 @@ every push to `main`, so any later push re-installs the stack.
 
 The script detects the state first and reports it before it acts:
 
-* an existing install (`/opt/hybrid-ai` with all three compose files),
+* an existing install (`/opt/haven` with all three compose files),
 * remnants only (no install, but data or unit files left behind), or
 * nothing at all, in which case it is a no-op and exits 0.
 
@@ -769,7 +769,7 @@ It then removes:
 * the `hybrid-ai-*` systemd units, and the login user's backup and check units,
 * the polkit rule `50-hybrid-ai-deploy.rules`,
 * only the `DOCKER-USER` firewall rules tagged `hybrid-ai-sandbox-egress`,
-* `/opt/hybrid-ai`.
+* `/opt/haven`.
 
 With `--remove-data` it also removes the data, work, log and restic-cache
 directories, the backup credential directory, the agent workspace
@@ -787,7 +787,7 @@ directory (`/var/log/hybrid-ai-backup`), and the layout and stack files under
 * anything outside the allowlist below. A layout value that resolves outside the
   allowlist is refused and left untouched, with a message naming the setting.
 
-The allowlist is exact: `/opt/hybrid-ai`, `/var/lib/hybrid-ai*`,
+The allowlist is exact: `/opt/haven`, the legacy `/opt/hybrid-ai`, `/var/lib/hybrid-ai*`,
 `/var/log/hybrid-ai*`, `/var/cache/hybrid-ai-backup`, `/etc/hybrid-ai`,
 `/etc/credstore/hybrid-ai-backup`, the `hybrid-ai-*` unit files, and the polkit
 rule file.

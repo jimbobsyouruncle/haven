@@ -108,6 +108,12 @@ check "BACKUP_CONTAINER_CONTROL default is self" "self" "$(resolve "$EMPTY" BACK
 check "UID default is empty" "" "$(resolve "$EMPTY" HYBRID_AI_UID)"
 check "GID default is empty" "" "$(resolve "$EMPTY" HYBRID_AI_GID)"
 
+# A handoff may normalize duplicate layout keys; the documented last-wins
+# rule must select one path, never concatenate two roots.
+printf 'HYBRID_AI_APP_DIR=/opt/hybrid-ai\nHYBRID_AI_APP_DIR=/opt/haven\n' > "$TMPROOT/duplicate-layout"
+check "duplicate app roots resolve to the last layout value" "/opt/haven" \
+  "$(resolve "$TMPROOT/duplicate-layout" HYBRID_AI_APP_DIR)"
+
 # --- STACK_ENV_FILE defaults to the resolved LAYOUT file --------------------
 # With the setting unset the stack file and the layout file are the SAME path,
 # so every `--env-file` command line stays byte-identical to today's.

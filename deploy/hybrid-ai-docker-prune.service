@@ -16,22 +16,22 @@
 #   NO Restart= AT ALL, deliberately: a failing prune must not loop. A failure
 #   stays visible in `systemctl status hybrid-ai-docker-prune`.
 #
-#   EnvironmentFile has the "-" prefix so a missing /opt/hybrid-ai/.env is not
+#   EnvironmentFile has the "-" prefix so a missing /opt/haven/.env is not
 #   fatal: the script then uses its own 15 GB default. The script logs only the
 #   cap value; it never echoes any other .env entry.
 # ---------------------------------------------------------------------------
 [Unit]
 Description=hybrid-ai Docker build-cache prune (cap the build cache, cache only)
-Documentation=file:///opt/hybrid-ai/deploy/README.md
+Documentation=file:///opt/haven/deploy/README.md
 After=docker.service
 
 [Service]
 Type=oneshot
 # The prune talks to the Docker socket, which is root-owned.
 User=root
-WorkingDirectory=/opt/hybrid-ai
-EnvironmentFile=-/opt/hybrid-ai/.env
-ExecStart=/opt/hybrid-ai/scripts/prune-docker-cache.sh
+WorkingDirectory=/opt/haven
+EnvironmentFile=-/opt/haven/.env
+ExecStart=/opt/haven/scripts/prune-docker-cache.sh
 
 # Deliberately NO Restart= policy: a failing prune must not loop. See the header.
 

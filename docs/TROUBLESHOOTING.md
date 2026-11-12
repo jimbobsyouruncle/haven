@@ -531,7 +531,7 @@ control fired.
 | `1` | Usage error, or an existing host object (account, directory, file) that fails verification | Fix the invocation, or reconcile the existing object by hand |
 | `2` | Not run as root | Re-run with `sudo` |
 | `3` | The deploy public key was refused: a private key, more than one key, or a line that already carries options | Pass exactly one public key, with no options |
-| `4` | `/opt/hybrid-ai` exists but is not a clone of the public remote, or its origin carries a credential | Move the existing `/opt/hybrid-ai` aside, or remove the credential from its origin URL |
+| `4` | Legacy root exists, or `/opt/haven` is conflicting, untrusted, symlinked or has an unexpected origin | Use normal authorized deployment for legacy migration; review conflicting state without merging or deleting directories |
 | `5` | polkitd is absent, or its version predates `.rules` (JavaScript) support | Install or upgrade polkit; the bootstrap never edits polkit's own config |
 | `6` | A migration move is cross-device, or a move target already exists and is not empty (refused BEFORE any move) | Put the data on one filesystem, or empty the target, then re-run |
 | `7` | `install.sh` failed | Read the install log under `HYBRID_AI_LOG_DIR`; the cut-off steps did not run |
@@ -552,7 +552,7 @@ completed. The script is safe to re-run: the moves are idempotent, so a second
 run skips anything already in place and continues from where it stopped.
 
 ```bash
-sudo /opt/hybrid-ai/scripts/bootstrap.sh --deploy-pubkey <pub> --from <legacy checkout>
+sudo /opt/haven/scripts/bootstrap.sh --deploy-pubkey <pub> --from <legacy checkout>
 ```
 
 The most common cause of exit `7` on a first run is the Hermes image build. The
@@ -616,7 +616,7 @@ file) and warns about any set path that does not exist.
 When `HYBRID_AI_ENV_FILE` is unset and `$HYBRID_AI_APP_DIR/.env` does not
 exist, the helper falls back to the host LAYOUT file
 `/etc/hybrid-ai/hybrid-ai.env` if that file exists. This is what makes a bare
-`sudo /opt/hybrid-ai/doctor.sh --no-cloud` report the paths the units actually
+`sudo /opt/haven/doctor.sh --no-cloud` report the paths the units actually
 use: the layout file is read, so `HYBRID_AI_BACKUP_MODE=system` takes effect,
 `BACKUP_LOG` resolves to `/var/log/hybrid-ai-backup/backup.log`, and
 `HYBRID_AI_BACKUP_CRED_DIR` resolves to `/etc/credstore/hybrid-ai-backup`.
@@ -2069,7 +2069,7 @@ To sweep them, opt in deliberately:
 
 1. Set `HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=1` in `.env` and re-run `./install.sh`.
 2. Run the sweep: `sudo systemctl start hybrid-ai-prune`, or
-   `sudo /opt/hybrid-ai/scripts/prune-conversations.sh`.
+   `sudo /opt/haven/scripts/prune-conversations.sh`.
 3. Confirm `moved-lease-less=` in the summary. A directory still inside
    `HYBRID_AI_PRUNE_AGE_SECONDS` is refused with reason `lease-less-recent`.
 
@@ -2139,7 +2139,7 @@ If a capture is killed hard, `unpause` is idempotent, so it is always safe to ru
 by hand as root:
 
 ```bash
-sudo /opt/hybrid-ai/backup/backup-containers.sh unpause
+sudo /opt/haven/backup/backup-containers.sh unpause
 ```
 
 The upload unit holds the R2 credentials (from
@@ -2210,7 +2210,7 @@ sudo env HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env ./backup/backup.sh --ch
 
 **`skip: <unit> (host paths not installed)`.** The static test
 `scripts/test-backup-system-units.sh` runs `systemd-analyze verify` on the
-system units. On a host that has no `/opt/hybrid-ai` (the builder host,
+system units. On a host that has no `/opt/haven` (the builder host,
 `ubuntu-latest`), verify reports only the missing-host-path diagnostic for each
 `ExecStart=`, so the test prints that skip line and does not count a failure. Any
 OTHER diagnostic is a real failure, alone or mixed with the host-path line.
@@ -2464,7 +2464,7 @@ plan and changes nothing.
 
 ### The second run takes the remnants path
 
-After a software-only uninstall `/opt/hybrid-ai` is gone, so the script reports
+After a software-only uninstall `/opt/haven` is gone, so the script reports
 `remnants only` and lists what is left by name. That is expected. It removes the
 known containers by name (no compose call, because there is no compose file to
 read) and, with `--remove-data`, the data directories. A third run then reports
@@ -2484,7 +2484,7 @@ prints a message naming the setting, for example:
 
 The path survives. To remove it, do so by hand, or correct the setting in
 `/etc/hybrid-ai/hybrid-ai.env` and run again. The allowlist is exact:
-`/opt/hybrid-ai`, `/var/lib/hybrid-ai*`, `/var/log/hybrid-ai*`,
+`/opt/haven`, the legacy `/opt/hybrid-ai`, `/var/lib/hybrid-ai*`, `/var/log/hybrid-ai*`,
 `/var/cache/hybrid-ai-backup`, `/etc/hybrid-ai`,
 `/etc/credstore/hybrid-ai-backup`, the `hybrid-ai-*` unit files, and the polkit
 rule file. The script parses the layout file and never sources it, and it never

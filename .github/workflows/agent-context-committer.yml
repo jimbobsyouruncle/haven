@@ -105,7 +105,7 @@ jobs:
         if: env.STALE == '1'
         run: |
           set -euo pipefail
-          if ! python3 .shared-actions/agent-context/generate.py --root . --output-dir . --max-bytes 24576; then
+          if ! python3 .shared-actions/agent-context/generate.py --root . --output-dir . --max-bytes 28672; then
             echo "::warning::agent-context committer: generator failed"
             exit 1
           fi

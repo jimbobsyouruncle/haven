@@ -147,11 +147,25 @@ finish() { # <PASS|FAIL|TIMEOUT> <rc> [detail]
       *) verdict=FAIL; rc=1; detail="mandatory verification evidence missing or unsuccessful" ;;
     esac
   fi
-  record_gate verdict_file false PASS "receipt published with configured numeric ownership"
+  local receipt_required=false
+  [[ "${HYBRID_AI_VERIFY_INSTALL_ROOT:-0}" == 1 ]] && receipt_required=true
+  record_gate verdict_file "$receipt_required" PASS "receipt published with configured numeric ownership"
   if ! write_verdict "$verdict" "$rc" "$detail"; then
     printf 'run-post-deploy-verify: could not publish verdict receipt with configured numeric ownership\n' >&2
-    if [[ "$verdict" == PASS || "$verdict" == WARN ]]; then
+    if [[ "$receipt_required" == true ]]; then
+      verdict=FAIL; rc=1; detail="mandatory installation receipt could not be published"
+    elif [[ "$verdict" == PASS || "$verdict" == WARN ]]; then
       verdict=WARN; detail="optional verdict receipt could not be published"
+    fi
+  elif [[ "$receipt_required" == true && "$rc" == 0 ]]; then
+    # Pass the root verifier's own evidence, not the service-owned receipt.
+    if ! jq -nc --arg sha "$SHA" --arg app "$APP_DIR" --arg verdict "$verdict" \
+         --argjson gates "$GATES" \
+         '{schema_version:2, sha:$sha, head:$sha, app_dir:$app, rc:0, verdict:$verdict, gates:$gates}' \
+         | python3 "$APP_DIR/scripts/install-root.py" accept "$SHA"; then
+      verdict=FAIL; rc=1; detail="installation transaction acceptance failed"
+      record_gate installation_root true FAIL "$detail"
+      write_verdict "$verdict" "$rc" "$detail" || true
     fi
   fi
   if [[ -n "$detail" ]]; then
@@ -530,6 +544,25 @@ while :; do
       fi
 
       record_gate deployed_head true PASS "deployed HEAD matches requested SHA"
+      if [[ "${HYBRID_AI_VERIFY_INSTALL_ROOT:-0}" == 1 ]]; then
+        record_gate installation_root true FAIL "installation wiring not verified"
+        record_gate runtime_health true FAIL "runtime health not verified"
+        if ! python3 "$APP_DIR/scripts/install-root.py" verify "$SHA"; then
+          finish FAIL 1 "installation wiring failed"
+        fi
+        record_gate installation_root true PASS "canonical root and installed control paths verified"
+        health_rc=0
+        "$APP_DIR/doctor.sh" --no-cloud >/dev/null 2>&1 || health_rc=$?
+        if (( health_rc > 1 )) || ! curl -fsS --max-time 10 http://localhost:3000/health >/dev/null 2>&1; then
+          finish FAIL 1 "mandatory runtime health failed"
+        fi
+        if (( health_rc == 1 )); then
+          record_gate doctor_report false WARN "doctor reported optional warnings (exit 1)"
+        else
+          record_gate doctor_report false PASS "doctor reported healthy (exit 0)"
+        fi
+        record_gate runtime_health true PASS "doctor and application health gates passed"
+      fi
       # The tree is right. Record backup coverage before aggregating policy.
       if ! check_backup_tile; then
         finish FAIL 1 "${GATE_REASON}"

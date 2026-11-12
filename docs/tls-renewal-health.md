@@ -167,7 +167,7 @@ substituted with the RESOLVED log directory (`HYBRID_AI_LOG_DIR` from `.env`,
 else `<repo>/logs`):
 
 ```
-LOGDIR=/opt/hybrid-ai/logs        # or the HYBRID_AI_LOG_DIR value from .env
+LOGDIR=/opt/haven/logs        # or the HYBRID_AI_LOG_DIR value from .env
 sudo sed "s#__HYBRID_AI_LOG_DIR__#$LOGDIR#g" deploy/logrotate/hybrid-ai-tls \
   | sudo tee /etc/logrotate.d/hybrid-ai-tls >/dev/null
 sudo logrotate --debug /etc/logrotate.d/hybrid-ai-tls

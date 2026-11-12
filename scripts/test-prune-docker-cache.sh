@@ -248,9 +248,9 @@ timer_line()   { grep -qxF "$1" "$TIMER" 2>/dev/null && echo yes || echo no; }
 
 check "(i) service Type=oneshot" "$(service_line 'Type=oneshot')" "yes"
 check "(i) service User=root" "$(service_line 'User=root')" "yes"
-check "(i) service WorkingDirectory" "$(service_line 'WorkingDirectory=/opt/hybrid-ai')" "yes"
-check "(i) service ExecStart" "$(service_line 'ExecStart=/opt/hybrid-ai/scripts/prune-docker-cache.sh')" "yes"
-check "(i) service EnvironmentFile=- (missing file non-fatal)" "$(service_line 'EnvironmentFile=-/opt/hybrid-ai/.env')" "yes"
+check "(i) service WorkingDirectory" "$(service_line 'WorkingDirectory=/opt/haven')" "yes"
+check "(i) service ExecStart" "$(service_line 'ExecStart=/opt/haven/scripts/prune-docker-cache.sh')" "yes"
+check "(i) service EnvironmentFile=- (missing file non-fatal)" "$(service_line 'EnvironmentFile=-/opt/haven/.env')" "yes"
 check "(i) service After=docker.service" "$(service_line 'After=docker.service')" "yes"
 if grep -qE '^[[:space:]]*Restart=' "$SERVICE"; then
   bad "(i) service must carry no Restart= line"

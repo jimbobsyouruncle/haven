@@ -85,7 +85,7 @@ fi
 # Both compose files. Omitting the overlay makes `ps` and `logs` silently skip
 # OpenHands -- and a diagnostic bundle that omits a running service is worse
 # than one that says nothing about it, because it looks complete.
-COMPOSE=(docker compose
+COMPOSE=(docker compose -p hybrid-ai
          --env-file "$ENV_FILE"
          --project-directory "$APP_DIR"
          -f "$APP_DIR/docker-compose.yml"

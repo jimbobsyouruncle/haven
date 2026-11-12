@@ -289,6 +289,9 @@ jobs:
         # that one user, action, verb and unit shape. systemctl is stubbed.
         run: bash scripts/test-deploy-forced-command.sh
 
+      - name: Installation root migration tests
+        run: bash scripts/test-install-root.sh
+
       - name: Headless deploy instance tests
         # Offline. Proves scripts/deploy-instance.sh re-validates the sha, takes
         # the lock, refuses a credential-bearing origin, fetches the public
