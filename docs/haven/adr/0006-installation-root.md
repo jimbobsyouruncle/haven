@@ -33,10 +33,117 @@ persistent data. No compatibility symlink is created.
 Update the layout and exact SSH forced-command path without changing key material
 or options. Reapply systemd templates from the new root and retain narrow polkit
 grammar. Refuse foreign, symlinked or non-root-controlled code roots and ambiguous
-drop-ins. Stop before recreation if the running proxy's exact image cannot be
-resolved locally; #186 requires verified accessible recovery or an explicitly
-approved equivalent before an affected operation. Local inspect is a necessary
-automatic preflight, not proof of full disaster recovery.
+drop-ins. Before recreation require a protected owner decision and compatibility
+evidence for an available immutable recovery image. The running exact image or
+an explicitly approved equivalent can satisfy this gate; a tag cannot. Export
+the approved local image by ID into a protected retained archive before staging.
+Neither local inspect nor successful export proves full disaster recovery.
+
+## Deployment #271 recovery-preflight correction
+
+[PR #188](https://github.com/jimbobsyouruncle/haven/pull/188) merged as
+`1a9dec3622931c45343095f5707765db283c4ba4`.
+[Run 43317551461](https://github.com/jimbobsyouruncle/haven/actions/runs/43317551461)
+passed source validation and failed its deploy trigger with systemd `exit-code`,
+status 1 and the generic `install-root` refusal. Owner-confirmed observations:
+active root `/opt/hybrid-ai`, no migration journal, and exact running proxy image
+unavailable through image inspect. No successful migration or proxy recreation
+is established.
+
+**Confirmed source defect:** the original gate obtains the running immutable ID
+from container `.Image` and inspects that ID. An inspect subprocess failure
+escapes to the generic exception handler; its later identity comparison/refusal
+is never reached. It also has no way to accept the separately validated and
+owner-approved alternative retained by #186's final disposition. These facts
+explain the missing-artifact refusal path. The old log does not identify the
+individual failed command, so it cannot independently exclude an earlier gate
+failure or establish every runtime step. Absence of the journal limits evidence
+to pre-activation; do not infer successful rollback or untouched earlier legacy
+dispatcher activity.
+
+Container `.Config.Image` and image `RepoTags` are mutable references. The
+recorded locally cached tag resolved to a different ARM64 ID in #186; neither
+tag equality, source build arguments nor the candidate's platform proves running
+image identity or compatibility. No candidate equivalence is asserted here.
+
+The correction requires two fixed host files under
+`/etc/hybrid-ai/install-root-approvals/`: `<requested-full-SHA>.json` and
+`<requested-full-SHA>.evidence.json`. Both must be root-owned regular files,
+mode `0600`, with trusted, non-writable, non-symlinked parents. There is no
+environment/SSH/CLI override or automatic approval writer. The recovery operator
+records verified compatibility evidence; the owner approves its exact hash.
+This gate applies to each transactional deployment, including canonical-root
+redeployment, so a later revision cannot silently reuse a migration approval.
+
+Approval schema v1:
+
+```json
+{
+  "schema_version": 1,
+  "decision": "approve-install-root-deployment-and-proxy-recovery",
+  "requested_sha": "<full authorized commit SHA>",
+  "approved_at": 0,
+  "expires_at": 0,
+  "evidence_sha256": "<SHA256 of exact evidence file bytes>"
+}
+```
+
+The timestamps are UTC Unix seconds; approval must be current, not future-dated,
+and last at most 24 hours. Zeros/placeholders above are intentionally invalid.
+Evidence schema v1 contains `running_image_id`, `recovery_image_id` (both full
+`sha256:` image IDs), `platform` (Docker OS/architecture, plus variant if present),
+`configuration_sha256` with exactly `caddyfile`, `compose`, `stack_env` hashes,
+and `checks` with exactly `caddy_version`, `dns_modules`, `config_validation`,
+`platform`, `recovery_procedure`. Each check contains `state: "PASS"` and a
+`receipt_sha256` identifying the retained private validation receipt. These
+receipts must cover running/candidate version and required DNS modules,
+compatible platform, installed configuration validation and the bounded recovery
+procedure using retained code/configuration and immutable recovery image. A
+stock Caddy image or mere tag match is insufficient. Hashes/receipts, configuration
+and approval files stay on the approved private route, never in public CI/issues.
+
+This is an owner-attested evidence mechanism, not automatic execution of
+compatibility tests. Root control is its trust boundary; root must record the
+owner's actual explicit decision only after reviewing real evidence. Root can
+already modify the deployment code; these files do not defend against a hostile
+root operator. Missing, WARN, skipped, failed or unverified checks cannot pass.
+The gate compares the live running ID, installed Caddyfile, rendered Compose and
+protected stack-env bytes to that evidence, then inspects the approved recovery
+ID and platform. It saves that image to a unique root-only archive in the private
+`0700` transaction directory, checks nonempty export, fsyncs/hashes it and records
+the archive, identities and approval hash in the journal. Missing local images,
+unavailable layers, export/disk failures or mismatches refuse before activation.
+No automatic pull/load/build, candidate execution, tag mutation or replacement
+container is used by preflight. Successful archives survive rollback and later
+tag changes; keep sufficient disk space and retain them until approved cleanup.
+Runtime use/loading of the archive still needs separate authorization.
+
+Fixed `PROXY_IDENTITY`, `RECOVERY_APPROVAL`, `RECOVERY_COMPATIBILITY`,
+`RECOVERY_CONFIGURATION`, `RECOVERY_IMAGE`, `RECOVERY_ARTIFACT` and
+`RECOVERY_STORAGE` diagnostics identify failed recovery gates. Refusals use
+GitHub Actions error annotations without subprocess output, image IDs, paths,
+hashes, environment contents or raw host configuration.
+
+The deployment workflow is manual-only and requires explicit production assent,
+the exact dispatched main SHA, source validation and the existing production
+environment. A merge/push cannot initiate migration. The inspected production
+environment had a branch policy but no required-reviewer rule; an environment
+name alone is not approval. No repository/environment settings are changed by
+this correction. Existing SSH grammar, polkit permissions and deployment locks
+remain unchanged. Host approval does not itself dispatch a deployment.
+
+**Remaining owner actions, before a production attempt:** separately authorize
+compatibility validation and a bounded method to install the reviewed corrected
+driver on the legacy root. The currently installed dispatcher invokes its local
+driver before staging the requested SHA: merging or dispatching a new SHA alone
+does not reliably propagate this preflight correction. Do not retry the old
+driver, rename directories manually or relax the gate. Retain verified recovery
+code/configuration/image evidence, provision the protected evidence/approval
+files for the final authorized SHA, and authorize the exact production dispatch.
+No host preparation is performed by this PR. Subsequent runtime acceptance needs
+requested/installed SHA correlation, canonical wiring and the matching mandatory
+verifier gates, with ordinary worker-use evidence only for its affected scope.
+No fresh worker operation or cross-repository change is required for this fix.
 
 ## Failure and acceptance
 

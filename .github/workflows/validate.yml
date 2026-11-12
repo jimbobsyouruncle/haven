@@ -8,7 +8,7 @@
 #   Two callers use it:
 #
 #     1. sast-checks.yml, on every pull request to main (the PR gate).
-#     2. deploy.yml, on every push to main (before touching the Pi).
+#     2. deploy.yml, on authorized manual dispatch (before touching the Pi).
 #
 #   Because it is a `workflow_call` workflow, it only ever receives the code
 #   and never any secret. The steps below read the tree; they do not talk to

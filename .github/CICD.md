@@ -2,8 +2,8 @@
 
 | File | Purpose |
 |---|---|
-| `workflows/deploy.yml` | On a push to `main`, reuses `validate.yml` and then triggers the deploy unit on the Pi over the Tailscale network. |
-| `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` on every pull request and by `deploy.yml` on every push to `main`. Holds no secrets. |
+| `workflows/deploy.yml` | On an explicitly authorized manual dispatch for the exact main SHA, reuses `validate.yml` and then triggers the deploy unit over Tailscale. Merges/pushes do not deploy. |
+| `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` on every pull request and by `deploy.yml` on authorized manual dispatch. Holds no secrets. |
 | `workflows/sandbox-image.yml` | Builds and publishes the derived agent-server image to GHCR. Auto-publishes on a push to `main` that changes `openhands/agent-server/Dockerfile` (tag read from the `image_tag` default, guarded against overwriting an existing tag); `workflow_dispatch` is the manual rebuild path. |
 | `workflows/agent-context.yml` | Checks the checked-in `REPO_MAP.md` and `CODE_INDEX.md` are fresh on every pull request. Read-only; never commits. |
 | `workflows/sast-checks.yml` | The single pull-request gate: ShellCheck, Semgrep, source validation, CodeQL and the Hermes non-root smoke test, ending in the `Security & SAST gate`. |
@@ -13,13 +13,13 @@
 
 ## What this does
 
-Push a change to `main`, and GitHub rents a temporary computer that validates your code, joins your private network, and asks your Raspberry Pi (over SSH, as the dedicated deploy account) to run the exactly-one-thing deploy unit. The unit pulls the new version and re-runs `install.sh`. If the site does not come back up, the build fails loudly with the relevant logs attached.
+Dispatch **Deploy Control Plane** from `main`, supply the full current main SHA in `deployment_sha`, and explicitly select `authorize_production` after approving that deployment. GitHub then rents a temporary computer that validates your code, joins your private network, and asks your Raspberry Pi (over SSH, as the dedicated deploy account) to run the exactly-one-thing deploy unit. The unit pulls the new version and re-runs `install.sh`. If the site does not come back up, the build fails loudly with the relevant logs attached.
 
 The interesting part is how it reaches your Pi. **Your Pi has no public IP address, no open firewall ports, and no port forwarding configured.** The GitHub runner temporarily joins your Tailscale network as a member tagged `tag:ci`, connects over the encrypted mesh, does its work, and disappears when the job ends.
 
 This is strictly better than the conventional approach of exposing SSH to the internet. There is no permanent attack surface, because there is no permanently reachable service.
 
-**This is entirely optional.** Everything works if you deploy by hand with `git pull && ./install.sh`. CI just removes the manual step.
+Installation-root migration must use the transactional deployment path and its protected host recovery approval. Do not use an installer invocation to bypass that gate. See [ADR-0006](../docs/haven/adr/0006-installation-root.md) for evidence, approval and installed-driver preparation requirements.
 
 ---
 
@@ -31,7 +31,7 @@ This is strictly better than the conventional approach of exposing SSH to the in
 ### Job 1 — `validate`
 
 Runs on every pull request to `main` (through `sast-checks.yml`) and on every
-push to `main` (through `deploy.yml`). Catches mistakes before they can reach
+authorized manual dispatch (through `deploy.yml`). Catches mistakes before they can reach
 the Pi.
 
 | Check | What it catches |
@@ -160,7 +160,7 @@ It becomes fully active when the owner runs **card F**, `scripts/bootstrap.sh`,
 which installs the unit, the polkit rule, the scripts and the `authorized_keys`
 line on the host and creates the account as a system account with `/bin/sh` and
 a locked password (sshd runs the forced command through the login shell). Once
-that bootstrap has run, every push to `main` takes this path. The bootstrap
+that bootstrap has run, an explicitly authorized manual dispatch takes this path. The bootstrap
 installs those files once; `install.sh` re-applies the unit and the polkit rule
 on every deploy, so a change to either file reaches the host without a by-hand
 copy (effective from the next instantiation). See
@@ -267,7 +267,7 @@ GitHub repo → **Settings** → **Secrets and variables** → **Actions** → *
 
 ### 5. Optional — require approval before deploying
 
-The workflow declares `environment: production`. Under **Settings → Environments → production**, add yourself as a required reviewer and every deploy will pause for your approval.
+The workflow declares `environment: production`, but that name alone does not enforce reviewer approval. The inspected environment had only a branch policy. The tracked workflow now requires manual dispatch, explicit production assent and the exact main SHA before accessing production secrets. Protected host evidence and owner recovery approval are also mandatory. Configuring required reviewers is a separate owner settings action; this PR does not change settings.
 
 Worth enabling if the Pi is doing anything you depend on.
 

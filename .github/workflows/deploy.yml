@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------------------
 # FILE: .github/workflows/deploy.yml
 # PURPOSE (plain English):
-#   This is an automation recipe that GitHub runs for you. Every time you push
-#   code to the "main" branch, GitHub rents a temporary computer (a "runner"),
+#   This is an owner-dispatched deployment recipe. After explicit approval of
+#   a full main-branch SHA, GitHub rents a temporary computer (a "runner"),
 #   which then:
 #
 #     1. Checks your code for syntax errors and accidentally committed secrets.
@@ -66,14 +66,17 @@ name: Deploy Control Plane
 
 # "on:" decides when this runs.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      # Do not burn a deploy on a documentation typo.
-      - "**/*.md"
-      - "LICENSE"
-      - ".gitignore"
-  workflow_dispatch:      # adds a manual "Run workflow" button in the UI
+  workflow_dispatch:
+    inputs:
+      deployment_sha:
+        description: 'Full current main SHA explicitly authorized for production deployment'
+        required: true
+        type: string
+      authorize_production:
+        description: 'Authorize this production deployment; host recovery approval is also required'
+        required: true
+        default: false
+        type: boolean
 
 # Only one deploy at a time. Without this, two quick pushes could have two
 # runners reconfiguring the same Pi simultaneously.
@@ -100,6 +103,9 @@ jobs:
   # =========================================================================
   deploy:
     name: Deploy over Tailscale
+    # Merging/pushing is never production authorization. Require explicit
+    # dispatch for this exact main SHA before access to production secrets.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.authorize_production == true && inputs.deployment_sha == github.sha
     needs: validate          # gate: do not start until validation succeeds
     runs-on: ubuntu-latest
     environment: production  # lets you require manual approval in repo settings
