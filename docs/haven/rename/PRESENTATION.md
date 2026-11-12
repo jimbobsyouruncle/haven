@@ -1,8 +1,18 @@
 # HAVEN-002 presentation and compatibility decisions
 
 Issue #148; epic #146. Implemented under the owner-approved Implementation Card.
-Haven is the product name; the active repository remains
-`jimbobsyouruncle/hybrid-ai` until the separately approved #150 operation.
+Haven is the product name; the canonical repository is `jimbobsyouruncle/haven`
+following the accepted cutover. The tables below preserve the original
+presentation-stage decisions against the immutable audit baseline; their
+pre-cutover wording is historical, not a current instruction to retain old
+canonical URLs. Current lifecycle and operational follow-ups are recorded in
+[#151](https://github.com/jimbobsyouruncle/haven/issues/151).
+
+Current-facing clone and badge links use `haven`. The clone example explicitly
+keeps the `hybrid-ai` directory so subsequent commands and compatibility paths
+still agree. Historical evidence URLs, original audit records, runtime names
+and the unset repository-selector default remain unchanged. Deprecating any
+compatibility identity requires separate consumer review and approval.
 
 ## Scope and consumer review
 
@@ -63,6 +73,8 @@ intentional; a preserved match is not evidence of unfinished branding work.
 | `status/app.py`: A04442–A04444, A04446–A04448 | Rename visible presentation only; no operational resource selection (D01/D11). |
 
 ## Delivery, later gates and rollback
+
+The following section records the historical presentation-stage handoff.
 
 #147 is complete under the recorded owner decision. PR #155 completed the
 bounded #149 identity selector preparation, with the old identity still default;

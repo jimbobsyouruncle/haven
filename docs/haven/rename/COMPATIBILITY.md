@@ -4,11 +4,18 @@ Related: #149, #148 and epic #146. This is the bounded executable-identity
 portion of #149, not completion of its operational readiness requirements.
 The owner approved its Implementation Card in the local developer session.
 
+The accepted cutover and remaining operational observations are recorded in
+[#151](https://github.com/jimbobsyouruncle/haven/issues/151). Preparation-stage
+dispositions and local results below are historical evidence, not instructions
+to repeat completed work. The legacy default remains implemented; canonical
+bootstrap and deployment processes must select `haven` explicitly.
+
 ## Contract and review decisions
 
 `HYBRID_AI_REPOSITORY_SLUG` is process-environment-only. Unset selects
 `jimbobsyouruncle/hybrid-ai`; explicitly selecting `jimbobsyouruncle/haven`
-prepares the future identity. Any other value, including empty, returns exit 2
+selects the canonical post-cutover identity. Any other value, including empty,
+returns exit 2
 without echoing its value and before consumer side effects. The setting is not
 persisted, inferred from a remote, or loaded from any environment file. This
 avoids executing layout data and avoids implying that host cutover is active.
@@ -87,9 +94,12 @@ dependency-installing suites and Docker/Caddy validation remain PR-CI-owned;
 this local table does not claim their result. Independent human review remains
 required before merge.
 
-At #150 the owner must coordinate the clone origin, selected identity in each
-system service/transient verifier, and any existing fetch override. This PR
-does not implement operational propagation. Capture the known-good revision,
-installed verifier and image digests before a separately approved deployment.
-Revert the preparation before activation if necessary; reverting a code commit
-does not undo external configuration or authorize renaming back.
+The historical #150 activation requirement was to coordinate the clone origin,
+selected identity in each system service/transient verifier, and any existing
+fetch override. The original selector preparation did not implement operational
+propagation. Current source forwards the resolved selector explicitly to the
+transient verifier; the next separately authorized deployment must establish
+its new-path runtime result, as tracked in #151. Capture the known-good
+revision, installed verifier and image digests before a separately approved
+deployment. A code revert does not undo external configuration or authorize
+renaming back.
