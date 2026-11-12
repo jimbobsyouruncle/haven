@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+# Code is root-owned and service-readable. Secret files/directories below use
+# explicit 0600/0700 modes; an inherited umask must not break SSH/backup access.
+umask 022
 # ---------------------------------------------------------------------------
 # FILE: scripts/bootstrap.sh
 # PURPOSE (plain English):

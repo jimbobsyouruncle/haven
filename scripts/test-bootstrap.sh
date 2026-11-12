@@ -213,6 +213,7 @@ while (( i < ${#args[@]} )); do
 done
 case "$verb" in
   clone)
+    printf 'clone-umask %s\n' "$(umask)" >> "$GIT_LOG"
     dir="${args[${#args[@]}-1]}"
     mkdir -p "$dir/.git"
     cp -a "$GIT_FIXTURE_SRC/." "$dir"/
@@ -803,6 +804,13 @@ EXTRA_ENV=(GIT_CHECKOUT_HEAD_SHA=1111111111111111111111111111111111111111)
 rc=0; run_bootstrap "$R" "$WORK/r_stagedsha.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
 check "fresh staged HEAD mismatch fails" "1" "$rc"
 check "failed staging never activates canonical root" "absent" "$( [[ -e "$R/opt/haven" ]] && echo present || echo absent )"
+
+R="$(new_root)"
+rc=0
+( umask 077; run_bootstrap "$R" "$WORK/r_umask.log" --deploy-pubkey "$PUBKEY" --login-user pi ) || rc=$?
+check "restrictive caller umask permits fresh bootstrap" "0" "$rc"
+check "Git checkout uses root-owned service-readable creation modes" "yes" \
+  "$(grep -q '^clone-umask 0022$' "$GIT_LOG" && echo yes || echo no)"
 
 # 4 -- a credential-bearing origin.
 R="$(new_root)"
