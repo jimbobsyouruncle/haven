@@ -206,7 +206,7 @@ class Transaction:
         # stay protected: even a secret-file hash must not enter CI output.
         paths = {'caddyfile': source / 'status/Caddyfile',
                  'compose': source / 'docker-compose.yml',
-                 'stack_env': self.path('/etc/hybrid-ai/stack.env')}
+                 'stack_env': Path(self.values(self.layout.read_text())['HYBRID_AI_STACK_ENV_FILE'])}
         hashes = {}
         for name, path in paths.items():
             try:

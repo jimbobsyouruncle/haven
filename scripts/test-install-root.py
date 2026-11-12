@@ -335,6 +335,15 @@ class MigrationTests(unittest.TestCase):
                 path.write_bytes(before)
                 self.assert_preserved()
 
+    def test_compatibility_binds_the_resolved_stack_environment(self):
+        custom = self.secret.with_name('custom-stack.env')
+        self.secret.rename(custom)
+        self.tx.layout.write_text(self.tx.layout.read_text().replace(str(self.secret), str(custom)))
+        self.secret = custom
+        self.approve_recovery()
+        self.tx.deploy(self.sha)
+        self.assert_preserved()
+
     def test_wrong_image_platform_and_unexportable_layers(self):
         for metadata in (dict(Id='sha256:' + 'c' * 64, Os='linux', Architecture='arm64'),
                          dict(Id=self.recovery_image, Os='linux', Architecture='amd64'),

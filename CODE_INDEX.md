@@ -965,6 +965,7 @@
   - def test_untrusted_approval_and_evidence(self)
   - def test_missing_and_incomplete_compatibility_evidence(self)
   - def test_changed_configuration_invalidates_approval(self)
+  - def test_compatibility_binds_the_resolved_stack_environment(self)
   - def test_wrong_image_platform_and_unexportable_layers(self)
   - def test_production_workflow_requires_manual_exact_sha_authorization(self)
   - def test_cli_gate_annotation_never_contains_subprocess_output(self)
