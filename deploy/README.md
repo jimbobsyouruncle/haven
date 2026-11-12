@@ -16,11 +16,21 @@ FHS storage keep their existing paths; repository-local persistent paths require
 separate preparation and cause a safe refusal. Symlinked/untrusted/foreign roots,
 conflicting directories and legacy-path systemd overrides also cause refusal.
 
-Before any installer activity that could recreate the proxy, the running exact
-proxy image must be locally resolvable. The retained [#186 prerequisite](https://github.com/jimbobsyouruncle/haven/issues/186#issuecomment-6835562964)
-still requires compatible accessible recovery or a separately validated and
-explicitly approved alternative. A running container, matching tag or Dockerfile
-alone cannot clear that gate. A refusal does not authorize a pull/build/restart.
+Before installer activity, every transactional deploy requires a protected,
+current owner approval bound to its exact SHA, running/recovery image IDs,
+configuration hashes and compatibility evidence. The approved recovery image
+must be locally inspectable and exportable by immutable ID. Preflight retains a
+private archive before activation; rollback does not delete it. The retained
+[#186 prerequisite](https://github.com/jimbobsyouruncle/haven/issues/186#issuecomment-6835562964)
+allows a separately validated and explicitly approved equivalent, never a tag
+match or environment bypass. See ADR-0006 for the protected record schema,
+fixed gate diagnostics and the installed-driver propagation requirement. A
+refusal does not authorize a pull/build/restart or driver installation.
+
+Production workflow execution is manual-only, with explicit assent and the exact
+current main SHA. Merge/push is not production authorization. Host approval and
+workflow dispatch are separate requirements; neither authorizes arbitrary runtime
+recovery. No production migration has been verified by this change.
 
 The root-only journal is `/var/lib/hybrid-ai-install-root/current.json`; it may
 contain saved secrets and key material, so **never publish its contents**. Earlier
