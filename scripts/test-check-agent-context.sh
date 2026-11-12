@@ -74,12 +74,12 @@ cp "$CHECK_SCRIPT" "$TMP_REPO/scripts/check-agent-context.sh"
 git -C "$TMP_REPO" init -q
 git -C "$TMP_REPO" config user.name "fixture"
 git -C "$TMP_REPO" config user.email "fixture@example.com"
-python3 "$GENERATOR" --root "$TMP_REPO" --output-dir "$TMP_REPO" --max-bytes 24576 >/dev/null
+python3 "$GENERATOR" --root "$TMP_REPO" --output-dir "$TMP_REPO" --max-bytes 28672 >/dev/null
 git -C "$TMP_REPO" add -A
 git -C "$TMP_REPO" commit -q -m "fixture: init"
 
 regen_into_repo() {
-  python3 "$GENERATOR" --root "$TMP_REPO" --output-dir "$TMP_REPO" --max-bytes 24576 >/dev/null
+  python3 "$GENERATOR" --root "$TMP_REPO" --output-dir "$TMP_REPO" --max-bytes 28672 >/dev/null
 }
 
 commit_if_staged() {

@@ -467,7 +467,7 @@ ONLY manual step; everything after it runs from the units. Card F must create:
    any manual `backup.sh` / `restore.sh` run directly from here.
 4. **The layout env file** — `/etc/hybrid-ai/hybrid-ai.env`, root-owned, mode
    `0644`, with these settings (names and paths only, never a secret):
-   - `HYBRID_AI_APP_DIR=/opt/hybrid-ai`
+   - `HYBRID_AI_APP_DIR=/opt/haven`
    - `HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env`
    - `HYBRID_AI_STACK_ENV_FILE=/etc/hybrid-ai/stack.env`
    - `HYBRID_AI_DATA_DIR=/var/lib/hybrid-ai`

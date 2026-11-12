@@ -73,10 +73,11 @@ EOF
 make_shims
 export PATH="$BINDIR:$PATH"
 
-# Default every run to the "verifier is absent" case so the pre-existing cases
-# never depend on whether the host really ships /usr/local/sbin/run-post-deploy-
-# verify.sh. The post-deploy cases below override these per call.
-export HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$WORKDIR/no-such-verifier"
+# Use a synthetic verifier so health cases do not depend on host installation.
+# Missing/scheduling-failure cases below assert the fail-closed contract.
+export HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$WORKDIR/default-verifier"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD"
+chmod +x "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD"
 export HYBRID_AI_POST_DEPLOY_VERIFY_LOG="$WORKDIR/no-such-verify.log"
 unset SYSTEMD_RUN_LOG SYSTEMD_RUN_EXIT
 
@@ -392,7 +393,7 @@ for slug in '' 'unapproved-selector-fixture' $'jimbobsyouruncle/haven\n'; do
   fi
 done
 
-# Case: the verifier script is absent. The deploy must say so and stay green.
+# Case: the verifier script is absent. The deployment must fail closed.
 rm -f "$MARKER" "$SDRUN_LOG"
 ABSENT_CMD="$WORKDIR/not-installed/run-post-deploy-verify.sh"
 if HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$ABSENT_CMD" \
@@ -403,15 +404,15 @@ if HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$ABSENT_CMD" \
 else
   RC_ABSENT=$?
 fi
-if has_line "$WORKDIR/c9.out" "::warning::post-deploy verification script is absent: ${ABSENT_CMD}"; then
-  pass "verifier absent -> the exact absent warning is printed"
+if has_line "$WORKDIR/c9.out" "::error::post-deploy verification script is absent: ${ABSENT_CMD}"; then
+  pass "verifier absent -> the exact absent error is printed"
 else
-  fail "verifier absent -> the exact ::warning::post-deploy verification script is absent line is missing"
+  fail "verifier absent -> the exact ::error::post-deploy verification script is absent line is missing"
 fi
-if [[ "$RC_ABSENT" -eq 0 ]]; then
-  pass "verifier absent -> the deploy exit code is unchanged (0)"
+if [[ "$RC_ABSENT" -eq 5 ]]; then
+  pass "verifier absent -> the deploy fails closed (5)"
 else
-  fail "verifier absent -> the deploy exited ${RC_ABSENT}, expected 0"
+  fail "verifier absent -> the deploy exited ${RC_ABSENT}, expected 5"
 fi
 if [[ ! -s "$SDRUN_LOG" ]]; then
   pass "verifier absent -> systemd-run was never invoked"
@@ -419,7 +420,7 @@ else
   fail "verifier absent -> systemd-run was invoked for a script that does not exist"
 fi
 
-# Case: scheduling fails (systemd refuses). Loud, but never fatal.
+# Case: scheduling fails (systemd refuses). Mandatory failure.
 rm -f "$MARKER" "$SDRUN_LOG"
 if HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
    HYBRID_AI_POST_DEPLOY_VERIFY_LOG="$VERIFY_LOG" \
@@ -429,15 +430,15 @@ if HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
 else
   RC_SCHEDFAIL=$?
 fi
-if has_line "$WORKDIR/c10.out" "::warning::post-deploy verification could not be scheduled"; then
-  pass "scheduling failure -> the exact could-not-be-scheduled warning is printed"
+if has_line "$WORKDIR/c10.out" "::error::post-deploy verification could not be scheduled"; then
+  pass "scheduling failure -> the exact could-not-be-scheduled error is printed"
 else
-  fail "scheduling failure -> the exact ::warning::post-deploy verification could not be scheduled line is missing"
+  fail "scheduling failure -> the exact ::error::post-deploy verification could not be scheduled line is missing"
 fi
-if [[ "$RC_SCHEDFAIL" -eq 0 ]]; then
-  pass "scheduling failure -> the deploy exit code is unchanged (0)"
+if [[ "$RC_SCHEDFAIL" -eq 5 ]]; then
+  pass "scheduling failure -> the deploy fails closed (5)"
 else
-  fail "scheduling failure -> the deploy exited ${RC_SCHEDFAIL}, expected 0"
+  fail "scheduling failure -> the deploy exited ${RC_SCHEDFAIL}, expected 5"
 fi
 
 echo "== done =="

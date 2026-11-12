@@ -246,8 +246,8 @@ check_line() { # file line desc
 }
 check_line "$UNIT_FILE" 'Type=oneshot' "unit is Type=oneshot"
 check_line "$UNIT_FILE" 'User=root' "unit runs as root"
-check_line "$UNIT_FILE" 'ExecStart=/opt/hybrid-ai/scripts/deploy-instance.sh %i' "unit execs deploy-instance.sh %i"
-check_line "$UNIT_FILE" 'WorkingDirectory=/opt/hybrid-ai' "unit WorkingDirectory is /opt/hybrid-ai"
+check_line "$UNIT_FILE" 'ExecStart=/opt/haven/scripts/deploy-instance.sh %i' "unit execs deploy-instance.sh %i"
+check_line "$UNIT_FILE" 'WorkingDirectory=/opt/haven' "unit WorkingDirectory is /opt/haven"
 check_line "$UNIT_FILE" 'Environment=HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env' "unit sets the env file path"
 check_line "$UNIT_FILE" 'TimeoutStartSec=45min' "unit TimeoutStartSec is 45min"
 
@@ -298,10 +298,10 @@ fi
 
 echo "== systemd-analyze verify, with both stub directions =="
 # Same tolerance as scripts/test-backup-system-units.sh: skip only when EVERY
-# diagnostic is the missing-host-path form for /opt/hybrid-ai; any other
+# diagnostic is the missing-host-path form for /opt/haven; any other
 # diagnostic is a failure. A template unit is reported under its INSTANTIATED
 # name (e.g. hybrid-ai-deploy@test_instance.service), so the check matches the
-# `... is not executable: No such file or directory` tail for a /opt/hybrid-ai
+# `... is not executable: No such file or directory` tail for a /opt/haven
 # command rather than the literal file base.
 run_verify() {
   local unit="$1" out rc line hostpath_ok=1 saw_hostpath=0
@@ -311,7 +311,7 @@ run_verify() {
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     case "$line" in
-      *": Command /opt/hybrid-ai/"*" is not executable: No such file or directory")
+      *": Command /opt/haven/"*" is not executable: No such file or directory")
         saw_hostpath=1 ;;
       /usr/lib/systemd/system/*": Support for option CPUAccounting= has been removed and it is ignored")
         # Known warning from runner-installed units, not this repository.
@@ -331,7 +331,7 @@ if ! command -v systemd-analyze >/dev/null 2>&1; then
   printf 'skip: systemd-analyze not available\n'
 else
   if run_verify "$UNIT_FILE"; then
-    ok "real systemd-analyze verify passes on a host without /opt/hybrid-ai"
+    ok "real systemd-analyze verify passes on a host without /opt/haven"
   else
     bad "real systemd-analyze verify did not pass"
   fi
@@ -340,7 +340,7 @@ else
   cat > "${STUBDIR}/systemd-analyze" <<'STUB'
 #!/usr/bin/env bash
 base="$(basename -- "${@: -1}")"
-printf '%s: Command /opt/hybrid-ai/scripts/deploy-instance.sh is not executable: No such file or directory\n' "$base"
+printf '%s: Command /opt/haven/scripts/deploy-instance.sh is not executable: No such file or directory\n' "$base"
 exit 1
 STUB
   chmod +x "${STUBDIR}/systemd-analyze"
@@ -353,7 +353,7 @@ STUB
   cat > "${STUBDIR}/systemd-analyze" <<'STUB'
 #!/usr/bin/env bash
 base="$(basename -- "${@: -1}")"
-printf '%s: Command /opt/hybrid-ai/scripts/deploy-instance.sh is not executable: No such file or directory\n' "$base"
+printf '%s: Command /opt/haven/scripts/deploy-instance.sh is not executable: No such file or directory\n' "$base"
 printf '%s: Unknown key %s in section [Service], ignoring.\n' "$base" 'Bogus=1'
 exit 1
 STUB
@@ -367,7 +367,7 @@ STUB
   cat > "${STUBDIR}/systemd-analyze" <<'STUB'
 #!/usr/bin/env bash
 base="$(basename -- "${@: -1}")"
-printf '%s: Command /opt/hybrid-ai/scripts/deploy-instance.sh is not executable: No such file or directory\n' "$base"
+printf '%s: Command /opt/haven/scripts/deploy-instance.sh is not executable: No such file or directory\n' "$base"
 printf '/usr/lib/systemd/system/walinuxagent.service:21: Support for option CPUAccounting= has been removed and it is ignored\n'
 exit 1
 STUB
@@ -382,7 +382,7 @@ STUB
   cat > "${STUBDIR}/systemd-analyze" <<'STUB'
 #!/usr/bin/env bash
 base="$(basename -- "${@: -1}")"
-printf '%s: Command /opt/hybrid-ai/scripts/deploy-instance.sh is not executable: No such file or directory\n' "$base"
+printf '%s: Command /opt/haven/scripts/deploy-instance.sh is not executable: No such file or directory\n' "$base"
 printf '/usr/lib/systemd/system/walinuxagent.service:21: Unknown key Bogus in section [Service]\n'
 exit 1
 STUB

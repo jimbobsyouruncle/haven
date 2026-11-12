@@ -739,6 +739,60 @@ if grep -q '^WARN: optional verdict receipt' <<<"$OUT_STDOUT" \
 else fail "receipt symlink was followed"; fi
 unset VERIFY_MOCK_ROOT CURL_TILE_CODE JQ_STUB_TILE
 
+echo "== mandatory installation acceptance =="
+mkdir -p "$TREE_A/scripts"
+cat > "$TREE_A/scripts/install-root.py" <<'PY'
+import json
+import os
+import sys
+if sys.argv[1] == 'accept':
+    evidence = json.load(sys.stdin)
+    assert evidence['gates']['runtime_health']['state'] == 'PASS'
+    assert evidence['gates']['installation_root']['state'] == 'PASS'
+    sys.exit(int(os.environ.get('FIXTURE_ACCEPT_RC', '0')))
+sys.exit(int(os.environ.get('FIXTURE_WIRING_RC', '0')))
+PY
+cat > "$TREE_A/doctor.sh" <<'EOF'
+#!/usr/bin/env bash
+exit "${FIXTURE_DOCTOR_RC:-0}"
+EOF
+chmod +x "$TREE_A/doctor.sh"
+export HYBRID_AI_VERIFY_INSTALL_ROOT=1
+# The preceding symlink/invalid-owner cases intentionally poison the default
+# receipt directory. Use a clean destination for installation acceptance.
+rm -f "$VDIR_FILE"
+write_layout "$TREE_A"
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 0 ]] && "$REAL_JQ" -e '
+    .gates.installation_root.required and .gates.installation_root.state == "PASS"
+    and .gates.runtime_health.required and .gates.runtime_health.state == "PASS"
+    and .gates.verdict_file.required' "$VDIR_FILE" >/dev/null; then
+  pass "installation acceptance requires wiring, runtime health and receipt publication"
+else fail "installation acceptance lacked mandatory evidence: $OUT"; fi
+export FIXTURE_WIRING_RC=1
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 1 ]] && grep -q '^FAIL: installation wiring failed' <<< "$OUT_STDOUT"; then
+  pass "installation wiring failure blocks acceptance"
+else fail "installation wiring failure did not block"; fi
+unset FIXTURE_WIRING_RC
+export FIXTURE_DOCTOR_RC=2
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 1 ]] && grep -q '^FAIL: mandatory runtime health failed' <<< "$OUT_STDOUT"; then
+  pass "runtime health failure blocks installation acceptance"
+else fail "runtime health failure did not block"; fi
+unset FIXTURE_DOCTOR_RC
+export FIXTURE_ACCEPT_RC=1
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 1 ]] && grep -q '^FAIL: installation transaction acceptance failed' <<< "$OUT_STDOUT"; then
+  pass "failed root transaction acceptance stays FAIL"
+else fail "root transaction acceptance failure did not block"; fi
+unset FIXTURE_ACCEPT_RC
+run_verify "$TREE_A" "__absent__" "$BLOCKER/deploy-verdicts"
+if [[ "$RC" == 1 ]] && grep -q '^FAIL: mandatory installation receipt' <<< "$OUT_STDOUT"; then
+  pass "missing mandatory installation receipt fails closed"
+else fail "missing mandatory installation receipt did not block"; fi
+unset HYBRID_AI_VERIFY_INSTALL_ROOT
+
 echo "== done =="
 if [[ "$failures" -ne 0 ]]; then
   echo "$failures case(s) failed."

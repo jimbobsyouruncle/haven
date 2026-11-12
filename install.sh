@@ -2229,7 +2229,7 @@ install_backup_scheduler_system() {
       continue
     fi
 
-    # Paths in these units are already absolute (/opt/hybrid-ai/...), so unlike
+    # Paths in these units are already absolute (/opt/haven/...), so unlike
     # the user units there is no __REPO_DIR__ placeholder to render; copy as-is.
     if ! install -m 0644 "$source_file" "${target_file}.tmp"; then
       warn "Could not stage ${unit}."

@@ -29,7 +29,7 @@
 # ---------------------------------------------------------------------------
 [Unit]
 Description=hybrid-ai backup capture (stage, no network, no credentials)
-Documentation=file:///opt/hybrid-ai/backup/README.md
+Documentation=file:///opt/haven/backup/README.md
 After=network-online.target
 Wants=network-online.target
 
@@ -46,11 +46,11 @@ Group=hybrid-ai-backup
 # Fixed, root-owned commands run with privilege: the leading "+" drops every
 # sandbox restriction for that single command so it can talk to Docker. It only
 # ever pauses/unpauses the FIXED container list and reads host facts.
-ExecStartPre=+/opt/hybrid-ai/backup/backup-containers.sh host-info
-ExecStartPre=+/opt/hybrid-ai/backup/backup-containers.sh pause
-ExecStart=/opt/hybrid-ai/backup/backup.sh --stage-only
+ExecStartPre=+/opt/haven/backup/backup-containers.sh host-info
+ExecStartPre=+/opt/haven/backup/backup-containers.sh pause
+ExecStart=/opt/haven/backup/backup.sh --stage-only
 # Always unpause, whether the capture succeeded, failed, or was killed.
-ExecStopPost=+/opt/hybrid-ai/backup/backup-containers.sh unpause
+ExecStopPost=+/opt/haven/backup/backup-containers.sh unpause
 
 # An INCOMPLETE capture (exit 3) is a valid outcome: the upload unit still runs
 # (OnSuccess= fires for a success exit status) and tags the snapshot

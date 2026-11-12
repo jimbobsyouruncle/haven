@@ -34,7 +34,7 @@
 # ---------------------------------------------------------------------------
 [Unit]
 Description=hybrid-ai headless deploy for commit %i
-Documentation=file:///opt/hybrid-ai/deploy/README.md
+Documentation=file:///opt/haven/deploy/README.md
 After=network-online.target
 Wants=network-online.target
 
@@ -42,14 +42,15 @@ Wants=network-online.target
 Type=oneshot
 # The deploy resets the program tree and reprovisions the host: it needs root.
 User=root
-WorkingDirectory=/opt/hybrid-ai
+WorkingDirectory=/opt/haven
 
 # Paths by name only, never a value. The env file carries the host layout.
 Environment=HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
+Environment=HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven
 
 # `%i` is the 40-hex commit; deploy-instance.sh re-validates it, then fetches,
 # checks ancestry, resets, asserts HEAD, and execs deploy-remote.sh.
-ExecStart=/opt/hybrid-ai/scripts/deploy-instance.sh %i
+ExecStart=/opt/haven/scripts/deploy-instance.sh %i
 
 # Give up rather than run forever. A hung deploy holding the lock is worse than
 # a failed one. Deliberately SHORTER than the workflow step that triggers it

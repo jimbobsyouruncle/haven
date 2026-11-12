@@ -31,7 +31,7 @@
 # ---------------------------------------------------------------------------
 [Unit]
 Description=hybrid-ai sandbox firewall (DOCKER-USER drops)
-Documentation=file:///opt/hybrid-ai/deploy/README.md
+Documentation=file:///opt/haven/deploy/README.md
 After=docker.service
 Wants=docker.service
 
@@ -40,9 +40,9 @@ Type=oneshot
 RemainAfterExit=yes
 # DOCKER-USER is root-owned; adding rules needs root.
 User=root
-WorkingDirectory=/opt/hybrid-ai
+WorkingDirectory=/opt/haven
 # No leading "-": a failed apply must fail the unit.
-ExecStart=/opt/hybrid-ai/scripts/sandbox-firewall.sh apply
+ExecStart=/opt/haven/scripts/sandbox-firewall.sh apply
 
 # Deliberately NO Restart= policy. See the file header.
 

@@ -13,7 +13,7 @@
 #   wrong. It needs no Docker, no network and no root -- only bash.
 #
 #   It also runs `systemd-analyze verify` the RIGHT way. On systemd >= 245,
-#   verify exits non-zero when an ExecStart= binary is absent, and /opt/hybrid-ai
+#   verify exits non-zero when an ExecStart= binary is absent, and /opt/haven
 #   exists on no builder host or CI runner. So: if every diagnostic line is the
 #   missing-host-path form, print a skip and pass. Ignore only the known
 #   CPUAccounting= deprecation warning from unrelated runner system units.
@@ -103,10 +103,10 @@ has_line "$CAP" 'LogsDirectory=hybrid-ai-backup'     "capture has a logs directo
 has_line "$CAP" 'Environment=HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env' "capture reads the system env file"
 has_line "$CAP" 'Environment=HYBRID_AI_BACKUP_MODE=system'    "capture selects system mode"
 has_line "$CAP" 'Environment=BACKUP_CONTAINER_CONTROL=external' "capture treats container control as external"
-has_line "$CAP" 'ExecStartPre=+/opt/hybrid-ai/backup/backup-containers.sh host-info' "capture collects host info first"
-has_line "$CAP" 'ExecStartPre=+/opt/hybrid-ai/backup/backup-containers.sh pause'     "capture pauses containers second"
-has_line "$CAP" 'ExecStart=/opt/hybrid-ai/backup/backup.sh --stage-only'             "capture runs the stage-only phase"
-has_line "$CAP" 'ExecStopPost=+/opt/hybrid-ai/backup/backup-containers.sh unpause'   "capture unpauses on exit"
+has_line "$CAP" 'ExecStartPre=+/opt/haven/backup/backup-containers.sh host-info' "capture collects host info first"
+has_line "$CAP" 'ExecStartPre=+/opt/haven/backup/backup-containers.sh pause'     "capture pauses containers second"
+has_line "$CAP" 'ExecStart=/opt/haven/backup/backup.sh --stage-only'             "capture runs the stage-only phase"
+has_line "$CAP" 'ExecStopPost=+/opt/haven/backup/backup-containers.sh unpause'   "capture unpauses on exit"
 has_line "$CAP" 'SuccessExitStatus=3'                "capture treats exit 3 as success"
 hasnt_regex "$CAP" '^Restart='                       "capture has NO Restart= (never loops)"
 # The upload unit is started by the capture's OnSuccess.
@@ -133,7 +133,7 @@ has_line "$UP" 'ProtectHome=yes'                     "upload protects home"
 has_line "$UP" 'CacheDirectory=hybrid-ai-backup'     "upload has a cache directory (restic cache)"
 has_line "$UP" 'Environment=RESTIC_CACHE_DIR=/var/cache/hybrid-ai-backup' "upload points RESTIC_CACHE_DIR at its cache"
 has_line "$UP" 'StateDirectory=hybrid-ai-backup'     "upload sees the staging state directory"
-has_line "$UP" 'ExecStart=/opt/hybrid-ai/backup/backup.sh --upload-only' "upload runs the upload-only phase"
+has_line "$UP" 'ExecStart=/opt/haven/backup/backup.sh --upload-only' "upload runs the upload-only phase"
 has_line "$UP" 'Restart=on-failure'                  "upload retries a transient failure"
 has_line "$UP" 'RestartSec=15min'                    "upload retry delay is bounded"
 has_line "$UP" 'StartLimitIntervalSec=1h'            "upload limits retries per hour"
@@ -150,7 +150,7 @@ echo "== timers and check unit =="
 has_line "$CTIMER" 'OnCalendar=*-*-* 03:15:00'   "capture timer runs nightly at 03:15"
 has_line "$CTIMER" 'Persistent=true'             "capture timer catches up after downtime"
 has_line "$CTIMER" 'RandomizedDelaySec=15min'    "capture timer spreads the start"
-has_line "$CHECK"  'ExecStart=/opt/hybrid-ai/backup/backup.sh --check' "check unit runs --check"
+has_line "$CHECK"  'ExecStart=/opt/haven/backup/backup.sh --check' "check unit runs --check"
 has_line "$CHECK"  'LoadCredential=r2.env:/etc/credstore/hybrid-ai-backup/r2.env' "check unit loads the same credentials"
 has_line "$CHECK"  'CapabilityBoundingSet='      "check unit has no capability (upload shape)"
 has_line "$CHECK"  'CacheDirectory=hybrid-ai-backup' "check unit shares the restic cache directory"
@@ -171,12 +171,12 @@ while IFS= read -r line; do
   case "$val" in
     -*) printf 'FAIL exec line uses a "-" prefix: %s\n' "$line" >&2; EXEC_BAD=1 ;;
   esac
-  # first token after any '+' must be an absolute /opt/hybrid-ai path
+  # first token after any '+' must be an absolute /opt/haven path
   prog="${val#+}"
   prog="${prog%% *}"
   case "$prog" in
-    /opt/hybrid-ai/*) ;;
-    *) printf 'FAIL exec line is not an absolute /opt/hybrid-ai path: %s\n' "$line" >&2; EXEC_BAD=1 ;;
+    /opt/haven/*) ;;
+    *) printf 'FAIL exec line is not an absolute /opt/haven path: %s\n' "$line" >&2; EXEC_BAD=1 ;;
   esac
 done < <(grep -E '^Exec(Start|StartPre|StopPost|StartPost|Reload)=' "$CAP" "$UP" "$CHECK")
 if (( EXEC_BAD == 0 )); then ok "every Exec line is absolute and has no '-' prefix"; else bad "one or more Exec lines are malformed"; fi
@@ -632,7 +632,7 @@ echo "== systemd-analyze verify =="
 
 # The real verify, in a helper so the stub test can reuse the same logic. The
 # rule lives here once:
-#   * missing /opt/hybrid-ai executables for this unit -> skip, pass
+#   * missing /opt/haven executables for this unit -> skip, pass
 #   * unrelated runner CPUAccounting= deprecations   -> ignore
 #   * any other diagnostic (alone or mixed)          -> fail
 #   * systemd-analyze absent                         -> skip, pass
@@ -643,7 +643,7 @@ run_verify() {
   if (( rc == 0 )); then
     return 0
   fi
-  # Only this unit's missing /opt/hybrid-ai executable can be ignored.
+  # Only this unit's missing /opt/haven executable can be ignored.
   # systemd-analyze on CI may also warn about unrelated *installed* units
   # (e.g. the runner's XFS scrub services). Those warnings must not turn
   # verified repository units into false failures.
@@ -652,7 +652,7 @@ run_verify() {
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     case "$line" in
-      "${base}: Command /opt/hybrid-ai/"*"is not executable: No such file or directory")
+      "${base}: Command /opt/haven/"*"is not executable: No such file or directory")
         saw_hostpath=1 ;;
       /usr/lib/systemd/system/*": Support for option CPUAccounting= has been removed and it is ignored")
         # systemd diagnostic from host-provided units, not this repository.
@@ -671,20 +671,20 @@ run_verify() {
 if ! command -v systemd-analyze >/dev/null 2>&1; then
   printf 'skip: systemd-analyze not available\n'
 else
-  # 1. The real verify on a host with no /opt/hybrid-ai must exit 0 (it skips).
+  # 1. The real verify on a host with no /opt/haven must exit 0 (it skips).
   #    Run it over every unit, not just the capture unit.
   REAL_OK=1
   for u in "$CAP" "$UP" "$CHECK"; do
     run_verify "$u" || REAL_OK=0
   done
-  if (( REAL_OK )); then ok "real systemd-analyze verify passes on a host without /opt/hybrid-ai"; else bad "real systemd-analyze verify did not pass"; fi
+  if (( REAL_OK )); then ok "real systemd-analyze verify passes on a host without /opt/haven"; else bad "real systemd-analyze verify did not pass"; fi
 
   # 2. A stub that prints ONLY the host-path line -> skip, exit 0.
   STUBDIR="$(mktemp -d)"
   cat > "${STUBDIR}/systemd-analyze" <<'STUB'
 #!/usr/bin/env bash
 base="$(basename -- "${@: -1}")"
-printf '%s: Command /opt/hybrid-ai/backup/backup.sh is not executable: No such file or directory\n' "$base"
+printf '%s: Command /opt/haven/backup/backup.sh is not executable: No such file or directory\n' "$base"
 exit 1
 STUB
   chmod +x "${STUBDIR}/systemd-analyze"
@@ -699,7 +699,7 @@ STUB
   cat > "${STUBDIR}/systemd-analyze" <<'STUB'
 #!/usr/bin/env bash
 base="$(basename -- "${@: -1}")"
-printf '%s: Command /opt/hybrid-ai/backup/backup.sh is not executable: No such file or directory\n' "$base"
+printf '%s: Command /opt/haven/backup/backup.sh is not executable: No such file or directory\n' "$base"
 printf '%s: Unknown key %s in section [Service], ignoring.\n' "$base" 'Bogus=1'
 exit 1
 STUB
@@ -713,7 +713,7 @@ STUB
   cat > "${STUBDIR}/systemd-analyze" <<'STUB'
 #!/usr/bin/env bash
 base="$(basename -- "${@: -1}")"
-printf '%s: Command /opt/hybrid-ai/backup/backup.sh is not executable: No such file or directory\n' "$base"
+printf '%s: Command /opt/haven/backup/backup.sh is not executable: No such file or directory\n' "$base"
 printf '/usr/lib/systemd/system/xfs_scrub_all.service:26: Support for option CPUAccounting= has been removed and it is ignored\n'
 exit 1
 STUB
@@ -728,7 +728,7 @@ STUB
   cat > "${STUBDIR}/systemd-analyze" <<'STUB'
 #!/usr/bin/env bash
 base="$(basename -- "${@: -1}")"
-printf '%s: Command /opt/hybrid-ai/backup/backup.sh is not executable: No such file or directory\n' "$base"
+printf '%s: Command /opt/haven/backup/backup.sh is not executable: No such file or directory\n' "$base"
 printf '/usr/lib/systemd/system/xfs_scrub_all.service:26: Unknown key Bogus in section [Service]\n'
 exit 1
 STUB

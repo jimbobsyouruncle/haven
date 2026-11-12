@@ -16,7 +16,7 @@
 # ---------------------------------------------------------------------------
 [Unit]
 Description=hybrid-ai backup integrity verification (system mode)
-Documentation=file:///opt/hybrid-ai/backup/README.md
+Documentation=file:///opt/haven/backup/README.md
 After=network-online.target
 Wants=network-online.target
 
@@ -25,7 +25,7 @@ Type=oneshot
 User=hybrid-ai-backup
 Group=hybrid-ai-backup
 
-ExecStart=/opt/hybrid-ai/backup/backup.sh --check
+ExecStart=/opt/haven/backup/backup.sh --check
 
 # An INCOMPLETE outcome (exit 3) is valid, not a check failure; a real failure
 # (exit 1) stays retryable if a retry policy is ever added.

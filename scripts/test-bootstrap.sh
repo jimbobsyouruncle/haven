@@ -218,7 +218,13 @@ case "$verb" in
     cp -a "$GIT_FIXTURE_SRC/." "$dir"/
     exit 0 ;;
   config) printf '%s\n' "${GIT_ORIGIN_URL:-}"; exit 0 ;;
-  rev-parse) printf '%s\n' "${GIT_HEAD_SHA:-0123456789abcdef0123456789abcdef01234567}"; exit 0 ;;
+  rev-parse)
+    if [[ "${args[${#args[@]}-1]}" == HEAD && -n "${GIT_CHECKOUT_HEAD_SHA:-}" ]]; then
+      printf '%s\n' "$GIT_CHECKOUT_HEAD_SHA"
+    else
+      printf '%s\n' "${GIT_HEAD_SHA:-0123456789abcdef0123456789abcdef01234567}"
+    fi
+    exit 0 ;;
   fetch) exit "${GIT_FETCH_RC:-0}" ;;
   reset) exit "${GIT_RESET_RC:-0}" ;;
 esac
@@ -271,7 +277,7 @@ exit "${PREFLIGHT_RC:-0}"
 EOF
 printf '# fixture deploy unit\n[Service]\nUser=root\n' > "$GIT_FIXTURE_SRC/deploy/hybrid-ai-deploy@.service"
 printf '// fixture polkit rule\n' > "$GIT_FIXTURE_SRC/deploy/50-hybrid-ai-deploy.rules"
-printf '# fixture firewall unit\n[Service]\nExecStart=/opt/hybrid-ai/scripts/sandbox-firewall.sh apply\n' \
+printf '# fixture firewall unit\n[Service]\nExecStart=/opt/haven/scripts/sandbox-firewall.sh apply\n' \
   > "$GIT_FIXTURE_SRC/deploy/hybrid-ai-firewall.service"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$GIT_FIXTURE_SRC/scripts/deploy-forced-command.sh"
 chmod +x "$GIT_FIXTURE_SRC/install.sh" "$GIT_FIXTURE_SRC/doctor.sh" \
@@ -331,7 +337,7 @@ EVENTS="$WORK/events.log"; GIT_LOG="$WORK/git.log"
 echo "== the test-only prefix is UNSET by default and the default root is / =="
 out="$(env -u HYBRID_AI_BOOTSTRAP_ROOT bash "$BOOTSTRAP" --print-paths 2>&1)"
 have "print-paths default root is /" "$out" "root                     = /"
-have "print-paths default app dir" "$out" "HYBRID_AI_APP_DIR        = /opt/hybrid-ai"
+have "print-paths default app dir" "$out" "HYBRID_AI_APP_DIR        = /opt/haven"
 have "print-paths default stack file" "$out" "HYBRID_AI_STACK_ENV_FILE = /etc/hybrid-ai/stack.env"
 if env -u HYBRID_AI_BOOTSTRAP_ROOT bash "$BOOTSTRAP" --print-paths >/dev/null 2>&1; then
   ok "print-paths needs no root and touches nothing"
@@ -356,7 +362,8 @@ if (( rc != 0 )); then sed 's/^/      /' "$WORK/fresh.log" >&2; fi
 
 LAYOUT="$R1/etc/hybrid-ai/hybrid-ai.env"
 check "layout file mode is 0644" "644" "$(stat -c '%a' "$LAYOUT" 2>/dev/null)"
-check "app dir cloned" "yes" "$([[ -d "$R1/opt/hybrid-ai/.git" ]] && echo yes || echo no)"
+check "app dir cloned" "yes" "$([[ -d "$R1/opt/haven/.git" ]] && echo yes || echo no)"
+check "staged code root is traversable by service accounts" "755" "$(stat -c '%a' "$R1/opt/haven")"
 check "data dir" "yes" "$([[ -d "$R1/var/lib/hybrid-ai" ]] && echo yes || echo no)"
 check "agent workspace is a SIBLING of the data dir" "yes" "$([[ -d "$R1/var/lib/hybrid-ai-agent" ]] && echo yes)"
 check "agent repos is a SIBLING of the data dir" "yes" "$([[ -d "$R1/var/lib/hybrid-ai-repos" ]] && echo yes)"
@@ -373,7 +380,7 @@ have "bootstrap enabled the firewall unit" "$(cat "$EVENTS")" \
   "systemctl enable hybrid-ai-firewall.service"
 check "authorized_keys mode" "600" "$(stat -c '%a' "$R1/var/lib/hybrid-ai-deploy/.ssh/authorized_keys" 2>/dev/null)"
 check "authorized_keys line is the forced command" "1" \
-  "$(grep -c "restrict,command=\"$R1/opt/hybrid-ai/scripts/deploy-forced-command.sh\"" "$R1/var/lib/hybrid-ai-deploy/.ssh/authorized_keys" 2>/dev/null)"
+  "$(grep -c "restrict,command=\"$R1/opt/haven/scripts/deploy-forced-command.sh\"" "$R1/var/lib/hybrid-ai-deploy/.ssh/authorized_keys" 2>/dev/null)"
 
 # Each account: system uid, its own group, nologin (or /bin/sh for deploy).
 for a in hybrid-ai hybrid-ai-backup; do
@@ -391,7 +398,7 @@ if (( duid < 1000 )); then ok "hybrid-ai-deploy is a system account"; else bad "
 
 # The layout file content.
 for needle in \
-  "HYBRID_AI_APP_DIR=$R1/opt/hybrid-ai" \
+  "HYBRID_AI_APP_DIR=$R1/opt/haven" \
   "HYBRID_AI_ENV_FILE=$LAYOUT" \
   "HYBRID_AI_STACK_ENV_FILE=$R1/etc/hybrid-ai/stack.env" \
   "HYBRID_AI_DATA_DIR=$R1/var/lib/hybrid-ai" \
@@ -451,7 +458,7 @@ mkdir -p "$R2/home/pi/.ssh" "$R2/home/pi/.config/hybrid-ai-backup"
 # Two unrelated keys plus the deploy key. Only the deploy line may be removed.
 {
   printf '%s\n' "ssh-ed25519 ${OTHER_BLOB} other@fixture"
-  printf '%s\n' "restrict,command=\"/opt/hybrid-ai/scripts/deploy-forced-command.sh\" $(cat "$PUBKEY")"
+  printf '%s\n' "restrict,command=\"/opt/haven/scripts/deploy-forced-command.sh\" $(cat "$PUBKEY")"
   printf '%s\n' "ssh-ed25519 ${OTHER_BLOB} third@fixture"
 } > "$R2/home/pi/.ssh/authorized_keys"
 chmod 600 "$R2/home/pi/.ssh/authorized_keys"
@@ -621,7 +628,7 @@ chmod 600 "$LEGACY6/.env"
 : > "$LEGACY6/openhands/docker-compose.openhands.yml"
 : > "$LEGACY6/hermes/docker-compose.hermes.yml"
 mkdir -p "$R6/home/pi/.ssh"
-printf '%s\n' "restrict,command=\"/opt/hybrid-ai/scripts/deploy-forced-command.sh\" $(cat "$PUBKEY")" \
+printf '%s\n' "restrict,command=\"/opt/haven/scripts/deploy-forced-command.sh\" $(cat "$PUBKEY")" \
   > "$R6/home/pi/.ssh/authorized_keys"
 # Run 1 completes the migration and MOVES the legacy .env away.
 rc=0
@@ -777,22 +784,36 @@ R="$(new_root)"
 rc=0; run_bootstrap "$R" "$WORK/r_opts.log" --deploy-pubkey "$WORK/opts.pub" --login-user pi || rc=$?
 check "an option-bearing key line is refused with 3" "3" "$rc"
 
-# 4 -- an existing /opt/hybrid-ai that is not a git clone.
+# 4 -- an existing /opt/haven that is not a git clone.
+R="$(new_root)"
+mkdir -p "$R/opt/haven"
+rc=0; run_bootstrap "$R" "$WORK/r_notclone.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
+check "a non-clone /opt/haven is refused with 4" "4" "$rc"
+
 R="$(new_root)"
 mkdir -p "$R/opt/hybrid-ai"
-rc=0; run_bootstrap "$R" "$WORK/r_notclone.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
-check "a non-clone /opt/hybrid-ai is refused with 4" "4" "$rc"
+printf 'preserve\n' > "$R/opt/hybrid-ai/sentinel"
+rc=0; run_bootstrap "$R" "$WORK/r_existinglegacy.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
+check "legacy root directs bootstrap to normal deployment" "4" "$rc"
+check "legacy root remains untouched" "preserve" "$(cat "$R/opt/hybrid-ai/sentinel")"
+check "legacy refusal creates no canonical root" "absent" "$( [[ -e "$R/opt/haven" ]] && echo present || echo absent )"
+
+R="$(new_root)"
+EXTRA_ENV=(GIT_CHECKOUT_HEAD_SHA=1111111111111111111111111111111111111111)
+rc=0; run_bootstrap "$R" "$WORK/r_stagedsha.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
+check "fresh staged HEAD mismatch fails" "1" "$rc"
+check "failed staging never activates canonical root" "absent" "$( [[ -e "$R/opt/haven" ]] && echo present || echo absent )"
 
 # 4 -- a credential-bearing origin.
 R="$(new_root)"
-mkdir -p "$R/opt/hybrid-ai/.git"
+mkdir -p "$R/opt/haven/.git"
 EXTRA_ENV=(GIT_ORIGIN_URL="https://user:pass@github.com/jimbobsyouruncle/hybrid-ai.git")
 rc=0; run_bootstrap "$R" "$WORK/r_cred.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
 check "a credential-bearing origin is refused with 4" "4" "$rc"
 
 # 4 -- a foreign origin.
 R="$(new_root)"
-mkdir -p "$R/opt/hybrid-ai/.git"
+mkdir -p "$R/opt/haven/.git"
 EXTRA_ENV=(GIT_ORIGIN_URL="https://github.com/someone/other.git")
 rc=0; run_bootstrap "$R" "$WORK/r_foreign.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
 check "a foreign origin is refused with 4" "4" "$rc"
@@ -889,7 +910,7 @@ LEGACY="$R/legacy"; mkdir -p "$LEGACY/openhands" "$LEGACY/hermes"
 : > "$LEGACY/hermes/docker-compose.hermes.yml"
 mkdir -p "$R/home/pi/.ssh"
 { printf '%s\n' "ssh-ed25519 ${OTHER_BLOB} other@fixture"
-  printf '%s\n' "restrict,command=\"/opt/hybrid-ai/scripts/deploy-forced-command.sh\" $(cat "$PUBKEY")"
+  printf '%s\n' "restrict,command=\"/opt/haven/scripts/deploy-forced-command.sh\" $(cat "$PUBKEY")"
 } > "$R/home/pi/.ssh/authorized_keys"
 rc=0
 EXTRA_ENV=(INSTALL_RC=1)
@@ -918,7 +939,7 @@ setup_doctor_migration_root() {
   : > "$legacy/openhands/docker-compose.openhands.yml"
   : > "$legacy/hermes/docker-compose.hermes.yml"
   mkdir -p "$r/home/pi/.ssh"
-  printf '%s\n' "restrict,command=\"/opt/hybrid-ai/scripts/deploy-forced-command.sh\" $(cat "$PUBKEY")" \
+  printf '%s\n' "restrict,command=\"/opt/haven/scripts/deploy-forced-command.sh\" $(cat "$PUBKEY")" \
     > "$r/home/pi/.ssh/authorized_keys"
 }
 assert_no_cutoff() { # label
@@ -1249,7 +1270,6 @@ if git -C "$REPO" rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
   # only that path is removed for the repository-identity preparation.
   diff_out="$(git -C "$REPO" diff --stat origin/main -- \
     backup/backup-containers.sh \
-    backup/system/hybrid-ai-backup-capture.service \
     backup/system/hybrid-ai-backup-capture.timer \
     backup/system/hybrid-ai-backup-check.timer \
     backup/hybrid-ai-backup.service backup/hybrid-ai-backup.timer \

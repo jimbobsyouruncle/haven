@@ -416,7 +416,34 @@ have "legacy workspace: refusal says outside the allowlist" "$OUT" "outside the 
 check "legacy workspace: the path survives" "present" \
   "$( [[ -e "$R/home/pi/hybrid-ai-agent/precious.txt" ]] && echo present || echo gone )"
 
-# ===========================================================================
+# Canonical installation with retained migration checkpoints. Uninstall must
+# select the layout root and keep rollback artifacts and data by default.
+R="$(new_root canonical)"
+write_layout "$R"; write_full_install "$R"; write_data_dirs "$R"
+mv "$R/opt/hybrid-ai" "$R/opt/haven"
+sed -i 's|/opt/hybrid-ai|/opt/haven|g' "$R/etc/hybrid-ai/hybrid-ai.env"
+mkdir -p "$R/opt/hybrid-ai" "$R/opt/.haven-previous-fixture" "$R/var/lib/hybrid-ai-install-root"
+printf 'retained\n' > "$R/opt/hybrid-ai/checkpoint"
+EV="$WORK/ev-canonical"; : > "$EV"
+OUT="$(EVENTS="$EV" HYBRID_AI_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes --keep-data 2>&1)"; RC=$?
+check "canonical: exit 0" "0" "$RC"
+check "canonical: active app removed" "gone" "$( [[ -e "$R/opt/haven" ]] && echo present || echo gone )"
+check "canonical: legacy checkpoint kept" "present" "$( [[ -f "$R/opt/hybrid-ai/checkpoint" ]] && echo present || echo gone )"
+check "canonical: previous checkpoint kept" "present" "$( [[ -d "$R/opt/.haven-previous-fixture" ]] && echo present || echo gone )"
+check "canonical: journal kept" "present" "$( [[ -d "$R/var/lib/hybrid-ai-install-root" ]] && echo present || echo gone )"
+check "canonical: persistent data kept" "present" "$( [[ -e "$R/var/lib/hybrid-ai/keepme.txt" ]] && echo present || echo gone )"
+have_not "canonical: no volume deletion" "$(cat "$EV")" "--volumes"
+
+# Repository-local durable state requires retaining the whole root.
+R="$(new_root local-data)"
+write_layout "$R"; write_full_install "$R"; write_data_dirs "$R"
+printf 'HYBRID_AI_DATA_DIR=%s/opt/hybrid-ai\n' "$R" >> "$R/etc/hybrid-ai/hybrid-ai.env"
+printf 'keep\n' > "$R/opt/hybrid-ai/database"
+EV="$WORK/ev-local-data"; : > "$EV"
+OUT="$(EVENTS="$EV" HYBRID_AI_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes --keep-data 2>&1)"; RC=$?
+check "local data: exit 0" "0" "$RC"
+check "local data: code root preserved" "present" "$( [[ -f "$R/opt/hybrid-ai/database" ]] && echo present || echo gone )"
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 (( FAIL == 0 )) || exit 1
 exit 0

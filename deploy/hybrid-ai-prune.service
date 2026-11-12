@@ -25,14 +25,14 @@
 # ---------------------------------------------------------------------------
 [Unit]
 Description=hybrid-ai conversation prune (quarantine stale OpenHands conversations)
-Documentation=file:///opt/hybrid-ai/deploy/README.md
+Documentation=file:///opt/haven/deploy/README.md
 
 [Service]
 Type=oneshot
 # The conversations tree is root/stack-owned; moving entries needs root.
 User=root
-WorkingDirectory=/opt/hybrid-ai
-ExecStart=/opt/hybrid-ai/scripts/prune-conversations.sh
+WorkingDirectory=/opt/haven
+ExecStart=/opt/haven/scripts/prune-conversations.sh
 
 # Deliberately NO Restart= policy: a failing prune must not loop. See the header.
 

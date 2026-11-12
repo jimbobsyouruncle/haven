@@ -64,7 +64,7 @@ set -Eeuo pipefail
 #   2  not run as root
 #   3  the deploy public key was refused (a private key, more than one key, or
 #      a line that already carries options)
-#   4  /opt/hybrid-ai exists but is not a clone of the public remote, or its
+#   4  /opt/haven exists but is not a clone of the public remote, or its
 #      origin carries a credential
 #   5  polkitd is absent, or its version predates .rules (JavaScript) support
 #   6  a migration move is cross-device, or a move target already exists and is
@@ -108,7 +108,7 @@ host_path() {
 }
 
 # --- Fixed layout ----------------------------------------------------------
-APP_DIR="$(host_path /opt/hybrid-ai)"
+APP_DIR="$(host_path /opt/haven)"
 ETC_DIR="$(host_path /etc/hybrid-ai)"
 LAYOUT_ENV="${ETC_DIR}/hybrid-ai.env"
 STACK_ENV="${ETC_DIR}/stack.env"
@@ -244,7 +244,14 @@ detect_polkit() {
 }
 detect_polkit
 
-# --- 4. /opt/hybrid-ai must be a clean clone of the public remote (refuse 4)
+# Bootstrap and normal deployments share the same lock. The scratch prefix
+# keeps the offline fixtures away from the real host lock.
+BOOTSTRAP_LOCK="$(host_path /run/lock/hybrid-ai-deploy.lock)"
+mkdir -p -- "$(dirname -- "$BOOTSTRAP_LOCK")"
+exec 9>"$BOOTSTRAP_LOCK"
+flock -n 9 || die 1 "another bootstrap or deployment holds the installation lock"
+
+# --- 4. /opt/haven must be a clean clone of the public remote (refuse 4)
 # A URL scheme with userinfo (or an scp-like form) means a credential sits in
 # the checkout's config; refuse it, exactly as deploy-instance.sh does.
 url_has_userinfo() {
@@ -260,6 +267,17 @@ git_public() {
 }
 
 prepare_app_dir() {
+  # Re-running bootstrap must never silently replace an existing legacy layout.
+  # Its next authorized normal deployment performs the journaled migration.
+  [[ ! -e "$(host_path /opt/hybrid-ai)" && ! -L "$(host_path /opt/hybrid-ai)" ]] || \
+    die 4 "legacy root exists; use the authorized normal deployment migration"
+  [[ ! -L "$APP_DIR" ]] || die 4 "refusing a symlinked installation root"
+  if [[ -z "$ROOT_PREFIX" && -e "$APP_DIR" ]]; then
+    [[ "$(realpath -e -- "$APP_DIR")" == "$APP_DIR" ]] || \
+      die 4 "refusing a symlinked installation path"
+    [[ -z "$(find "$APP_DIR" -xdev \( -type l -o ! -user root -o -perm /022 \) -print -quit)" ]] || \
+      die 4 "installation checkout is not root controlled"
+  fi
   if [[ -e "$APP_DIR" ]]; then
     [[ -d "$APP_DIR/.git" ]] || \
       die 4 "$APP_DIR exists but is not a git clone of ${PUBLIC_REMOTE}"
@@ -278,14 +296,26 @@ prepare_app_dir() {
     git -C "$APP_DIR" reset --hard origin/main >/dev/null \
       || die 1 "resetting ${APP_DIR} to origin/main failed"
   else
-    log "Cloning ${PUBLIC_REMOTE} into ${APP_DIR}..."
-    git_public clone --no-tags "$PUBLIC_REMOTE" "$APP_DIR" \
+    local stage target
+    mkdir -p -- "$(dirname -- "$APP_DIR")"
+    stage="$(mktemp -d "$(dirname -- "$APP_DIR")/.haven-bootstrap.XXXXXX")"
+    log "Staging the public checkout before installation..."
+    git_public clone --no-tags "$PUBLIC_REMOTE" "$stage" \
       || die 1 "cloning ${PUBLIC_REMOTE} failed"
-    git -C "$APP_DIR" fetch --prune --no-tags "$PUBLIC_REMOTE" \
+    git_public -C "$stage" fetch --prune --no-tags "$PUBLIC_REMOTE" \
       "+refs/heads/main:refs/remotes/origin/main" \
-      || die 1 "fetching main into ${APP_DIR} failed"
-    git -C "$APP_DIR" reset --hard origin/main >/dev/null \
-      || die 1 "resetting ${APP_DIR} to origin/main failed"
+      || die 1 "fetching main into the staged checkout failed"
+    target="$(git_public -C "$stage" rev-parse origin/main)"
+    [[ "$target" =~ ^[0-9a-f]{40}$ ]] || die 1 "main did not resolve to a full SHA"
+    git_public -C "$stage" merge-base --is-ancestor "$target" origin/main || \
+      die 1 "staged revision is not on public main"
+    git_public -C "$stage" reset --hard "$target" >/dev/null || \
+      die 1 "staged reset failed"
+    [[ "$(git_public -C "$stage" rev-parse HEAD)" == "$target" ]] || \
+      die 1 "staged checkout does not match requested revision"
+    chmod 0755 -- "$stage"  # deploy/backup accounts must traverse the code root
+    [[ ! -e "$APP_DIR" && ! -L "$APP_DIR" ]] || die 4 "installation target appeared during staging"
+    mv -T -- "$stage" "$APP_DIR" || die 1 "could not activate staged checkout"
     ok "Cloned ${APP_DIR}."
   fi
 }

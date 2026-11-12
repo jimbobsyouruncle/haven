@@ -30,7 +30,7 @@
 # ---------------------------------------------------------------------------
 [Unit]
 Description=hybrid-ai backup upload (credentials and network, no read privilege)
-Documentation=file:///opt/hybrid-ai/backup/README.md
+Documentation=file:///opt/haven/backup/README.md
 After=network-online.target
 Wants=network-online.target
 
@@ -44,7 +44,7 @@ Type=oneshot
 User=hybrid-ai-backup
 Group=hybrid-ai-backup
 
-ExecStart=/opt/hybrid-ai/backup/backup.sh --upload-only
+ExecStart=/opt/haven/backup/backup.sh --upload-only
 
 # Retry a transient failure (R2 blip, network down). Bounded, and exit 3 (an
 # incomplete capture) is not retried: the data was already missing when it was

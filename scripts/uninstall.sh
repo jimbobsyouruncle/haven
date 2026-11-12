@@ -25,7 +25,7 @@
 #     hybrid-ai backup and check user units
 #   * the polkit rule 50-hybrid-ai-deploy.rules
 #   * ONLY the DOCKER-USER rules tagged hybrid-ai-sandbox-egress
-#   * /opt/hybrid-ai
+#   * the selected /opt/haven or legacy /opt/hybrid-ai code root
 #   * with --remove-data: the data, work, log, restic-cache and backup
 #     credential directories, and /etc/hybrid-ai
 #
@@ -132,7 +132,7 @@ done
 LOGIN_USER="${LOGIN_USER:-${SUDO_USER:-}}"
 
 # --- Fixed host paths (FHS defaults) ---------------------------------------
-APP_DIR="$(host_path /opt/hybrid-ai)"
+APP_DIR="$(host_path /opt/haven)"
 ETC_DIR="$(host_path /etc/hybrid-ai)"
 LAYOUT_ENV="${ETC_DIR}/hybrid-ai.env"
 STACK_ENV="${ETC_DIR}/stack.env"
@@ -189,6 +189,13 @@ apply_layout_setting() { # varname setting
 # source of truth; without a clone, fall back to the FHS defaults and the
 # readable layout file.
 resolve_paths() {
+  # Resolve the selected root before loading its helper. A retained legacy
+  # checkout must not become active merely because it still exists for rollback.
+  apply_layout_setting APP_DIR HYBRID_AI_APP_DIR
+  APP_DIR="$(host_path "$APP_DIR")"
+  if [[ ! -e "$LAYOUT_ENV" && ! -e "$APP_DIR" ]]; then
+    APP_DIR="$(host_path /opt/hybrid-ai)"
+  fi
   local clone_lib="${APP_DIR}/scripts/lib/hybrid-ai-env.sh"
   if [[ -r "$clone_lib" ]]; then
     # Point the library's fallback probe at this run's layout file. With
@@ -264,6 +271,7 @@ resolve_paths
 # left untouched. The two trailing glob prefixes mirror the documented
 # /var/lib/hybrid-ai* and /var/log/hybrid-ai* allowlist entries.
 ALLOW_EXACT=(
+  "$(host_path /opt/haven)"
   "$(host_path /opt/hybrid-ai)"
   "$(host_path /var/cache/hybrid-ai-backup)"
   "$(host_path /etc/hybrid-ai)"
@@ -654,6 +662,20 @@ step_remove_app_dir() {
   if [[ ! -e "$APP_DIR" ]]; then
     ok "already gone: ${APP_DIR}"
     return 0
+  fi
+  if [[ -L "$APP_DIR" ]]; then
+    warn "refusing a symlinked program directory"
+    return 0
+  fi
+  if (( ! REMOVE_DATA )); then
+    local durable
+    for durable in "$DATA_DIR" "$STACK_ENV" "$WORK_DIR" "$LOG_DIR" "$RESTIC_CACHE" \
+                   "$CRED_DIR" "$AGENT_WS" "$AGENT_REPOS"; do
+      if [[ "$durable" == "$APP_DIR" || "$durable" == "$APP_DIR"/* ]]; then
+        warn "keeping the program directory because it contains preserved data or secrets"
+        return 0
+      fi
+    done
   fi
   # Leave the current directory before removing anything, so the script can
   # never delete its own working directory mid-run.
