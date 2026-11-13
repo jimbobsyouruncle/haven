@@ -2,6 +2,33 @@
 
 ## Installation root migration
 
+### Recovery validation status (2026-11-13)
+
+The owner reported successful bounded preparation of the corrected PR #189
+migration driver on the legacy installation, with syntax/integrity checks and
+the previous driver retained. The Git checkout still names the old revision;
+avoid resetting the tree before the authorized migration because the corrected
+driver is a deliberate one-file host modification.
+
+The running Caddy proxy remains active. Its original image is **not locally
+inspectable**, so recovery requires the explicitly approved alternative path.
+A different cached candidate matches the host platform and executes as Caddy
+v2.11.7 with both required DNS provider modules present. That does **not**
+establish matching module versions, full installed Caddyfile validation,
+recovery-procedure proof, image exportability or owner approval. In particular,
+an over-restricted diagnostic initially failed with `operation not permitted`
+until `NET_BIND_SERVICE` was restored solely for the isolated validator; do
+not infer an image defect or weaken production security settings.
+
+**Next:** complete private module-version/configuration/recovery validation,
+retain actual evidence and protected per-SHA owner approval, then authorize
+the manual production migration and require the matching verifier receipt.
+Keep a later Caddy patch upgrade separate from migration. See
+[ADR-0006](../docs/haven/adr/0006-installation-root.md#owner-reported-recovery-progress--2026-11-13-not-migration-acceptance).
+No deploy, image export or root migration was established by these observations.
+
+
+
 Fresh bootstrap uses `/opt/haven`. Existing bootstrapped `/opt/hybrid-ai`
 installations migrate during the next **separately authorized normal deployment**.
 Do not move the directory manually or rerun bootstrap over an existing legacy
