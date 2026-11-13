@@ -145,6 +145,60 @@ requested/installed SHA correlation, canonical wiring and the matching mandatory
 verifier gates, with ordinary worker-use evidence only for its affected scope.
 No fresh worker operation or cross-repository change is required for this fix.
 
+## Owner-reported recovery progress — 2026-11-13 (not migration acceptance)
+
+This is an evidence update for [#187](https://github.com/jimbobsyouruncle/haven/issues/187),
+not a change to the approved migration and proxy-recovery gates. The operator
+reported the following private-host observations; the underlying private
+receipts and live configuration were not independently inspected for this PR.
+
+- **DRIVER-271 — OWNER-ATTESTED / corrected host preparation:** the legacy
+  deployment entrypoint remained at `/opt/hybrid-ai`, with legacy checkout
+  `1a9dec3622931c45343095f5707765db283c4ba4`. The operator used the
+  bounded, deployment-locked, SHA-verified replacement of only
+  `scripts/install-root.py` from merged PR #189
+  (`59bc6d41390c75af1d9457f683d6f4c5847c7724`). Reported Python syntax
+  PASS, driver integrity PASS, and previous driver retained. No deployment or
+  installation-root migration was initiated. The Git checkout remains at the
+  historical commit with an intentionally modified driver; a `git reset --hard`
+  would overwrite the corrected file and is not a repair step.
+- **RECOVERY-271 — PARTIAL / candidate compatibility:** running proxy and
+  expected Compose project confirmed; the running image ID was not locally
+  inspectable; a *different* locally cached immutable Caddy candidate was
+  present and matched the host platform. The running binary reported Caddy
+  `v2.11.7`. After matching the diagnostic container to Caddy's executable
+  capability needs, the candidate executed and reported `v2.11.7`, with
+  `dns.providers.cloudflare` and `dns.providers.rfc2136` present. These
+  are presence checks, **not** proof of matching module versions, full binary
+  equivalence, installed-config compatibility or recovery viability.
+- **Validation-tool finding:** the first diagnostic ran with
+  `--cap-drop ALL --security-opt no-new-privileges --user 65534:65534`
+  and failed with `exec /usr/bin/caddy: operation not permitted`.
+  The same candidate subsequently executed when `NET_BIND_SERVICE` was
+  explicitly added back, still without network access, privileges, host
+  credentials or production proxy changes. This is consistent with Caddy
+  executable file-capability requirements; no file-capability inspection
+  established exact causation. A failed over-restricted diagnostic must not
+  be misreported as an invalid recovery image. Do not weaken the running
+  proxy's configuration to accommodate a diagnostic.
+- **Still REQUIRED BEFORE production dispatch:** privately compare running
+  and candidate nonstandard module **versions**; use the repository's
+  `scripts/lib/tls.sh` Caddy-validation semantics to validate the actually
+  installed Caddyfile against the candidate with the appropriate protected
+  env/credential mounts (not merely `caddy adapt`); retain a bounded
+  recovery-procedure receipt, actual configuration hashes and immutable
+  IDs. Obtain owner approval of evidence for the **final dispatched SHA**
+  using the fixed root-owned records above, then allow the new driver to
+  inspect and durably export the approved image before staging.
+  No `docker image save`, approved equivalence, production dispatch or
+  canonical-root verifier PASS has been established by this evidence.
+- **Follow-up, not a migration dependency:** assess a separate, pinned Caddy
+  patch-version upgrade after verified recovery and installation-root
+  migration. The v2.11.7 image and its candidate must not be silently
+  retagged/rebuilt as part of fixing the root migration. The base image,
+  custom DNS modules, Caddyfile, ARM64 build and TLS/ACME behavior need
+  their own compatibility/security validation and rollback artifact.
+
 ## Failure and acceptance
 
 Keep the existing deployment lock throughout staging and synchronous install.
