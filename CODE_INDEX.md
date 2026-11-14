@@ -617,6 +617,7 @@
 
 ## scripts/sandbox-firewall.sh
 - usage()
+- unavailable()
 - resolve_bridge()
 - normalise_rule()
 - is_owned()
@@ -889,6 +890,7 @@
 - run_parent_apply()
 - count_of()
 - run_doctor()
+- assert_warn()
 - check_skip_flavour()
 
 ## scripts/test-doctor-sandbox-image.sh
