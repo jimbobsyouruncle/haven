@@ -7,6 +7,7 @@ with a scratch root and synthetic command runner; there is no CLI path override.
 import base64
 import fcntl
 import hashlib
+import gzip
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import tarfile
 import time
 import uuid
 
@@ -162,71 +164,136 @@ class Transaction:
 
     def gate_command(self, gate, args):
         try:
-            return self.command(args)
-        except (OSError, subprocess.CalledProcessError):
+            return self.command(args, timeout=180)
+        except (OSError, subprocess.SubprocessError):
             raise Refusal(gate + ': inspection or artifact operation failed') from None
 
-    def protected_json(self, path, gate):
-        try:
+    def recovery_image(self, running):
+        # Optional durable selection for a validated alternative. No per-SHA
+        # approval, expiration or manual receipts. Never resolve a mutable tag.
+        path = self.path('/etc/hybrid-ai/proxy-recovery-image')
+        if path.exists() or path.is_symlink():
             self.trusted(path)
-            mode = path.stat()
-            if not stat.S_ISREG(mode.st_mode) or stat.S_IMODE(mode.st_mode) != 0o600:
-                raise ValueError
-            value = json.loads(path.read_text())
-            if not isinstance(value, dict):
-                raise ValueError
-            return value
-        except (OSError, ValueError, Refusal):
-            raise Refusal(gate + ': missing or untrusted protected record') from None
+            if not path.is_file():
+                raise Refusal('RECOVERY_IMAGE: selection must be a regular file')
+            selected = path.read_text().strip()
+        else:
+            selected = running
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', selected):
+            raise Refusal('RECOVERY_IMAGE: selection must be an immutable digest')
+        return selected
 
-    def recovery_approval(self, sha, source, image):
-        # Fixed root-owned files, never a CLI/env/SSH flag. Root records the
-        # owner's decision only after separately authorized compatibility work.
-        directory = self.path('/etc/hybrid-ai/install-root-approvals')
-        approval_path = directory / (sha + '.json')
-        evidence_path = directory / (sha + '.evidence.json')
-        approval = self.protected_json(approval_path, 'RECOVERY_APPROVAL')
-        evidence = self.protected_json(evidence_path, 'RECOVERY_COMPATIBILITY')
-        now = int(time.time())
-        issued, expires = approval.get('approved_at'), approval.get('expires_at')
-        if (approval.get('schema_version') != 1
-                or approval.get('decision') != 'approve-install-root-deployment-and-proxy-recovery'
-                or approval.get('requested_sha') != sha
-                or not isinstance(issued, int) or isinstance(issued, bool)
-                or not isinstance(expires, int) or isinstance(expires, bool)
-                or not issued <= now < expires <= issued + 86400
-                or approval.get('evidence_sha256') != hashlib.sha256(evidence_path.read_bytes()).hexdigest()):
-            raise Refusal('RECOVERY_APPROVAL: decision, revision, evidence or validity mismatch')
-        recovery = evidence.get('recovery_image_id', '')
-        if (evidence.get('schema_version') != 1 or evidence.get('running_image_id') != image
-                or not isinstance(recovery, str)
-                or not re.fullmatch(r'sha256:[0-9a-f]{64}', recovery)):
-            raise Refusal('RECOVERY_COMPATIBILITY: immutable image identities do not match')
-        # Bind validation to the currently installed runtime inputs. Hashes
-        # stay protected: even a secret-file hash must not enter CI output.
-        paths = {'caddyfile': source / 'status/Caddyfile',
-                 'compose': source / 'docker-compose.yml',
-                 'stack_env': Path(self.values(self.layout.read_text())['HYBRID_AI_STACK_ENV_FILE'])}
-        hashes = {}
-        for name, path in paths.items():
-            try:
-                self.trusted(path)
-                hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-            except (OSError, Refusal):
-                raise Refusal('RECOVERY_CONFIGURATION: unavailable or untrusted input') from None
-        checks = evidence.get('checks')
-        if (evidence.get('configuration_sha256') != hashes
-                or not isinstance(checks, dict)
-                or set(checks) != {'caddy_version', 'dns_modules', 'config_validation',
-                                   'platform', 'recovery_procedure'}
-                or any(not isinstance(check, dict) or check.get('state') != 'PASS'
-                       or not isinstance(check.get('receipt_sha256'), str)
-                       or not re.fullmatch(r'[0-9a-f]{64}', check['receipt_sha256'])
-                       for check in checks.values())):
-            raise Refusal('RECOVERY_COMPATIBILITY: configuration or mandatory evidence mismatch')
-        return recovery, evidence, hashlib.sha256(approval_path.read_bytes()).hexdigest()
+    @staticmethod
+    def verify_archive(archive, metadata):
+        """Verify docker-save content without extracting or equating index/config IDs."""
+        try:
+            with tarfile.open(archive, 'r:') as tar:
+                def read(name):
+                    member = tar.getmember(name)
+                    if not member.isfile():
+                        raise ValueError
+                    return tar.extractfile(member)
 
-    def proxy_preflight(self, sha, source):
+                manifests = json.load(read('manifest.json'))
+                if len(manifests) != 1:
+                    raise ValueError
+                manifest = manifests[0]
+                config_bytes = read(manifest['Config']).read()
+                config_id = 'sha256:' + hashlib.sha256(config_bytes).hexdigest()
+                # Docker 26 names the config <hash>.json; containerd uses blobs.
+                name = manifest['Config']
+                expected = name.removeprefix('blobs/sha256/').removesuffix('.json')
+                if config_id != 'sha256:' + expected:
+                    raise ValueError
+                config = json.loads(config_bytes)
+                if (config['os'] != metadata['Os']
+                        or config['architecture'] != metadata['Architecture']
+                        or any(config.get('config', {}).get(k) != metadata['Config'].get(k)
+                               for k in set(config.get('config', {})) | set(metadata['Config']))
+                        or config['rootfs']['diff_ids'] != metadata['RootFS']['Layers']):
+                    raise ValueError
+                layers = manifest['Layers']
+                if not layers or len(layers) != len(config['rootfs']['diff_ids']):
+                    raise ValueError
+                for name, expected in zip(layers, config['rootfs']['diff_ids']):
+                    digest = hashlib.sha256()
+                    # OCI archives may retain compressed blobs. Verify the
+                    # blob digest first, then the uncompressed filesystem ID.
+                    with read(name) as stream:
+                        prefix = stream.read(2)
+                        stream.seek(0)
+                        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                            digest.update(chunk)
+                    if name.startswith('blobs/sha256/') and name != 'blobs/sha256/' + digest.hexdigest():
+                        raise ValueError
+                    if prefix == b'\x1f\x8b':
+                        digest = hashlib.sha256()
+                        with read(name) as stream, gzip.GzipFile(fileobj=stream) as unpacked:
+                            for chunk in iter(lambda: unpacked.read(1024 * 1024), b''):
+                                digest.update(chunk)
+                    if 'sha256:' + digest.hexdigest() != expected:
+                        raise ValueError
+                return config_id
+        except (OSError, EOFError, ValueError, KeyError, TypeError, tarfile.TarError):
+            raise Refusal('RECOVERY_ARTIFACT: archive configuration or layer integrity mismatch') from None
+
+    def compatible_proxy(self, recovery, source, metadata):
+        running = json.loads(self.gate_command('PROXY_IDENTITY',
+                            ['docker', 'container', 'inspect', '--format', '{{json .}}',
+                             'hybrid-ai-proxy']))
+        if (metadata['Os'] != 'linux' or metadata['Architecture'] !=
+                self.gate_command('RECOVERY_IMAGE', ['docker', 'info', '--format', '{{.Architecture}}'])
+                .replace('aarch64', 'arm64').replace('x86_64', 'amd64')):
+            raise Refusal('RECOVERY_IMAGE: incompatible host platform')
+        caddyfile = source / 'status/Caddyfile'
+        self.trusted(caddyfile)
+        if not caddyfile.is_file():
+            raise Refusal('RECOVERY_CONFIGURATION: installed Caddyfile unavailable')
+        mounts = []
+        # Match the existing TLS validator's protected credential mount, never
+        # inherit arbitrary production volumes or the Docker socket.
+        secrets = set(re.findall(r'\{file\.(/run/secrets/(?:cloudflare_dns_token|rfc2136_key_secret))\}',
+                                 caddyfile.read_text()))
+        for destination in sorted(secrets):
+            candidates = [m for m in running.get('Mounts', [])
+                          if m.get('Destination') == destination and m.get('Type') == 'bind']
+            if len(candidates) != 1:
+                raise Refusal('RECOVERY_CONFIGURATION: DNS credential bind unavailable')
+            path = Path(candidates[0]['Source'])
+            self.trusted(path)
+            if not path.is_file() or not path.stat().st_size or path.stat().st_mode & 0o077:
+                raise Refusal('RECOVERY_CONFIGURATION: DNS credential must be a private nonempty file')
+            mounts += ['--mount', 'type=bind,src=' + str(path) + ',dst=' + destination + ',readonly']
+        # Only the proxy's effective environment, never the entire stack's
+        # credentials. The private temporary file is removed on every exit.
+        fd, name = tempfile.mkstemp(prefix='proxy-env-', dir=self.state)
+        try:
+            with os.fdopen(fd, 'w') as stream:
+                for entry in running['Config']['Env']:
+                    if '\n' in entry or '\r' in entry or '=' not in entry:
+                        raise Refusal('RECOVERY_CONFIGURATION: unsupported proxy environment')
+                    stream.write(entry + '\n')
+            base = ['docker', 'run', '--rm', '--pull=never', '--network=none',
+                    '--read-only', '--cap-drop=ALL', '--cap-add=NET_BIND_SERVICE',
+                    '--security-opt=no-new-privileges',
+                    '--memory=128m', '--cpus=0.5', '--tmpfs', '/data', '--tmpfs', '/config',
+                    '--env-file', name, '--mount',
+                    'type=bind,src=' + str(caddyfile) + ',dst=/etc/caddy/Caddyfile,readonly',
+                    *mounts, '--entrypoint', '/usr/bin/caddy', recovery]
+            version = self.gate_command('RECOVERY_COMPATIBILITY', base + ['version'])
+            current = self.gate_command('RECOVERY_COMPATIBILITY',
+                       ['docker', 'exec', 'hybrid-ai-proxy', '/usr/bin/caddy', 'version'])
+            if not version or not current or version.split()[0] != current.split()[0]:
+                raise Refusal('RECOVERY_COMPATIBILITY: Caddy version mismatch')
+            modules = self.gate_command('RECOVERY_COMPATIBILITY', base + ['list-modules']).splitlines()
+            if not {'dns.providers.cloudflare', 'dns.providers.rfc2136'} <= set(modules):
+                raise Refusal('RECOVERY_COMPATIBILITY: required DNS modules unavailable')
+            self.gate_command('RECOVERY_CONFIGURATION', base + [
+                'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'])
+        finally:
+            os.unlink(name)
+
+    def proxy_preflight(self, source):
         project = self.gate_command('PROXY_IDENTITY', ['docker', 'container', 'inspect', '--format',
                                 '{{index .Config.Labels "com.docker.compose.project"}}',
                                 'hybrid-ai-proxy'])
@@ -236,28 +303,19 @@ class Transaction:
                               '{{.Image}}', 'hybrid-ai-proxy'])
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
             raise Refusal('PROXY_IDENTITY: cannot establish current exact proxy image')
-        # .Image is the running immutable ID. .Config.Image/RepoTags are only
-        # mutable references and cannot establish recovery equivalence.
-        recovery, evidence, approval_hash = self.recovery_approval(sha, source, image)
-        metadata = self.gate_command('RECOVERY_IMAGE', ['docker', 'image', 'inspect',
-                                     '--format', '{{json .}}', recovery])
-        try:
-            metadata = json.loads(metadata)
-            platform = '/'.join(metadata[k] for k in ('Os', 'Architecture'))
-            if metadata.get('Variant'):
-                platform += '/' + metadata['Variant']
-            if metadata['Id'] != recovery or platform != evidence.get('platform'):
-                raise ValueError
-        except (ValueError, KeyError, TypeError):
-            raise Refusal('RECOVERY_IMAGE: immutable identity or validated platform mismatch') from None
-        # Inspect alone does not demonstrate layer availability. Save by ID to
-        # a unique protected checkpoint, both testing exportability and keeping
-        # recovery independent of later tag changes/builds/pruning. Never clean
-        # up successful archives automatically, including on rollback.
+        recovery = self.recovery_image(image)
+        metadata = json.loads(self.gate_command('RECOVERY_IMAGE', ['docker', 'image', 'inspect',
+                                     '--format', '{{json .}}', recovery]))
+        # Inspect by immutable reference; its returned Id may be an index or
+        # configuration digest. Bind the exported content via Config + RootFS.
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', metadata.get('Id', '')):
+            raise Refusal('RECOVERY_IMAGE: invalid local immutable identity')
         archive, digest = self.retain_recovery(recovery)
+        config_id = self.verify_archive(archive, metadata)
+        self.compatible_proxy(recovery, source, metadata)
         return dict(running_image_id=image, recovery_image_id=recovery,
-                    platform=platform, archive=str(archive), archive_sha256=digest,
-                    approval_sha256=approval_hash)
+                    configuration_id=config_id, platform=metadata['Os'] + '/' + metadata['Architecture'],
+                    archive=str(archive), archive_sha256=digest)
 
     def retain_recovery(self, recovery):
         archive = self.state / ('proxy-recovery-' + uuid.uuid4().hex + '.tar')
@@ -397,7 +455,7 @@ class Transaction:
         elif journal and journal['phase'] == 'awaiting_verifier':
             raise Refusal('previous deployment awaits verifier; inspect or explicitly roll back')
         source, values = self.source()
-        proxy_recovery = self.proxy_preflight(sha, source)
+        proxy_recovery = self.proxy_preflight(source)
         sha_before = self.git(source, 'rev-parse', 'HEAD')
         token = uuid.uuid4().hex
         stage = self.app.parent / ('.haven-stage-' + token)
@@ -449,8 +507,16 @@ class Transaction:
                 raise Refusal('previous revision could not be established')
             self.git(stage, 'merge-base', '--is-ancestor', previous_sha, 'origin/main')
             legacy_previous = self.app.parent / ('.haven-legacy-previous-' + token)
-            shutil.copytree(stage, legacy_previous)
-            self.git(legacy_previous, 'reset', '--hard', previous_sha)
+            shutil.copytree(source, legacy_previous)
+            if self.git(legacy_previous, 'rev-parse', 'HEAD') != previous_sha:
+                self.git(legacy_previous, 'reset', '--hard', previous_sha)
+                # An old dispatcher may already have reset code. Preserve the
+                # available rendered runtime inputs alongside its prior code.
+                for rel in ('status/Caddyfile', 'docker-compose.yml',
+                            'openhands/docker-compose.openhands.yml',
+                            'hermes/docker-compose.hermes.yml'):
+                    if (source / rel).is_file():
+                        shutil.copy2(source / rel, legacy_previous / rel)
             if self.git(legacy_previous, 'rev-parse', 'HEAD') != previous_sha:
                 raise Refusal('legacy recovery checkout revision mismatch')
             self.trusted(legacy_previous, tree=True)
@@ -539,7 +605,7 @@ def cli():
     except Refusal as error:
         print('::error::install-root: ' + str(error), file=sys.stderr)
         return 1
-    except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         # Never print subprocess output, control-file contents or secrets.
         print('::error::install-root: handoff refused or incomplete; inspect protected journal and recovery guidance',
               file=sys.stderr)

@@ -19,7 +19,7 @@ The interesting part is how it reaches your Pi. **Your Pi has no public IP addre
 
 This is strictly better than the conventional approach of exposing SSH to the internet. There is no permanent attack surface, because there is no permanently reachable service.
 
-Installation-root migration must use the transactional deployment path and its protected host recovery approval. Do not use an installer invocation to bypass that gate. See [ADR-0006](../docs/haven/adr/0006-installation-root.md) for evidence, approval and installed-driver preparation requirements.
+Installation-root migration must use the transactional deployment path and its automated immutable-image recovery preflight. Do not use an installer invocation to bypass that gate. See [ADR-0006](../docs/haven/adr/0006-installation-root.md) for recovery checks and installed-driver preparation requirements.
 
 ---
 
@@ -267,7 +267,7 @@ GitHub repo → **Settings** → **Secrets and variables** → **Actions** → *
 
 ### 5. Optional — require approval before deploying
 
-The workflow declares `environment: production`, but that name alone does not enforce reviewer approval. The inspected environment had only a branch policy. The tracked workflow now requires manual dispatch, explicit production assent and the exact main SHA before accessing production secrets. Protected host evidence and owner recovery approval are also mandatory. Configuring required reviewers is a separate owner settings action; this PR does not change settings.
+The workflow declares `environment: production`, but that name alone does not enforce reviewer approval. The inspected environment had only a branch policy. The tracked workflow now requires manual dispatch, explicit production assent and the exact main SHA before accessing production secrets. Automated host recovery preflight is also mandatory. Configuring required reviewers is a separate owner settings action; this PR does not change settings.
 
 Worth enabling if the Pi is doing anything you depend on.
 

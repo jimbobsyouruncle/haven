@@ -2,33 +2,6 @@
 
 ## Installation root migration
 
-### Recovery validation status (2026-11-13)
-
-The owner reported successful bounded preparation of the corrected PR #189
-migration driver on the legacy installation, with syntax/integrity checks and
-the previous driver retained. The Git checkout still names the old revision;
-avoid resetting the tree before the authorized migration because the corrected
-driver is a deliberate one-file host modification.
-
-The running Caddy proxy remains active. Its original image is **not locally
-inspectable**, so recovery requires the explicitly approved alternative path.
-A different cached candidate matches the host platform and executes as Caddy
-v2.11.7 with both required DNS provider modules present. That does **not**
-establish matching module versions, full installed Caddyfile validation,
-recovery-procedure proof, image exportability or owner approval. In particular,
-an over-restricted diagnostic initially failed with `operation not permitted`
-until `NET_BIND_SERVICE` was restored solely for the isolated validator; do
-not infer an image defect or weaken production security settings.
-
-**Next:** complete private module-version/configuration/recovery validation,
-retain actual evidence and protected per-SHA owner approval, then authorize
-the manual production migration and require the matching verifier receipt.
-Keep a later Caddy patch upgrade separate from migration. See
-[ADR-0006](../docs/haven/adr/0006-installation-root.md#owner-reported-recovery-progress--2026-11-13-not-migration-acceptance).
-No deploy, image export or root migration was established by these observations.
-
-
-
 Fresh bootstrap uses `/opt/haven`. Existing bootstrapped `/opt/hybrid-ai`
 installations migrate during the next **separately authorized normal deployment**.
 Do not move the directory manually or rerun bootstrap over an existing legacy
@@ -43,21 +16,123 @@ FHS storage keep their existing paths; repository-local persistent paths require
 separate preparation and cause a safe refusal. Symlinked/untrusted/foreign roots,
 conflicting directories and legacy-path systemd overrides also cause refusal.
 
-Before installer activity, every transactional deploy requires a protected,
-current owner approval bound to its exact SHA, running/recovery image IDs,
-configuration hashes and compatibility evidence. The approved recovery image
-must be locally inspectable and exportable by immutable ID. Preflight retains a
-private archive before activation; rollback does not delete it. The retained
-[#186 prerequisite](https://github.com/jimbobsyouruncle/haven/issues/186#issuecomment-6835562964)
-allows a separately validated and explicitly approved equivalent, never a tag
-match or environment bypass. See ADR-0006 for the protected record schema,
-fixed gate diagnostics and the installed-driver propagation requirement. A
-refusal does not authorize a pull/build/restart or driver installation.
+Before activation, automated preflight selects the running immutable proxy image
+or the digest in the optional root-controlled
+`/etc/hybrid-ai/proxy-recovery-image`. It retains a private checksum-verified export,
+verifies configuration and all filesystem layers, checks host architecture,
+Caddy version and required DNS modules, and validates the installed configuration
+in isolated temporary containers. No pull/build/load or running-proxy replacement
+occurs. Index and configuration digests are distinct identities, not an equality
+test. Missing/incompatible/corrupt/unexportable images refuse before activation.
+There are no per-deployment approval/evidence files or expiration window.
 
 Production workflow execution is manual-only, with explicit assent and the exact
-current main SHA. Merge/push is not production authorization. Host approval and
-workflow dispatch are separate requirements; neither authorizes arbitrary runtime
-recovery. No production migration has been verified by this change.
+current main SHA. Merge/push is not production authorization. The procedure below
+is for the owner after reviewing and merging the implementation; it has not been
+executed by repository development.
+
+### Complete the existing installation-root migration
+
+Use one reviewed, merged main revision throughout. No bootstrap rerun, directory
+rename, proxy replacement or new recovery rehearsal is necessary. The recovery
+candidate must already be available locally; automated checks will refuse if it
+is missing or incompatible. Preserve existing backups and recovery archives.
+
+1. On the host, open a root shell (`sudo -i`). Enter the reviewed **full main SHA**
+   at the prompt below. This stages only public source and installs two corrected
+   driver files under the existing root; it does not start services. The lock
+   prevents concurrent deployment. Keep the printed preparation directory locally
+   for undo; do not publish host files or the transaction journal.
+
+   ```bash
+   set -e
+   read -r -p 'Reviewed merged full main SHA: ' SHA
+   [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+   exec 9>/run/lock/hybrid-ai-deploy.lock
+   flock -n 9
+   PREP="/opt/.haven-driver-$SHA"
+   test ! -e "$PREP"
+   umask 022
+   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c http.extraHeader= -c core.hooksPath=/dev/null clone --no-checkout https://github.com/jimbobsyouruncle/haven.git "$PREP"
+   git -C "$PREP" merge-base --is-ancestor "$SHA" origin/main
+   git -C "$PREP" -c core.hooksPath=/dev/null checkout --detach "$SHA"
+   test "$(git -C "$PREP" rev-parse HEAD)" = "$SHA"
+   mkdir -m 0700 "$PREP/previous-driver"
+   if test -e /etc/hybrid-ai/proxy-recovery-image; then
+     cp -a /etc/hybrid-ai/proxy-recovery-image "$PREP/previous-driver/"
+   fi
+   cp -a /opt/hybrid-ai/scripts/install-root.py "$PREP/previous-driver/"
+   cp -a /opt/hybrid-ai/scripts/deploy-instance.sh "$PREP/previous-driver/"
+   install -o root -g root -m 0644 "$PREP/scripts/install-root.py" /opt/hybrid-ai/scripts/.install-root.py.new
+   mv /opt/hybrid-ai/scripts/.install-root.py.new /opt/hybrid-ai/scripts/install-root.py
+   install -o root -g root -m 0755 "$PREP/scripts/deploy-instance.sh" /opt/hybrid-ai/scripts/.deploy-instance.sh.new
+   mv /opt/hybrid-ai/scripts/.deploy-instance.sh.new /opt/hybrid-ai/scripts/deploy-instance.sh
+   printf '%s\n' 'sha256:ada3a3b23ed20ce8d870404809d22ac4355e6aba58a133f2cece875abad27538'      > /etc/hybrid-ai/.proxy-recovery-image.new
+   chmod 0600 /etc/hybrid-ai/.proxy-recovery-image.new
+   mv /etc/hybrid-ai/.proxy-recovery-image.new /etc/hybrid-ai/proxy-recovery-image
+   printf 'Prepared driver revision %s; undo files: %s/previous-driver\n' "$SHA" "$PREP"
+   exec 9>&-
+   ```
+
+   This durable candidate selection is the already validated retained alternative
+   for this installation. Its index differs legitimately from the loaded
+   configuration digest. It is checked again automatically, without publishing
+   private receipts. For another installation, omit the selection file to use its
+   running image, or select its own compatible immutable digest. Existing obsolete
+   approval JSON files are ignored and need not be regenerated.
+
+2. In GitHub Actions, run the **deploy** workflow from main with `deployment_sha`
+   set to that same full SHA and `authorize_production` checked. This is the
+   explicit production action. If main advanced, use the new reviewed main SHA
+   consistently, including driver preparation. Do not retry an old driver.
+
+3. Wait for both deployment and its post-deploy verifier. On the host, keep checks
+   local: confirm `git -C /opt/haven rev-parse HEAD` equals the requested SHA,
+   `/etc/hybrid-ai/hybrid-ai.env` selects `/opt/haven`, and the protected journal
+   has phase `accepted` with that SHA. The mandatory verifier checks canonical
+   SSH/unit wiring and service health; use the existing configured Compose command with `-p hybrid-ai` to inspect services if a specific failure needs it.
+   Report only the revision, accepted outcome and health result in the issue.
+   Leave the issue open on any missing/failed mandatory check. After success,
+   request owner closure; implementation does not authorize automatic closure.
+
+Subsequent deployments need only step 2 and verification. The corrected installed
+driver stages fresh checkouts; no repeated driver installation or recovery
+paperwork is needed. The recovery selection may remain until deliberately changed.
+
+### Rollback
+
+If preparation alone must be undone, hold the same deployment lock and copy the
+two saved `previous-driver` files back to `/opt/hybrid-ai/scripts/`, preserving
+ownership/modes. Remove the new selection only if it was newly created; preserve
+any prior selection. Do not undo preparation during a running deployment.
+
+If migration fails synchronously, the transaction restores roots/control files
+automatically. For an interrupted activation, the next authorized deploy restores
+it before retrying. For failed/missing asynchronous verification, stop further
+deployment and run the following as root using the retained preparation checkout
+and the failed deployment's full SHA:
+
+```bash
+python3 /opt/.haven-driver-<reviewed-SHA>/scripts/install-root.py rollback <deployment-SHA>
+```
+
+This restores code/control files and reloads systemd, without database/volume
+changes or container restarts. A refusal after later control/secret edits requires
+owner reconciliation; never overwrite a rotated secret to force rollback.
+If services were recreated, control rollback alone does not recover runtime.
+Keep the working proxy running while inspecting the protected journal locally.
+For a necessary runtime recovery, verify the retained archive's SHA256 against
+`proxy_recovery.archive_sha256` before `docker image load --input <archive>`.
+Use the recorded `configuration_id` from the verified archive (not a mutable tag
+or an assumed index/config equality) in a private Compose override for proxy
+`image`, and use the retained previous root's rendered Compose/Caddyfile with
+`-p hybrid-ai` and the existing protected stack env. Owner-run targeted Compose
+`up -d --no-build --pull never proxy` with that override recreates only the proxy;
+do not run a whole-stack rebuild, restore databases or delete volumes. First
+confirm the retained rendered configuration matches the intended runtime; an
+old pre-reset dispatcher cannot reconstruct missing historical configuration.
+Other unhealthy services require their own known-good retained images; the Caddy
+archive is not a whole-stack image backup. Verify health after recovery.
 
 The root-only journal is `/var/lib/hybrid-ai-install-root/current.json`; it may
 contain saved secrets and key material, so **never publish its contents**. Earlier

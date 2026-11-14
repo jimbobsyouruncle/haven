@@ -750,7 +750,7 @@ sudo scripts/uninstall.sh --remove-data # tear down the software AND the data
 ```
 
 Disable the GitHub `deploy.yml` workflow before you decommission. It runs on
-explicitly authorized manual dispatch for the exact main SHA. Merging or pushing does not reinstall the stack. Transactional deployment also requires protected owner recovery approval; see [ADR-0006](docs/haven/adr/0006-installation-root.md).
+explicitly authorized manual dispatch for the exact main SHA. Merging or pushing does not reinstall the stack. Transactional deployment also runs automated immutable-image recovery preflight; see [ADR-0006](docs/haven/adr/0006-installation-root.md).
 
 ### What it removes
 
