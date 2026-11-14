@@ -6,40 +6,10 @@
 #   stubbed iptables and a recorded DOCKER-USER chain -- it does not merely
 #   grep the text of doctor.sh.
 #
-#   The parent change (scripts/sandbox-firewall.sh) puts two DROP rules and one
-#   ACCEPT exception in Docker's DOCKER-USER chain so the random sandbox agent
-#   ports stop answering on the LAN. doctor.sh now reads that chain back and
-#   warns, but never fails, when a rule is missing.
-#
-#   Fully OFFLINE. No Docker, no network, no root, no live iptables. The
-#   stubbed iptables keeps its state in a file, so it behaves like a real
-#   chain for the lifetime of one `apply`.
-#
-#   REAL, NOT TAUTOLOGICAL. The "rules present" fixture is not typed in by
-#   hand: this harness runs the REAL scripts/sandbox-firewall.sh apply against
-#   the stateful stub, then hands the chain it recorded to doctor.sh. So the
-#   pass case proves doctor.sh accepts exactly what the parent script installs,
-#   and that the tag and docker0-gateway literals in doctor.sh agree with the
-#   ones in scripts/sandbox-firewall.sh. (The port agrees at its default,
-#   because both sides read OPENHANDS_PORT with the same 3001 fallback.)
-#
-#   Proven here:
-#     (a) rules applied by the parent script -> the check reports a pass, and
-#         the overall exit code equals a baseline run of a doctor.sh WITHOUT
-#         the check;
-#     (b) rules missing -- all three, and only the webhook ACCEPT -> a warn
-#         names the missing rule(s), doctor exits 1, never 2, and no failure
-#         line is printed;
-#     (c) probe unavailable -- no iptables on PATH, iptables refusing to read
-#         the chain (permission denied), an empty listing, and a non-Linux host
-#         -- a skip line, no pass and no warn from this check, and an exit code
-#         identical to the baseline.
-#
-#   The baseline is a copy of the doctor.sh under test with the check's section
-#   removed, so "same exit code" compares like with like. That same copy is
-#   used at the end to prove this harness FAILS against an unpatched doctor.sh:
-#   a doctor.sh without the check prints neither a pass nor a skip line, which
-#   breaks assertion (a) and every assertion in (c).
+#   Offline: real apply generates the complete fixture using stateful stubs.
+#   Every individual missing rule, ordering errors, duplicates, unknown tagged
+#   rules, bridge discovery failures and unreadable chains must never pass.
+#   All checks assert no firewall writes and warning-only doctor semantics.
 #
 # Usage:
 #   bash scripts/test-doctor-sandbox-firewall.sh [path-to-doctor.sh]
@@ -80,14 +50,16 @@ FAILURES=0
 pass() { PASS=$((PASS + 1)); echo "PASS: $1"; }
 fail() { echo "FAIL: $1" >&2; FAILURES=$((FAILURES + 1)); }
 
+REAL_JQ="$(command -v jq)"
+export REAL_JQ
 BIN="$WORK/bin"
 FIXDIR="$WORK/fixtures"
 APPD="$WORK/app"
 mkdir -p "$BIN" "$FIXDIR" "$APPD/scripts/lib" "$WORK/home" "$WORK/ws" "$WORK/ohstate"
 
 SKIP_RE='sandbox firewall check skipped'
-PASS_RE='Sandbox firewall: DOCKER-USER drops keep the sandbox ports off the LAN'
-WARN_RE='Sandbox firewall: DOCKER-USER is missing'
+PASS_RE='Sandbox firewall: DOCKER-USER: all 14 current policy rules present'
+WARN_RE='Sandbox firewall: current policy not verified'
 
 # --- stubs ------------------------------------------------------------------
 # docker: answers just enough that doctor's container, binding and sandbox
@@ -100,7 +72,15 @@ for a in "$@"; do
   [[ "$prev" == "-f" ]] && tmpl="$a"
   prev="$a"
 done
-for a in "$@"; do [[ "$a" == "network" ]] && exit 1; done
+if [[ "${1:-}" == "network" ]]; then
+  [[ "${NETWORK_FAIL:-}" == "1" ]] && exit 1
+  case "${*: -1}" in
+    hybrid-ai) echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+    coder-net) echo bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ;;
+    *) exit 1 ;;
+  esac
+  exit 0
+fi
 [[ "$*" == *"hermes-agent"* ]] && exit 1
 [[ "$*" == *"name=oh-agent-server"* ]] && exit 0
 case "$tmpl" in
@@ -315,7 +295,7 @@ pid = json.load(sys.stdin).get("next_page_id") or ""
 if pid:
     print(pid)' ;;
   *)
-    exec /usr/bin/jq "$@" ;;
+    exec "$REAL_JQ" "$@" ;;
 esac
 EOF
 
@@ -342,6 +322,7 @@ EOF
 cat > "$BIN/iptables" <<'EOF'
 #!/usr/bin/env bash
 state="${IPT_STATE:?IPT_STATE is not set}"
+printf '%s\n' "$*" >> "$state.calls"
 args=()
 while (( $# )); do
   case "$1" in
@@ -357,6 +338,7 @@ case "$op" in
     case "${IPT_MODE:-ok}" in
       fail)  echo 'iptables: Permission denied (you must be root).' >&2; exit 4 ;;
       empty) exit 0 ;;
+      malformed) echo garbage; exit 0 ;;
     esac
     echo "-N $chain"
     [[ -f "$state" ]] || exit 0
@@ -399,6 +381,7 @@ printf '{"items":[{"id":"t-ok","status":"COMPLETED","updated_at":"%s","error":nu
 cp "$REPO_ROOT/scripts/lib/hybrid-ai-env.sh" "$APPD/scripts/lib/"
 # doctor.sh resolves the pod MagicDNS name through this shared lib.
 cp "$REPO_ROOT/scripts/lib/tailscale-resolve.sh" "$APPD/scripts/lib/"
+cp "$PARENT_SCRIPT" "$APPD/scripts/sandbox-firewall.sh"
 cp "$DOCTOR" "$APPD/doctor.sh"
 chmod +x "$APPD/doctor.sh"
 
@@ -410,10 +393,10 @@ awk '/^# 5a2\. Sandbox network containment/ {skip=1}
      /^# 5b\. Agent clone credentials/ {skip=0}
      !skip' "$APPD/doctor.sh" > "$APPD/doctor-base.sh"
 chmod +x "$APPD/doctor-base.sh"
-if grep -q 'SBX_TAG' "$APPD/doctor-base.sh"; then
+if grep -q 'SBX_RESULT' "$APPD/doctor-base.sh"; then
   fail "could not build the baseline: the 5a2 section was not removed"
 fi
-if ! grep -q 'SBX_TAG' "$APPD/doctor.sh"; then
+if ! grep -q 'SBX_RESULT' "$APPD/doctor.sh"; then
   fail "the doctor.sh under test has no sandbox-firewall check (unpatched base)"
 fi
 
@@ -450,38 +433,13 @@ run_parent_apply() { # state-file
 }
 
 STATE_PRESENT="$FIXDIR/chain.present"
-# Two pre-DNAT rules a previous release installed. The parent script prepends
-# and never deletes, so this is exactly the chain an upgraded host carries, and
-# it is the chain doctor.sh's 5a2 check still keys on. Seeded first, then the
-# real parent run prepends today's rules above them.
-LEGACY_ACCEPT="-i docker0 -p tcp -d 172.17.0.1 --dport 3001 -m comment --comment hybrid-ai-sandbox-egress -j ACCEPT"
-LEGACY_STACK_DROP="-i docker0 ! -o docker0 -m comment --comment hybrid-ai-sandbox-egress -j DROP"
-LEGACY=2
-printf '%s\n%s\n' "$LEGACY_ACCEPT" "$LEGACY_STACK_DROP" > "$STATE_PRESENT"
+: > "$STATE_PRESENT"
 run_parent_apply "$STATE_PRESENT"
-if [[ "$RC" != "0" ]]; then
-  fail "scripts/sandbox-firewall.sh apply exited ${RC}: $(tail -1 "$WORK/parent-apply.log")"
+if [[ "$RC" != 0 || "$(wc -l < "$STATE_PRESENT")" != 14 ]]; then
+  fail "real apply must generate 14 current rules: $(cat "$WORK/parent-apply.log")"
 fi
-
-CHAIN_LINES="$(grep -c . "$STATE_PRESENT" 2>/dev/null || true)"
-if [[ "${CHAIN_LINES:-0}" == "$(( 8 + LEGACY ))" ]]; then
-  pass "parent script added 8 rules above the 2 legacy rules in the stub chain"
-else
-  fail "parent script left ${CHAIN_LINES:-0} rules, expected $(( 8 + LEGACY ))"
-fi
-
-# Two "missing" fixtures derived from the real recording, so their shape is the
-# parent's, not a hand-typed approximation.
 STATE_NONE="$FIXDIR/chain.none"
 : > "$STATE_NONE"
-STATE_NOACCEPT="$FIXDIR/chain.noaccept"
-grep -Fv -- ' -j ACCEPT' "$STATE_PRESENT" > "$STATE_NOACCEPT" 2>/dev/null || : > "$STATE_NOACCEPT"
-ACCEPTS="$(grep -c -- ' -j ACCEPT' "$STATE_PRESENT" || true)"
-if [[ "$(grep -c . "$STATE_NOACCEPT" 2>/dev/null || echo 0)" == "$(( CHAIN_LINES - ACCEPTS ))" ]]; then
-  pass "derived an 'only the webhook ACCEPT missing' fixture from the recorded chain"
-else
-  fail "could not derive the 'ACCEPT missing' fixture from the recorded chain"
-fi
 
 # --- doctor runs ------------------------------------------------------------
 # The counts, not just the exit code, are compared: this scratch host has a
@@ -499,6 +457,9 @@ count_of() { # file key -> number from the summary line
 run_doctor() { # name doctor-path state-file [extra env assignments...] ; sets RC
   local name="$1" doc="$2" st="$3"
   shift 3
+  local before
+  before="$(cat "$st")"
+  : > "$st.calls"
   (
     cd "$APPD" || exit 1
     env IPT_MODE=ok "$@" IPT_STATE="$st" \
@@ -507,6 +468,12 @@ run_doctor() { # name doctor-path state-file [extra env assignments...] ; sets R
       timeout 120 bash "$doc" --no-cloud
   ) > "$WORK/out.$name" 2>&1
   RC=$?
+  if grep -Evq -- '^-w 5 -S DOCKER-USER$' "$st.calls"; then
+    fail "$name: doctor invoked a firewall operation other than listing"
+  fi
+  if [[ "$(cat "$st")" != "$before" ]]; then
+    fail "$name: doctor changed the rule set"
+  fi
 }
 
 # The baseline: no check at all, so nothing here can be attributed to it.
@@ -556,67 +523,70 @@ else
   fail "out-of-mesh resolution: the pod check reported a pass anyway"
 fi
 
-# --- (b) rules missing ------------------------------------------------------
+# --- Missing/partial/corrupt/order cases ------------------------------------
+assert_warn() {
+  local name="$1" pattern="$2"
+  if grep -q "$WARN_RE" "$WORK/out.$name" && grep -q -- "$pattern" "$WORK/out.$name" \
+     && ! grep -q "$PASS_RE" "$WORK/out.$name" \
+     && [[ "$RC" == 1 ]] && grep -q '0 failure(s)' "$WORK/out.$name" \
+     && [[ "$(count_of "$WORK/out.$name" 'warning(s)')" == "$(( $(count_of "$WORK/out.base" 'warning(s)') + 1 ))" ]]; then
+    pass "$name: precise warning, no pass or failure, exactly one added warning"
+  else
+    fail "$name: expected warning matching $pattern (rc=$RC)"
+  fi
+}
 run_doctor none "$APPD/doctor.sh" "$STATE_NONE"
-RC_NONE=$RC
-if grep -q "$WARN_RE" "$WORK/out.none"; then
-  pass "all rules absent: a warn names the missing DOCKER-USER rules"
+assert_warn none 'missing rule:'
+# Each of the 14 rules independently: detects partial sets, not merely counts.
+for n in {1..14}; do
+  st="$FIXDIR/missing.$n"
+  sed "${n}d" "$STATE_PRESENT" > "$st"
+  run_doctor "missing.$n" "$APPD/doctor.sh" "$st"
+  assert_warn "missing.$n" 'missing rule:'
+  expected="$(sed -n "${n}p" "$STATE_PRESENT")"
+  if grep -Fq -- "missing rule: $expected" "$WORK/out.missing.$n"; then
+    pass "missing.$n identifies the exact missing rule"
+  else
+    fail "missing.$n did not identify the missing rule"
+  fi
+done
+# Same total count with a duplicate replacing a missing rule cannot pass.
+{ head -n 13 "$STATE_PRESENT"; head -n 1 "$STATE_PRESENT"; } > "$FIXDIR/duplicate"
+run_doctor duplicate "$APPD/doctor.sh" "$FIXDIR/duplicate"
+assert_warn duplicate 'duplicate rule:'
+{ tail -n 1 "$STATE_PRESENT"; head -n 13 "$STATE_PRESENT"; } > "$FIXDIR/reordered"
+run_doctor reordered "$APPD/doctor.sh" "$FIXDIR/reordered"
+assert_warn reordered 'ACCEPT below DROP'
+for target in RETURN ACCEPT DROP; do
+  { echo "-j $target"; cat "$STATE_PRESENT"; } > "$FIXDIR/foreign.$target"
+  run_doctor "foreign.$target" "$APPD/doctor.sh" "$FIXDIR/foreign.$target"
+  assert_warn "foreign.$target" 'foreign rule precedes'
+done
+{ cat "$STATE_PRESENT"; echo '-j RETURN'; } > "$FIXDIR/return-last"
+run_doctor return-last "$APPD/doctor.sh" "$FIXDIR/return-last"
+if grep -q "$PASS_RE" "$WORK/out.return-last"; then
+  pass "foreign RETURN after the policy is accepted"
 else
-  fail "all rules absent: no warn line for the missing rules"
+  fail "foreign RETURN after the policy rejected"
 fi
-if grep -q "$WARN_RE" "$WORK/out.none" \
-   && grep -q "webhook ACCEPT" "$WORK/out.none" \
-   && grep -q "DROP from docker0 to other Docker networks" "$WORK/out.none" \
-   && grep -q "DROP from external interfaces into docker0" "$WORK/out.none"; then
-  pass "all rules absent: the warn names all three missing rules"
+{ cat "$STATE_PRESENT"; echo '-i docker0 ! -o docker0 -m comment --comment hybrid-ai-sandbox-egress -j DROP'; } > "$FIXDIR/legacy"
+run_doctor legacy "$APPD/doctor.sh" "$FIXDIR/legacy"
+assert_warn legacy 'out-of-policy tagged rule'
+# Kernel listing form: implied modules, destination before interface, reversed
+# conntrack state order, quoted comment (the stub quotes comments on output).
+sed -e 's/-p tcp /-p tcp -m tcp /g' -e 's/-p udp /-p udp -m udp /g' \
+    -e 's/ESTABLISHED,RELATED/RELATED,ESTABLISHED/' \
+    -e 's/-i docker0 -d \([^ ]*\)/-d \1 -i docker0/' "$STATE_PRESENT" > "$FIXDIR/normalised"
+run_doctor normalised "$APPD/doctor.sh" "$FIXDIR/normalised"
+if grep -q "$PASS_RE" "$WORK/out.normalised"; then
+  pass "kernel-normalised rule listing accepted"
 else
-  fail "all rules absent: the warn does not name all three missing rules"
+  fail "kernel-normalised rule listing rejected"
 fi
-if [[ "$RC_NONE" == "1" ]]; then
-  pass "all rules absent: exit code is 1 (warn on a healthy baseline of ${RC_BASE})"
-else
-  fail "all rules absent: exit code is ${RC_NONE}, expected 1"
-fi
-if [[ "$RC_NONE" != "2" ]]; then
-  pass "all rules absent: exit code is never 2 (check is warning-only)"
-else
-  fail "all rules absent: exit code is 2 -- the check must never fail the run"
-fi
-if ! grep -q '✗' "$WORK/out.none" && grep -q '0 failure(s)' "$WORK/out.none"; then
-  pass "all rules absent: no failure line is printed"
-else
-  fail "all rules absent: a failure line was printed"
-fi
-if [[ "$(count_of "$WORK/out.none" 'warning(s)')" == "$(( $(count_of "$WORK/out.base" 'warning(s)') + 1 ))" \
-   && "$(count_of "$WORK/out.none" passed)" == "$(count_of "$WORK/out.base" passed)" ]]; then
-  pass "all rules absent: exactly one extra warning, and the pass count is unchanged"
-else
-  fail "all rules absent: the summary counts do not match the baseline plus one warning"
-fi
-
-run_doctor noaccept "$APPD/doctor.sh" "$STATE_NOACCEPT"
-RC_NOACCEPT=$RC
-if grep -q "webhook ACCEPT" "$WORK/out.noaccept"; then
-  pass "ACCEPT missing: the warn names the webhook ACCEPT rule"
-else
-  fail "ACCEPT missing: the warn does not name the webhook ACCEPT rule"
-fi
-if grep -q "DROP from docker0 to other Docker networks" "$WORK/out.noaccept" \
-   || grep -q "DROP from external interfaces into docker0" "$WORK/out.noaccept"; then
-  fail "ACCEPT missing: the warn also names a DROP that is still installed"
-else
-  pass "ACCEPT missing: the warn names only the rule that is actually gone"
-fi
-if [[ "$RC_NOACCEPT" == "1" ]]; then
-  pass "ACCEPT missing: exit code is 1"
-else
-  fail "ACCEPT missing: exit code is ${RC_NOACCEPT}, expected 1"
-fi
-if [[ "$RC_NOACCEPT" != "2" ]] && ! grep -q '✗' "$WORK/out.noaccept"; then
-  pass "ACCEPT missing: exit code is never 2 and no failure line is printed"
-else
-  fail "ACCEPT missing: exit code is 2 or a failure line was printed"
-fi
+# Matching ports alone cannot hide a widened ACCEPT.
+sed 's/--dport 3000/--dport 3000:3999/' "$STATE_PRESENT" > "$FIXDIR/widened"
+run_doctor widened "$APPD/doctor.sh" "$FIXDIR/widened"
+assert_warn widened 'missing rule:'
 
 # --- (c) probe unavailable --------------------------------------------------
 # Each flavour must print a skip line, stay silent about pass/warn, and leave
@@ -683,6 +653,13 @@ if grep -q 'not a Linux host' "$WORK/out.nonlinux"; then
 else
   fail "non-Linux host: skip reason is not the platform"
 fi
+
+run_doctor discovery "$APPD/doctor.sh" "$STATE_PRESENT" NETWORK_FAIL=1
+check_skip_flavour discovery "bridge discovery unavailable"
+run_doctor malformed "$APPD/doctor.sh" "$STATE_PRESENT" IPT_MODE=malformed
+check_skip_flavour malformed "unexpected listing"
+# The helper itself must not apply when checked: all doctor runs above log -S
+# only, and their fixture files are unchanged.
 
 # --- proof that the harness rejects an unpatched doctor.sh -------------------
 # A doctor.sh without the check prints neither a pass nor a skip line, so (a)

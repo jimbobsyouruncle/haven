@@ -77,18 +77,20 @@ set -Eeuo pipefail
 #   deploy/hybrid-ai-firewall.service.
 #
 # USAGE:
-#   ./scripts/sandbox-firewall.sh apply
+#   ./scripts/sandbox-firewall.sh {apply|check}
 #
-#   Run as root. `apply` is the only verb: it adds missing rules and leaves
-#   everything else alone.
+#   Run as root. `apply` adds/repairs rules; `check` only reads the chain and
+#   discovers bridges. check exits 1 for policy drift, 6 when unavailable.
+#   Both modes use the same policy; neither changes a foreign rule.
 #
 # EXIT CODES:
 #   0  rules present (some added, repaired, or all already present)
-#   1  the ordering self-check found an owned ACCEPT below an owned DROP
+#   1  apply: ordering self-check failed; check: policy drift detected
 #   2  bad usage
 #   3  iptables is not installed
 #   4  the DOCKER-USER chain does not exist (Docker is not up yet)
 #   5  iptables refused an insert, or a repair could not complete a delete
+#   6  check only: chain or complete bridge topology unavailable
 # ---------------------------------------------------------------------------
 
 readonly TAG="hybrid-ai-sandbox-egress"
@@ -113,10 +115,10 @@ readonly APP_WEB_PORT="3000"
 readonly SANDBOX_BLOCKED_DESTS=("10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" "100.64.0.0/10")
 
 usage() {
-  printf 'usage: %s apply\n' "${0##*/}" >&2
+  printf 'usage: %s {apply|check}\n' "${0##*/}" >&2
 }
 
-if [[ "${1:-}" != "apply" ]]; then
+if [[ "${1:-}" != "apply" && "${1:-}" != "check" ]]; then
   usage
   exit 2
 fi
@@ -125,16 +127,23 @@ if [[ $# -ne 1 ]]; then
   exit 2
 fi
 
+readonly MODE="$1"
+unavailable() {
+  printf 'sandbox-firewall: %s\n' "$1" >&2
+  if [[ "$MODE" == "check" ]]; then exit 6; fi
+  exit "$2"
+}
+
 if ! command -v iptables >/dev/null 2>&1; then
-  printf 'sandbox-firewall: iptables is not installed; cannot apply the sandbox rules.\n' >&2
-  exit 3
+  unavailable "iptables not installed" 3
 fi
 
 IPT=(iptables -w "$IPT_LOCK_WAIT")
-
-if ! "${IPT[@]}" -S "$CHAIN" >/dev/null 2>&1; then
-  printf 'sandbox-firewall: the %s chain does not exist. Docker has not started yet; the boot unit hybrid-ai-firewall.service will apply these rules once it has.\n' "$CHAIN" >&2
-  exit 4
+if ! INITIAL_LISTING="$("${IPT[@]}" -S "$CHAIN" 2>/dev/null)"; then
+  unavailable "cannot read $CHAIN (needs root, or Docker is not up); DOCKER-USER chain does not exist or is unreadable" 4
+fi
+if [[ "$MODE" == "check" && "$INITIAL_LISTING" != "-N $CHAIN" && "$INITIAL_LISTING" != "-N $CHAIN"$'\n'* ]]; then
+  unavailable "empty or unexpected $CHAIN listing" 4
 fi
 
 # -- Bridge discovery -------------------------------------------------------
@@ -148,14 +157,17 @@ resolve_bridge() { # network-name -> bridge interface on stdout, non-zero if unk
 }
 
 BRIDGES=()
+DISCOVERY_INCOMPLETE=0
 for net in "${APP_NETWORKS[@]}"; do
   if ! command -v docker >/dev/null 2>&1; then
     printf 'sandbox-firewall: docker is not installed; skipping the bridge rules for network %s.\n' "$net" >&2
+    DISCOVERY_INCOMPLETE=1
     continue
   fi
   br="$(resolve_bridge "$net" || true)"
   if [[ -z "$br" ]]; then
     printf 'sandbox-firewall: could not resolve network %s; skipping its bridge rules.\n' "$net" >&2
+    DISCOVERY_INCOMPLETE=1
     continue
   fi
   BRIDGES+=("$br")
@@ -241,6 +253,9 @@ normalise_rule() { # rule text -> canonical form on stdout
       neg=""
       continue
     fi
+    if [[ "$opt" == "--comment" && "$val" == "\"$TAG\"" ]]; then
+      val="$TAG"
+    fi
     if [[ "$val" == *,* ]]; then
       IFS=, read -r -a parts <<< "$val"
       for (( j = 1; j < ${#parts[@]}; j++ )); do
@@ -290,6 +305,62 @@ is_owned() { # rule-line with the "-A CHAIN " prefix already stripped
   done
   return 1
 }
+
+# -- Read-only policy validation --------------------------------------------
+# Uses the same generated RULES and normalisation as apply. Never executes -C,
+# -I or -D. Unknown/foreign rules before the policy ends could short-circuit
+# first-match evaluation, so report them conservatively rather than infer safety.
+if [[ "$MODE" == "check" ]]; then
+  (( DISCOVERY_INCOMPLETE == 0 )) || unavailable "cannot resolve all app bridges; policy not verified" 4
+  seen=()
+  for own in "${OWNED[@]}"; do seen+=(0); done
+  drift=0
+  first_drop=0
+  foreign_before=0
+  while IFS= read -r line; do
+    [[ "$line" == "-N $CHAIN" ]] && continue
+    if [[ "$line" != "-A $CHAIN "* ]]; then
+      unavailable "unexpected $CHAIN listing" 4
+    fi
+    body="${line#"-A $CHAIN "}"
+    candidate="$(normalise_rule "$body")"
+    match=-1
+    for idx in "${!OWNED[@]}"; do
+      if [[ "$candidate" == "${OWNED[idx]}" ]]; then match=$idx; break; fi
+    done
+    if (( match < 0 )); then
+      foreign_before=1
+      if [[ "$body" == *"$TAG"* ]]; then
+        printf 'out-of-policy tagged rule: %s\n' "$body"
+        drift=1
+      fi
+      continue
+    fi
+    if (( foreign_before )); then
+      printf 'ordering: foreign rule precedes current policy rule: %s\n' "$body"
+      drift=1
+    fi
+    seen[match]=$(( seen[match] + 1 ))
+    if [[ "$body" == *"-j DROP"* ]]; then
+      first_drop=1
+    elif (( first_drop )); then
+      printf 'ordering: ACCEPT below DROP: %s\n' "$body"
+      drift=1
+    fi
+  done <<< "$INITIAL_LISTING"
+  for idx in "${!RULES[@]}"; do
+    if (( seen[idx] == 0 )); then
+      printf 'missing rule: %s\n' "${RULES[idx]}"
+      drift=1
+    elif (( seen[idx] > 1 )); then
+      printf 'duplicate rule: %s\n' "${RULES[idx]}"
+      drift=1
+    fi
+  done
+  (( drift == 0 )) || exit 1
+  printf '%s: all %d current policy rules present; ACCEPTs precede DROPs and policy precedes foreign rules\n' "$CHAIN" "${#RULES[@]}"
+  exit 0
+fi
 
 # -- Apply ------------------------------------------------------------------
 added=0
