@@ -53,7 +53,7 @@ is missing or incompatible. Preserve existing backups and recovery archives.
    PREP="/opt/.haven-driver-$SHA"
    test ! -e "$PREP"
    umask 022
-   git -c credential.helper= -c core.hooksPath=/dev/null clone --no-checkout      https://github.com/jimbobsyouruncle/haven.git "$PREP"
+   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c http.extraHeader= -c core.hooksPath=/dev/null clone --no-checkout https://github.com/jimbobsyouruncle/haven.git "$PREP"
    git -C "$PREP" merge-base --is-ancestor "$SHA" origin/main
    git -C "$PREP" -c core.hooksPath=/dev/null checkout --detach "$SHA"
    test "$(git -C "$PREP" rev-parse HEAD)" = "$SHA"

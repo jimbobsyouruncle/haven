@@ -973,6 +973,8 @@
   - def test_first_rollback_preserves_rendered_runtime_inputs(self)
   - def test_all_seven_layers_are_verified(self)
   - def test_writable_selection_refused_and_no_environment_bypass(self)
+  - def test_dns_credential_readonly_mount_and_validator_capability(self)
+  - def test_inspected_configuration_id_may_differ_from_selected_index(self)
   - def test_production_workflow_requires_manual_exact_sha_authorization(self)
   - def test_cli_gate_annotation_never_contains_subprocess_output(self)
   - def test_approved_alternative_is_exported_by_id_and_preserved_on_rollback(self)

@@ -54,6 +54,7 @@ class MigrationTests(unittest.TestCase):
         self.running_image = 'sha256:' + 'a' * 64
         self.recovery_image = self.running_image
         self.image_metadata = None
+        self.proxy_mounts = []
         self.export_missing = False
         self.export_empty = False
         self.tx = MODULE.Transaction(self.root, self.runner, os.getuid())
@@ -151,7 +152,7 @@ class MigrationTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, output, '')
             if args[1:3] == ['container', 'inspect'] and args[-2] == '{{json .}}':
                 return subprocess.CompletedProcess(args, 0, json.dumps({
-                    'Config': {'Env': ['LOCAL_DOMAIN=fixture']}}), '')
+                    'Config': {'Env': ['LOCAL_DOMAIN=fixture']}, 'Mounts': self.proxy_mounts}), '')
             if args[1] == 'image':
                 metadata = self.image_metadata or dict(Id=self.recovery_image, Os='linux',
                                                        Architecture='arm64', Variant='', Config=self.config['config'],
@@ -408,6 +409,40 @@ class MigrationTests(unittest.TestCase):
         self.proxy_missing = True
         with patch.dict(os.environ, HYBRID_AI_SKIP_PROXY_RECOVERY='1', CADDY_IMAGE='caddy:latest'):
             self.assert_recovery_refused('RECOVERY_IMAGE')
+
+    def test_dns_credential_readonly_mount_and_validator_capability(self):
+        token = self.tx.path('/etc/hybrid-ai/dns-token')
+        token.write_text('SYNTHETIC_DNS_TOKEN')
+        token.chmod(0o600)
+        destination = '/run/secrets/cloudflare_dns_token'
+        (self.tx.legacy / 'status/Caddyfile').write_text('dns cloudflare {file.' + destination + '}')
+        self.assert_recovery_refused('RECOVERY_CONFIGURATION')
+        self.proxy_mounts = [dict(Type='bind', Source=str(token), Destination=destination),
+                             dict(Type='bind', Source='/var/run/docker.sock', Destination='/var/run/docker.sock')]
+        token.chmod(0o644)
+        self.assert_recovery_refused('RECOVERY_CONFIGURATION')
+        token.chmod(0o600)
+        self.tx.deploy(self.sha)
+        commands = [c for c in self.calls if c[:2] == ['docker', 'run']]
+        self.assertTrue(commands)
+        for command in commands:
+            self.assertIn('--cap-drop=ALL', command)
+            self.assertIn('--cap-add=NET_BIND_SERVICE', command)
+            self.assertIn('--network=none', command)
+            self.assertIn('type=bind,src=' + str(token) + ',dst=' + destination + ',readonly', command)
+            self.assertNotIn('/var/run/docker.sock', ' '.join(command))
+            self.assertNotIn('SYNTHETIC_DNS_TOKEN', ' '.join(command))
+        self.assertEqual(token.read_text(), 'SYNTHETIC_DNS_TOKEN')
+        self.assertEqual(list(self.tx.state.glob('proxy-env-*')), [])
+        self.assert_preserved()
+
+    def test_inspected_configuration_id_may_differ_from_selected_index(self):
+        self.approve_recovery('sha256:' + 'd' * 64)
+        self.image_metadata = dict(Id=self.config_id, Os='linux', Architecture='arm64',
+                                   Config=self.config['config'],
+                                   RootFS={'Layers': self.config['rootfs']['diff_ids']})
+        self.tx.deploy(self.sha)
+        self.assertEqual(self.tx.load()['proxy_recovery']['configuration_id'], self.config_id)
 
     def test_production_workflow_requires_manual_exact_sha_authorization(self):
         workflow = (Path(__file__).resolve().parent.parent /

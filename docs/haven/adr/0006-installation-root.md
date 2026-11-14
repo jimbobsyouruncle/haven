@@ -55,8 +55,10 @@ Caddy version, requires the Cloudflare and RFC2136 DNS modules, and validates th
 installed Caddyfile using the running proxy's effective environment. These checks
 publish no environment/configuration contents or subprocess output. Validation
 containers have no network, published ports, persistent-data mounts or Docker
-socket; the configuration is read-only, data/config are temporary, capabilities
-are dropped and resource limits apply. This does not replace the running proxy.
+socket; the configuration and required DNS credential bind are read-only,
+data/config are temporary, all capabilities except NET_BIND_SERVICE are dropped
+and resource limits apply. The retained Caddy executable needs that capability
+even for isolated validation; this does not change production security settings. This does not replace the running proxy.
 
 Per-deployment approval/evidence JSON, 24-hour expiration, hashed manual receipts,
 repeated recovery rehearsals and redundant host authorization checkpoints are

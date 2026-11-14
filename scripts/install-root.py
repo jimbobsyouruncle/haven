@@ -249,6 +249,21 @@ class Transaction:
         self.trusted(caddyfile)
         if not caddyfile.is_file():
             raise Refusal('RECOVERY_CONFIGURATION: installed Caddyfile unavailable')
+        mounts = []
+        # Match the existing TLS validator's protected credential mount, never
+        # inherit arbitrary production volumes or the Docker socket.
+        secrets = set(re.findall(r'\{file\.(/run/secrets/(?:cloudflare_dns_token|rfc2136_key_secret))\}',
+                                 caddyfile.read_text()))
+        for destination in sorted(secrets):
+            candidates = [m for m in running.get('Mounts', [])
+                          if m.get('Destination') == destination and m.get('Type') == 'bind']
+            if len(candidates) != 1:
+                raise Refusal('RECOVERY_CONFIGURATION: DNS credential bind unavailable')
+            path = Path(candidates[0]['Source'])
+            self.trusted(path)
+            if not path.is_file() or not path.stat().st_size or path.stat().st_mode & 0o077:
+                raise Refusal('RECOVERY_CONFIGURATION: DNS credential must be a private nonempty file')
+            mounts += ['--mount', 'type=bind,src=' + str(path) + ',dst=' + destination + ',readonly']
         # Only the proxy's effective environment, never the entire stack's
         # credentials. The private temporary file is removed on every exit.
         fd, name = tempfile.mkstemp(prefix='proxy-env-', dir=self.state)
@@ -259,11 +274,12 @@ class Transaction:
                         raise Refusal('RECOVERY_CONFIGURATION: unsupported proxy environment')
                     stream.write(entry + '\n')
             base = ['docker', 'run', '--rm', '--pull=never', '--network=none',
-                    '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
+                    '--read-only', '--cap-drop=ALL', '--cap-add=NET_BIND_SERVICE',
+                    '--security-opt=no-new-privileges',
                     '--memory=128m', '--cpus=0.5', '--tmpfs', '/data', '--tmpfs', '/config',
                     '--env-file', name, '--mount',
                     'type=bind,src=' + str(caddyfile) + ',dst=/etc/caddy/Caddyfile,readonly',
-                    '--entrypoint', '/usr/bin/caddy', recovery]
+                    *mounts, '--entrypoint', '/usr/bin/caddy', recovery]
             version = self.gate_command('RECOVERY_COMPATIBILITY', base + ['version'])
             current = self.gate_command('RECOVERY_COMPATIBILITY',
                        ['docker', 'exec', 'hybrid-ai-proxy', '/usr/bin/caddy', 'version'])
