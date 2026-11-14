@@ -175,6 +175,24 @@
 - status
 - proxy
 
+## docs/haven/identity/inventory.py
+- def registry_reference(line)
+- def git(root, *args)
+- def classify(repo, path, line)
+- def scan(root, repo, revision)
+- def main()
+
+## docs/haven/identity/test_inventory.py
+- class InventoryTests(TestCase)
+  - def setUp(self)
+  - def git(self, *args)
+  - def commit(self)
+  - def test_reads_pinned_objects_including_hidden_files_not_worktree(self)
+  - def test_symlinks_refused_without_following(self)
+  - def test_non_utf8_cannot_disappear_from_coverage(self)
+  - def test_missing_revision_refuses(self)
+  - def test_registry_authority(self)
+
 ## docs/haven/rename/audit.py
 - def git(*args)
 - def has_ghcr_reference(line)

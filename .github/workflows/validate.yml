@@ -63,6 +63,10 @@ jobs:
           done < <(git ls-files '*.py')
           exit $fail
 
+      - name: Identity inventory safety tests
+        # Offline Git fixtures: immutable objects only, no local config reads.
+        run: python3 docs/haven/identity/test_inventory.py
+
       - name: Generated pipe is in sync with its sources
         # runpod_pipe.py is concatenated from runpod_core.py and
         # pipe_wrapper.py. A forgotten rebuild means the file you paste into

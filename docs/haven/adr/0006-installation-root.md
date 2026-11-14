@@ -1,5 +1,10 @@
 # ADR-0006 — Transactional installation root migration
 
+Supersession notice (2026-11-14): [ADR-0007](0007-complete-platform-identity.md)
+reopens retained legacy identities and manual-only deployment as new owner scope.
+The decision and evidence below remain the historical #187 contract; its
+transaction, integrity, recovery and security controls remain required.
+
 Status: accepted owner decision for implementation. Production deployment remains
 an explicit owner action; source changes and CI do not establish runtime migration.
 
