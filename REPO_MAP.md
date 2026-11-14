@@ -97,6 +97,18 @@
 - docs/haven/adr/0004-github-epic-governance.md - ADR-0004 — GitHub epics and agent governance
 - docs/haven/adr/0005-evidence-based-completion.md - ADR-0005 — Evidence-based issue completion
 - docs/haven/adr/0006-installation-root.md - ADR-0006 — Transactional installation root migration
+- docs/haven/adr/0007-complete-platform-identity.md - ADR-0007 — Complete Haven identity and continuous deployment
+## docs/haven/identity
+
+- docs/haven/identity/CONTINUOUS-DEPLOYMENT.md - Automatic deployment design and activation acceptance
+- docs/haven/identity/CUTOVER.md - Production cutover, acceptance and retirement
+- docs/haven/identity/DEPENDENCIES.md - Identity dependency register
+- docs/haven/identity/README.md - Final platform identity consolidation
+- docs/haven/identity/inventory.csv
+- docs/haven/identity/inventory.py - Inventory immutable public Git objects; never open deployment/local env files.
+- docs/haven/identity/manifest.json
+- docs/haven/identity/summary.json
+- docs/haven/identity/test_inventory.py - Immutable-object coverage and fail-closed discovery regression tests.
 ## docs/haven/rename
 
 - docs/haven/rename/COMPATIBILITY.md - HAVEN-003 repository identity compatibility preparation
