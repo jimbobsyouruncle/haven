@@ -176,6 +176,7 @@
 - proxy
 
 ## docs/haven/identity/inventory.py
+- def registry_reference(line)
 - def git(root, *args)
 - def classify(repo, path, line)
 - def scan(root, repo, revision)
@@ -190,6 +191,7 @@
   - def test_symlinks_refused_without_following(self)
   - def test_non_utf8_cannot_disappear_from_coverage(self)
   - def test_missing_revision_refuses(self)
+  - def test_registry_authority(self)
 
 ## docs/haven/rename/audit.py
 - def git(*args)

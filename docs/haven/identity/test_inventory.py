@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from inventory import scan
+from inventory import registry_reference, scan
 
 
 class InventoryTests(unittest.TestCase):
@@ -55,6 +55,18 @@ class InventoryTests(unittest.TestCase):
         self.commit()
         with self.assertRaises(subprocess.CalledProcessError):
             scan(self.root, "haven", "0" * 40)
+
+    def test_registry_authority(self):
+        for value in ("ghcr.io/owner/image:tag", "https://ghcr.io/owner/image"):
+            with self.subTest(value=value):
+                self.assertTrue(registry_reference(value))
+        for value in ("https://evil.invalid/ghcr.io/image",
+                      "https://ghcr.io.evil.invalid/image",
+                      "https://ghcr.io@evil.invalid/image",
+                      "https://user@ghcr.io/image",
+                      "https://ghcr.io:444/image", "http://ghcr.io/image"):
+            with self.subTest(value=value):
+                self.assertFalse(registry_reference(value))
 
 
 if __name__ == "__main__":

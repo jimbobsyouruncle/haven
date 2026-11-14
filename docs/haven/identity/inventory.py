@@ -9,10 +9,25 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit
 
 TOKEN = re.compile(r"hybrid(?:[-_ ]ai)?(?:[-_][A-Za-z0-9_.@-]+)?", re.I)
 BASE = "bdfbbc6269bf3b5d6430b13cdea587c833ea1832"
 WORKER = "cf402976b09d8d155c62f5f4b83d174b35d3521f"
+
+
+def registry_reference(line):
+    # Classify artifact references by parsed authority, never host substrings.
+    for candidate in re.findall(r"(?:https?://)?[A-Za-z0-9._@:+-]+/[A-Za-z0-9_./:@+-]+", line):
+        try:
+            parsed = urlsplit(candidate if "://" in candidate else "https://" + candidate)
+            if (parsed.scheme == "https" and parsed.hostname == "ghcr.io"
+                    and parsed.username is None and parsed.password is None
+                    and parsed.port in (None, 443)):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def git(root, *args):
@@ -25,7 +40,7 @@ def classify(repo, path, line):
         return "4", "historical-decision"
     if path in ("REPO_MAP.md", "CODE_INDEX.md"):
         return "1", "generated-navigation"
-    if repo == "worker" or "runpod-hybrid-worker" in line or "ghcr.io/" in line:
+    if repo == "worker" or "runpod-hybrid-worker" in line or registry_reference(line):
         return "3", "external-artifact"
     if re.search(r"restic|--tag|cookie|credstore|authorized_keys|polkit|flock|lock|/var/|/etc/|/home/", line, re.I):
         return "2", "persistent-or-security"
