@@ -53,69 +53,58 @@ change with that behavior, while their immutable baseline records stay intact.
    Change consumers together; regenerate maps with the pinned generator.
 2. **Persistent/security:** state paths, credentials, cookie, account, lock,
    authorization and backup selectors. Controlled transaction and negative tests.
-3. **External:** worker repository, GHCR artifacts and dependencies. Coordinate
-   publication and compatibility before switching consumers.
+3. **External:** worker repository and published application contracts remain unchanged.
+   No worker publication or rename is a Haven dependency.
 4. **Historical:** previous audit and ADR records. Preserve evidence; add explicit
    supersession links. Historical Git, closed issues and snapshots are immutable.
 5. **Obsolete compatibility:** old repository selector and aliases. Remove active
    selection only after all callers use Haven; retain narrowly scoped import and
    recovery readers where historical artifacts require them.
 
-## Implementation Card — architecture and discovery packet
+## Approved architecture and implementation proposals
 
-Objective: document the complete consolidation before changing coupled security
-and storage behavior. Files: this directory, ADR-0007, decision index, generated
-maps and one additive offline inventory test step in `validate.yml`.
-Deliverable: draft PR, then Ready after current-head required checks pass;
-parent epic and seven dependent tracking issues. Branch:
-`feature/haven-final-identity`. No automatic issue closure.
+Owner-approved simplified architecture: personal single-owner Pi deployment,
+bounded extensions to ADR-0006, canonical Haven-owned identities, unchanged
+third-party applications and worker, existing verification and automatic deployment
+through the existing Actions/host mechanism. Exact code, host mappings and trigger
+wiring remain implementation proposals subject to normal review and tests.
 
-The owner has explicitly authorized repository implementation and PR preparation;
-no repeated implementation permission is requested. Security-sensitive runtime
-implementation must receive the architecture review required by AGENTS.md before
-changing accounts, polkit, firewall, deployment authorization or storage handoff.
-Subsequent bounded PRs follow the issue order below; this first PR changes none of
-those runtime contracts. Rollback: revert the documentation/tooling commit.
-Validation: reproducible inventory, scanner refusal fixtures, map freshness,
-repository static checks and required GitHub checks. Risks: source cannot reveal
-private host overrides or external account policies; cutover must refuse unknown
-layouts rather than guessing. No private host discovery is authorized here.
+The worker repository is entirely excluded from epic #193 and #194–#200 changes,
+dependencies, deliverables and acceptance criteria. Its historical inventory is
+read-only compatibility evidence, never an action list. Preserve its deployed
+source/images/logs/configuration/API/deployment/infrastructure exactly. Optional
+future worker proposals require separate owner approval and cannot block Haven.
 
-## Delivery order and review boundaries
+## Three cohesive implementation PRs
 
-Tracking: [epic #193](https://github.com/jimbobsyouruncle/haven/issues/193);
-source/config #194, units/accounts #195, Docker #196, data/backups #197,
-security/integrations #198, continuous deployment #199, runtime/retirement #200.
-Prepare #197's mappings/readers with #194, then #195/#196 against those contracts;
-#198 reviews security design before their sensitive implementation and validates
-the integrated result. #199 can be tested inertly in preparation; #200 accepts
-canonical runtime before #199 activation and returns for final CD/cleanup gates.
-This is a staged dependency, not a cycle requiring CD before canonical acceptance.
+| PR | Traceability | Bounded deliverable |
+| --- | --- | --- |
+| Canonical Haven source and configuration | #194; relevant #198 checks | Platform namespaces/config/templates/callers and focused fixtures; preserve application identities and worker contracts |
+| Coordinated host, accounts, persistent data and Docker migration | #195–#198; #200 cutover/acceptance | One coherent extension of existing transaction, locks/recovery, accounts/SSH/polkit, backup mappings, mounts and firewall; existing verification extensions and operator checklist |
+| Automatic deployment preparation and activation | #199; #200 deployment evidence | Existing Actions/host path, trusted exact-main validation, serialized deploy and mandatory verification; manual recovery; activation only with production authorization |
 
-1. Review this architecture, inventory and migration threat model.
-2. Prepare data/backup migration and historical restore readers; prepare canonical
-   config and source consumers. Neither may activate the new stack independently.
-3. Prepare systemd/account and Docker handoffs behind the same inactive,
-   versioned migration transaction. Security/integration tests bind the pieces.
-4. Prepare automatic deployment in an inert candidate with no production trigger
-   or activation path from a normal merge. Manual recovery remains available.
-5. Merge reviewed preparatory PRs by owner action. Freeze production deployment,
-   authorize one coordinated cutover only when all implementations are ready.
-6. Run runtime acceptance, then separately authorize automatic deployment;
-   demonstrate a protected-main merge and recovery. Only then approve cleanup.
+The seven issues remain traceability workstreams, not seven PR prerequisites.
+Coordinate mappings within the second PR; adjust boundaries only for safe atomic
+deployment or reviewability. The third PR can be prepared alongside stable interfaces;
+production activation follows accepted canonical cutover. No extra activation PR,
+reconciliation service, generalized filesystem engine, retirement-manifest engine
+or second comprehensive verifier is required.
 
-Data mapping is designed before Docker recreation; account and firewall consumers
-are ready before the new network or SSH entrypoint activates. Keep the preparation
-period on the existing identity. Split PRs may add dormant modules and fixtures,
-but must not change production defaults piecemeal. A bounded maintenance window
-performs one activation, avoiding prolonged split operation.
+## This revision and authorization
 
-See [ADR](../adr/0007-complete-platform-identity.md),
-[cutover/recovery/cleanup](CUTOVER.md) and
-[automatic deployment acceptance](CONTINUOUS-DEPLOYMENT.md).
+PR #201 on `feature/haven-final-identity` revises documentation and live issue/PR
+dispositions only. No migration code is implemented. Rollback is a documentation
+revert; it does not affect production. Validate inventory integrity/scanner fixtures,
+map freshness, static checks and current-head CI/SAST. Preserve baseline inventory
+and ADR-0006/#187 evidence rather than rescanning completed runtime work.
 
-OWNER ACTION GATE: architecture/security review before runtime implementation.
-Production execution, secrets/settings changes, repository rename, automatic
-deployment activation, cleanup and issue closure each require separate explicit
-owner authorization. This packet is implementation planning, not platform
-completion or production acceptance.
+Owner authorization already covers bounded implementation PR preparation; no
+additional permission is requested. Security-sensitive implementation receives
+normal review of exact changes. Production cutover/configuration, automatic
+deployment activation, cleanup, merges and issue closure remain owner actions.
+
+OWNER ACTION GATE: CLEAR for this revision and authorized PR preparation.
+Future production authorization is REQUIRED LATER, not a documentation blocker.
+See [ADR-0007](../adr/0007-complete-platform-identity.md),
+[cutover/recovery/checklist](CUTOVER.md), [dependencies](DEPENDENCIES.md) and
+[automatic deployment](CONTINUOUS-DEPLOYMENT.md).

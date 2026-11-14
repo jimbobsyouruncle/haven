@@ -1,98 +1,77 @@
-# Automatic deployment design and activation acceptance
+# Restore automatic deployment through the existing workflow
 
-This is a proposed implementation contract, not an enabled workflow. Current
-`deploy.yml` accepts manual exact-main dispatch with explicit production assent.
-Keep it available for recovery/deliberate redeployment during preparation.
+Approved architecture: extend `.github/workflows/deploy.yml` and the existing
+restricted SSH/host deployment mechanism. Current source remains manual dispatch;
+this revision changes no workflow or production state. Detailed trigger wiring is
+an implementation proposal for the third cohesive PR, not a new orchestration layer.
 
-## Trusted revision selection
+## Trusted validation and exact SHA
 
-Prefer a production orchestrator reacting to trusted successful validation for a
-main push, with an independent manual dispatch path. Bind repository numeric ID
-`1380300964`, full name `jimbobsyouruncle/haven`, event type, main ref, workflow
-identity and `head_sha`. Never trust PR/fork `workflow_run` artifacts or execute
-their downloaded scripts with secrets. Candidate code comes from the exact
-approved main SHA with checkout credentials disabled.
+A main-branch event runs trusted repository validation/SAST for that exact commit
+before the existing deployment job can access production credentials. Reuse the
+existing reusable validation and required checks, including applicable image/ARM64
+gates. PR-head or synthetic merge results alone do not validate an actual main SHA.
+Pin checkout to the full validated SHA with persisted credentials disabled. Preserve
+SSH host fingerprint pinning, strict `deploy <40-lowercase-hex>` grammar, host
+main-provenance checks and immutable recovery preflight. Never deploy fork/PR
+artifacts or scripts with secrets.
 
-At inspection, effective main rules require `Check agent context maps` and
-`Security & SAST gate` from GitHub Actions integration `15368`, plus deletion and
-non-fast-forward restrictions. Strict up-to-date checking is false. No required
-PR/review rule was returned by that branch-rules read. Thus “protected-main
-merge” provenance cannot be inferred merely from main ancestry or a green check.
-The implementation must verify a merged PR association and its actual merge
-revision, or stop automatic deployment when that proof is absent. Any desired
-ruleset strengthening requires separate owner authorization; do not change it
-implicitly. Manual approved redeploy can use the existing exact-main contract.
+Observed main rules in the original PR #201 review required two checks but did not
+require a PR. Main ancestry alone therefore does not establish a merged PR. Validate
+merged-main provenance for the automatic path; retain the existing owner-dispatched
+exact-main recovery path. Do not add branch settings changes, administrative bypasses
+or recurring human approval requirements. Required missing/failed/skipped/ambiguous
+validation blocks deployment; verify trusted workflow/app identity and SHA.
 
-Re-run required validation/SAST against the actual main commit; earlier PR head
-or synthetic merge checks alone are insufficient. Validate workflow identity,
-trusted app ID, status `completed`, conclusion `success`, and full SHA; duplicate
-same-name or ambiguous checks refuse. Enumerate all applicable required checks,
-including ARM64 publication/smoke when image inputs changed. No raw cancelled,
-skipped, neutral, timeout or missing required check becomes success.
+## Serialization and mandatory acceptance
 
-The map-refresh workflow currently can push a bot branch and merge its PR with
-GITHUB_TOKEN. Such a merge may suppress downstream push events. Decide explicitly
-in the CD issue how the orchestrator observes it: a trusted completion/reconcile
-path can select the latest main commit, run its exact-SHA checks and verify its
-merged-PR association. Never add another auto-merge capability or change that
-workflow to bypass required checks. If no safe observation exists, report a
-missed-deploy blocker; do not claim every main merge is covered.
+Keep the existing shared `deploy-control-plane` concurrency group with
+`cancel-in-progress: false` for manual and automatic execution. GitHub can replace
+pending runs; intermediate commits need not each deploy. Check candidate eligibility
+before the remote trigger and allow an already started host transaction to complete.
+No custom coalescing scheduler or reconciliation service is needed.
 
-## Serialization and overlapping merges
+The host deployment lock remains authoritative, including recovery. During identity
+handoff hold old/new locks until stale entrypoints are disabled; do not create a
+parallel manual path. A later deployment must refuse unresolved or unaccepted prior
+state, using ADR-0006's existing recovery procedure.
 
-Use a single production concurrency group for automatic and manual paths with
-`cancel-in-progress: false`. GitHub concurrency may replace pending runs; define
-this deliberately as latest-successful-main coalescing, never promising every
-intermediate commit deploys. A superseded candidate exits before connecting to
-production. Re-read main after validation and immediately before remote trigger;
-if changed, requeue/reconcile the latest eligible revision. Once remote mutation
-begins, do not cancel it because a newer merge arrived.
+Wait, with bounded host/workflow deadlines, for existing protected root acceptance:
+requested SHA equals installed SHA, matching receipt and all mandatory gates PASS.
+Successful dispatch, SSH or unit exit alone is insufficient. Keep existing async
+verification and ensure its workflow evidence check excludes the deployment job
+waiting for it, avoiding self-wait. Timeout/cancellation/disconnect never counts as
+acceptance or permission to replay an interrupted transaction. No new receipt
+framework or second verifier is required.
 
-Host exclusivity remains authoritative. Both entrypoints use the same canonical
-lock; the migration holds both old and new locks until old entrypoints are
-disabled. No parallel “manual recovery” deployment path. The next transaction
-must reconcile the previous protected journal before any new install.
+## Existing automation interaction
 
-Root post-deploy verifier acceptance remains asynchronous but mandatory. The
-orchestrator waits for accepted journal state tied to requested/installed SHA,
-fresh root evidence, schema version and all required gates PASS. Do not trust
-only the service-account-writable public receipt. A unit exit or scheduled
-verifier is insufficient. Bound wait time to documented host/workflow deadlines;
-timeout is failure/pending recovery, never readiness. Avoid a verifier waiting
-for the orchestrator that itself waits for verification: checks consumed by the
-host verifier must exclude its own waiting deployment run.
+The map-refresh committer uses GITHUB_TOKEN, whose bot merges can suppress push
+workflows. Prefer a bounded explicit dispatch of the same validation/deployment
+workflow for the exact merged map revision, if needed and reviewed in the third PR.
+It must pass the same trust/SHA/validation gates; add no auto-merge capability and
+change no required checks. A map-only revision may instead be explicitly documented
+as deployment-neutral with evidence that runtime inputs are unchanged. Resolve and
+test this exact event boundary in that PR; do not invent a background reconciliation
+service or claim untested every-merge coverage. This documentation push does not
+trigger the main-only committer or production deployment.
 
-Runner cancellation/disconnect cannot kill host recovery or create a second
-transaction. The next run first reconciles host state; failed/missing acceptance
-blocks it. Do not automatically restore a database or retry partially activated
-code. Immutable proxy recovery and fail-closed provenance gates remain required.
+## Preparation, activation and tests
 
-## Inert preparation and explicit activation
+Prepare and test the existing workflow changes in the third PR without enabling
+production triggers through an ordinary preparatory merge. The exact activation
+change can be reviewed in that same PR; no additional activation PR or approval
+bureaucracy is required. Applying/enabling it requires owner production authorization
+after canonical runtime acceptance. No repository settings/secrets change is implied.
 
-Prepare candidate logic and fixture tests without attaching it to a production
-trigger or executable deployment job. A disabled-looking job with a mutable
-variable is not a sufficient activation boundary. Keep the candidate outside
-active production workflows until separate owner authorization of an exact
-reviewed activation diff and canonical runtime acceptance. No secrets/settings
-change is authorized by this packet.
+Test wrong repo/fork/event, unmerged or stale SHA, failed/missing checks, missing
+image, manual/automatic overlap, cancellation/disconnect, verifier timeout/failure
+and interrupted host recovery using existing fixtures. Required current-head CI/SAST
+must pass. After separately authorized activation, acceptance needs one real trusted
+main merge deployed at the exact validated SHA with mandatory verification and the
+manual recovery path retained. Reuse prior recovery evidence when unchanged.
 
-Activation acceptance requires:
-
-- Canonical identity cutover and runtime gates accepted; architecture/security
-  review and current-head CI/SAST passed, no blocking findings.
-- Tests reject fork, wrong repository/app/workflow, PR-only SHA, unmerged main
-  commit, stale checks, failed/skipped checks, missing immutable image,
-  superseded revision and unaccepted previous transaction.
-- Race tests cover two merges, a manual dispatch during automation, cancellation
-  before/after SSH, timeout, failed asynchronous verifier and interrupted host
-  activation. No duplicate stack or concurrent deploy.
-- Owner-authorized activation followed by a real protected-main PR merge with
-  exact deployed SHA, fresh mandatory PASS receipt and accepted journal.
-- Demonstrated manual recovery/redeploy and restart behavior. Independent backup
-  and old/new restore remain successful. Sanitized records link full SHA,
-  workflow/run, time, non-sensitive environment and observed outcome.
-
-If any criterion fails, fence automatic entry, keep manual owner recovery and
-report the precise failure. Reverting activation prevents future triggers; it
-does not undo a running transaction or restore production. Never merge, activate,
-change settings/secrets or deploy as part of preparing this specification.
+Disable automatic entry on a concrete acceptance failure; keep bounded manual
+recovery under the same lock. Reverting trigger wiring stops future runs, not an
+in-flight transaction, and does not restore data. No merge, deployment, activation,
+settings/credential change or live test is performed in this revision.

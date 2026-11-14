@@ -97,11 +97,11 @@
 - docs/haven/adr/0004-github-epic-governance.md - ADR-0004 — GitHub epics and agent governance
 - docs/haven/adr/0005-evidence-based-completion.md - ADR-0005 — Evidence-based issue completion
 - docs/haven/adr/0006-installation-root.md - ADR-0006 — Transactional installation root migration
-- docs/haven/adr/0007-complete-platform-identity.md - ADR-0007 — Complete Haven identity and continuous deployment
+- docs/haven/adr/0007-complete-platform-identity.md - ADR-0007 — Complete Haven identity and restore automatic deployment
 ## docs/haven/identity
 
-- docs/haven/identity/CONTINUOUS-DEPLOYMENT.md - Automatic deployment design and activation acceptance
-- docs/haven/identity/CUTOVER.md - Production cutover, acceptance and retirement
+- docs/haven/identity/CONTINUOUS-DEPLOYMENT.md - Restore automatic deployment through the existing workflow
+- docs/haven/identity/CUTOVER.md - Production cutover, existing verification and operator cleanup
 - docs/haven/identity/DEPENDENCIES.md - Identity dependency register
 - docs/haven/identity/README.md - Final platform identity consolidation
 - docs/haven/identity/inventory.csv

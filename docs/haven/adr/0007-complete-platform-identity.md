@@ -1,166 +1,105 @@
-# ADR-0007 — Complete Haven identity and continuous deployment
+# ADR-0007 — Complete Haven identity and restore automatic deployment
 
-Status: owner-approved architectural direction (2026-11-14); detailed transaction
-and security design proposed for review. Implementation, deployment authorization
-and runtime acceptance remain distinct. This ADR does not activate production.
+Status: approved simplified architecture, owner direction 2026-11-14.
+Implementation details below are proposals; this documentation revision implements
+no migration code and authorizes no production operations.
 
-## Context and supersession
+## Context and decision
 
-Haven is the canonical platform identity. ADR-0006 intentionally migrated only
-the code root and retained legacy state, account, Docker and backup identities.
-The owner now explicitly supersedes those retention provisions and its indefinite
-manual-only deployment policy. Preserve ADR-0006's exact-SHA provenance,
-transaction journal, integrity checks, immutable compatible proxy recovery,
-restricted SSH/polkit, exclusive locking, independent backups and mandatory
-verification. Keep its historical record and #187's accepted completion intact.
+Haven is a personal, single-owner Raspberry Pi platform. Reuse ADR-0006's
+implemented installation-root transaction, deployment locking, backup mechanisms
+and recovery procedures. Extend those mechanisms only for the specific Haven
+identity handoff. No generalized filesystem migration framework, new orchestration
+service, elaborate transaction phase model or second comprehensive verifier.
 
-## Decision
+This supersedes ADR-0006's indefinite retention of active legacy platform names
+and manual-only deployment direction. It preserves its security, integrity,
+immutable proxy recovery/export checks, interrupted recovery, credential isolation,
+restricted SSH/polkit, exclusive locking and mandatory post-deployment verification.
+Its historical record and accepted #187 completion remain intact.
 
-Use `/opt/haven`, `/etc/haven/haven.env`, `/etc/haven/stack.env`,
-`/var/lib/haven`, `/var/log/haven`, `HAVEN_*`, `haven-*` host units/accounts,
-Compose project `haven` and platform-owned Haven container/network/image names.
-Vendor/application names, IDs, API variables and application-relative data
-directory formats remain their actual contracts. The dependency register defines
-each mapping. Legacy names may appear only in historical evidence, immutable
-external artifact addresses, bounded migration/recovery readers and tests proving
-legacy input handling. No active legacy default or indefinite compatibility mode.
+## Identity and compatibility boundary
 
-Preparation PRs are inert until the complete migration version is available.
-One owner-authorized maintenance transaction activates all coupled identities;
-ordinary installation must refuse an unprepared partial layout. It must not
-silently create data directories or bootstrap a second stack.
+Canonicalize Haven-owned paths, environment/helper namespaces, accounts, units,
+Compose project, platform resource identifiers and firewall selectors. Target
+`/opt/haven`, `/etc/haven`, `/var/lib/haven`, `/var/log/haven`, `HAVEN_*` and
+platform-owned `haven-*` resources. The dependency register specifies bounded
+mappings; spelling alone never establishes ownership.
 
-### Transaction and storage
+Keep Ollama, Open WebUI, Hermes, OpenHands and other third-party application names,
+service/API contracts, vendor variables and application-relative data formats.
+A platform Compose project can become `haven` while service keys and containers
+named `ollama`, `open-webui` and `hermes-agent` retain application identities.
+Preserve existing published third-party compatibility artifacts and digests.
 
-The protected versioned journal records source/target device and inode identities,
-safe private integrity metadata, numeric owners/modes, original config hashes,
-unit/account/enablement snapshots, Docker mount and image mappings, phase and
-requested SHA. Write temporary files, fsync files, atomically rename and fsync
-parent directories. Individual changes are atomic; whole-host activation is
-recoverable, not globally atomic. Journal updates must support idempotent replay
-even when interruption occurs between an operation and its phase update.
+`jimbobsyouruncle/runpod-hybrid-worker` is excluded from this initiative. Read-only
+compatibility analysis is permitted. No worker source, repository, image, log,
+configuration, API contract, deployment or infrastructure change is a dependency,
+deliverable or acceptance criterion of #193 or #194–#200. Haven must use the worker
+exactly as deployed. Any desired worker-side rename/change is an optional future
+proposal requiring separate owner approval; it cannot block this initiative.
 
-Phases: `prepared`, `fenced`, `quiesced`, `storage_staged`, `controls_staged`,
-`activating`, `awaiting_verifier`, `accepted`, or `recovery_required`.
-Before `activating`, failure restores old controls and re-enables only the old
-stack after checking original resource mappings. After any new writer starts,
-failure stops automation and requires bounded recovery using current data; never
-restore a stale copied data tree. Persist which writers started, even after
-partial recreation. Ambiguous journal/resource state refuses both deployment and
-cleanup. The same lock protects deploy, accept, recover and retirement.
+## Bounded migration proposal
 
-Quiesce all database, vector, upload, agent and ACME writers before moving binds.
-Prefer same-filesystem directory rename preserving inode and numerical ownership.
-For cross-filesystem layouts, use separately validated staged copy preserving
-ACLs/xattrs/modes/hardlinks, adequate disk capacity, offline consistency and
-private content verification. Keep source immutable until acceptance. Conflicting,
-symlinked, foreign-owned or populated destinations refuse; never merge trees.
-Application data is not renamed internally merely because its parent changes.
-No volume deletion, pruning, database restoration or secret rotation as a naming
-shortcut. Named volumes discovered at runtime need explicit mappings and verified
-existing resources; unknown mounts block cutover.
+Extend the existing transaction with only the explicit config/account/data/Docker
+mapping and recovery information needed by the supported host layout. Retain its
+protected journal, saved controls, fsync/integrity checks and immutable recovery
+exports. Do not introduce a replacement transaction engine or speculative phases.
+Prefer quiesced same-filesystem renames preserving numeric ownership and metadata.
+An unsupported cross-filesystem layout stops preflight for a concrete reviewed
+procedure; it does not justify a generalized copy engine now.
 
-### Docker and firewall
+Fence and drain old deployment/backup entrypoints before handoff. Preserve mutual
+exclusion while changing lock paths: hold old and new locks in fixed order until
+old entrypoints are disabled, never rename a live lock inode as a locking strategy.
+Reject conflicting paths/accounts, symlinks, unknown overrides and foreign stacks.
+Translate only known platform config keys as literal data, refusing ambiguous
+aliases while preserving secrets, unrelated keys and permissions.
 
-Recreate the owned stack under canonical Compose labels. `docker rename` cannot
-change Compose project ownership. Capture immutable images, effective mount
-mapping and recovery configuration privately, then stop old containers before
-starting canonical ones. Disable automatic bind path creation on persistent
-mounts. Validate expected source existence, resource identity and data before
-`up`. Reconcile exactly seven primary services plus explicitly inventoried optional
-sandboxes; never use a broad stop/remove selector.
+Stop writers before moving persistent paths. Verify existing data mounts before
+Compose recreation; refuse automatic empty bind creation and unknown volumes.
+Recreate only owned resources to change Compose project labels. Preserve app data,
+UID/GID ownership, credentials and effective firewall protection throughout.
+Install equivalent canonical firewall selectors before attaching new networks;
+never flush unrelated rules or broaden privileges. Keep independent backups and
+historical restore access; do not rename/copy remote buckets or rewrite snapshots.
 
-Stage equivalent canonical network firewall drops before connecting new networks.
-Keep protection effective through transition and rollback; preserve unrelated
-DOCKER-USER rules and host policy. Update selectors, tags, reboot unit and doctor
-together. Do not open ports, broaden egress or extend host Docker socket access.
-The existing socket risk remains independent of identity consolidation.
+Before new writers start, recover original coherent controls and paths using the
+existing recovery procedure. After new writes, retain current data and recover
+compatible code/config/images; never overwrite it with a stale copy. A code-root
+rollback does not itself restore running services. Ambiguous or failed acceptance
+blocks further deployment until bounded recovery under the same lock.
 
-### Accounts, configuration and entrypoints
+## Deployment and acceptance
 
-Preserve numeric account/group IDs where possible; refuse name/ID collisions,
-unsupported NSS and unknown service overrides. Migrate homes, credential sources,
-supplementary groups and polkit with no privilege expansion. Canonical deploy
-account accepts exactly `deploy <40-lowercase-hex>` through the forced command;
-no forwarding, PTY, shell, journal membership or container-management group.
+Restore automation in the existing GitHub Actions deployment workflow and host
+mechanism. Require trusted main-branch validation, exact-SHA deployment, shared
+serialized execution, host locking and successful existing root post-deployment
+verification. Retain manual recovery. See the [CD plan](../identity/CONTINUOUS-DEPLOYMENT.md).
+No reconciliation service, recurring manual approval stage or separate activation
+PR is required by the architecture. Production activation still requires explicit
+owner authorization; preparation cannot activate it through an ordinary merge.
 
-Fence old SSH and systemd entrypoints, drain existing operations, and acquire
-old/new locks in fixed order before switching. Never rename/unlink a live lock
-inode and assume exclusivity survived. After cutover old services/accounts cannot
-start deployment or backups. A stale dispatcher must fail before mutation.
-Migration rollback must keep both entrypoints fenced until one coherent identity
-is verified and selected. Retired lock/journal identities are removed only after
-the owner-approved recovery window; historical journals are not rewritten.
+Extend existing health/security/data/deployment checks only at changed boundaries.
+Keep the existing mandatory receipt gates and acceptance semantics. Reuse accepted
+evidence where its contract is unchanged; no fresh worker/GPU test solely for a
+name change. See [cutover and cleanup](../identity/CUTOVER.md). Replace the proposed
+retirement-manifest engine with an exact operator-reviewed checklist. Preserve
+backups and recovery artifacts until successful cutover and cleanup authorization.
 
-Translate known environment keys as literal data, preserving unrelated values,
-comments as feasible, permissions and credential confidentiality. Reject unequal
-old/new key collisions, ambiguous duplicate assignments, unsafe paths and unknown
-overrides. Secrets never enter nonsecret layout, logs, PRs or public receipts.
-Preserve signing secrets and password hashes; changing the auth cookie name
-requires a deliberate re-login, not credential rotation. Restore permission and
-credential changes only if hashes still match; never overwrite later rotation.
+## Delivery, authorization and risks
 
-### Backups and external dependencies
+Approximately three cohesive implementation PRs: canonical source/config (#194),
+coordinated host/accounts/data/Docker and security (#195–#198, #200 acceptance),
+then automatic deployment preparation/activation (#199, #200 deployment evidence).
+Adjust boundaries only for safe atomic deployment or reviewability. Issues retain
+traceability, not seven independent PR dependencies. Already authorized bounded
+implementation PR preparation needs no repeated permission request.
 
-New backups use Haven tags and canonical source paths. Keep old snapshots, tags,
-keys and historical manifests intact. Restore/count/retention consumers understand
-both eras and exact snapshot IDs; legacy manifests map into canonical staging
-with traversal and config-import refusal. Validate old and new restores in
-isolated scratch space. Historical environment and units are recovery material,
-never directly activated. Keep independent encrypted backups and working access
-to the original archive. A Haven-named remote repository/bucket requires a
-separately authorized, verified copy; no inferred cloud resource provisioning.
-
-Worker repository remains `runpod-hybrid-worker` until a separate owner decision.
-The reviewed dependency plan may propose a Haven-named published artifact and
-event-log default in a separate worker task/PR; no API, model, mesh, auth, watchdog
-or streaming changes. Immutable existing image references remain historical
-recovery inputs. Do not change a consumer until the canonical artifact is
-available, reviewed and compatibility-tested. No inferred repository rename.
-
-### Continuous deployment
-
-The owner wants protected-main merges to deploy automatically after canonical
-runtime acceptance. This direction is not activation authorization. Prepare a
-reviewed inert candidate; retain the current manual path until a separately
-authorized activation PR and production enablement. No magic repository variable,
-secret or source default can activate the candidate during preparatory merges.
-
-Use the exact validated protected-main commit from trusted workflow provenance,
-not a PR/fork artifact or mutable branch checkout. Preserve CI/SAST and image
-availability gates, SSH fingerprint pinning, exact host SHA/ancestry checks,
-immutable recovery export, one lock, root verification and controlled recovery.
-Successful workflow dispatch or unit completion alone cannot mean acceptance.
-Do not weaken protected-main rules or require an administrative bypass.
-
-See the [CD specification](../identity/CONTINUOUS-DEPLOYMENT.md) for coalescing,
-cancellation, trusted checks and asynchronous acceptance. Missing/failed mandatory
-evidence blocks further mutation; recovery remains an explicit owner operation.
-
-## Acceptance, rollback and retirement
-
-Offline tests must cover fresh/canonical/legacy/conflicting layouts, adversarial
-paths, permissions and duplicate config, missing/foreign mounts, disk/copy errors,
-account collisions, revoked/stale entrypoints, lock races and interruption at each
-phase. Security review precedes runtime implementation. CI validates current-head
-source, SAST, Compose/Caddy and affected ARM64 images; no skipped mandatory gate
-counts as PASS. Changed live boundaries receive specific authorized runtime tests.
-
-Jarvis acceptance requires actual existing data mounted under Haven identities,
-application integrity, authentication, firewall, old/new restore, restart and
-recovery evidence, canonical-only active wiring, then a protected-main automatic
-deploy with matching accepted schema-v2 receipt. Source CI cannot establish this.
-The [cutover runbook](../identity/CUTOVER.md) defines phase gates and recovery.
-Only after acceptance and separate owner authorization may offline legacy roots,
-units/accounts or caches be retired. Persistent data, independent backups and
-required recovery information are never cleanup shortcuts.
-
-## Consequences and limits
-
-This requires a bounded service outage and more migration machinery than keeping
-aliases indefinitely. Data preservation and recoverable failure take precedence
-over cosmetic renaming speed. Historical evidence, actual worker repository URLs
-and immutable archive identities remain visible without being active platform
-identity. An unknown host layout is a concrete cutover blocker, not permission to
-guess or to restart completed work. RPO/RTO and isolation claims remain limited to
-their existing evidence; naming changes do not implement the wider Haven design.
+Exact commands, supported host mappings and trigger wiring remain implementation
+proposals requiring normal security review and current-head tests. Production
+cutover, configuration changes, activation, cleanup, merge and issue closure remain
+separate owner actions; none occurs in this revision. Principal risks are a bounded
+outage, stale entrypoints, wrong mounts, interrupted handoff and asynchronous
+verification. Existing safeguards plus targeted negative/interruption tests address
+these; source CI cannot establish runtime acceptance or new isolation guarantees.
