@@ -2,6 +2,7 @@
 """Offline real-Git migration tests; no network, Docker, systemd or root."""
 import importlib.util
 import hashlib
+import gzip
 import io
 import json
 import os
@@ -9,7 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-import time
+import tarfile
 import unittest
 from unittest.mock import patch
 from contextlib import redirect_stderr
@@ -92,38 +93,25 @@ class MigrationTests(unittest.TestCase):
 
     def approve_recovery(self, recovery=None):
         self.recovery_image = recovery or self.running_image
-        directory = self.tx.path('/etc/hybrid-ai/install-root-approvals')
-        directory.mkdir(mode=0o700, exist_ok=True)
-        self.approval_path = directory / (self.sha + '.json')
-        self.evidence_path = directory / (self.sha + '.evidence.json')
-        source = self.tx.app if self.tx.app.exists() else self.tx.legacy
-        evidence = dict(schema_version=1, running_image_id=self.running_image,
-                        recovery_image_id=self.recovery_image, platform='linux/arm64',
-                        configuration_sha256={name: hashlib.sha256(path.read_bytes()).hexdigest()
-                                              for name, path in {
-                                                  'caddyfile': source / 'status/Caddyfile',
-                                                  'compose': source / 'docker-compose.yml',
-                                                  'stack_env': self.secret}.items()},
-                        checks={name: dict(state='PASS', receipt_sha256='b' * 64) for name in
-                                ('caddy_version', 'dns_modules', 'config_validation',
-                                 'platform', 'recovery_procedure')})
-        self.evidence_path.write_text(json.dumps(evidence))
-        self.evidence_path.chmod(0o600)
-        now = int(time.time())
-        approval = dict(schema_version=1, requested_sha=self.sha,
-                        decision='approve-install-root-deployment-and-proxy-recovery',
-                        approved_at=now, expires_at=now + 3600,
-                        evidence_sha256=hashlib.sha256(self.evidence_path.read_bytes()).hexdigest())
-        self.approval_path.write_text(json.dumps(approval))
-        self.approval_path.chmod(0o600)
+        self.selection = self.tx.path('/etc/hybrid-ai/proxy-recovery-image')
+        self.selection.write_text(self.recovery_image + '\n')
+        self.selection.chmod(0o600)
+        self.layer = b'synthetic filesystem layer'
+        self.config = dict(os='linux', architecture='arm64', config={'Env': ['LOCAL_DOMAIN=fixture']},
+                           rootfs={'type': 'layers', 'diff_ids': [
+                               'sha256:' + hashlib.sha256(self.layer).hexdigest()]})
+        self.config_bytes = json.dumps(self.config).encode()
+        self.config_id = 'sha256:' + hashlib.sha256(self.config_bytes).hexdigest()
 
-    def change_record(self, path, **changes):
-        record = json.loads(path.read_text())
-        record.update(changes)
-        path.write_text(json.dumps(record))
-        if path == self.evidence_path:
-            self.change_record(self.approval_path,
-                               evidence_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+    def write_archive(self, path):
+        config_name = self.config_id[7:] + '.json'
+        manifest = [dict(Config=config_name, RepoTags=None, Layers=['layer.tar'])]
+        with tarfile.open(path, 'w') as tar:
+            for name, content in [('manifest.json', json.dumps(manifest).encode()),
+                                  (config_name, self.config_bytes), ('layer.tar', self.layer)]:
+                member = tarfile.TarInfo(name)
+                member.size = len(content)
+                tar.addfile(member, io.BytesIO(content))
 
     @staticmethod
     def git(directory, *args):
@@ -145,12 +133,29 @@ class MigrationTests(unittest.TestCase):
             if args[1:3] == ['image', 'save']:
                 if self.export_missing:
                     raise subprocess.CalledProcessError(1, args, stderr='SYNTHETIC_PRIVATE_DETAIL')
-                Path(args[args.index('--output') + 1]).write_bytes(
-                    b'' if self.export_empty else b'synthetic complete image archive')
+                path = Path(args[args.index('--output') + 1])
+                if self.export_empty:
+                    path.write_bytes(b'')
+                else:
+                    self.write_archive(path)
                 return subprocess.CompletedProcess(args, 0, '', '')
+            if args[1] == 'info':
+                return subprocess.CompletedProcess(args, 0, 'aarch64', '')
+            if args[1] in ('run', 'exec'):
+                if args[-1] == 'version':
+                    output = 'v2.11.7 fixture'
+                elif args[-1] == 'list-modules':
+                    output = 'dns.providers.cloudflare\ndns.providers.rfc2136'
+                else:
+                    output = ''
+                return subprocess.CompletedProcess(args, 0, output, '')
+            if args[1:3] == ['container', 'inspect'] and args[-2] == '{{json .}}':
+                return subprocess.CompletedProcess(args, 0, json.dumps({
+                    'Config': {'Env': ['LOCAL_DOMAIN=fixture']}}), '')
             if args[1] == 'image':
                 metadata = self.image_metadata or dict(Id=self.recovery_image, Os='linux',
-                                                       Architecture='arm64', Variant='')
+                                                       Architecture='arm64', Variant='', Config=self.config['config'],
+                                                       RootFS={'Layers': self.config['rootfs']['diff_ids']})
                 return subprocess.CompletedProcess(args, 0, json.dumps(metadata), '')
             return subprocess.CompletedProcess(args, 0, self.running_image, '')
         if args[0] == 'systemctl':
@@ -274,88 +279,135 @@ class MigrationTests(unittest.TestCase):
         self.assertFalse(any(c[0] in ('bash', 'systemctl') for c in self.calls))
         self.assert_preserved()
 
-    def test_missing_approval_cannot_be_replaced_by_environment(self):
-        self.approval_path.unlink()
-        with patch.dict(os.environ, HYBRID_AI_SKIP_PROXY_RECOVERY='1',
-                        HYBRID_AI_APPROVE_RECOVERY='1', CADDY_IMAGE='matching-tag'):
-            self.assert_recovery_refused('RECOVERY_APPROVAL')
-        self.assertFalse(any(c[1:3] == ['image', 'save'] for c in self.calls))
-
-    def test_approval_expiry_revision_decision_and_evidence_binding(self):
-        for changes in ({'expires_at': 1}, {'approved_at': int(time.time()) + 1000},
-                        {'expires_at': int(time.time()) + 90000},
-                        {'requested_sha': 'f' * 40}, {'decision': 'approve'},
-                        {'evidence_sha256': 'c' * 64}):
-            with self.subTest(changes=changes):
-                self.approve_recovery()
-                self.change_record(self.approval_path, **changes)
-                self.assert_recovery_refused('RECOVERY_APPROVAL')
-
-    def test_untrusted_approval_and_evidence(self):
-        for name in ('approval_path', 'evidence_path'):
-            for mode in (0o644, 0o666):
-                with self.subTest(name=name, mode=mode):
-                    self.approve_recovery()
-                    getattr(self, name).chmod(mode)
-                    self.assert_recovery_refused('RECOVERY_')
-            self.approve_recovery()
-            path = getattr(self, name)
-            saved = path.with_suffix('.saved')
-            path.rename(saved)
-            path.symlink_to(saved)
-            self.assert_recovery_refused('RECOVERY_')
-            path.unlink()
-            saved.rename(path)
-
-    def test_missing_and_incomplete_compatibility_evidence(self):
-        self.evidence_path.unlink()
-        self.assert_recovery_refused('RECOVERY_COMPATIBILITY')
-        for changes in ({'running_image_id': 'sha256:' + 'c' * 64},
-                        {'recovery_image_id': 'hybrid-ai-caddy:2.11.7-dns'},
-                        {'configuration_sha256': {}}, {'checks': {}}):
-            with self.subTest(changes=changes):
-                self.approve_recovery()
-                self.change_record(self.evidence_path, **changes)
-                self.assert_recovery_refused('RECOVERY_COMPATIBILITY')
-        for state in ('FAILED', 'WARN', 'SKIPPED', 'NOT VERIFIED', 'PENDING'):
-            self.approve_recovery()
-            evidence = json.loads(self.evidence_path.read_text())
-            evidence['checks']['config_validation']['state'] = state
-            self.change_record(self.evidence_path, checks=evidence['checks'])
-            self.assert_recovery_refused('RECOVERY_COMPATIBILITY')
-
-    def test_changed_configuration_invalidates_approval(self):
-        for path in (self.tx.legacy / 'status/Caddyfile',
-                     self.tx.legacy / 'docker-compose.yml', self.secret):
-            with self.subTest(path=path.name):
-                before = path.read_bytes()
-                path.write_bytes(before + b'# changed\n')
-                with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_COMPATIBILITY'):
-                    self.tx.deploy(self.sha)
-                path.write_bytes(before)
-                self.assert_preserved()
-
-    def test_compatibility_binds_the_resolved_stack_environment(self):
-        custom = self.secret.with_name('custom-stack.env')
-        self.secret.rename(custom)
-        self.tx.layout.write_text(self.tx.layout.read_text().replace(str(self.secret), str(custom)))
-        self.secret = custom
-        self.approve_recovery()
+    def test_no_manual_records_required_for_migration_or_repeat(self):
+        self.selection.unlink()
         self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
+        self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
         self.assert_preserved()
 
-    def test_wrong_image_platform_and_unexportable_layers(self):
-        for metadata in (dict(Id='sha256:' + 'c' * 64, Os='linux', Architecture='arm64'),
-                         dict(Id=self.recovery_image, Os='linux', Architecture='amd64'),
-                         dict(Id=self.recovery_image, Os='linux', Architecture='arm64', Variant='v8')):
-            self.image_metadata = metadata
-            self.assert_recovery_refused('RECOVERY_IMAGE')
-        self.image_metadata = None
+    def test_mutable_selection_and_symlink_refused(self):
+        self.selection.write_text('caddy:latest')
+        self.assert_recovery_refused('RECOVERY_IMAGE')
+        self.selection.unlink()
+        self.selection.symlink_to(self.secret)
+        self.assert_recovery_refused('symlink')
+
+    def test_unexportable_and_empty_archive(self):
         self.export_missing = True
         self.assert_recovery_refused('RECOVERY_ARTIFACT')
         self.export_missing = False
         self.export_empty = True
         self.assert_recovery_refused('RECOVERY_ARTIFACT')
+
+    def test_index_and_configuration_identity_can_differ(self):
+        self.approve_recovery('sha256:' + 'd' * 64)
+        self.tx.deploy(self.sha)
+        recovery = self.tx.load()['proxy_recovery']
+        self.assertNotEqual(recovery['recovery_image_id'], recovery['configuration_id'])
+        self.assertEqual(recovery['configuration_id'], self.config_id)
+        self.assert_preserved()
+
+    def test_corrupt_layer_and_config_are_refused(self):
+        for target in ('layer', 'config_bytes'):
+            with self.subTest(target=target):
+                self.approve_recovery()
+                setattr(self, target, getattr(self, target) + b'corruption')
+                self.assert_recovery_refused('RECOVERY_ARTIFACT')
+
+    def test_incompatible_platform_config_and_layers_are_refused(self):
+        base = dict(Id=self.recovery_image, Os='linux', Architecture='arm64',
+                    Config=self.config['config'], RootFS={'Layers': self.config['rootfs']['diff_ids']})
+        for field, value in [('Architecture', 'amd64'), ('Config', {}),
+                             ('RootFS', {'Layers': ['sha256:' + 'f' * 64]})]:
+            self.image_metadata = dict(base, **{field: value})
+            self.assert_recovery_refused('RECOVERY_ARTIFACT')
+
+    def test_compatibility_failures_precede_activation_and_remove_private_env(self):
+        original = self.runner
+        for failure in ('version', 'list-modules', 'caddyfile'):
+            def runner(args, **kwargs):
+                if args[0:2] == ['docker', 'run'] and args[-1] == failure:
+                    raise subprocess.CalledProcessError(1, args, stderr='SYNTHETIC_PRIVATE_DETAIL')
+                return original(args, **kwargs)
+            self.tx.run = runner
+            self.assert_recovery_refused('RECOVERY_')
+            self.assertEqual(list(self.tx.state.glob('proxy-env-*')), [])
+
+    def test_compressed_oci_layer_and_config_members(self):
+        archive = self.root / 'oci.tar'
+        config_name = 'blobs/sha256/' + self.config_id[7:]
+        compressed = gzip.compress(self.layer)
+        layer_name = 'blobs/sha256/' + hashlib.sha256(compressed).hexdigest()
+        manifest = [dict(Config=config_name, Layers=[layer_name])]
+        with tarfile.open(archive, 'w') as tar:
+            for name, content in [('manifest.json', json.dumps(manifest).encode()),
+                                  (config_name, self.config_bytes), (layer_name, compressed)]:
+                member = tarfile.TarInfo(name)
+                member.size = len(content)
+                tar.addfile(member, io.BytesIO(content))
+        metadata = dict(Os='linux', Architecture='arm64', Config=self.config['config'],
+                        RootFS={'Layers': self.config['rootfs']['diff_ids']})
+        self.assertEqual(self.tx.verify_archive(archive, metadata), self.config_id)
+        with patch.object(MODULE.gzip, 'GzipFile', side_effect=EOFError):
+            with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_ARTIFACT'):
+                self.tx.verify_archive(archive, metadata)
+
+    def test_missing_modules_version_and_host_architecture_refuse(self):
+        original = self.runner
+        for failure in ('version', 'list-modules', 'info'):
+            def runner(args, **kwargs):
+                if ((args[:2] == ['docker', 'run'] and args[-1] == failure)
+                        or args[:2] == ['docker', failure]):
+                    return subprocess.CompletedProcess(args, 0, 'incompatible', '')
+                return original(args, **kwargs)
+            self.tx.run = runner
+            self.assert_recovery_refused('RECOVERY_')
+
+    def test_first_rollback_preserves_rendered_runtime_inputs(self):
+        rendered = b'# locally rendered runtime configuration\n'
+        path = self.tx.legacy / 'status/Caddyfile'
+        path.write_bytes(rendered)
+        self.fail_install = True
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.tx.deploy(self.sha)
+        self.assertEqual(path.read_bytes(), rendered)
+        self.assert_preserved()
+
+    def test_all_seven_layers_are_verified(self):
+        layers = [b'filesystem layer ' + str(i).encode() for i in range(7)]
+        config = dict(self.config, rootfs=dict(type='layers', diff_ids=[
+            'sha256:' + hashlib.sha256(layer).hexdigest() for layer in layers]))
+        content = json.dumps(config).encode()
+        config_name = hashlib.sha256(content).hexdigest() + '.json'
+        names = [str(i) + '/layer.tar' for i in range(7)]
+        archive = self.root / 'seven-layers.tar'
+        metadata = dict(Os='linux', Architecture='arm64', Config=config['config'],
+                        RootFS={'Layers': config['rootfs']['diff_ids']})
+        for corrupt_last in (False, True):
+            with tarfile.open(archive, 'w') as tar:
+                entries = [('manifest.json', json.dumps([dict(Config=config_name, Layers=names)]).encode()),
+                           (config_name, content), *zip(names, layers)]
+                for name, data in entries:
+                    if corrupt_last and name == names[-1]:
+                        data += b'corrupt'
+                    member = tarfile.TarInfo(name)
+                    member.size = len(data)
+                    tar.addfile(member, io.BytesIO(data))
+            if corrupt_last:
+                with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_ARTIFACT'):
+                    self.tx.verify_archive(archive, metadata)
+            else:
+                self.assertEqual(self.tx.verify_archive(archive, metadata), 'sha256:' + config_name[:-5])
+
+    def test_writable_selection_refused_and_no_environment_bypass(self):
+        self.selection.chmod(0o666)
+        self.assert_recovery_refused('not trusted')
+        self.selection.chmod(0o600)
+        self.proxy_missing = True
+        with patch.dict(os.environ, HYBRID_AI_SKIP_PROXY_RECOVERY='1', CADDY_IMAGE='caddy:latest'):
+            self.assert_recovery_refused('RECOVERY_IMAGE')
 
     def test_production_workflow_requires_manual_exact_sha_authorization(self):
         workflow = (Path(__file__).resolve().parent.parent /
@@ -406,8 +458,7 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(self.tx.layout.read_bytes(), self.layout_before)
         self.assertEqual(self.tx.keys.read_text(), self.original_key)
         self.assert_preserved()
-        self.assertTrue(all(c[1:3] in (['image', 'inspect'], ['image', 'save'],
-                                     ['container', 'inspect']) for c in self.calls if c[0] == 'docker'))
+        self.assertFalse(any('pull' in c or 'load' in c for c in self.calls))
 
     def test_foreign_compose_project_is_not_taken_over(self):
         self.project = 'another-project'

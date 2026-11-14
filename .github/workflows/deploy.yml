@@ -73,7 +73,7 @@ on:
         required: true
         type: string
       authorize_production:
-        description: 'Authorize this production deployment; host recovery approval is also required'
+        description: 'Authorize this production deployment; automated recovery preflight is required'
         required: true
         default: false
         type: boolean

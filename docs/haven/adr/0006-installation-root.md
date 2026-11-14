@@ -1,186 +1,107 @@
 # ADR-0006 — Transactional installation root migration
 
-Status: proposed implementation for [#187](https://github.com/jimbobsyouruncle/haven/issues/187).
-This is not production migration approval. Related completed rename: #146;
-retained proxy recovery prerequisite: #186 and its final owner disposition.
+Status: accepted owner decision for implementation. Production deployment remains
+an explicit owner action; source changes and CI do not establish runtime migration.
 
 ## Decision
 
-Fresh bootstrap uses `/opt/haven`. Normal authorized deployment stages a new,
-credential-free public checkout of the exact requested full SHA and checks its
-ancestry against freshly fetched main before changing active paths. A protected,
-fsynced journal records the previous root, retained checkout and original control
-files before handoff. Directory renames and individual control-file replacements
-are atomic; a multi-file handoff is recoverable, not globally atomic.
+Haven is a single-owner, self-hosted home installation. Use automated safety
+checks and recoverable transactions rather than recurring operator paperwork.
+Deploy the exact full commit SHA from controlled public Git provenance, only on
+an explicit owner-initiated production dispatch. Merging does not deploy.
 
-The first migration must also work when the previously installed dispatcher has
-already reset the legacy checkout before entering the new deploy-remote script.
-That checkout is retained, and an independent validated checkout of its
-pre-reset ORIG_HEAD is retained for code rollback. This is not an untouched
-pre-deployment rendered configuration.
-Subsequent deployments stage without resetting the active checkout and retain
-that checkout, including its rendered configuration, for rollback.
+Fresh bootstrap uses `/opt/haven`; existing `/opt/hybrid-ai` installations migrate
+through the normal deployment driver. Only the application root changes.
+`/etc/hybrid-ai`, `/var/lib/hybrid-ai`, accounts, units, credentials, backups,
+persistent data and the Compose project `hybrid-ai` retain their identities.
+Never move/delete data or volumes as part of this migration. Refuse repository-local
+durable storage, foreign projects, conflicting directories, symlinks, untrusted
+ownership and ambiguous service overrides before activation.
 
-Only the application root changes. `/etc/hybrid-ai`, `/var/lib/hybrid-ai`, logs,
-backup credentials/repositories, numeric ownership, service accounts, unit names,
-Compose project `hybrid-ai`, networks, containers and worker contracts remain.
-Stateful installer, maintenance, agent-control and uninstall Compose calls pin
-that project explicitly, and preflight refuses a different existing project.
-Layouts with durable data or secrets inside the code root require separate
-preparation and fail before activation; this migration never moves or deletes
-persistent data. No compatibility symlink is created.
+Keep the exclusive deployment lock, independently staged exact-SHA checkout,
+main-ancestry validation, protected fsynced transaction journal, previous checkout
+and original control-file snapshots. Directory renames and individual control-file
+replacements are atomic; the whole handoff is recoverable, not globally atomic.
+Retain rendered configuration in the previous checkout. A legacy dispatcher that
+already reset its checkout can supply only its available configuration and
+ORIG_HEAD code, not an untouched pre-reset runtime snapshot.
 
-Update the layout and exact SSH forced-command path without changing key material
-or options. Reapply systemd templates from the new root and retain narrow polkit
-grammar. Refuse foreign, symlinked or non-root-controlled code roots and ambiguous
-drop-ins. Before recreation require a protected owner decision and compatibility
-evidence for an available immutable recovery image. The running exact image or
-an explicitly approved equivalent can satisfy this gate; a tag cannot. Export
-the approved local image by ID into a protected retained archive before staging.
-Neither local inspect nor successful export proves full disaster recovery.
+## Automated proxy recovery preflight
 
-## Deployment #271 recovery-preflight correction
+Every transactional deployment verifies a locally available immutable recovery
+image, exports it into a unique mode-0600 archive in the protected mode-0700
+transaction directory, fsyncs it and records its SHA256 in the journal. This also
+protects risky root migrations. Archives survive rollback and subsequent deploys;
+cleanup is an explicit owner operation. A failed, empty or corrupt export refuses
+activation. No automatic pull, load, build or mutable-tag resolution is allowed.
 
-[PR #188](https://github.com/jimbobsyouruncle/haven/pull/188) merged as
-`1a9dec3622931c45343095f5707765db283c4ba4`.
-[Run 43317551461](https://github.com/jimbobsyouruncle/haven/actions/runs/43317551461)
-passed source validation and failed its deploy trigger with systemd `exit-code`,
-status 1 and the generic `install-root` refusal. Owner-confirmed observations:
-active root `/opt/hybrid-ai`, no migration journal, and exact running proxy image
-unavailable through image inspect. No successful migration or proxy recreation
-is established.
+Default to the running proxy's immutable image reference. If it is unavailable,
+the owner can select an existing compatible alternative once in the root-controlled
+file `/etc/hybrid-ai/proxy-recovery-image`, containing only `sha256:<64 hex>`.
+The selection is durable, not a deployment approval. Each deployment repeats the
+automated content and compatibility checks against current inputs.
 
-**Confirmed source defect:** the original gate obtains the running immutable ID
-from container `.Image` and inspects that ID. An inspect subprocess failure
-escapes to the generic exception handler; its later identity comparison/refusal
-is never reached. It also has no way to accept the separately validated and
-owner-approved alternative retained by #186's final disposition. These facts
-explain the missing-artifact refusal path. The old log does not identify the
-individual failed command, so it cannot independently exclude an earlier gate
-failure or establish every runtime step. Absence of the journal limits evidence
-to pre-activation; do not infer successful rollback or untouched earlier legacy
-dispatcher activity.
+An index/manifest digest identifies a different object from an image configuration
+digest. They need not be equal. Inspect the immutable selection, verify the exported
+configuration digest against its archive member name, compare configuration and
+ordered root-filesystem digests with local inspection, and hash every exported
+filesystem layer against its configuration diff ID. Retain both selected and
+configuration identities with the archive checksum. A digest mismatch within the
+same object type remains corruption and must refuse deployment.
 
-Container `.Config.Image` and image `RepoTags` are mutable references. The
-recorded locally cached tag resolved to a different ARM64 ID in #186; neither
-tag equality, source build arguments nor the candidate's platform proves running
-image identity or compatibility. No candidate equivalence is asserted here.
+Preflight compares the recovery image's Linux architecture with the Docker host,
+executes its Caddy binary in disposable isolated containers, compares the running
+Caddy version, requires the Cloudflare and RFC2136 DNS modules, and validates the
+installed Caddyfile using the running proxy's effective environment. These checks
+publish no environment/configuration contents or subprocess output. Validation
+containers have no network, published ports, persistent-data mounts or Docker
+socket; the configuration is read-only, data/config are temporary, capabilities
+are dropped and resource limits apply. This does not replace the running proxy.
 
-The correction requires two fixed host files under
-`/etc/hybrid-ai/install-root-approvals/`: `<requested-full-SHA>.json` and
-`<requested-full-SHA>.evidence.json`. Both must be root-owned regular files,
-mode `0600`, with trusted, non-writable, non-symlinked parents. There is no
-environment/SSH/CLI override or automatic approval writer. The recovery operator
-records verified compatibility evidence; the owner approves its exact hash.
-This gate applies to each transactional deployment, including canonical-root
-redeployment, so a later revision cannot silently reuse a migration approval.
+Per-deployment approval/evidence JSON, 24-hour expiration, hashed manual receipts,
+repeated recovery rehearsals and redundant host authorization checkpoints are
+removed. The manual production dispatch still explicitly selects and authorizes
+the exact main SHA. Existing SSH grammar, polkit restrictions, secrets handling
+and project checks remain.
 
-Approval schema v1:
+## Failure, verification and rollback
 
-```json
-{
-  "schema_version": 1,
-  "decision": "approve-install-root-deployment-and-proxy-recovery",
-  "requested_sha": "<full authorized commit SHA>",
-  "approved_at": 0,
-  "expires_at": 0,
-  "evidence_sha256": "<SHA256 of exact evidence file bytes>"
-}
-```
+Restore saved control files/root after synchronous failure and retain the failed
+checkout. Recover an interrupted activation on the next owner-initiated deploy.
+An asynchronous verification that is missing or unsuccessful blocks subsequent
+deployment. Acceptance requires matching requested/installed SHA, canonical wiring
+and successful mandatory health gates from the root verifier. Scheduling a check
+is not acceptance; WARN/SKIPPED is not PASS for a mandatory gate.
 
-The timestamps are UTC Unix seconds; approval must be current, not future-dated,
-and last at most 24 hours. Zeros/placeholders above are intentionally invalid.
-Evidence schema v1 contains `running_image_id`, `recovery_image_id` (both full
-`sha256:` image IDs), `platform` (Docker OS/architecture, plus variant if present),
-`configuration_sha256` with exactly `caddyfile`, `compose`, `stack_env` hashes,
-and `checks` with exactly `caddy_version`, `dns_modules`, `config_validation`,
-`platform`, `recovery_procedure`. Each check contains `state: "PASS"` and a
-`receipt_sha256` identifying the retained private validation receipt. These
-receipts must cover running/candidate version and required DNS modules,
-compatible platform, installed configuration validation and the bounded recovery
-procedure using retained code/configuration and immutable recovery image. A
-stock Caddy image or mere tag match is insufficient. Hashes/receipts, configuration
-and approval files stay on the approved private route, never in public CI/issues.
+Explicit rollback under the same lock restores saved control files and the prior
+checkout, reloads systemd and retains recovery artifacts. It neither restarts
+containers nor restores databases. Refuse rollback over subsequently changed
+control files, including rotated secrets. If services have been recreated,
+runtime recovery requires an owner-selected bounded procedure with retained code,
+configuration and checksum-verified immutable images. Never infer that restoring
+code restored running services. See the [deployment procedure](../../../deploy/README.md).
 
-This is an owner-attested evidence mechanism, not automatic execution of
-compatibility tests. Root control is its trust boundary; root must record the
-owner's actual explicit decision only after reviewing real evidence. Root can
-already modify the deployment code; these files do not defend against a hostile
-root operator. Missing, WARN, skipped, failed or unverified checks cannot pass.
-The gate compares the live running ID, installed Caddyfile, rendered Compose and
-protected stack-env bytes to that evidence, then inspects the approved recovery
-ID and platform. It saves that image to a unique root-only archive in the private
-`0700` transaction directory, checks nonempty export, fsyncs/hashes it and records
-the archive, identities and approval hash in the journal. Missing local images,
-unavailable layers, export/disk failures or mismatches refuse before activation.
-No automatic pull/load/build, candidate execution, tag mutation or replacement
-container is used by preflight. Successful archives survive rollback and later
-tag changes; keep sufficient disk space and retain them until approved cleanup.
-Runtime use/loading of the archive still needs separate authorization.
+## Rationale and accepted residual risks
 
-Fixed `PROXY_IDENTITY`, `RECOVERY_APPROVAL`, `RECOVERY_COMPATIBILITY`,
-`RECOVERY_CONFIGURATION`, `RECOVERY_IMAGE`, `RECOVERY_ARTIFACT` and
-`RECOVERY_STORAGE` diagnostics identify failed recovery gates. Refusals use
-GitHub Actions error annotations without subprocess output, image IDs, paths,
-hashes, environment contents or raw host configuration.
+Root already controls deployment code and Docker; extra root-written attestations
+provide little additional protection for a single trusted owner. Automated
+preflight gives repeatable evidence at the point of use while reducing stale
+paperwork and operator mistakes. Existing successful recovery evidence can be
+reused without another manual rehearsal when its contract is unchanged.
 
-The deployment workflow is manual-only and requires explicit production assent,
-the exact dispatched main SHA, source validation and the existing production
-environment. A merge/push cannot initiate migration. The inspected production
-environment had a branch policy but no required-reviewer rule; an environment
-name alone is not approval. No repository/environment settings are changed by
-this correction. Existing SSH grammar, polkit permissions and deployment locks
-remain unchanged. Host approval does not itself dispatch a deployment.
+Archive integrity and Caddy validation establish content and bounded compatibility,
+not a complete disaster-recovery rehearsal or future service health. Disk/host
+failure can destroy local checkpoints; independent encrypted backups remain
+necessary. Network-disabled validation can refuse configurations needing external
+resources; investigate the specific refusal rather than bypass checks. Runtime
+rollback may need operator intervention and service recreation. Retained archives
+consume disk until owner cleanup. Version equality deliberately refuses untested
+version substitutions. These limits are accepted; protecting persistent data,
+credentials, the working proxy and recoverability remains mandatory.
 
-**Remaining owner actions, before a production attempt:** separately authorize
-compatibility validation and a bounded method to install the reviewed corrected
-driver on the legacy root. The currently installed dispatcher invokes its local
-driver before staging the requested SHA: merging or dispatching a new SHA alone
-does not reliably propagate this preflight correction. Do not retry the old
-driver, rename directories manually or relax the gate. Retain verified recovery
-code/configuration/image evidence, provision the protected evidence/approval
-files for the final authorized SHA, and authorize the exact production dispatch.
-No host preparation is performed by this PR. Subsequent runtime acceptance needs
-requested/installed SHA correlation, canonical wiring and the matching mandatory
-verifier gates, with ordinary worker-use evidence only for its affected scope.
-No fresh worker operation or cross-repository change is required for this fix.
-
-## Failure and acceptance
-
-Keep the existing deployment lock throughout staging and synchronous install.
-Restore saved control files and root after synchronous failure. Retain failed
-checkout and transaction for diagnosis, with no automatic container or database
-rollback. Interrupted activation is restored on the next authorized invocation.
-An installation awaiting asynchronous verification blocks another deployment;
-failure/missing receipt is never accepted. Verifier receipt publication, requested
-SHA, installed SHA, installation wiring and mandatory health gates must succeed.
-Only then may the journal mark the handoff accepted. Optional warnings retain
-their evidence status. No background work is promised by the development agent.
-
-## Recovery
-
-The deployment operator inspects the protected journal locally. An explicit
-`rollback` restores saved control files and the retained checkout under the same
-deployment lock; it does not restart containers or restore data. If install had
-already recreated services, stop and authorize a bounded runtime recovery using
-the recorded previous SHA, matching rendered configuration and retained immutable
-images. For the first legacy handoff, reconstructing a previous runtime needs the
-operator's previously retained configuration/image evidence; ORIG_HEAD alone is
-insufficient. Keep all recovery artifacts until owner-approved cleanup. No code
-in this migration removes checkpoints, persistent directories or Docker volumes.
-
-## Validation and limits
-
-Offline real-Git fixtures cover fresh/bootstrap, legacy and canonical roots,
-interruption, repeat deployment, rollback, trust refusals, unit/SSH/layout wiring,
-receipt/SHA gates and uninstall preservation. CI adds ShellCheck, security tests
-and SAST. Public worker source review establishes no `/opt/hybrid-ai` dependency
-in its image/startup at public revision
-[`cf402976b09d8d155c62f5f4b83d174b35d3521f`](https://github.com/jimbobsyouruncle/runpod-hybrid-worker/tree/cf402976b09d8d155c62f5f4b83d174b35d3521f);
-no worker behavior or configuration changes are proposed.
-Live ARM64 migration, proxy recovery and normal worker-use observations require
-the separately authorized deployment; source tests do not establish them.
-
-The complete generated code index grows beyond its former 24 KiB cap. The
-freshness checker and existing map committer use a matching 28 KiB capacity;
-the pinned generator, complete symbol coverage and freshness comparison remain.
+Offline tests cover first migration, repeated canonical deployment, identity types,
+archive corruption/export failure, compatibility refusals, interruption, control
+rollback, secret/data preservation and mandatory verification. CI adds source,
+security, Caddy and Compose checks. Worker contracts are unchanged; no fresh live
+RunPod test is required. Production acceptance and issue closure require actual
+sanitized runtime evidence and the owner's separate closure decision.
