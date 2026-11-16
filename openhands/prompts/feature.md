@@ -8,4 +8,4 @@ idempotent installation, backup and restore compatibility, and Raspberry Pi reso
 constraints.
 
 Add tests, update documentation, run validation, commit, and give me a PR-ready summary.
-Do not push, merge, or deploy.
+Follow the root AGENTS.md workflow through draft PR, CI remediation and review readiness, including mandatory pre-PR security escalation. Preserve the OpenHands read-only credential restriction; report unavailable push/PR capabilities and the remaining handoff. Never merge, enable auto-merge, bypass branch protection, delegate merge authority or deploy.

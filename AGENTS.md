@@ -12,7 +12,7 @@ Read relevant existing files before planning changes. For deployment work inspec
 
 This narrowly scoped **local developer mode** is distinct from Haven-managed autonomous execution. It applies only to human-initiated work with material already publicly available in this repository. It does not grant GitHub, filesystem, infrastructure, or task-service permissions.
 
-- A human operating their own workstation may use OpenAI Codex or another provider they explicitly approve to read, explain, review, and propose changes to **publicly published source and documentation**, including public issues and PRs. A Haven server-issued task contract is not required for this mode. The human's explicit request, existing GitHub/filesystem permissions, and tool/sandbox constraints bound access.
+- A human operating their own workstation may use an agent harness and inference provider they explicitly approve to read, explain, review, and propose changes to **publicly published source and documentation**, including public issues and PRs. A Haven server-issued task contract is not required for this mode. The human's explicit request, existing GitHub/filesystem permissions, and tool/sandbox constraints bound access.
 - The request must identify the repository and operation. Another repository, including `runpod-hybrid-worker`, requires separate explicit human authorization; a multi-root workspace alone is not authorization.
 - This exception **excludes** unpublished code, private issues, local `.env` files, credentials, tokens, logs, personal/customer data, backups, and other nonpublic material. Do not send these to external inference providers. When public status is uncertain, stop and ask.
 - Read-only reviews of public content need no Haven task-service contract. Changes require an explicit human request and a feature branch/worktree, applicable tests, and a reviewed PR. Never commit directly to `main` or merge. Deployment and production/credential changes require distinct approval.
@@ -37,14 +37,14 @@ This narrowly scoped **local developer mode** is distinct from Haven-managed aut
 
 ## Roles and task ownership
 
-- **Hermes Architect:** inspect authorized design/source; produce interfaces, threat model, bounded work items and acceptance tests. No implementation changes unless assigned.
-- **Hermes Coordinator:** decompose tasks, request scoped workers, track PRs and tests; may not grant itself or workers new permissions.
-- **Pi / Codex / OpenHands Builder:** implement in a dedicated branch/worktree and authorized repository; run tests; prepare a PR. Only one primary writer per branch/worktree.
-- **Hermes Troubleshooter:** reproduce failure in authorized sandbox, identify cause and propose focused fix. Do not make unrelated edits.
-- **Independent Reviewer:** read approved diffs, inspect security and regression evidence; do not simply trust builder's summary. Prefer separate context/model where policy permits.
-- **Human approver:** authorizes new project scope, sensitive tools, merges, releases and policy exceptions.
+- **Architecture Agent:** inspect authorized design/source; produce interfaces, threat model, bounded work items and acceptance tests. No implementation changes unless assigned.
+- **Coordinator:** decompose tasks, request scoped workers, track PRs and tests; may not grant itself or workers new permissions.
+- **Implementation Agent:** implement in a dedicated branch/worktree and authorized repository; run tests; own the draft PR, CI remediation and review readiness. Only one primary writer per branch/worktree.
+- **Implementation Agent (troubleshooting):** reproduce failure in authorized sandbox, identify cause and propose focused fix. Do not make unrelated edits.
+- **Review Agent:** read approved diffs, inspect security and regression evidence; do not simply trust the Implementation Agent's summary. Prefer separate context/model where policy permits.
+- **Human Owner:** authorizes new project scope, sensitive tools, merges, releases and policy exceptions.
 
-The engine is interchangeable only after it passes the project's inference, isolation and telemetry compatibility tests. OpenHands is optional; Codex and Pi are not assumed to support every RunPod model.
+Roles are independent of product, harness and model. A harness may use multiple models; every model-bearing operation inherits the same task scope and inference restrictions. Before use, verify the exact harness/model combination supports required inference routing, tools, isolation, authentication and telemetry controls, including ancillary calls and failure paths. Compatibility is demonstrated by tests, never inferred from a product name.
 
 ## Required task contract
 
@@ -60,7 +60,7 @@ repositories:
     allowed_refs: [refs/heads/feature/example]
 classification: internal
 inference_policy: project-approved
-allowed_engine: pi
+allowed_engine: <policy-approved-harness>
 allowed_tools: [git, tests, editor]
 network_destinations: [approved-git-proxy, approved-package-proxy]
 expires_at: <server-issued-timestamp>
@@ -97,6 +97,10 @@ Before creating a PR, evaluate whether the implementation introduces, discovers 
 If any condition applies, stop before PR creation. Explain the risk, affected trust boundary and practical consequences; recommend mitigation and reasonable alternatives; identify the specific decision requiring owner approval. Previous implementation authorization is insufficient. Resume implementation and PR creation only after an explicit owner decision, subject to enforced security policies; approval cannot waive mandatory security controls. Routine security fixes and implementations consistent with approved architecture proceed normally without unnecessary escalation. Resolve safe in-scope technical problems independently; this check is not a separate routine security-review or architecture-planning phase.
 
 ## Standard development workflow
+
+This is the canonical development workflow for every harness. Component instructions and prompt templates may specialize execution mechanics but must not weaken or contradict parent security, authorization or approval policies. Provider configuration, CLI flags and model selection belong in harness-specific instructions, not this universal contract.
+
+Explicit bounded implementation authorization covers testing, commits, draft PR creation, CI remediation and review readiness, subject to the pre-PR security escalation. Use only available, authorized capabilities. If a harness cannot push, create PRs or monitor checks, complete the supported work and report the exact limitation and remaining handoff; never broaden credentials or claim PR readiness without evidence.
 
 1. **Inspect:** Read relevant source/tests and verify repository permissions, branch, uncommitted/untracked work and divergence. Check the previous relevant PR and its merge status; preserve unfinished work. In implementation mode fetch the approved remote, confirm the base is current, then branch from that remote base. Fast-forward a local base only when safe; never discard changes, reset, rebase or overwrite divergent work silently. Read-only review does not refresh working branches. Do not infer implementation from outdated docs.
 2. **Choose an approach:** Keep scope, interface changes, security implications, validation and rollback proportional to the work. Make routine design decisions within implementation; escalate only consequential decisions or genuine blockers under the rules above.
@@ -136,7 +140,7 @@ For `haven next` and equivalent reviews:
 3. Identify actual unresolved dependencies and select the next open, unblocked issue in approved order. Do not select completed work because historical checkboxes are unchecked. If all required children appear resolved, assess epic-wide acceptance and dependencies for closure; do not require an epic-wide audit on every invocation.
 4. Present an Implementation Card, Cutover Card or Closure Card appropriate to the current stage, report only current mandatory owner actions and stop at genuine blockers/approval boundaries. Future operational gates stay attached to their execution/verification issue, not completed development.
 
-Read-only review (`haven next`, `haven new-epic`, epic review, architecture assessment and other explicitly analytical tasks) permits remote metadata inspection, not working-tree modification: no source edits, commits, branches, pull, merge, reset or rebase; no issue mutations unless explicitly authorized reconciliation; no production, deployment or cutover actions. Distinguish remote metadata refresh from local Git/working-tree mutation. The developer launcher is independently maintained: repository policy does not update it. Do not commit or install launcher source; prepare a separate owner-installable patch only from complete current contents.
+Read-only review (`haven next`, `haven new-epic`, epic review, architecture assessment and other explicitly analytical tasks) permits remote metadata inspection, not working-tree modification: no source edits, commits, branches, pull, merge, reset or rebase; no issue mutations unless explicitly authorized reconciliation; no production, deployment or cutover actions. Distinguish remote metadata refresh from local Git/working-tree mutation. The local `haven` launcher supplies standardized task modes and prompts; this file remains authoritative for development behavior. The launcher is independently maintained outside the repository: repository policy does not update it. Do not commit or install launcher source; prepare a separate owner-installable patch only from complete current contents.
 
 Issue and epic closure remain separate explicit approvals. A Closure Card enumerates relevant criteria, evidence, child dispositions (including transferred/deferred work), linked PRs, cross-repo dependencies, remaining limits and proposed GitHub changes. A nonblocking deferral requires explicit owner acceptance and a tracked successor, owner and milestone. End with `Awaiting approval to close issue #NUMBER.` or `Awaiting approval to close epic #NUMBER.` Never infer closure authorization from implementation approval or closing keywords; avoid automatic-closing PR keywords unless closure is authorized.
 
@@ -144,7 +148,7 @@ For discovery, `haven new-epic` reads architecture, ADRs, migration plans and li
 
 ## CI ownership and automatic remediation
 
-After explicit implementation authorization, Codex owns validation through review readiness within the approved scope:
+After explicit implementation authorization, the Implementation Agent owns validation through review readiness within the approved scope:
 
 1. Run relevant local tests and validation before pushing. Inspect workflows and other configured automation before pushing or changing PR state, including automation that can merge, publish or deploy. If the action would trigger an unauthorized operation, stop for explicit authorization; do not bypass protections.
 2. Push the approved feature branch and create a **draft PR**. All implementation PRs start as drafts.
@@ -156,11 +160,11 @@ Obtain new approval if remediation materially expands scope, modifies another re
 
 For an evidenced transient infrastructure failure, allow at most two retries per failure on a given head; do not retry indefinitely. When blocked or the monitoring time limit is reached, report the exact failure or pending checks, attempted fixes/retries and recommended next action. Do not claim completion or mark ready while required evidence is missing.
 
-These are active-session obligations, subject to installed CLI capabilities, GitHub permissions and available tools. `AGENTS.md` does not provide background execution or monitoring after Codex exits. Clearly report unsupported actions or interrupted monitoring and what remains to resume.
+These are active-session obligations, subject to installed CLI capabilities, GitHub permissions and available tools. `AGENTS.md` does not provide background execution or monitoring after the agent session ends. Clearly report unsupported actions or interrupted monitoring and what remains to resume.
 
 ## Automatic readiness and operational approval
 
-Codex must automatically change a draft PR to **Ready for review**, without another approval, only when:
+The Implementation Agent must automatically change a draft PR to **Ready for review**, without another approval, only when:
 
 - All applicable required GitHub checks have completed successfully for the current PR head, and relevant local tests and validation passed.
 - No known blocking security findings remain and implementation stays within the approved scope.
@@ -169,7 +173,7 @@ Codex must automatically change a draft PR to **Ready for review**, without anot
 
 If GitHub prevents the transition, report the blocker without bypassing protections. After marking ready, report the PR URL and issue reference (or initiating request when no issue exists), implementation summary, final commit SHA, required check results, tests executed and outcomes, skipped/deferred validation, security considerations and remaining owner actions. Then stop and await human review.
 
-**The human project owner is the sole authority for approving PR merges.** Codex must never merge a PR, enable auto-merge, bypass branch protection or authorize another agent to merge. Successful tests, CI/SAST or review readiness never imply merge authorization. Codex may create draft PRs, test, remediate CI and automatically mark ready when all gates pass; every implementation session ends at the human merge-review boundary. Deployment or release to production, repository renaming, live infrastructure or credential changes, changes to branch protection or security requirements, and access to another repository require separate explicit authorization and applicable enforced controls. Account for existing automatic merge/publish/deploy workflows before any triggering action; do not treat implementation approval or passing checks as operational approval.
+**The human project owner is the sole authority for approving PR merges.** No agent may merge a PR, enable auto-merge, bypass branch protection or authorize another agent to merge. Successful tests, CI/SAST or review readiness never imply merge authorization. The Implementation Agent may create draft PRs, test, remediate CI and automatically mark ready when all gates pass; every implementation session ends at the human merge-review boundary. Deployment or release to production, repository renaming, live infrastructure or credential changes, changes to branch protection or security requirements, and access to another repository require separate explicit authorization and applicable enforced controls. Account for existing automatic merge/publish/deploy workflows before any triggering action; do not treat implementation approval or passing checks as operational approval.
 
 ## Cross-repository development
 
