@@ -20,6 +20,12 @@ The pinned `generate.py` was downloaded read-only to
 (17647 bytes, sha256 `7073a98933cfa86b0a2ad8a77de05fd22c4ffe70a69d66b11fbf90518968ce4e`)
 and inspected in full. Nothing under `shared-actions` was modified.
 
+Current governance supersedes the historical unattended-merge description below: the
+[agent-context committer](../.github/workflows/agent-context-committer.yml) now opens
+draft refresh PRs, validates them and stops for Human Owner review and merge. It
+never merges or deletes branches. The measurements and design alternatives below
+remain evidence about the recorded baseline, not current workflow authority.
+
 ## 1. What exists today
 
 Two tracked, generated files at the repository root, produced by the pinned

@@ -294,7 +294,7 @@ effect.
 
 The default here is now the derived hybrid image,
 `ghcr.io/jimbobsyouruncle/openhands-agent-server-hybrid:1.37.1-python-hybrid.3` (see
-[Derived sandbox image](#derived-sandbox-image-shellcheck-and-other-tooling) below).
+[Derived sandbox image](#derived-sandbox-image-shellcheck-semgrep-and-other-tooling) below).
 Neither that name nor the CDN alias `docker.openhands.dev/openhands/agent-server` is
 the canonical string, so the app server honours `AGENT_SERVER_IMAGE_TAG`. That is what
 makes the `1.37.1-python-hybrid.3` pin work.
@@ -453,12 +453,17 @@ the deployment default, so a newly published tag only changes what runs once the
 ## Git workflow
 
 ```text
-request -> ai/* branch -> commit (OpenHands) -> independent review -> builder pushes + opens PR -> merge
+request -> ai/* branch -> implement + test + commit -> draft PR -> CI + review readiness -> Human Owner merge
 ```
 
-The agent is instructed to stop after committing. OpenHands never pushes and never opens a
-PR; the builder does that after an independent review (see
-[`../SECURITY.md`](../SECURITY.md#github-credential-separation)). Never enable automatic merge.
+Follow the [canonical root workflow](../AGENTS.md#standard-development-workflow), including
+mandatory owner decisions on consequential security risks before PR creation. The documented
+OpenHands sandbox has read-only GitHub credentials, so it reports the push/PR capability
+limitation and hands completed work and validation evidence to an authorized Implementation
+Agent outside the sandbox (see
+[`../SECURITY.md`](../SECURITY.md#github-credential-separation)). That handoff preserves
+the full task through PR readiness; a local commit alone does not complete it. Only the
+Human Owner merges. Never enable auto-merge, bypass branch protection or delegate merge authority.
 
 The OpenHands token is read-only. Use a fine-grained personal access token with:
 
@@ -501,7 +506,7 @@ Verify redaction before exposing a bundle to any cloud-hosted model.
 | Sandboxes can reach the API without a public port | `172.17.0.1:${OPENHANDS_PORT:-3001}` bind, reachable from the Docker bridge only, never the LAN |
 | Hermes reads the clone without being able to change it | `${OPENHANDS_WORKSPACE}:/agent-repo:ro`, and the separate `${AGENT_REPOS_DIR}:/agent-repos:ro` tree |
 | Hermes-only API path, no host port | internal `coder-net`, members `openhands` and `hermes` |
-| No automatic merge | Agent stops after commit; branch protection on `main` |
+| No automatic merge | Human Owner merges; root workflow and branch protection on `main`; read-only sandbox credentials |
 | Injection resistance | `AGENTS.md` classifies repo text and logs as untrusted data |
 | Resource bounded | Memory and CPU limits so agent work cannot starve chat |
 | Provider keys isolated | `${OPENHANDS_STATE_DIR}` (default `~/.openhands`), mode 0700, outside repo and sandbox |

@@ -156,7 +156,7 @@ agents:
 
 ### 5.2 Model and engine compatibility
 
-Build an adapter capability matrix: configurable OpenAI-compatible endpoint, streaming, tools/function calls, context length, structured output, token accounting, session persistence, embedding support, auth and telemetry control. Pi is a strong PoC candidate for custom provider routing; Hermes, Codex and OpenHands must each pass actual end-to-end tests before they are allowed in restricted mode. Do not assume a particular Codex build supports arbitrary model endpoints or that its ancillary features are disabled by configuration alone.
+For multi-model harnesses, verify every model and ancillary model call against the same task policy; a compatible primary model does not authorize other providers. Build an adapter capability matrix: configurable OpenAI-compatible endpoint, streaming, tools/function calls, context length, structured output, token accounting, session persistence, embedding support, auth and telemetry control. Pi is a strong PoC candidate for custom provider routing; Hermes, Codex and OpenHands must each pass actual end-to-end tests before they are allowed in restricted mode. Do not assume a particular Codex build supports arbitrary model endpoints or that its ancillary features are disabled by configuration alone.
 
 ### 5.3 RunPod deployment management
 
@@ -173,11 +173,11 @@ Build an adapter capability matrix: configurable OpenAI-compatible endpoint, str
 **Example:** Haven inference adapter and RunPod image need compatible changes.
 
 1. User selects project `Haven Platform`, repository group `Haven + RunPod`, and approves two scoped workstreams.
-2. Hermes Architect gets approved read-only contracts and relevant source snippets, drafts versioned API and acceptance tests. If restricted source enters context, coordinator must already use RunPod-only inference.
-3. Worker A (Codex or Pi) receives only `hybrid-ai`, an isolated branch, and a repo-specific GitHub token; implements Haven adapter and tests.
-4. Worker B (Pi or OpenHands, if policy permits) receives only RunPod container repo and separate credentials; updates inference server and health checks.
+2. Architecture Agent gets approved read-only contracts and relevant source snippets, drafts versioned API and acceptance tests. If restricted source enters context, coordinator must already use RunPod-only inference.
+3. Implementation Agent A receives only `hybrid-ai`, an isolated branch, and a repo-specific GitHub token; implements Haven adapter and tests.
+4. Implementation Agent B receives only RunPod container repo and separate credentials; updates inference server and health checks.
 5. Integration runner receives pinned images, schemas and synthetic test fixtures; it has no default access to either source repository. Tests compatibility, auth, streaming, failures and privacy.
-6. Independent Hermes Reviewer examines approved diffs and test results; if it reads restricted content, it must use the same RunPod-only inference policy.
+6. Review Agent examines approved diffs and test results; if it reads restricted content, it must use the same RunPod-only inference policy.
 7. Separate PRs, approvals and staged releases. Publish RunPod image first, then Haven adapter. Roll back independently on failure.
 
 Never place two independent agents on the same writable branch/worktree. An optional cross-repo worker needs an explicit exceptional grant and heightened approval; project grouping alone does not authorize it.
@@ -279,7 +279,7 @@ Inventory only credential names, owners, consumers, scopes and dependencies—**
 
 ### GitHub backlog and epic lifecycle
 
-GitHub Issues/Projects are proposed as the canonical cross-repository backlog. Codex performs owner-scoped implementation; a future Hermes PM may plan and groom issues under least privilege, without self-granted merge/deploy authority. The developer-local `haven new-epic` presents prioritized, deduplicated candidate epics and child issues; `haven next` verifies epic closure eligibility before proposing another issue. Both commands are **read-only**; epic creation, issue updates and closure require explicit separate owner approval. See [ADR-0004](adr/0004-github-epic-governance.md) and locally managed `~/.local/bin/haven` launcher.
+GitHub Issues/Projects are proposed as the canonical cross-repository backlog. The Implementation Agent follows the [canonical development workflow](../../AGENTS.md#standard-development-workflow) through testing and PR readiness, including mandatory pre-PR security escalation. A Coordinator may plan and groom issues only with scoped authorization. Only the Human Owner merges PRs; agents cannot merge, enable auto-merge, bypass branch protection or delegate merge authority. The developer-local `haven new-epic` presents prioritized, deduplicated candidate epics and child issues; `haven next` verifies epic closure eligibility before proposing another issue. Both commands are **read-only**; epic creation, issue updates and closure require explicit separate owner approval. See [ADR-0004](adr/0004-github-epic-governance.md) and locally managed `~/.local/bin/haven` launcher.
 
 ### RunPod worker contract
 
