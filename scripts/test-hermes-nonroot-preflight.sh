@@ -11,8 +11,8 @@
 #   or changed. The real check script is invoked by absolute path.
 #
 # COVERED:
-#   a) HYBRID_AI_UID unset  -> exit 0, today's behaviour, no output
-#   a2) HYBRID_AI_UID=0     -> exit 0, no-op
+#   a) HAVEN_UID unset  -> exit 0, today's behaviour, no output
+#   a2) HAVEN_UID=0     -> exit 0, no-op
 #   b) uid resolves to a login account (shell not nologin/false) -> refuse
 #   c) uid does not resolve to any account (real getent) -> refuse
 #   d) hermes_data holds entries not owned by the uid -> refuse, COUNT ONLY,
@@ -86,7 +86,7 @@ run_check() {
   env -i \
     PATH="${path_prefix:+$path_prefix:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     HOME="$WORKDIR" \
-    HYBRID_AI_UID="$uid" \
+    HAVEN_UID="$uid" \
     HERMES_DATA_DIR="$data_dir" \
     LOGIN_DEFS="$LOGIN_DEFS" \
     GETENT_MAP="$GETENT_MAP" \

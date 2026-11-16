@@ -13,11 +13,11 @@ set -Eeuo pipefail
 #   wrong verb, shell metacharacters, an empty command, an uppercase or short
 #   sha. It proves the SYSTEM manager is used (no --user), that a unit failure
 #   is a non-zero exit (3), and that the run log is printed from
-#   $HYBRID_AI_LOG_DIR/deploy/<sha>.log.
+#   $HAVEN_LOG_DIR/deploy/<sha>.log.
 #
 #   It also reproduces the real bootstrapped split in one case: a 0644 LAYOUT
 #   file names both the log dir and the 0600 stack file, with
-#   HYBRID_AI_LOG_DIR and HYBRID_AI_STACK_ENV_FILE unset in the environment. The
+#   HAVEN_LOG_DIR and HAVEN_STACK_ENV_FILE unset in the environment. The
 #   forced command must pin STACK_ENV_FILE at the layout file and never read the
 #   unreadable stack file. A mode-000 file is readable to root, so the case drops
 #   to an unprivileged uid when run as root; if it cannot, it prints SKIP and is
@@ -83,8 +83,8 @@ run() {
   : > "$SYSCTL_LOG"
   local rc=0
   SSH_ORIGINAL_COMMAND="$cmd" \
-  HYBRID_AI_ENV_FILE="$WORKDIR/empty.env" \
-  HYBRID_AI_LOG_DIR="$LOGDIR" \
+  HAVEN_ENV_FILE="$WORKDIR/empty.env" \
+  HAVEN_LOG_DIR="$LOGDIR" \
   "$@" "$SCRIPT" >"$WORKDIR/out" 2>&1 || rc=$?
   printf '%s' "$rc"
 }
@@ -164,7 +164,7 @@ mkdir -p "${LOGDIR}/deploy"
 printf 'hello-from-the-run-log\n' > "${LOGDIR}/deploy/${SHA}.log"
 rc="$(run "deploy $SHA")"
 if [[ "$rc" == "0" ]] && has_line "$WORKDIR/out" "hello-from-the-run-log"; then
-  ok "printed the run log from \$HYBRID_AI_LOG_DIR/deploy/<sha>.log"
+  ok "printed the run log from \$HAVEN_LOG_DIR/deploy/<sha>.log"
 else
   bad "did not print the run log"
   sed 's/^/      /' "$WORKDIR/out" >&2 || true
@@ -172,10 +172,10 @@ fi
 
 echo "== layout-only split (bootstrapped host) =="
 # Reproduce the real bootstrapped split: a 0644 LAYOUT file names BOTH the log
-# dir and the 0600 stack file, and HYBRID_AI_LOG_DIR / HYBRID_AI_STACK_ENV_FILE
+# dir and the 0600 stack file, and HAVEN_LOG_DIR / HAVEN_STACK_ENV_FILE
 # are NOT exported. The forced command must pin STACK_ENV_FILE at the layout
 # file, so it never reads the unreadable stack file, and it must take
-# HYBRID_AI_LOG_DIR from the layout file (proved by printing that log).
+# HAVEN_LOG_DIR from the layout file (proved by printing that log).
 #
 # A mode-000 file is readable to root, so the case must run as a NON-root uid.
 # When the caller is already unprivileged it runs itself as-is.
@@ -202,8 +202,8 @@ else
   SPLIT_STACK="$SPLIT/stack.env"
   mkdir -p "${SPLIT_LOG}/deploy"
   cat > "${SPLIT}/layout.env" <<EOF
-HYBRID_AI_LOG_DIR=${SPLIT_LOG}
-HYBRID_AI_STACK_ENV_FILE=${SPLIT_STACK}
+HAVEN_LOG_DIR=${SPLIT_LOG}
+HAVEN_STACK_ENV_FILE=${SPLIT_STACK}
 EOF
   chmod 0644 "${SPLIT}/layout.env"
   : > "${SPLIT_STACK}"
@@ -225,9 +225,9 @@ EOF
     : > "$SYSCTL_LOG"
     if (( EUID == 0 )); then chmod 0666 "$SYSCTL_LOG"; fi
     split_rc=0
-    "${priv_pre[@]}" env -u HYBRID_AI_LOG_DIR -u HYBRID_AI_STACK_ENV_FILE \
+    "${priv_pre[@]}" env -u HAVEN_LOG_DIR -u HAVEN_STACK_ENV_FILE \
       SSH_ORIGINAL_COMMAND="deploy $SHA" \
-      HYBRID_AI_ENV_FILE="${SPLIT}/layout.env" \
+      HAVEN_ENV_FILE="${SPLIT}/layout.env" \
       PATH="$BIN:$PATH" SYSCTL_LOG="$SYSCTL_LOG" \
       "$SCRIPT" >"$WORKDIR/out" 2>&1 || split_rc=$?
     if [[ "$split_rc" == "0" ]]; then
@@ -242,7 +242,7 @@ EOF
       bad "layout-only split: did not start the expected unit"
     fi
     if [[ "$split_rc" == "0" ]] && has_line "$WORKDIR/out" "hello-from-the-layout-log"; then
-      ok "layout-only split: printed the run log from the LAYOUT's \$HYBRID_AI_LOG_DIR"
+      ok "layout-only split: printed the run log from the LAYOUT's \$HAVEN_LOG_DIR"
     else
       bad "layout-only split: did not print the run log from the layout's log dir"
       sed 's/^/      /' "$WORKDIR/out" >&2 || true

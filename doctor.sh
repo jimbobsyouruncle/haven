@@ -28,14 +28,14 @@ cd "$SCRIPT_DIR" || exit 1
 
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/scripts/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/scripts/lib/haven-env.sh"
 # Resolving the pod's MagicDNS name to an address happens in ONE place, shared
 # with collect-diagnostics.sh and install.sh.
 # shellcheck source=scripts/lib/tailscale-resolve.sh
 source "${SCRIPT_DIR}/scripts/lib/tailscale-resolve.sh"
-APP_DIR="$HYBRID_AI_APP_DIR"
-ENV_FILE="$HYBRID_AI_STACK_ENV_FILE"
+APP_DIR="$HAVEN_APP_DIR"
+ENV_FILE="$HAVEN_STACK_ENV_FILE"
 
 QUIET=0
 NO_CLOUD=0
@@ -72,14 +72,14 @@ fail() {
 }
 
 # Read one key from a resolved env file, stripping optional surrounding quotes.
-# On a bootstrapped host the LAYOUT file (HYBRID_AI_ENV_FILE, mode 0644) holds
+# On a bootstrapped host the LAYOUT file (HAVEN_ENV_FILE, mode 0644) holds
 # the path and identity settings while the STACK file
-# (HYBRID_AI_STACK_ENV_FILE, mode 0600) holds the secrets, so BOTH are searched
+# (HAVEN_STACK_ENV_FILE, mode 0600) holds the secrets, so BOTH are searched
 # and the first non-empty value wins. When the two are the same file (no
 # bootstrap), the search is identical to reading that one file.
 env_get() {
   local file v
-  for file in "$HYBRID_AI_ENV_FILE" "$HYBRID_AI_STACK_ENV_FILE"; do
+  for file in "$HAVEN_ENV_FILE" "$HAVEN_STACK_ENV_FILE"; do
     [[ -n "$file" && -f "$file" ]] || continue
     v="$(grep -E "^$1=" "$file" 2>/dev/null | tail -1 | cut -d= -f2-)"
     v="${v%\"}"; v="${v#\"}"; v="${v%\'}"; v="${v#\'}"
@@ -194,9 +194,9 @@ runpod_key_check() {
 # throwaway fixtures without touching the live deployment. Production defaults
 # point at the real bind-mounted paths under the deployment directory.
 # ---------------------------------------------------------------------------
-HERMES_DATA_DIR="${HERMES_DATA_DIR:-${HYBRID_AI_HERMES_DATA_DIR}}"
+HERMES_DATA_DIR="${HERMES_DATA_DIR:-${HAVEN_HERMES_DATA_DIR}}"
 DOCTOR_TRIAGE_STALL_MIN="${DOCTOR_TRIAGE_STALL_MIN:-15}"
-DEPLOY_ENV="${DEPLOY_ENV:-$HYBRID_AI_ENV_FILE}"
+DEPLOY_ENV="${DEPLOY_ENV:-$HAVEN_ENV_FILE}"
 
 # Read one environment variable from a container's config (not a live exec).
 container_env() {
@@ -210,7 +210,7 @@ container_env() {
 # BOTH resolved env files are passed: the layout file holds the host paths and
 # identity settings, the stack file holds the runtime config and secrets. When
 # the two resolve to the same path, passing it twice is accepted.
-COMPOSE_CMD="docker compose -p hybrid-ai --env-file ${HYBRID_AI_ENV_FILE} --env-file ${ENV_FILE} --project-directory ${APP_DIR} -f ${APP_DIR}/docker-compose.yml -f ${APP_DIR}/openhands/docker-compose.openhands.yml -f ${APP_DIR}/hermes/docker-compose.hermes.yml"
+COMPOSE_CMD="docker compose -p hybrid-ai --env-file ${HAVEN_ENV_FILE} --env-file ${ENV_FILE} --project-directory ${APP_DIR} -f ${APP_DIR}/docker-compose.yml -f ${APP_DIR}/openhands/docker-compose.openhands.yml -f ${APP_DIR}/hermes/docker-compose.hermes.yml"
 
 (( QUIET )) || {
   printf '%s\n' "============================================================"
@@ -228,28 +228,28 @@ COMPOSE_CMD="docker compose -p hybrid-ai --env-file ${HYBRID_AI_ENV_FILE} --env-
 # may simply not have been created yet.
 section "Paths"
 # The helper records which settings were SET (by the environment or the env
-# file) in HYBRID_AI_EXPLICIT_SETTINGS. Only a SET path is warned about when it
+# file) in HAVEN_EXPLICIT_SETTINGS. Only a SET path is warned about when it
 # does not exist -- a default is never noise.
-PATH_IS_EXPLICIT=" ${HYBRID_AI_EXPLICIT_SETTINGS:-} "
-for _name in HYBRID_AI_APP_DIR HYBRID_AI_ENV_FILE HYBRID_AI_STACK_ENV_FILE \
-             HYBRID_AI_DATA_DIR \
-             HYBRID_AI_LOG_DIR HYBRID_AI_WORK_DIR OPENHANDS_WORKSPACE \
+PATH_IS_EXPLICIT=" ${HAVEN_EXPLICIT_SETTINGS:-} "
+for _name in HAVEN_APP_DIR HAVEN_ENV_FILE HAVEN_STACK_ENV_FILE \
+             HAVEN_DATA_DIR \
+             HAVEN_LOG_DIR HAVEN_WORK_DIR OPENHANDS_WORKSPACE \
              AGENT_REPOS_DIR OPENHANDS_STATE_DIR BACKUP_CONF_DIR \
-             HYBRID_AI_BACKUP_CRED_DIR \
+             HAVEN_BACKUP_CRED_DIR \
              RESTIC_CACHE_DIR BACKUP_LOG; do
   _p="${!_name}"
-  # HYBRID_AI_BACKUP_CRED_DIR is the directory the Backups section actually
+  # HAVEN_BACKUP_CRED_DIR is the directory the Backups section actually
   # checks (mode-aware: the root-owned credstore in system mode, BACKUP_CONF_DIR
   # in user mode). BACKUP_CONF_DIR stays printed but is labelled as the
   # user-mode config setting, so the two paths cannot be confused (D11). Paths
   # only -- never a credential value.
   case "$_name" in
     BACKUP_CONF_DIR)        _label="BACKUP_CONF_DIR (user-mode config setting)" ;;
-    HYBRID_AI_BACKUP_CRED_DIR) _label="HYBRID_AI_BACKUP_CRED_DIR (checked by the Backups section)" ;;
+    HAVEN_BACKUP_CRED_DIR) _label="HAVEN_BACKUP_CRED_DIR (checked by the Backups section)" ;;
     *)                      _label="$_name" ;;
   esac
   pass "${_label} = ${_p}"
-  if [[ "$_name" != "HYBRID_AI_ENV_FILE" && "$_name" != "HYBRID_AI_STACK_ENV_FILE" && ! -e "$_p" \
+  if [[ "$_name" != "HAVEN_ENV_FILE" && "$_name" != "HAVEN_STACK_ENV_FILE" && ! -e "$_p" \
         && "$PATH_IS_EXPLICIT" == *" ${_name} "* ]]; then
     warn "${_name} is set but does not exist: ${_p}" \
          "Create it, or unset ${_name} to fall back to the default."
@@ -551,15 +551,15 @@ if [[ -f "$ENV_FILE" ]]; then
     # The directory of EACH env file is guarded: the layout file and the stack
     # file. A workspace that IS either directory, or CONTAINS one, can read a
     # secret or a deployment setting, so both must be refused.
-    ENV_DIR_REAL="$(dirname "$(readlink -f "$HYBRID_AI_ENV_FILE" 2>/dev/null || echo "$HYBRID_AI_ENV_FILE")")"
-    STACK_ENV_DIR_REAL="$(dirname "$(readlink -f "$HYBRID_AI_STACK_ENV_FILE" 2>/dev/null || echo "$HYBRID_AI_STACK_ENV_FILE")")"
+    ENV_DIR_REAL="$(dirname "$(readlink -f "$HAVEN_ENV_FILE" 2>/dev/null || echo "$HAVEN_ENV_FILE")")"
+    STACK_ENV_DIR_REAL="$(dirname "$(readlink -f "$HAVEN_STACK_ENV_FILE" 2>/dev/null || echo "$HAVEN_STACK_ENV_FILE")")"
     if [[ "$OH_WS_REAL" == "$DEPLOY_REAL" ]]; then
       fail "OPENHANDS_WORKSPACE is the deployment directory" \
            "The agent sandbox could read the env file and the log files. Fix: ./scripts/setup-agent-workspace.sh"
     elif [[ "$OH_WS_REAL" == "$ENV_DIR_REAL" || "$OH_WS_REAL" == "$STACK_ENV_DIR_REAL" ]]; then
       fail "OPENHANDS_WORKSPACE is an env-file directory" \
            "That defeats the isolation. Fix: ./scripts/setup-agent-workspace.sh"
-    elif [[ -e "${OH_WS}/.env" || -e "$HYBRID_AI_ENV_FILE" && "$OH_WS_REAL" == "$ENV_DIR_REAL" || -e "$HYBRID_AI_STACK_ENV_FILE" && "$OH_WS_REAL" == "$STACK_ENV_DIR_REAL" ]]; then
+    elif [[ -e "${OH_WS}/.env" || -e "$HAVEN_ENV_FILE" && "$OH_WS_REAL" == "$ENV_DIR_REAL" || -e "$HAVEN_STACK_ENV_FILE" && "$OH_WS_REAL" == "$STACK_ENV_DIR_REAL" ]]; then
       fail "An env file exists inside the agent workspace" \
            "That defeats the isolation. Remove it: rm ${OH_WS}/.env"
     elif [[ -d "${OH_WS}/.git" ]]; then
@@ -692,13 +692,13 @@ if docker info >/dev/null 2>&1; then
 
     # --- Hermes effective uid ---------------------------------------------
     # WARN (never fail) while Hermes runs as uid 0: that is the legacy default
-    # on every existing host, and the account migration sets HYBRID_AI_UID to
+    # on every existing host, and the account migration sets HAVEN_UID to
     # move it to a dedicated non-root service uid.
     HERMES_RUN_UID="$(docker inspect -f '{{.Config.User}}' hermes-agent 2>/dev/null)"
     case "$HERMES_RUN_UID" in
       ""|"0"|"0:0"|"root"|"root:root")
         warn "Hermes runs as root (uid 0)" \
-             "Legacy default. Set HYBRID_AI_UID/HYBRID_AI_GID in .env to the dedicated non-root service uid, then: ${COMPOSE_CMD} up -d --build hermes"
+             "Legacy default. Set HAVEN_UID/HAVEN_GID in .env to the dedicated non-root service uid, then: ${COMPOSE_CMD} up -d --build hermes"
         ;;
       *)
         pass "Hermes runs as a non-root uid (${HERMES_RUN_UID})"
@@ -707,14 +707,14 @@ if docker info >/dev/null 2>&1; then
 
     # hermes_data should be owned by the configured non-root uid. Count only,
     # never names: the report must not leak directory contents.
-    CFG_UID="$(env_get HYBRID_AI_UID)"
+    CFG_UID="$(env_get HAVEN_UID)"
     if [[ -n "$CFG_UID" && "$CFG_UID" != "0" && "$CFG_UID" =~ ^[0-9]+$ && -d "$HERMES_DATA_DIR" ]]; then
       FOREIGN="$(find "$HERMES_DATA_DIR" ! -uid "$CFG_UID" 2>/dev/null | wc -l | tr -d ' ')"
       if [[ "${FOREIGN:-0}" -gt 0 ]]; then
-        warn "hermes_data has ${FOREIGN} entr(ies) not owned by HYBRID_AI_UID=${CFG_UID}" \
+        warn "hermes_data has ${FOREIGN} entr(ies) not owned by HAVEN_UID=${CFG_UID}" \
              "Fix ownership before Hermes starts as that uid, e.g.: sudo chown -R ${CFG_UID}:${CFG_UID} ${HERMES_DATA_DIR}"
       else
-        pass "hermes_data is owned by HYBRID_AI_UID=${CFG_UID}"
+        pass "hermes_data is owned by HAVEN_UID=${CFG_UID}"
       fi
     fi
   else
@@ -1285,8 +1285,8 @@ if (( OH_RUNNING )); then
       # Never derive the owner from the calling user: doctor runs under sudo, so
       # `id -un` is root and the printed fix would hand the whole workspace to
       # root. Use the stack identity, then the workspace's own owner.
-      WS_OWNER="$(env_get HYBRID_AI_UID)"; WS_OWNER="${WS_OWNER:-$(stat -c '%u' "$OH_WS" 2>/dev/null)}"
-      WS_GROUP="$(env_get HYBRID_AI_GID)"; WS_GROUP="${WS_GROUP:-$(stat -c '%g' "$OH_WS" 2>/dev/null)}"
+      WS_OWNER="$(env_get HAVEN_UID)"; WS_OWNER="${WS_OWNER:-$(stat -c '%u' "$OH_WS" 2>/dev/null)}"
+      WS_GROUP="$(env_get HAVEN_GID)"; WS_GROUP="${WS_GROUP:-$(stat -c '%g' "$OH_WS" 2>/dev/null)}"
       fail "Root-owned files in the workspace: $(echo "$ROOT_OWNED" | tr '\n' ' ')" \
            "Fix: sudo chown -R ${WS_OWNER}:${WS_GROUP} ${OH_WS} && sudo setfacl -R -m u:${OH_SB_UID}:rwx ${OH_WS}"
     else
@@ -1553,7 +1553,7 @@ fi
 # missing CLI, an unreachable daemon or an unreadable file skips.
 #
 # DOCTOR_RESOLV_CONF is an INTERNAL test seam, like
-# HYBRID_AI_POST_DEPLOY_VERIFY_LOG: it names a different file to inspect so an
+# HAVEN_POST_DEPLOY_VERIFY_LOG: it names a different file to inspect so an
 # offline harness can drive the check without touching the real /etc. Unset, it
 # is exactly /etc/resolv.conf.
 # ---------------------------------------------------------------------------
@@ -1601,12 +1601,12 @@ section "Backups"
 # backup.sh. In system mode the two-unit privilege split installs SYSTEM units
 # (capture + upload) and stores credentials in the root-owned credstore; in user
 # mode the per-user unit is used, exactly as before.
-BACKUP_MODE="$HYBRID_AI_BACKUP_MODE"
-BACKUP_TIMER_UNIT="$HYBRID_AI_BACKUP_TIMER_UNIT"
-BACKUP_SERVICE_NAME="$HYBRID_AI_BACKUP_SERVICE_UNIT"
-TIMER_SYSTEMCTL=(systemctl "$HYBRID_AI_BACKUP_SYSTEMCTL_SCOPE")
-JOURNAL_SCOPE="$HYBRID_AI_BACKUP_JOURNAL_SCOPE"
-BACKUP_CONF="$HYBRID_AI_BACKUP_CRED_DIR"
+BACKUP_MODE="$HAVEN_BACKUP_MODE"
+BACKUP_TIMER_UNIT="$HAVEN_BACKUP_TIMER_UNIT"
+BACKUP_SERVICE_NAME="$HAVEN_BACKUP_SERVICE_UNIT"
+TIMER_SYSTEMCTL=(systemctl "$HAVEN_BACKUP_SYSTEMCTL_SCOPE")
+JOURNAL_SCOPE="$HAVEN_BACKUP_JOURNAL_SCOPE"
+BACKUP_CONF="$HAVEN_BACKUP_CRED_DIR"
 if [[ -f "${BACKUP_CONF}/r2.env" && -f "${BACKUP_CONF}/repo-password" ]]; then
   pass "Backup credentials present"
 
@@ -1752,7 +1752,7 @@ unset DEPLOYED_BACKUP_SH
 # ---------------------------------------------------------------------------
 section "Data"
 
-for d in "$HYBRID_AI_WEBUI_DATA_DIR" "$HYBRID_AI_OLLAMA_DATA_DIR"; do
+for d in "$HAVEN_WEBUI_DATA_DIR" "$HAVEN_OLLAMA_DATA_DIR"; do
   if [[ -d "$d" ]]; then
     SZ="$(du -sh "$d" 2>/dev/null | cut -f1)"
     pass "$(basename "$d") present (${SZ})"
@@ -1761,8 +1761,8 @@ for d in "$HYBRID_AI_WEBUI_DATA_DIR" "$HYBRID_AI_OLLAMA_DATA_DIR"; do
   fi
 done
 
-if [[ -d "$HYBRID_AI_WEBUI_DATA_DIR" ]] && command -v sqlite3 >/dev/null 2>&1; then
-  DB="$HYBRID_AI_WEBUI_DATA_DIR/webui.db"
+if [[ -d "$HAVEN_WEBUI_DATA_DIR" ]] && command -v sqlite3 >/dev/null 2>&1; then
+  DB="$HAVEN_WEBUI_DATA_DIR/webui.db"
   if [[ -f "$DB" ]]; then
     # Read-only integrity check; does not lock out the running application.
     RESULT="$(sqlite3 "file:${DB}?mode=ro" 'PRAGMA quick_check;' 2>/dev/null | head -1)"
@@ -1776,10 +1776,10 @@ if [[ -d "$HYBRID_AI_WEBUI_DATA_DIR" ]] && command -v sqlite3 >/dev/null 2>&1; t
 fi
 
 # Leftover safety copies from a previous restore waste a lot of space.
-LEFTOVER="$(find "$HYBRID_AI_DATA_DIR" "$HYBRID_AI_WORK_DIR" -maxdepth 1 \( -name 'webui_data.pre-restore-*' -o -name 'hermes_data.pre-restore-*' -o -name '.restore-test-*' \) 2>/dev/null | wc -l | tr -d ' ')"
+LEFTOVER="$(find "$HAVEN_DATA_DIR" "$HAVEN_WORK_DIR" -maxdepth 1 \( -name 'webui_data.pre-restore-*' -o -name 'hermes_data.pre-restore-*' -o -name '.restore-test-*' \) 2>/dev/null | wc -l | tr -d ' ')"
 if [[ "${LEFTOVER:-0}" -gt 0 ]]; then
   warn "${LEFTOVER} leftover restore director(ies) taking up space" \
-       "Remove when you are confident: rm -rf \"${HYBRID_AI_DATA_DIR}\"/*.pre-restore-* \"${HYBRID_AI_WORK_DIR}\"/*.restore-test-*"
+       "Remove when you are confident: rm -rf \"${HAVEN_DATA_DIR}\"/*.pre-restore-* \"${HAVEN_WORK_DIR}\"/*.restore-test-*"
 fi
 
 # ---------------------------------------------------------------------------
@@ -1873,7 +1873,7 @@ else
   unset _ll_entry
   if (( LEASELESS > 0 )); then
     warn "${LEASELESS} conversation director(ies) have no owner_lease.json (${CONV_ROOT}): the prune sweep refuses them forever, so it moves nothing" \
-         "These are invisible to the app. Sweep the ones past the age limit with: sudo systemctl start hybrid-ai-prune (or sudo ${HYBRID_AI_APP_DIR:-/opt/hybrid-ai}/scripts/prune-conversations.sh) after setting HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=1 in .env and re-running ./install.sh. Leave it unset to keep the fail-safe."
+         "These are invisible to the app. Sweep the ones past the age limit with: sudo systemctl start hybrid-ai-prune (or sudo ${HAVEN_APP_DIR:-/opt/hybrid-ai}/scripts/prune-conversations.sh) after setting HAVEN_PRUNE_ALLOW_LEASE_LESS=1 in .env and re-running ./install.sh. Leave it unset to keep the fail-safe."
   else
     pass "every conversation directory carries an owner lease"
   fi
@@ -1957,7 +1957,7 @@ unset TLS_ENABLED_VAL TLS_IS_ON
 # This is a smoke detector, never a gate: it calls warn()/pass() only, so the
 # worst it can do is raise the exit code to 1, never 2.
 # ---------------------------------------------------------------------------
-PDV_LOG="$HYBRID_AI_POST_DEPLOY_VERIFY_LOG"
+PDV_LOG="$HAVEN_POST_DEPLOY_VERIFY_LOG"
 PDV_SKIP=""
 PDV_SEEN_WAITING=0
 PDV_WAITING_SHA=""
@@ -1992,7 +1992,7 @@ if [[ -n "$PDV_SKIP" ]]; then
   (( QUIET )) || printf '  %s-%s post-deploy verification log skipped (%s)\n' "$C_DIM" "$C_RST" "$PDV_SKIP"
 elif [[ ! -s "$PDV_LOG" ]]; then
   warn "post-deploy verification log ${PDV_LOG} is empty: the post-deploy verifier never wrote anything" \
-       "Either the verifier is not installed (check ${HYBRID_AI_POST_DEPLOY_VERIFY_CMD}) or it was killed before it wrote. Inspect it with: journalctl -u 'hybrid-ai-post-deploy-verify-*'"
+       "Either the verifier is not installed (check ${HAVEN_POST_DEPLOY_VERIFY_CMD}) or it was killed before it wrote. Inspect it with: journalctl -u 'hybrid-ai-post-deploy-verify-*'"
 elif (( ! PDV_SEEN_WAITING )); then
   warn "post-deploy verification log ${PDV_LOG} has no parseable 'waiting for <sha> at <ts>' line" \
        "Inspect the run with: journalctl -u 'hybrid-ai-post-deploy-verify-*'"

@@ -25,7 +25,7 @@ set -Eeuo pipefail
 # ---------------------------------------------------------------------------
 
 # Cases control the selector explicitly; ignore the invoking shell setting.
-unset HYBRID_AI_REPOSITORY_SLUG
+unset HAVEN_REPOSITORY_SLUG
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -96,11 +96,11 @@ run_instance() {
   local out="$1"; shift
   local rc=0
   env PATH="$BIN:$PATH" \
-      HYBRID_AI_APP_DIR="$APP" \
-      HYBRID_AI_ENV_FILE="$EMPTY" \
-      HYBRID_AI_LOG_DIR="$LOG" \
-      HYBRID_AI_DEPLOY_LOCK_FILE="$LOCK" \
-      GIT_ORIGIN_URL="${GIT_ORIGIN_URL:-https://github.com/jimbobsyouruncle/hybrid-ai.git}" \
+      HAVEN_APP_DIR="$APP" \
+      HAVEN_ENV_FILE="$EMPTY" \
+      HAVEN_LOG_DIR="$LOG" \
+      HAVEN_DEPLOY_LOCK_FILE="$LOCK" \
+      GIT_ORIGIN_URL="${GIT_ORIGIN_URL:-https://github.com/jimbobsyouruncle/haven.git}" \
       GIT_FETCH_RC="${GIT_FETCH_RC:-0}" \
       GIT_MERGEBASE_RC="${GIT_MERGEBASE_RC:-0}" \
       GIT_RESET_RC="${GIT_RESET_RC:-0}" \
@@ -121,7 +121,7 @@ else
   bad "accepted commit exited $rc and deploy-remote marker = $(cat "$DEPLOY_MARKER" 2>/dev/null)"
   sed 's/^/      /' "$WORK/accept.out" >&2 || true
 fi
-if has_line "$GIT_LOG" "fetch --prune --no-tags https://github.com/jimbobsyouruncle/hybrid-ai.git +refs/heads/main:refs/remotes/origin/main"; then
+if has_line "$GIT_LOG" "fetch --prune --no-tags https://github.com/jimbobsyouruncle/haven.git +refs/heads/main:refs/remotes/origin/main"; then
   ok "fetched main from the public https remote"
 else
   bad "did not fetch main from the public https remote"
@@ -147,22 +147,27 @@ fi
 
 echo "== explicit repository selection and legacy override =="
 : > "$GIT_LOG"; : > "$DEPLOY_MARKER"
-rc="$(run_instance "$WORK/haven.out" HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven)"
+rc="$(run_instance "$WORK/haven.out" HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven)"
 if [[ "$rc" == 0 ]] && has_line "$GIT_LOG" "fetch --prune --no-tags https://github.com/jimbobsyouruncle/haven.git"; then
   ok "explicit Haven selection fetches the new canonical URL"
 else
   bad "Haven selection did not fetch its canonical URL"
 fi
 : > "$GIT_LOG"
-rc="$(run_instance "$WORK/override.out" HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven HYBRID_AI_DEPLOY_PUBLIC_REMOTE=https://github.com/jimbobsyouruncle/hybrid-ai.git)"
-if [[ "$rc" == 0 ]] && has_line "$GIT_LOG" "fetch --prune --no-tags https://github.com/jimbobsyouruncle/hybrid-ai.git"; then
+rc="$(run_instance "$WORK/override.out" HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven HAVEN_DEPLOY_PUBLIC_REMOTE=https://github.com/jimbobsyouruncle/haven.git)"
+if [[ "$rc" == 0 ]] && has_line "$GIT_LOG" "fetch --prune --no-tags https://github.com/jimbobsyouruncle/haven.git"; then
   ok "existing public remote override takes precedence over selector"
 else
   bad "existing public remote override lost precedence"
 fi
-for remote in http://github.com/jimbobsyouruncle/haven.git https://user:pass@github.com/jimbobsyouruncle/haven.git; do
+for remote in http://github.com/jimbobsyouruncle/haven.git \
+  https://user:pass@github.com/jimbobsyouruncle/haven.git \
+  https://github.com/jimbobsyouruncle/hybrid-ai.git \
+  https://github.com/someone/other.git \
+  https://github.com.evil/jimbobsyouruncle/haven.git \
+  'https://github.com/jimbobsyouruncle/haven.git?query'; do
   : > "$GIT_LOG"
-  rc="$(run_instance "$WORK/unsafe.out" HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven HYBRID_AI_DEPLOY_PUBLIC_REMOTE="$remote")"
+  rc="$(run_instance "$WORK/unsafe.out" HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven HAVEN_DEPLOY_PUBLIC_REMOTE="$remote")"
   if [[ "$rc" == 5 ]] && ! has_line "$GIT_LOG" "fetch "; then
     ok "unsafe override rejected before fetch with Haven selected"
   else
@@ -173,8 +178,8 @@ done
 echo "== refusals (distinct exit codes) =="
 # Bad sha: 2 -- run with a bad sha argument directly.
 bad_rc=0
-env PATH="$BIN:$PATH" HYBRID_AI_APP_DIR="$APP" HYBRID_AI_ENV_FILE="$EMPTY" \
-    HYBRID_AI_LOG_DIR="$LOG" HYBRID_AI_DEPLOY_LOCK_FILE="$LOCK" \
+env PATH="$BIN:$PATH" HAVEN_APP_DIR="$APP" HAVEN_ENV_FILE="$EMPTY" \
+    HAVEN_LOG_DIR="$LOG" HAVEN_DEPLOY_LOCK_FILE="$LOCK" \
     bash "$SCRIPT" "not-a-sha" >"$WORK/badsha.out" 2>&1 || bad_rc=$?
 if [[ "$bad_rc" == "2" ]]; then
   ok "a bad sha is refused with exit 2"
@@ -183,7 +188,7 @@ else
 fi
 
 # Credential-bearing origin: 4
-rc="$(GIT_ORIGIN_URL="https://user:pass@github.com/jimbobsyouruncle/hybrid-ai.git" \
+rc="$(GIT_ORIGIN_URL="https://user:pass@github.com/jimbobsyouruncle/haven.git" \
       run_instance "$WORK/c_cred.out")"
 if [[ "$rc" == "4" ]]; then
   ok "a credential-bearing origin is refused with exit 4"
@@ -248,7 +253,7 @@ check_line "$UNIT_FILE" 'Type=oneshot' "unit is Type=oneshot"
 check_line "$UNIT_FILE" 'User=root' "unit runs as root"
 check_line "$UNIT_FILE" 'ExecStart=/opt/haven/scripts/deploy-instance.sh %i' "unit execs deploy-instance.sh %i"
 check_line "$UNIT_FILE" 'WorkingDirectory=/opt/haven' "unit WorkingDirectory is /opt/haven"
-check_line "$UNIT_FILE" 'Environment=HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env' "unit sets the env file path"
+check_line "$UNIT_FILE" 'Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env' "unit sets the env file path"
 check_line "$UNIT_FILE" 'TimeoutStartSec=45min' "unit TimeoutStartSec is 45min"
 
 # The workflow step must outlive the unit, so the step sees the real Result=

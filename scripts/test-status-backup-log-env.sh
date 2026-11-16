@@ -10,8 +10,8 @@
 #
 #   WHY THIS EXISTS: docker-compose.yml now builds the status service's
 #   read-only backup-log mount from ${BACKUP_LOG:?...}, so the mount source is
-#   whatever scripts/lib/hybrid-ai-env.sh resolved. docker-compose.yml used to
-#   mount ${HYBRID_AI_LOG_DIR}/backup.log unconditionally, which in SYSTEM mode
+#   whatever scripts/lib/haven-env.sh resolved. docker-compose.yml used to
+#   mount ${HAVEN_LOG_DIR}/backup.log unconditionally, which in SYSTEM mode
 #   is a file nothing writes: the units append to their LogsDirectory=
 #   (/var/log/hybrid-ai-backup/backup.log). The status page therefore said
 #   "no successful backup recorded" forever on a host whose backups worked.
@@ -71,7 +71,7 @@ mkdir -p "$APP/scripts/lib" "$BIN" "$WORK/data" "$WORK/log" "$WORK/work" \
          "$WORK/ws" "$WORK/repos" "$WORK/ohstate" "$WORK/conf" "$WORK/restic" \
          "$WORK/etc/hybrid-ai" "$WORK/ws/.git/info"
 cp "$REPO/install.sh" "$APP/install.sh"
-cp "$REPO/scripts/lib/hybrid-ai-env.sh" "$APP/scripts/lib/"
+cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
 [ -f "$REPO/scripts/lib/build-gate.sh" ] || { echo "FATAL: scripts/lib/build-gate.sh is missing; the build gate does not exist in this tree." >&2; exit 2; }
 cp "$REPO/scripts/lib/build-gate.sh" "$APP/scripts/lib/"
 
@@ -91,22 +91,22 @@ STACK="$WORK/etc/hybrid-ai/stack.env"
 write_layout() { # mode [extra KEY=VALUE lines...]
   local mode="$1"; shift
   {
-    printf 'HYBRID_AI_APP_DIR=%s\n' "$APP"
-    printf 'HYBRID_AI_ENV_FILE=%s\n' "$LAYOUT"
-    printf 'HYBRID_AI_STACK_ENV_FILE=%s\n' "$STACK"
-    printf 'HYBRID_AI_DATA_DIR=%s\n' "$WORK/data"
-    printf 'HYBRID_AI_LOG_DIR=%s\n' "$WORK/log"
-    printf 'HYBRID_AI_WORK_DIR=%s\n' "$WORK/work"
+    printf 'HAVEN_APP_DIR=%s\n' "$APP"
+    printf 'HAVEN_ENV_FILE=%s\n' "$LAYOUT"
+    printf 'HAVEN_STACK_ENV_FILE=%s\n' "$STACK"
+    printf 'HAVEN_DATA_DIR=%s\n' "$WORK/data"
+    printf 'HAVEN_LOG_DIR=%s\n' "$WORK/log"
+    printf 'HAVEN_WORK_DIR=%s\n' "$WORK/work"
     printf 'OPENHANDS_WORKSPACE=%s\n' "$WORK/ws"
     printf 'AGENT_REPOS_DIR=%s\n' "$WORK/repos"
     printf 'OPENHANDS_STATE_DIR=%s\n' "$WORK/ohstate"
     printf 'BACKUP_CONF_DIR=%s\n' "$WORK/conf"
     printf 'RESTIC_CACHE_DIR=%s\n' "$WORK/restic"
-    printf 'HYBRID_AI_HERMES_HOME_DIR=%s\n' "$WORK/hermes"
-    printf 'HYBRID_AI_BACKUP_MODE=%s\n' "$mode"
+    printf 'HAVEN_HERMES_HOME_DIR=%s\n' "$WORK/hermes"
+    printf 'HAVEN_BACKUP_MODE=%s\n' "$mode"
     printf 'BACKUP_CONTAINER_CONTROL=external\n'
-    printf 'HYBRID_AI_UID=1000\n'
-    printf 'HYBRID_AI_GID=1000\n'
+    printf 'HAVEN_UID=1000\n'
+    printf 'HAVEN_GID=1000\n'
     local line
     for line in "$@"; do printf '%s\n' "$line"; done
   } > "$LAYOUT"
@@ -155,17 +155,17 @@ chmod +x "$BIN"/*
 
 run_install() { # log
   local log="$1" rc=0
-  env -u HYBRID_AI_APP_DIR -u HYBRID_AI_DATA_DIR -u HYBRID_AI_LOG_DIR \
-      -u HYBRID_AI_WORK_DIR -u HYBRID_AI_STACK_ENV_FILE \
+  env -u HAVEN_APP_DIR -u HAVEN_DATA_DIR -u HAVEN_LOG_DIR \
+      -u HAVEN_WORK_DIR -u HAVEN_STACK_ENV_FILE \
       -u OPENHANDS_WORKSPACE -u AGENT_REPOS_DIR -u OPENHANDS_STATE_DIR \
-      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HYBRID_AI_HERMES_HOME_DIR \
-      -u HYBRID_AI_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
-      -u HYBRID_AI_UID -u HYBRID_AI_GID -u HYBRID_AI_LAYOUT_UID -u HYBRID_AI_LAYOUT_GID \
+      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HAVEN_HERMES_HOME_DIR \
+      -u HAVEN_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
+      -u HAVEN_UID -u HAVEN_GID -u HAVEN_LAYOUT_UID -u HAVEN_LAYOUT_GID \
       -u BACKUP_LOG -u BACKUP_GROUP_GID -u BACKUP_GROUP_GID_DEFAULT \
       ID_STUB_UID="${ID_STUB_UID:-1000}" CHOWN_LOG="${CHOWN_LOG:-/dev/null}" \
       GETENT_BACKUP_GID="${GETENT_BACKUP_GID-982}" \
       PATH="$BIN:$PATH" \
-      HYBRID_AI_ENV_FILE="$LAYOUT" \
+      HAVEN_ENV_FILE="$LAYOUT" \
       LOCAL_DOMAIN=example.test OPENROUTER_API_KEY=stub RUNPOD_API_KEY=stub \
       RUNPOD_POD_ID=stub RUNPOD_HOST=stub PI_HOST=stub \
       OPENHANDS_SANDBOX_HOST=example.test PEER_HOSTNAMES="none" \

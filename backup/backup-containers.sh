@@ -47,8 +47,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # Every host path comes from the ONE shared helper, exactly as backup.sh does.
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/../scripts/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/../scripts/lib/haven-env.sh"
 
 # The one directory this helper writes to. It matches the units'
 # RuntimeDirectory=hybrid-ai-backup (systemd sets that to /run/hybrid-ai-backup).
@@ -66,11 +66,11 @@ APP_CONTAINERS=(open-webui hermes-agent)
 
 # Every compose file, so 'config --images' reports the full stack, matching the
 # way backup.sh and doctor.sh render it.
-COMPOSE=(docker compose -p hybrid-ai --env-file "$HYBRID_AI_STACK_ENV_FILE"
-         --project-directory "$HYBRID_AI_APP_DIR"
-         -f "$HYBRID_AI_APP_DIR/docker-compose.yml"
-         -f "$HYBRID_AI_APP_DIR/openhands/docker-compose.openhands.yml"
-         -f "$HYBRID_AI_APP_DIR/hermes/docker-compose.hermes.yml")
+COMPOSE=(docker compose -p hybrid-ai --env-file "$HAVEN_STACK_ENV_FILE"
+         --project-directory "$HAVEN_APP_DIR"
+         -f "$HAVEN_APP_DIR/docker-compose.yml"
+         -f "$HAVEN_APP_DIR/openhands/docker-compose.openhands.yml"
+         -f "$HAVEN_APP_DIR/hermes/docker-compose.hermes.yml")
 
 log() { printf '[ * ] %s\n' "$*"; }
 
@@ -153,7 +153,7 @@ cmd_host_info() {
     done < "${out}/ollama-models.txt"
   fi
 
-  if [[ -f "${HYBRID_AI_ENV_FILE}" ]]; then
+  if [[ -f "${HAVEN_ENV_FILE}" ]]; then
     "${COMPOSE[@]}" config --images > "${out}/container-images.txt" 2>/dev/null || true
   fi
   hand_to_service "$out"

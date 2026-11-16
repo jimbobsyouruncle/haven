@@ -28,10 +28,10 @@
 #   build_gate_decide <repo-root> [env-file] [image-ref]
 #       Set BUILD_GATE_DECISION (rebuild|cache), BUILD_GATE_REASON and
 #       BUILD_GATE_SHA. Always returns 0.
-#   hybrid_progress_start <phase> / hybrid_progress_stop
-#       Background heartbeat: one log line per HYBRID_PROGRESS_INTERVAL seconds
+#   haven_progress_start <phase> / haven_progress_stop
+#       Background heartbeat: one log line per HAVEN_PROGRESS_INTERVAL seconds
 #       (default 60, 0 or less disables it) with elapsed seconds and the phase.
-#       The loop is always killed by hybrid_progress_stop.
+#       The loop is always killed by haven_progress_stop.
 # ---------------------------------------------------------------------------
 
 # Build-input tracking is only meaningful when the pin is readable.
@@ -196,14 +196,20 @@ build_gate_decide() {
 # --- progress heartbeat ----------------------------------------------------
 # One line per interval while a long phase runs, so a silent wait is visible in
 # the install log. Interval 0 (or bad input) disables the heartbeat.
-hybrid_progress_start() {
+haven_progress_start() {
   local phase="$1"
-  local interval="${HYBRID_PROGRESS_INTERVAL:-60}"
+  if [[ -v HAVEN_PROGRESS_INTERVAL && -v HYBRID_PROGRESS_INTERVAL &&
+        "$HAVEN_PROGRESS_INTERVAL" != "$HYBRID_PROGRESS_INTERVAL" ]]; then
+    printf 'build-gate: conflicting progress interval aliases\n' >&2
+    return 2
+  fi
+  HAVEN_PROGRESS_INTERVAL="${HAVEN_PROGRESS_INTERVAL-${HYBRID_PROGRESS_INTERVAL-}}"
+  local interval="${HAVEN_PROGRESS_INTERVAL:-60}"
 
   [[ "$interval" =~ ^[0-9]+$ ]] || interval=60
   (( interval > 0 )) || return 0
 
-  HYBRID_PROGRESS_START=$SECONDS
+  HAVEN_PROGRESS_START=$SECONDS
 
   (
     while :; do
@@ -211,7 +217,7 @@ hybrid_progress_start() {
       # effect at once instead of at the end of the interval.
       sleep "$interval" &
       wait $! || exit 0
-      elapsed=$(( SECONDS - HYBRID_PROGRESS_START ))
+      elapsed=$(( SECONDS - HAVEN_PROGRESS_START ))
       if declare -F log >/dev/null 2>&1; then
         log "progress: phase=${phase} elapsed=${elapsed}s"
       else
@@ -219,14 +225,14 @@ hybrid_progress_start() {
       fi
     done
   ) &
-  HYBRID_PROGRESS_PID=$!
+  HAVEN_PROGRESS_PID=$!
 }
 
-hybrid_progress_stop() {
-  if [[ -n "${HYBRID_PROGRESS_PID:-}" ]]; then
-    kill "$HYBRID_PROGRESS_PID" 2>/dev/null || true
-    wait "$HYBRID_PROGRESS_PID" 2>/dev/null || true
-    HYBRID_PROGRESS_PID=""
+haven_progress_stop() {
+  if [[ -n "${HAVEN_PROGRESS_PID:-}" ]]; then
+    kill "$HAVEN_PROGRESS_PID" 2>/dev/null || true
+    wait "$HAVEN_PROGRESS_PID" 2>/dev/null || true
+    HAVEN_PROGRESS_PID=""
   fi
   return 0
 }

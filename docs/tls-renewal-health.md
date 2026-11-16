@@ -105,8 +105,8 @@ script compares certificate serials instead. A NEW SERIAL IS PROOF OF A RENEWAL.
 <data>/caddy/caddy/certificates/<acme-ca-dir>/<host>/<host>.crt
 ```
 
-That root is derived in ONE place, `scripts/lib/hybrid-ai-env.sh`, as
-`HYBRID_AI_CADDY_CERT_ROOT="${HYBRID_AI_CADDY_DATA_DIR}/caddy/certificates"`.
+That root is derived in ONE place, `scripts/lib/haven-env.sh`, as
+`HAVEN_CADDY_CERT_ROOT="${HAVEN_CADDY_DATA_DIR}/caddy/certificates"`.
 `tls-audit.sh` and `tls-dry-run-renewal.sh` both default their certificate root
 to that exported value (`--cert-root` still wins). If Caddy's `/data` mount ever
 moves, the helper constant is the only line to edit; no script hardcodes the
@@ -148,27 +148,27 @@ ts=2026-10-28T06:10:02Z host=daemonhub.dev issuer="CN=R11" not_after=2027-01-20T
 Both logs are created 0600 in a directory created 0700.
 
 Both scripts resolve the log directory the same way, whether they run from the
-timer or by hand: an exported variable wins, otherwise `HYBRID_AI_LOG_DIR` is
+timer or by hand: an exported variable wins, otherwise `HAVEN_LOG_DIR` is
 read from the deployment env file, otherwise they fall back to `<repo>/logs`.
-The certificate root resolves the same way from `HYBRID_AI_DATA_DIR`. So on a
+The certificate root resolves the same way from `HAVEN_DATA_DIR`. So on a
 real deployment the logs land in the deployment log directory next to the
 backups, not in the repository.
 
 The unit runs under `ProtectSystem=strict`, which makes `/var/log` read-only, so
 it permits writes to exactly two directories: `__REPO_DIR__/logs` and
-`/var/log/hybrid-ai`. Any OTHER `HYBRID_AI_LOG_DIR` value needs its own
+`/var/log/hybrid-ai`. Any OTHER `HAVEN_LOG_DIR` value needs its own
 `ReadWritePaths=` entry in the unit, or the appends are blocked. A blocked
 append does not change the health verdict: the check's exit code is independent
 of whether the audit line was written, so the alert still fires.
 
 Rotation is config, not code. logrotate does NOT expand shell variables, so the
-shipped file carries a `__HYBRID_AI_LOG_DIR__` placeholder that must be
-substituted with the RESOLVED log directory (`HYBRID_AI_LOG_DIR` from `.env`,
+shipped file carries a `__HAVEN_LOG_DIR__` placeholder that must be
+substituted with the RESOLVED log directory (`HAVEN_LOG_DIR` from `.env`,
 else `<repo>/logs`):
 
 ```
-LOGDIR=/opt/haven/logs        # or the HYBRID_AI_LOG_DIR value from .env
-sudo sed "s#__HYBRID_AI_LOG_DIR__#$LOGDIR#g" deploy/logrotate/hybrid-ai-tls \
+LOGDIR=/opt/haven/logs        # or the HAVEN_LOG_DIR value from .env
+sudo sed "s#__HAVEN_LOG_DIR__#$LOGDIR#g" deploy/logrotate/hybrid-ai-tls \
   | sudo tee /etc/logrotate.d/hybrid-ai-tls >/dev/null
 sudo logrotate --debug /etc/logrotate.d/hybrid-ai-tls
 ```
@@ -191,7 +191,7 @@ monitoring path is systemd user timers, journald and `doctor.sh` exit codes.
 
   Read it with `journalctl --user -u hybrid-ai-tls-check.service`.
 
-- Transport B, only when `HYBRID_AI_ALERT_WEBHOOK_URL` is set: POST the same
+- Transport B, only when `HAVEN_ALERT_WEBHOOK_URL` is set: POST the same
   JSON body with curl. `https://` only. A URL carrying userinfo is refused. The
   URL never appears in argv, in output, or in a log: it is handed to curl
   through a 0600 `--config` file in a private `mktemp` directory. Timeout is

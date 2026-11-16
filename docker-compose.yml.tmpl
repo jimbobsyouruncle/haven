@@ -67,7 +67,7 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       # Format is  <folder on the Pi>:<folder inside the container>
-      - ${HYBRID_AI_DATA_DIR:?HYBRID_AI_DATA_DIR must be set - run ./install.sh}/ollama_data:/root/.ollama
+      - ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/ollama_data:/root/.ollama
     # A REAL, kernel-enforced memory cap. This is what actually stops a model
     # from taking the whole machine down -- unlike OLLAMA_MAX_VRAM, which was
     # never honoured by Ollama and has been removed upstream.
@@ -152,7 +152,7 @@ services:
       # Reachable from your whole network (and tailnet) on port 3000.
       - "3000:8080"
     volumes:
-      - ${HYBRID_AI_DATA_DIR:?HYBRID_AI_DATA_DIR must be set - run ./install.sh}/webui_data:/app/backend/data
+      - ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/webui_data:/app/backend/data
       # Mounted read-only (":ro"). This just makes the pipe source visible
       # inside the container for reference; you still import it through the UI.
       #
@@ -267,25 +267,25 @@ services:
       - ./status/app.py:/app/app.py:ro
       # Only the Backups tile state, via a private Unix socket. No TCP port.
       - type: bind
-        source: ${HYBRID_AI_DATA_DIR:?HYBRID_AI_DATA_DIR must be set - run ./install.sh}/status-verifier
+        source: ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/status-verifier
         target: /run/status-verifier
         bind:
           create_host_path: false
       # Read-only Docker socket: needed for container state and log tails.
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Measured, never read for content.
-      - ${HYBRID_AI_DATA_DIR:?HYBRID_AI_DATA_DIR must be set - run ./install.sh}/webui_data:/data/webui_data:ro
+      - ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/webui_data:/data/webui_data:ro
       # Writer and reader must name ONE path. The units (system mode) and
-      # backup.sh (user mode) write whatever scripts/lib/hybrid-ai-env.sh
+      # backup.sh (user mode) write whatever scripts/lib/haven-env.sh
       # resolves BACKUP_LOG to; install.sh writes that resolved value into the
       # stack env file, so this bind source is the file that is actually being
       # written. Fail-closed: an unset value refuses the parse instead of
       # mounting a path nothing writes.
       - ${BACKUP_LOG:?BACKUP_LOG must be set - run ./install.sh}:/data/backup.log:ro
-      - ${HYBRID_AI_LOG_DIR:?HYBRID_AI_LOG_DIR must be set - run ./install.sh}/install.log:/data/install.log:ro
+      - ${HAVEN_LOG_DIR:?HAVEN_LOG_DIR must be set - run ./install.sh}/install.log:/data/install.log:ro
       # The post-deploy verifier's log: read-only display data for the Deploy
       # verification tile. Same single-file pattern as the two logs above.
-      - ${HYBRID_AI_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}:/data/post-deploy-verify.log:ro
+      - ${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}:/data/post-deploy-verify.log:ro
     environment:
       STATUS_PORT: "8088"
       STATUS_BACKUP_SOCKET: /run/status-verifier/backup.sock
@@ -317,7 +317,7 @@ services:
       DO_NOT_TRACK: "true"
     dns:
       - 100.100.100.100
-    user: "${HYBRID_AI_UID:-${STATUS_UID:-1000}}:${DOCKER_GID:-999}"
+    user: "${HAVEN_UID:-${STATUS_UID:-1000}}:${DOCKER_GID:-999}"
     # Exactly ONE supplementary group: the backup account's gid, so the
     # read-only backup log (0640, group hybrid-ai-backup) is readable without
     # widening the file to the world and without running this service as root.
@@ -387,7 +387,7 @@ services:
       - ./status/Caddyfile:/etc/caddy/Caddyfile:ro
       # Caddy validates its config at boot; a syntax error here stops the
       # proxy only, leaving Open WebUI reachable on :3000.
-      - ${HYBRID_AI_DATA_DIR:?HYBRID_AI_DATA_DIR must be set - run ./install.sh}/caddy:/data
+      - ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/caddy:/data
 #@region proxy_secrets
 #@dns
     secrets:
@@ -441,10 +441,10 @@ services:
     environment:
       # Credentials reach THIS container only, never the proxy. `$$` is escaped
       # at write by install.sh STEP 8, so Compose yields the operator's bytes.
-      HYBRID_AI_AUTH_USER: ${HYBRID_AI_AUTH_USER:-}
-      HYBRID_AI_AUTH_HASH: ${HYBRID_AI_AUTH_HASH:-}
-      HYBRID_AI_AUTH_COOKIE_SECRET: ${HYBRID_AI_AUTH_COOKIE_SECRET:-}
-      HYBRID_AI_AUTH_COOKIE_MAX_AGE: ${HYBRID_AI_AUTH_COOKIE_MAX_AGE:-86400}
+      HAVEN_AUTH_USER: ${HAVEN_AUTH_USER:-}
+      HAVEN_AUTH_HASH: ${HAVEN_AUTH_HASH:-}
+      HAVEN_AUTH_COOKIE_SECRET: ${HAVEN_AUTH_COOKIE_SECRET:-}
+      HAVEN_AUTH_COOKIE_MAX_AGE: ${HAVEN_AUTH_COOKIE_MAX_AGE:-86400}
       TLS_DOMAIN: ${TLS_DOMAIN:-}
     # Inherit auth/Dockerfile's Python loopback probe and timing settings.
     # A Compose override previously targeted an unresolved display placeholder.
@@ -461,7 +461,7 @@ services:
 # enters the environment, an argument or an image layer: only the path is here.
 secrets:
   %TLS_SECRET_NAME%:
-    file: ${HYBRID_AI_TLS_TOKEN_FILE:?HYBRID_AI_TLS_TOKEN_FILE must be set when TLS is enabled}
+    file: ${HAVEN_TLS_TOKEN_FILE:?HAVEN_TLS_TOKEN_FILE must be set when TLS is enabled}
 
 #@end
 # There is deliberately NO top-level "volumes:" block here. See the persistence

@@ -60,7 +60,7 @@
 #      every such case funnels through the EXIT_INCOMPLETE path below.
 #
 # DATA PERMISSIONS:
-#   HYBRID_AI_UID (when set) makes the stack write hermes_data as that uid. If
+#   HAVEN_UID (when set) makes the stack write hermes_data as that uid. If
 #   this backup runs as a different account it may not be able to read that
 #   tree at all. The preflight in stage_backup detects that BEFORE any container
 #   is touched: it logs backup_data_unreadable with both uids, marks the run
@@ -136,28 +136,28 @@ set -Eeuo pipefail
 
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
-HYBRID_AI_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../scripts/lib" && pwd)"
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${HYBRID_AI_LIB_DIR}/hybrid-ai-env.sh"
-cd "$HYBRID_AI_APP_DIR" || exit 1
+HAVEN_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../scripts/lib" && pwd)"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${HAVEN_LIB_DIR}/haven-env.sh"
+cd "$HAVEN_APP_DIR" || exit 1
 
 # Credentials live OUTSIDE the git repository so that no git operation and no
 # careless 'tar czf' of the project folder can ever sweep them up. When the
 # capture/upload split runs the upload unit, systemd hands the same two files
 # over via $CREDENTIALS_DIRECTORY (LoadCredential=); that takes precedence.
-# Otherwise they come from HYBRID_AI_BACKUP_CRED_DIR, the ONE setting that
+# Otherwise they come from HAVEN_BACKUP_CRED_DIR, the ONE setting that
 # resolves to the credstore in system mode and to BACKUP_CONF_DIR in user mode.
 if [[ -n "${CREDENTIALS_DIRECTORY:-}" ]]; then
   R2_ENV_FILE="${CREDENTIALS_DIRECTORY}/r2.env"
   RESTIC_PW_FILE="${CREDENTIALS_DIRECTORY}/repo-password"
 else
-  R2_ENV_FILE="${HYBRID_AI_BACKUP_CRED_DIR}/r2.env"
-  RESTIC_PW_FILE="${HYBRID_AI_BACKUP_CRED_DIR}/repo-password"
+  R2_ENV_FILE="${HAVEN_BACKUP_CRED_DIR}/r2.env"
+  RESTIC_PW_FILE="${HAVEN_BACKUP_CRED_DIR}/repo-password"
 fi
 export RESTIC_CACHE_DIR
 
 # Where consistent snapshots are staged before upload. Wiped afterwards.
-STAGING_DIR="$HYBRID_AI_BACKUP_STAGING_DIR"
+STAGING_DIR="$HAVEN_BACKUP_STAGING_DIR"
 
 KEEP_DAILY="${KEEP_DAILY:-7}"
 KEEP_WEEKLY="${KEEP_WEEKLY:-4}"
@@ -173,11 +173,11 @@ CONTROL_RUN_DIR="${BACKUP_CONTROL_RUN_DIR:-/run/hybrid-ai-backup}"
 # Every compose file, so 'config --images' reports the full stack. The
 # resolved env file and the app directory are passed explicitly, so the stack
 # is the same one doctor.sh and install.sh operate on.
-COMPOSE=(docker compose -p hybrid-ai --env-file "$HYBRID_AI_STACK_ENV_FILE"
-         --project-directory "$HYBRID_AI_APP_DIR"
-         -f "$HYBRID_AI_APP_DIR/docker-compose.yml"
-         -f "$HYBRID_AI_APP_DIR/openhands/docker-compose.openhands.yml"
-         -f "$HYBRID_AI_APP_DIR/hermes/docker-compose.hermes.yml")
+COMPOSE=(docker compose -p hybrid-ai --env-file "$HAVEN_STACK_ENV_FILE"
+         --project-directory "$HAVEN_APP_DIR"
+         -f "$HAVEN_APP_DIR/docker-compose.yml"
+         -f "$HAVEN_APP_DIR/openhands/docker-compose.openhands.yml"
+         -f "$HAVEN_APP_DIR/hermes/docker-compose.hermes.yml")
 
 # Container names (not compose service names) that write durable state.
 APP_CONTAINERS=(open-webui hermes-agent)
@@ -212,9 +212,9 @@ done
 # It follows argument parsing so it can see the phase.
 if [[ -z "${CREDENTIALS_DIRECTORY:-}" && "$RUN_PHASE" != "stage" ]]; then
   path_within() { [[ "$1" == "$2" || "$1" == "$2"/* ]]; }
-  for _tree in "$HYBRID_AI_APP_DIR" "$HYBRID_AI_DATA_DIR" "$HYBRID_AI_WORK_DIR"; do
-    if path_within "${HYBRID_AI_BACKUP_CRED_DIR%/}" "${_tree%/}"; then
-      printf '[ X ] HYBRID_AI_BACKUP_CRED_DIR is inside %s.\n' "$_tree" >&2
+  for _tree in "$HAVEN_APP_DIR" "$HAVEN_DATA_DIR" "$HAVEN_WORK_DIR"; do
+    if path_within "${HAVEN_BACKUP_CRED_DIR%/}" "${_tree%/}"; then
+      printf '[ X ] HAVEN_BACKUP_CRED_DIR is inside %s.\n' "$_tree" >&2
       printf '     Backup credentials must live OUTSIDE the app, data and work directories.\n' >&2
       exit 1
     fi
@@ -269,18 +269,18 @@ mark_incomplete() {
 # hermes_data is written by the Hermes container, so every path discovered
 # beneath it is attacker-controlled. Before such a path is used for ANY copy or
 # sqlite3 call it must pass this allow-list:
-#   * the absolute path starts with "$HYBRID_AI_DATA_DIR/" (so the "$db" -> rel
+#   * the absolute path starts with "$HAVEN_DATA_DIR/" (so the "$db" -> rel
 #     derivation below is exact and can never escape via "..")
 #   * the whole data-relative path matches ^([A-Za-z0-9._@+-]+/)*[A-Za-z0-9._@+-]+$
 #   * no component is "." or ".."
 #   * no component starts with "-" (so it can never be read as an option)
-# The absolute prefix ("$HYBRID_AI_DATA_DIR") is not inspected: it is ours, not
+# The absolute prefix ("$HAVEN_DATA_DIR") is not inspected: it is ours, not
 # the container's. A rejected path is counted only -- its raw name is NEVER
 # logged.
 valid_rel_path() {
   local abs="$1" rel
-  [[ "$abs" == "${HYBRID_AI_DATA_DIR}/"* ]] || return 1
-  rel="${abs#"${HYBRID_AI_DATA_DIR}/"}"
+  [[ "$abs" == "${HAVEN_DATA_DIR}/"* ]] || return 1
+  rel="${abs#"${HAVEN_DATA_DIR}/"}"
   [[ -n "$rel" ]] || return 1
   # Match the ENTIRE path against one anchored regex. The char class cannot
   # match a quote, a newline, a '*', a '?' or a space, so a component cannot
@@ -454,7 +454,7 @@ cold_copy_db() {
   local db="$1"
   SNAPSHOT_REL=""
   valid_rel_path "$db" || return 3
-  SNAPSHOT_REL="${db#"${HYBRID_AI_DATA_DIR}/"}"
+  SNAPSHOT_REL="${db#"${HAVEN_DATA_DIR}/"}"
   [[ -f "$db" && ! -L "$db" ]] || return 1
   classify_db_file "$db" || return 1
   (( DB_IS_SQLITE )) || return 2
@@ -484,7 +484,7 @@ trap 'die "Failed at line ${LINENO}: ${BASH_COMMAND}"' ERR
 # this file as a NON-owner (uid 1000, plus exactly one supplementary gid), so
 # group-read on the backup account's group is what makes the tile work; the file
 # is never world-readable. User mode keeps 0600, byte-identical to before.
-if [[ "$HYBRID_AI_BACKUP_MODE" == "system" ]]; then
+if [[ "$HAVEN_BACKUP_MODE" == "system" ]]; then
   LOG_MODE=640
 else
   LOG_MODE=600
@@ -494,11 +494,11 @@ if touch "$BACKUP_LOG" 2>/dev/null; then
 fi
 
 # Which backup unit names apply? The shared helper resolved them from
-# HYBRID_AI_BACKUP_MODE, so this script and doctor.sh/install.sh cannot
+# HAVEN_BACKUP_MODE, so this script and doctor.sh/install.sh cannot
 # disagree. Only the enabled/disabled state of the nightly timer is reported,
 # from a fixed platform.txt line. Names only -- never a path, never a credential.
-TIMER_SCOPE="$HYBRID_AI_BACKUP_SYSTEMCTL_SCOPE"
-BACKUP_TIMER_UNIT="$HYBRID_AI_BACKUP_TIMER_UNIT"
+TIMER_SCOPE="$HAVEN_BACKUP_SYSTEMCTL_SCOPE"
+BACKUP_TIMER_UNIT="$HAVEN_BACKUP_TIMER_UNIT"
 
 master_timer_state() {
   systemctl "$TIMER_SCOPE" is-enabled "$BACKUP_TIMER_UNIT" 2>/dev/null || echo unknown
@@ -514,11 +514,11 @@ master_timer_state() {
 # probe. Used by the preflight and classify_db_file() when the run is in system
 # mode, while the current access()-based checks are kept in user mode.
 PROBE_OPEN=0
-if [[ "$HYBRID_AI_BACKUP_MODE" == "system" ]]; then
+if [[ "$HAVEN_BACKUP_MODE" == "system" ]]; then
   PROBE_OPEN=1
 fi
 # shellcheck source=scripts/lib/read-probe.sh
-source "${HYBRID_AI_LIB_DIR}/read-probe.sh"
+source "${HAVEN_LIB_DIR}/read-probe.sh"
 
 # The readability test the preflight and classify_db_file() share. In user mode
 # it is access()-based, exactly as before; in system mode it opens the path.
@@ -590,7 +590,7 @@ if [[ "$RUN_PHASE" != "stage" ]]; then
 # start; the files arrive mode 0400 (or 0440) and CANNOT be chmod 600 -- this
 # unit does not own that tmpfs and the copy is recreated each run. So accept
 # 0400/0440 ONLY for a file resolved under $CREDENTIALS_DIRECTORY. A file
-# sourced from HYBRID_AI_BACKUP_CRED_DIR (the user-mode path) still has to be
+# sourced from HAVEN_BACKUP_CRED_DIR (the user-mode path) still has to be
 # exactly 0600, and its failure message keeps the chmod 600 advice.
 _cred_file_mode_ok() {
   local f="$1" perms="$2"
@@ -676,7 +676,7 @@ fi
 # it unsets RESTIC_CACHE_DIR and continues.
 CACHE_PROBE_MAXDEPTH=3
 
-_hybrid_ai_cache_dir_writable() { # <dir>
+_haven_cache_dir_writable() { # <dir>
   local probe="${1}/.hybrid-ai-write-probe.$$"
   ( : > "$probe" ) 2>/dev/null || return 1
   rm -f "$probe" 2>/dev/null || true
@@ -684,11 +684,11 @@ _hybrid_ai_cache_dir_writable() { # <dir>
 
 # Print the first directory under <dir> (inclusive) this uid cannot write and
 # return 0; return 1 when every one of them is writable.
-_hybrid_ai_cache_offender() { # <dir>
+_haven_cache_offender() { # <dir>
   local dir="$1" sub
   [[ -d "$dir" ]] || return 1
   while IFS= read -r -d '' sub; do
-    if ! _hybrid_ai_cache_dir_writable "$sub"; then
+    if ! _haven_cache_dir_writable "$sub"; then
       printf '%s\n' "$sub"
       return 0
     fi
@@ -697,13 +697,13 @@ _hybrid_ai_cache_offender() { # <dir>
   return 1
 }
 
-_hybrid_ai_cache_writable() { # <dir>
+_haven_cache_writable() { # <dir>
   # offender prints and succeeds only when something is NOT writable.
-  ! _hybrid_ai_cache_offender "$1" >/dev/null
+  ! _haven_cache_offender "$1" >/dev/null
 }
 
 # A symlink anywhere in the cache is reported, never traversed.
-_hybrid_ai_cache_warn_symlinks() { # <dir>
+_haven_cache_warn_symlinks() { # <dir>
   local link
   while IFS= read -r -d '' link; do
     warn "restic cache contains a symlink (not followed): ${link}"
@@ -719,16 +719,16 @@ prepare_restic_cache() {
   # byte-identical in both modes. Only a PRE-EXISTING tree this uid cannot write
   # (the root-owned nested subdir left by an earlier root run) is healed.
   [[ -e "$dir" ]] || return 0
-  _hybrid_ai_cache_warn_symlinks "$dir"
-  offender="$(_hybrid_ai_cache_offender "$dir")" || return 0
+  _haven_cache_warn_symlinks "$dir"
+  offender="$(_haven_cache_offender "$dir")" || return 0
   warn "restic cache ${offender} is not writable by uid $(id -u); selecting a writable cache."
   event "restic_cache_unwritable" "severity=low" "configured=${dir}" "path=${offender}"
   for fallback in \
       "${RUNTIME_DIRECTORY%%:*}/restic-cache" \
-      "${HYBRID_AI_WORK_DIR:-}/.restic-cache" \
+      "${HAVEN_WORK_DIR:-}/.restic-cache" \
       "${TMPDIR:-/tmp}/hybrid-ai-restic-cache-$(id -u)"; do
     [[ -n "$fallback" && "$fallback" != "/restic-cache" && "$fallback" != "/.restic-cache" ]] || continue
-    if mkdir -p "$fallback" 2>/dev/null && _hybrid_ai_cache_writable "$fallback"; then
+    if mkdir -p "$fallback" 2>/dev/null && _haven_cache_writable "$fallback"; then
       RESTIC_CACHE_DIR="$fallback"
       export RESTIC_CACHE_DIR
       warn "Using fallback restic cache ${fallback}."
@@ -739,7 +739,7 @@ prepare_restic_cache() {
   # No writable fallback left. System mode stops here, in seconds, naming what
   # to fix: a restic retry storm costs ~15 minutes a night and reports only
   # "restic backup failed".
-  if [[ "$HYBRID_AI_BACKUP_MODE" == "system" ]]; then
+  if [[ "$HAVEN_BACKUP_MODE" == "system" ]]; then
     local owner mode fix
     owner="$(stat -c '%u:%g' "$offender" 2>/dev/null || echo unknown)"
     mode="$(stat -c '%a' "$offender" 2>/dev/null || echo unknown)"
@@ -806,14 +806,14 @@ fi
 stage_backup() {
 # --- Read-access preflight. Runs BEFORE any container is touched. -----------
 # The backup runs as whoever invoked it (a systemd --user unit runs as the
-# human user), while with HYBRID_AI_UID set the stack writes hermes_data as the
+# human user), while with HAVEN_UID set the stack writes hermes_data as the
 # stack uid. If this process cannot read a data tree, nothing under it can be
 # captured -- and a cold copy that stopped the agent for nothing killed
 # in-flight sessions (incident B1, 2026-10-15). So detect it here, be honest
 # about it, and stop no container. A discovered name is NEVER printed: only the
 # fixed tree label and numeric uids reach the log.
 DATA_UNREADABLE=0
-for _tree_var in HYBRID_AI_HERMES_DATA_DIR HYBRID_AI_WEBUI_DATA_DIR; do
+for _tree_var in HAVEN_HERMES_DATA_DIR HAVEN_WEBUI_DATA_DIR; do
   _tree="${!_tree_var}"
   [[ -d "$_tree" ]] || continue
   # User mode uses the access()-based find (unchanged). System mode probes with
@@ -827,8 +827,8 @@ for _tree_var in HYBRID_AI_HERMES_DATA_DIR HYBRID_AI_WEBUI_DATA_DIR; do
   fi
   if [[ -n "$_unreadable" ]]; then
     case "$_tree_var" in
-      HYBRID_AI_HERMES_DATA_DIR) _tree_label="hermes_data" ;;
-      HYBRID_AI_WEBUI_DATA_DIR)  _tree_label="webui_data" ;;
+      HAVEN_HERMES_DATA_DIR) _tree_label="hermes_data" ;;
+      HAVEN_WEBUI_DATA_DIR)  _tree_label="webui_data" ;;
       *)                         _tree_label="unknown" ;;
     esac
     _owner="$(stat -c '%u:%g' "$_tree" 2>/dev/null || echo unknown)"
@@ -879,10 +879,10 @@ fi
 # here because live SQLite is captured as a consistent snapshot instead (see
 # discover_databases below), never copied while in use.
 # ---------------------------------------------------------------------------
-HERMES_DATA="${HYBRID_AI_DATA_DIR}/hermes_data"
+HERMES_DATA="${HAVEN_DATA_DIR}/hermes_data"
 WEBUI_DB_PATHS=(
-  "${HYBRID_AI_DATA_DIR}/webui_data/webui.db"
-  "${HYBRID_AI_DATA_DIR}/webui_data/vector_db/chroma.sqlite3"
+  "${HAVEN_DATA_DIR}/webui_data/webui.db"
+  "${HAVEN_DATA_DIR}/webui_data/vector_db/chroma.sqlite3"
 )
 HERMES_EXCLUDES=(
   'tools/' 'hermes-agent/' 'installs/' 'cache/' 'image_cache/' 'audio_cache/'
@@ -960,7 +960,7 @@ snapshot_one_db() {
   if ! valid_rel_path "$db"; then
     return 3
   fi
-  rel="${db#"${HYBRID_AI_DATA_DIR}/"}"
+  rel="${db#"${HAVEN_DATA_DIR}/"}"
   SNAPSHOT_REL="$rel"
   target="${STAGING_DIR}/databases/${rel}"
 
@@ -1088,20 +1088,20 @@ rsync_classify() {
   fi
 }
 
-if [[ -d "${HYBRID_AI_DATA_DIR}/webui_data/uploads" ]]; then
+if [[ -d "${HAVEN_DATA_DIR}/webui_data/uploads" ]]; then
   mkdir -p "${STAGING_DIR}/files/webui_data/uploads"
-  rc=0; rsync -a "${HYBRID_AI_DATA_DIR}/webui_data/uploads/" "${STAGING_DIR}/files/webui_data/uploads/" 2>/dev/null || rc=$?
+  rc=0; rsync -a "${HAVEN_DATA_DIR}/webui_data/uploads/" "${STAGING_DIR}/files/webui_data/uploads/" 2>/dev/null || rc=$?
   rsync_classify "$rc" "Open WebUI uploads" "webui_uploads"
 fi
 
-if [[ -d "${HYBRID_AI_DATA_DIR}/webui_data/vector_db" ]]; then
+if [[ -d "${HAVEN_DATA_DIR}/webui_data/vector_db" ]]; then
   mkdir -p "${STAGING_DIR}/files/webui_data/vector_db"
   rc=0
   rsync -a \
     --exclude='*.db' --exclude='*.sqlite' --exclude='*.sqlite3' \
     --exclude='*.db-wal' --exclude='*.db-shm' --exclude='*.db-journal' \
     --exclude='*-wal' --exclude='*-shm' \
-    "${HYBRID_AI_DATA_DIR}/webui_data/vector_db/" "${STAGING_DIR}/files/webui_data/vector_db/" 2>/dev/null || rc=$?
+    "${HAVEN_DATA_DIR}/webui_data/vector_db/" "${STAGING_DIR}/files/webui_data/vector_db/" 2>/dev/null || rc=$?
   rsync_classify "$rc" "Open WebUI vector data" "webui_vector_db"
 fi
 
@@ -1121,14 +1121,14 @@ if [[ -d "$HERMES_DATA" ]]; then
   unset HERMES_RSYNC_EXCL
 fi
 
-if [[ -d "${HYBRID_AI_HERMES_HOME_DIR}" ]]; then
+if [[ -d "${HAVEN_HERMES_HOME_DIR}" ]]; then
   rc=0
   rsync -a \
     --exclude='cache/' --exclude='tools/' --exclude='installs/' \
     --exclude='node_modules/' --exclude='.git/' --exclude='venv/' --exclude='.venv/' \
     --exclude='__pycache__/' --exclude='*.pyc' \
     --exclude='*.db' --exclude='*.sqlite' --exclude='*.sqlite3' \
-    "${HYBRID_AI_HERMES_HOME_DIR}/" "${STAGING_DIR}/hermes/" 2>/dev/null || rc=$?
+    "${HAVEN_HERMES_HOME_DIR}/" "${STAGING_DIR}/hermes/" 2>/dev/null || rc=$?
   rsync_classify "$rc" "the .hermes durable state" "dot_hermes"
 fi
 
@@ -1181,8 +1181,8 @@ if (( DB_FAILED > 0 )); then
     # against the fixed data-dir prefixes (ours, not container-provided).
     wfail=0; afail=0; agent_declined=0; agent_allowed=0
     for db in "${FAILED_DBS[@]}"; do
-      [[ "$db" == "${HYBRID_AI_WEBUI_DATA_DIR}/"* ]] && wfail=1
-      if [[ "$db" == "${HYBRID_AI_HERMES_DATA_DIR}/"* ]]; then
+      [[ "$db" == "${HAVEN_WEBUI_DATA_DIR}/"* ]] && wfail=1
+      if [[ "$db" == "${HAVEN_HERMES_DATA_DIR}/"* ]]; then
         afail=1
         if [[ "${BACKUP_ALLOW_AGENT_STOP:-0}" == "1" ]]; then
           agent_allowed=1
@@ -1246,10 +1246,10 @@ if (( DB_FAILED > 0 )); then
           [[ -f "$db" && ! -L "$db" ]] || continue
           # Skip a database whose container is not frozen: it is left out (which
           # makes the run incomplete) rather than copied while being written.
-          if [[ "$db" == "${HYBRID_AI_HERMES_DATA_DIR}/"* ]] && (( ! agent_frozen )); then
+          if [[ "$db" == "${HAVEN_HERMES_DATA_DIR}/"* ]] && (( ! agent_frozen )); then
             continue
           fi
-          if [[ "$db" == "${HYBRID_AI_WEBUI_DATA_DIR}/"* ]] && (( ! webui_frozen )); then
+          if [[ "$db" == "${HAVEN_WEBUI_DATA_DIR}/"* ]] && (( ! webui_frozen )); then
             continue
           fi
           crc=0; cold_copy_db "$db" || crc=$?
@@ -1320,32 +1320,32 @@ if is_running ollama; then
   OLLAMA_MODEL_COUNT="$(wc -l < "${HOST_DIR}/ollama-models.txt" 2>/dev/null | tr -d ' ')"
 fi
 
-if [[ -f "${HYBRID_AI_ENV_FILE}" ]]; then
+if [[ -f "${HAVEN_ENV_FILE}" ]]; then
   "${COMPOSE[@]}" config --images > "${HOST_DIR}/container-images.txt" 2>/dev/null || true
 fi
 fi
 
 for f in docker-compose.yml docker-compose.override.yml; do
-  if [[ -f "${HYBRID_AI_APP_DIR}/${f}" ]]; then
-    cp -a "${HYBRID_AI_APP_DIR}/${f}" "${HOST_DIR}/${f}" 2>/dev/null || true
+  if [[ -f "${HAVEN_APP_DIR}/${f}" ]]; then
+    cp -a "${HAVEN_APP_DIR}/${f}" "${HOST_DIR}/${f}" 2>/dev/null || true
   fi
 done
 
 for d in openwebui openhands hermes scripts status; do
-  if [[ -d "${HYBRID_AI_APP_DIR}/${d}" ]]; then
+  if [[ -d "${HAVEN_APP_DIR}/${d}" ]]; then
     mkdir -p "${HOST_DIR}/${d}"
-    cp -a "${HYBRID_AI_APP_DIR}/${d}/." "${HOST_DIR}/${d}/" 2>/dev/null || true
+    cp -a "${HAVEN_APP_DIR}/${d}/." "${HOST_DIR}/${d}/" 2>/dev/null || true
   fi
 done
 
-if command -v git >/dev/null 2>&1 && [[ -d "${HYBRID_AI_APP_DIR}/.git" ]]; then
+if command -v git >/dev/null 2>&1 && [[ -d "${HAVEN_APP_DIR}/.git" ]]; then
   {
-    printf 'commit=%s\n' "$(git -C "$HYBRID_AI_APP_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
-    printf 'branch=%s\n' "$(git -C "$HYBRID_AI_APP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-    printf 'remote=%s\n' "$(git -C "$HYBRID_AI_APP_DIR" config --get remote.origin.url 2>/dev/null || echo none)"
-    printf 'dirty=%s\n'  "$(git -C "$HYBRID_AI_APP_DIR" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+    printf 'commit=%s\n' "$(git -C "$HAVEN_APP_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+    printf 'branch=%s\n' "$(git -C "$HAVEN_APP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    printf 'remote=%s\n' "$(git -C "$HAVEN_APP_DIR" config --get remote.origin.url 2>/dev/null || echo none)"
+    printf 'dirty=%s\n'  "$(git -C "$HAVEN_APP_DIR" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
   } > "${HOST_DIR}/git-state.txt" 2>/dev/null || true
-  git -C "$HYBRID_AI_APP_DIR" diff HEAD > "${HOST_DIR}/uncommitted.patch" 2>/dev/null || true
+  git -C "$HAVEN_APP_DIR" diff HEAD > "${HOST_DIR}/uncommitted.patch" 2>/dev/null || true
   [[ -s "${HOST_DIR}/uncommitted.patch" ]] || rm -f "${HOST_DIR}/uncommitted.patch"
 fi
 
@@ -1405,8 +1405,8 @@ MANIFEST
 # ---------------------------------------------------------------------------
 # STEP 6. Stage the configuration file
 # ---------------------------------------------------------------------------
-if [[ -f "${HYBRID_AI_ENV_FILE}" ]]; then
-  cp -a "${HYBRID_AI_ENV_FILE}" "${STAGING_DIR}/env/.env"
+if [[ -f "${HAVEN_ENV_FILE}" ]]; then
+  cp -a "${HAVEN_ENV_FILE}" "${STAGING_DIR}/env/.env"
   chmod 600 "${STAGING_DIR}/env/.env"
 fi
 

@@ -303,7 +303,7 @@ RESOLV_FOREIGN="$FIXDIR/resolv.foreign"
 } > "$RESOLV_FOREIGN"
 
 # --- scratch app ------------------------------------------------------------
-cp "$REPO_ROOT/scripts/lib/hybrid-ai-env.sh" "$APPD/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/haven-env.sh" "$APPD/scripts/lib/"
 # doctor.sh resolves the pod MagicDNS name through this shared lib.
 cp "$REPO_ROOT/scripts/lib/tailscale-resolve.sh" "$APPD/scripts/lib/"
 cp "$DOCTOR" "$APPD/doctor.sh"
@@ -359,7 +359,7 @@ run_doctor() { # name doctor-path resolv-path mode [path-override] ; sets RC
     cd "$APPD" || exit 1
     env TS_MODE="$mode" DOCTOR_RESOLV_CONF="$resolv" \
       PATH="$runpath" HOME="$WORK/home" SHELL=/bin/bash \
-      HYBRID_AI_DATA_DIR="$APPD" HYBRID_AI_LOG_DIR="$APPD" HYBRID_AI_WORK_DIR="$APPD" \
+      HAVEN_DATA_DIR="$APPD" HAVEN_LOG_DIR="$APPD" HAVEN_WORK_DIR="$APPD" \
       timeout 120 bash "$doc" --no-cloud
   ) > "$WORK/out.$name" 2>&1
   RC=$?

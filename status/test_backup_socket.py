@@ -160,14 +160,14 @@ printf 200
             file.chmod(0o700)
         sha = "a" * 40
         layout = self.root / "layout.env"
-        layout.write_text(f"HYBRID_AI_DATA_DIR={self.root}\nBACKUP_LOG={self.log}\nBACKUP_GROUP_GID={os.getgid()}\n")
+        layout.write_text(f"HAVEN_DATA_DIR={self.root}\nBACKUP_LOG={self.log}\nBACKUP_GROUP_GID={os.getgid()}\n")
         env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", REAL_CURL=real_curl,
-                   FIXTURE_SHA=sha, HYBRID_AI_ENV_FILE_FALLBACK=str(layout),
-                   HYBRID_AI_APP_DIR=str(self.root), HYBRID_AI_UID=str(os.getuid()),
-                   HYBRID_AI_GID=str(os.getgid()), VERIFY_STATUS_GID=str(os.getgid()),
-                   HYBRID_AI_VERIFY_BACKUP_GATES="required",
-                   HYBRID_AI_DEPLOY_VERDICT_DIR=str(self.root / "receipts"))
-        for key in ("HYBRID_AI_DATA_DIR", "BACKUP_LOG", "BACKUP_GROUP_GID", "VERIFY_STATUS_UID"):
+                   FIXTURE_SHA=sha, HAVEN_ENV_FILE_FALLBACK=str(layout),
+                   HAVEN_APP_DIR=str(self.root), HAVEN_UID=str(os.getuid()),
+                   HAVEN_GID=str(os.getgid()), VERIFY_STATUS_GID=str(os.getgid()),
+                   HAVEN_VERIFY_BACKUP_GATES="required",
+                   HAVEN_DEPLOY_VERDICT_DIR=str(self.root / "receipts"))
+        for key in ("HAVEN_DATA_DIR", "BACKUP_LOG", "BACKUP_GROUP_GID", "VERIFY_STATUS_UID"):
             env.pop(key, None)
         with app.backup_verifier_socket(self.path):
             result = subprocess.run(["bash", str(ROOT / "scripts/run-post-deploy-verify.sh"),

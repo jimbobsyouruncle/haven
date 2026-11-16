@@ -71,10 +71,10 @@ StateDirectory=hybrid-ai-backup
 RuntimeDirectory=hybrid-ai-backup
 CacheDirectory=hybrid-ai-backup
 LogsDirectory=hybrid-ai-backup
-Environment=HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
-Environment=HYBRID_AI_STACK_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
-Environment=HYBRID_AI_BACKUP_MODE=system
-Environment=HYBRID_AI_WORK_DIR=/var/lib/hybrid-ai-backup
+Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
+Environment=HAVEN_STACK_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
+Environment=HAVEN_BACKUP_MODE=system
+Environment=HAVEN_WORK_DIR=/var/lib/hybrid-ai-backup
 Environment=RESTIC_CACHE_DIR=/var/cache/hybrid-ai-backup
 
 # Give up rather than run forever. A hung upload holding the staging directory

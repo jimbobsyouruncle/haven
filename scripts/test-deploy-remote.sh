@@ -18,7 +18,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_SCRIPT="$SCRIPT_DIR/deploy-remote.sh"
-unset HYBRID_AI_REPOSITORY_SLUG
+unset HAVEN_REPOSITORY_SLUG
 
 if [[ ! -f "$DEPLOY_SCRIPT" ]]; then
   echo "FATAL: cannot find $DEPLOY_SCRIPT" >&2
@@ -75,10 +75,10 @@ export PATH="$BINDIR:$PATH"
 
 # Use a synthetic verifier so health cases do not depend on host installation.
 # Missing/scheduling-failure cases below assert the fail-closed contract.
-export HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$WORKDIR/default-verifier"
-printf '#!/usr/bin/env bash\nexit 0\n' > "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD"
-chmod +x "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD"
-export HYBRID_AI_POST_DEPLOY_VERIFY_LOG="$WORKDIR/no-such-verify.log"
+export HAVEN_POST_DEPLOY_VERIFY_CMD="$WORKDIR/default-verifier"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$HAVEN_POST_DEPLOY_VERIFY_CMD"
+chmod +x "$HAVEN_POST_DEPLOY_VERIFY_CMD"
+export HAVEN_POST_DEPLOY_VERIFY_LOG="$WORKDIR/no-such-verify.log"
 unset SYSTEMD_RUN_LOG SYSTEMD_RUN_EXIT
 
 # --- Throwaway repo with a real commit --------------------------------------
@@ -301,8 +301,8 @@ VERIFY_LOG="$WORKDIR/verify.log"
 SDRUN_LOG="$WORKDIR/systemd-run.argv"
 rm -f "$SDRUN_LOG"
 
-if HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
-   HYBRID_AI_POST_DEPLOY_VERIFY_LOG="$VERIFY_LOG" \
+if HAVEN_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
+   HAVEN_POST_DEPLOY_VERIFY_LOG="$VERIFY_LOG" \
    SYSTEMD_RUN_LOG="$SDRUN_LOG" \
    run_deploy "$WORKDIR/c8.out" "$SHA"; then
   RC_SCHEDULED=0
@@ -319,10 +319,10 @@ else
 fi
 
 if [[ "$INVOCATIONS" -eq 1 ]]; then
-  if [[ "$(grep -cxF -- '--setenv=HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/hybrid-ai' "$SDRUN_LOG")" -eq 1 ]]; then
-    pass "unset selector -> transient verifier explicitly receives legacy default exactly once"
+  if [[ "$(grep -cxF -- '--setenv=HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven' "$SDRUN_LOG")" -eq 1 ]]; then
+    pass "unset selector -> transient verifier explicitly receives canonical default exactly once"
   else
-    fail "unset selector -> transient verifier did not receive exactly one legacy default"
+    fail "unset selector -> transient verifier did not receive exactly one canonical default"
   fi
   missing=""
   for needle in "--collect" "--service-type=exec" \
@@ -340,36 +340,37 @@ if [[ "$INVOCATIONS" -eq 1 ]]; then
   else
     fail "verifier present -> the unit name does not match hybrid-ai-post-deploy-verify-<sha12>-<pid>"
   fi
-  # --setenv must carry the APP_DIR the deploy resolved (scripts/lib/hybrid-ai-env.sh,
+  # --setenv must carry the APP_DIR the deploy resolved (scripts/lib/haven-env.sh,
   # line 9), so the transient unit checks the real tree instead of its own default.
   EXPECTED_APP_DIR="$(
     cd "$REPO"
-    # shellcheck source=scripts/lib/hybrid-ai-env.sh
-    source "$SCRIPT_DIR/lib/hybrid-ai-env.sh"
-    printf '%s' "$HYBRID_AI_APP_DIR"
+    # shellcheck source=scripts/lib/haven-env.sh
+    source "$SCRIPT_DIR/lib/haven-env.sh"
+    printf '%s' "$HAVEN_APP_DIR"
   )"
-  setenv_count="$(grep -cF -- "--setenv=HYBRID_AI_APP_DIR=${EXPECTED_APP_DIR}" "$SDRUN_LOG" 2>/dev/null || true)"
+  setenv_count="$(grep -cF -- "--setenv=HAVEN_APP_DIR=${EXPECTED_APP_DIR}" "$SDRUN_LOG" 2>/dev/null || true)"
   setenv_count="${setenv_count:-0}"
   if [[ "$setenv_count" -eq 1 ]]; then
-    pass "verifier present -> argv carries --setenv=HYBRID_AI_APP_DIR=<resolved APP_DIR> exactly once"
+    pass "verifier present -> argv carries --setenv=HAVEN_APP_DIR=<resolved APP_DIR> exactly once"
   else
-    fail "verifier present -> expected --setenv=HYBRID_AI_APP_DIR=${EXPECTED_APP_DIR} exactly once, found ${setenv_count}"
+    fail "verifier present -> expected --setenv=HAVEN_APP_DIR=${EXPECTED_APP_DIR} exactly once, found ${setenv_count}"
   fi
 else
   fail "verifier present -> argv assertions skipped, systemd-run never ran"
 fi
 
-# Both explicit identities must survive the systemd manager environment boundary.
-for slug in jimbobsyouruncle/hybrid-ai jimbobsyouruncle/haven; do
+# Both process variable spellings select the same canonical systemd identity.
+for selector_name in HAVEN_REPOSITORY_SLUG HYBRID_AI_REPOSITORY_SLUG; do
+  slug=jimbobsyouruncle/haven
   rm -f "$SDRUN_LOG"
   rc=0
-  HYBRID_AI_REPOSITORY_SLUG="$slug" \
-    HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
+  ( export "${selector_name}=$slug"
+    HAVEN_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
     SYSTEMD_RUN_LOG="$SDRUN_LOG" \
-    run_deploy "$WORKDIR/identity.out" "$SHA" || rc=$?
+    run_deploy "$WORKDIR/identity.out" "$SHA" ) || rc=$?
   if [[ "$rc" -eq 0 && -f "$SDRUN_LOG" ]] &&
-     [[ "$(grep -c -- '^--setenv=HYBRID_AI_REPOSITORY_SLUG=' "$SDRUN_LOG")" -eq 1 ]] &&
-     grep -qxF -- "--setenv=HYBRID_AI_REPOSITORY_SLUG=$slug" "$SDRUN_LOG"; then
+     [[ "$(grep -c -- '^--setenv=HAVEN_REPOSITORY_SLUG=' "$SDRUN_LOG")" -eq 1 ]] &&
+     grep -qxF -- "--setenv=HAVEN_REPOSITORY_SLUG=$slug" "$SDRUN_LOG"; then
     pass "explicit $slug -> exactly one matching transient verifier selector"
   else
     fail "explicit $slug -> selector handoff failed"
@@ -381,12 +382,12 @@ for slug in '' 'unapproved-selector-fixture' $'jimbobsyouruncle/haven\n'; do
   rm -f "$MARKER" "$SDRUN_LOG"
   chmod -x "$REPO/install.sh"
   rc=0
-  HYBRID_AI_REPOSITORY_SLUG="$slug" \
-    HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
+  HAVEN_REPOSITORY_SLUG="$slug" \
+    HAVEN_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
     SYSTEMD_RUN_LOG="$SDRUN_LOG" \
     run_deploy "$WORKDIR/invalid-identity.out" "$SHA" || rc=$?
   if [[ "$rc" -eq 2 && ! -e "$MARKER" && ! -e "$SDRUN_LOG" && ! -x "$REPO/install.sh" ]] &&
-     [[ "$(cat "$WORKDIR/invalid-identity.out")" == 'repository identity: HYBRID_AI_REPOSITORY_SLUG must select an approved repository' ]]; then
+     [[ "$(cat "$WORKDIR/invalid-identity.out")" == 'repository identity: HAVEN_REPOSITORY_SLUG must select an approved repository' ]]; then
     pass "invalid selector -> exit 2, fixed diagnostic, no host mutation or verifier launch"
   else
     fail "invalid selector -> refusal or side-effect boundary failed"
@@ -396,8 +397,8 @@ done
 # Case: the verifier script is absent. The deployment must fail closed.
 rm -f "$MARKER" "$SDRUN_LOG"
 ABSENT_CMD="$WORKDIR/not-installed/run-post-deploy-verify.sh"
-if HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$ABSENT_CMD" \
-   HYBRID_AI_POST_DEPLOY_VERIFY_LOG="$VERIFY_LOG" \
+if HAVEN_POST_DEPLOY_VERIFY_CMD="$ABSENT_CMD" \
+   HAVEN_POST_DEPLOY_VERIFY_LOG="$VERIFY_LOG" \
    SYSTEMD_RUN_LOG="$SDRUN_LOG" \
    run_deploy "$WORKDIR/c9.out" "$SHA"; then
   RC_ABSENT=0
@@ -422,8 +423,8 @@ fi
 
 # Case: scheduling fails (systemd refuses). Mandatory failure.
 rm -f "$MARKER" "$SDRUN_LOG"
-if HYBRID_AI_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
-   HYBRID_AI_POST_DEPLOY_VERIFY_LOG="$VERIFY_LOG" \
+if HAVEN_POST_DEPLOY_VERIFY_CMD="$VERIFY_STUB" \
+   HAVEN_POST_DEPLOY_VERIFY_LOG="$VERIFY_LOG" \
    SYSTEMD_RUN_LOG="$SDRUN_LOG" SYSTEMD_RUN_EXIT=1 \
    run_deploy "$WORKDIR/c10.out" "$SHA"; then
   RC_SCHEDFAIL=0

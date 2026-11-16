@@ -51,20 +51,20 @@ into the deployment directory when satisfied.
 ```
 
 The script refuses to proceed if the workspace is, is inside, or contains any protected tree
-— `HYBRID_AI_APP_DIR`, `HYBRID_AI_DATA_DIR`, `HYBRID_AI_LOG_DIR`, `HYBRID_AI_WORK_DIR`, the
+— `HAVEN_APP_DIR`, `HAVEN_DATA_DIR`, `HAVEN_LOG_DIR`, `HAVEN_WORK_DIR`, the
 directory the env file lives in, the directory the STACK env file
-(`HYBRID_AI_STACK_ENV_FILE`) lives in, or `BACKUP_CONF_DIR` — and fails if an env file or log
+(`HAVEN_STACK_ENV_FILE`) lives in, or `BACKUP_CONF_DIR` — and fails if an env file or log
 file is found in the clone. On a bootstrapped host the layout file
 (`/etc/hybrid-ai/hybrid-ai.env`) and the stack file (`/etc/hybrid-ai/stack.env`) are two
 different files, and BOTH of their directories are guarded. A bare invocation that does not
-name the layout file still finds it: when `HYBRID_AI_ENV_FILE` is unset and
-`$HYBRID_AI_APP_DIR/.env` is absent, the helper falls back to
-`HYBRID_AI_ENV_FILE_FALLBACK` (default `/etc/hybrid-ai/hybrid-ai.env`) when it exists.
+name the layout file still finds it: when `HAVEN_ENV_FILE` is unset and
+`$HAVEN_APP_DIR/.env` is absent, the helper falls back to
+`HAVEN_ENV_FILE_FALLBACK` (default `/etc/hybrid-ai/hybrid-ai.env`) when it exists.
 
 On a bootstrapped host the workspace and the repo tree are SIBLINGS of the data dir, never
 children of it: `scripts/bootstrap.sh` renders `OPENHANDS_WORKSPACE=/var/lib/hybrid-ai-agent`
 and `AGENT_REPOS_DIR=/var/lib/hybrid-ai-repos`, both owned by the `hybrid-ai` account. This
-keeps them outside `HYBRID_AI_DATA_DIR` (`/var/lib/hybrid-ai`), which the guards above refuse.
+keeps them outside `HAVEN_DATA_DIR` (`/var/lib/hybrid-ai`), which the guards above refuse.
 A re-run against a tree an earlier, wrong bootstrap left under `/var/lib/hybrid-ai/agent-*`
 moves that child up to its sibling with a same-device rename; if both copies hold data it
 refuses with exit `6` before any move.
@@ -120,24 +120,24 @@ walks the directory tree.
 The sweep MOVES; it does not shred. A stale directory is moved to:
 
 ```text
-<dirname of HYBRID_AI_DATA_DIR>/hybrid-ai-conversation-quarantine/<YYYYMMDD>/<conversation-id>/
+<dirname of HAVEN_DATA_DIR>/hybrid-ai-conversation-quarantine/<YYYYMMDD>/<conversation-id>/
 ```
 
 That root is on the same filesystem as the conversations tree, is created mode
 0750 and root-owned, and is asserted to sit outside every tree the backup captures
-(`HYBRID_AI_DATA_DIR`, `HYBRID_AI_APP_DIR`, `HYBRID_AI_WORK_DIR`,
-`HYBRID_AI_HERMES_DATA_DIR`, `HYBRID_AI_WEBUI_DATA_DIR`, `OPENHANDS_WORKSPACE`).
-If it does not, the sweep refuses to move anything. `HYBRID_AI_PRUNE_QUARANTINE_BASE`
+(`HAVEN_DATA_DIR`, `HAVEN_APP_DIR`, `HAVEN_WORK_DIR`,
+`HAVEN_HERMES_DATA_DIR`, `HAVEN_WEBUI_DATA_DIR`, `OPENHANDS_WORKSPACE`).
+If it does not, the sweep refuses to move anything. `HAVEN_PRUNE_QUARANTINE_BASE`
 overrides the root and is still subject to the same assertion.
 
 The quarantine root is bounded: `<YYYYMMDD>` run directories older than
-`HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS` (default `90`) are deleted, only after
+`HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS` (default `90`) are deleted, only after
 the backup assertion passes and only inside that root. An explicitly empty or
 `0` value opts out and never deletes.
 
 A directory with no `owner_lease.json` is refused on every run: the fail-safe
-keeps an absent lease. `HYBRID_AI_PRUNE_ALLOW_LEASE_LESS` is the default-OFF
-opt-in that lets one move once its own mtime is past `HYBRID_AI_PRUNE_AGE_SECONDS`,
+keeps an absent lease. `HAVEN_PRUNE_ALLOW_LEASE_LESS` is the default-OFF
+opt-in that lets one move once its own mtime is past `HAVEN_PRUNE_AGE_SECONDS`,
 and `./doctor.sh` warns with the count when any exist.
 
 Moving a directory back into `conversations/` restores it, because the sweep
@@ -146,7 +146,7 @@ symlinked or non-plain-token directory name is refused and never followed, a
 directory whose lease is unreadable or unrecognised is refused and never moved —
 reported as a refusal, not as kept-live, so an unreadable lease fails closed — a
 directory whose lease is missing is refused unless
-`HYBRID_AI_PRUNE_ALLOW_LEASE_LESS` is set, and a directory reached by a running
+`HAVEN_PRUNE_ALLOW_LEASE_LESS` is set, and a directory reached by a running
 container is skipped. The schedule, the knobs and
 the inspection steps are in
 [`../docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md#the-disk-keeps-filling-with-conversation-directories).
@@ -263,7 +263,7 @@ The short form works for `logs` and `ps`, which is what makes the exception dang
 compose treats it as an orphan. `install.sh` uses `--remove-orphans` on every run.
 
 `scripts/openhands-control.sh` always passes both files, the resolved `--env-file`, and
-`--project-directory "$HYBRID_AI_APP_DIR"`. Prefer it:
+`--project-directory "$HAVEN_APP_DIR"`. Prefer it:
 
 ```bash
 ./openhands/scripts/openhands-control.sh status

@@ -70,6 +70,7 @@
   - def signed(self, exp)
   - def assert_login(self, location, original)
 - class VerifyTests(ServerCase)
+  - def test_old_cookie(self)
   - def test_healthz_open(self)
   - def test_valid_cookie(self)
   - def test_bad_cookies(self)
@@ -85,6 +86,8 @@
 - class RateLimitTests(ServerCase)
   - def test_rate_limit(self)
 - class StartupTests(TestCase)
+  - def test_legacy_import(self)
+  - def test_aliases(self)
   - def child_env(self, **overrides)
   - def test_env_exits(self)
   - def test_valid_env_runs(self)
@@ -128,10 +131,10 @@
 - write_status()
 - read_status()
 - _cred_file_mode_ok()
-- _hybrid_ai_cache_dir_writable()
-- _hybrid_ai_cache_offender()
-- _hybrid_ai_cache_writable()
-- _hybrid_ai_cache_warn_symlinks()
+- _haven_cache_dir_writable()
+- _haven_cache_offender()
+- _haven_cache_writable()
+- _haven_cache_warn_symlinks()
 - prepare_restic_cache()
 - stage_backup()
 - hermes_rsync_excludes()
@@ -481,28 +484,32 @@
 - build_gate_base_digest()
 - build_gate_inputs_sha()
 - build_gate_decide()
-- hybrid_progress_start()
-- hybrid_progress_stop()
+- haven_progress_start()
+- haven_progress_stop()
+
+## scripts/lib/haven-env.sh
+- haven_key()
+- _haven_canon()
+- _haven_expand_tilde()
+- _haven_file_unreadable()
+- _haven_file_get()
+- _haven_file_require_readable()
+- _haven_validate_path()
+- _haven_resolve_path()
+- _haven_resolve_enum()
+- _haven_resolve_scalar()
+- haven_env_dirs()
+- haven_env_load()
 
 ## scripts/lib/hybrid-ai-env.sh
-- _hybrid_ai_canon()
-- _hybrid_ai_expand_tilde()
-- _hybrid_ai_file_unreadable()
-- _hybrid_ai_file_get()
-- _hybrid_ai_file_require_readable()
-- _hybrid_ai_validate_path()
-- _hybrid_ai_resolve_path()
-- _hybrid_ai_resolve_enum()
-- _hybrid_ai_resolve_scalar()
-- hybrid_ai_env_dirs()
-- hybrid_ai_env_load()
+- (no symbols)
 
 ## scripts/lib/read-probe.sh
 - probe_can_read()
 - find_unreadable()
 
 ## scripts/lib/repository-identity.sh
-- hybrid_ai_repository_slug()
+- haven_repository_slug()
 
 ## scripts/lib/tailscale-resolve.sh
 - mesh_range_ok()
@@ -616,15 +623,15 @@
 - main()
 
 ## scripts/run-post-deploy-verify.sh
-- hybrid_ai_repository_slug()
+- haven_repository_slug()
 - usage_refuse()
 - record_gate()
 - verdict_dir()
 - write_verdict()
 - finish()
+- file_value()
 - resolve_app_dir()
 - gate_skip()
-- file_value()
 - layout_value()
 - log_has_success()
 - probe_read_as_status()
@@ -933,12 +940,7 @@
 - run_install()
 - env_value()
 
-## scripts/test-hermes-nonroot-preflight.sh
-- run_check()
-- pass()
-- fail()
-
-## scripts/test-hybrid-ai-env.sh
+## scripts/test-haven-env.sh
 - ok()
 - bad()
 - check()
@@ -948,6 +950,11 @@
 - fb_resolve()
 - fb_rc()
 - render_step8()
+
+## scripts/test-hermes-nonroot-preflight.sh
+- run_check()
+- pass()
+- fail()
 
 ## scripts/test-install-auth-env-leak.sh
 - ok()
@@ -973,6 +980,7 @@
   - def runner(self, args, **kwargs)
   - def receipt(self)
   - def assert_preserved(self)
+  - def test_canonical_layout(self)
   - def test_legacy_and_repeated_deployment(self)
   - def test_pending_blocks_even_with_forged_public_receipt(self)
   - def test_missing_failed_skipped_wrong_and_stale_receipts(self)

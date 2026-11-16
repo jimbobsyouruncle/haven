@@ -33,7 +33,7 @@
 #   k) a cold-copy stop failure: no backup_failed, exit 3
 #   t1/t2) a systemd LoadCredential copy under $CREDENTIALS_DIRECTORY at 0400 or
 #      0440 passes the mode check
-#   t3/t4) a HYBRID_AI_BACKUP_CRED_DIR file at 0644 or 0400 still dies, with the
+#   t3/t4) a HAVEN_BACKUP_CRED_DIR file at 0644 or 0400 still dies, with the
 #      chmod 600 advice
 #   t5) a systemd-path file at a bad mode dies with NO impossible chmod advice
 #   u1/u2) the backup log's mode is 0600 in user mode, 0640 in system mode
@@ -179,7 +179,7 @@ LOG="$TMPROOT/backup.log"
 CAPTURE="$TMPROOT/capture"
 # The fixtures own their paths. A caller's layout variables must not leak in and
 # move database discovery or the log path somewhere else.
-unset HYBRID_AI_DATA_DIR HYBRID_AI_LOG_DIR HYBRID_AI_BACKUP_MODE BACKUP_GROUP_GID
+unset HAVEN_DATA_DIR HAVEN_LOG_DIR HAVEN_BACKUP_MODE BACKUP_GROUP_GID
 export BACKUP_CONF_DIR="$CONF" BACKUP_LOG="$LOG" HOME="$REPO/home" SQLITE_LOG DOCKER_LOG
 export CAPTURE_DIR="$CAPTURE"
 export PATH="$STUB:$PATH"
@@ -453,10 +453,10 @@ APP_BEFORE="$(find "$APP2" -mindepth 1 | sort)"
 rm -rf "$CAPTURE"
 RUN_RC=0
 env -u BACKUP_LOG HOME="$HOME2" \
-    HYBRID_AI_APP_DIR="$APP2" \
-    HYBRID_AI_DATA_DIR="$DATA2" \
-    HYBRID_AI_LOG_DIR="$LOG2" \
-    HYBRID_AI_WORK_DIR="$WORK2" \
+    HAVEN_APP_DIR="$APP2" \
+    HAVEN_DATA_DIR="$DATA2" \
+    HAVEN_LOG_DIR="$LOG2" \
+    HAVEN_WORK_DIR="$WORK2" \
     BACKUP_CONF_DIR="$CONF" \
     BACKUP_NO_PAUSE=1 \
     CAPTURE_DIR="$CAPTURE" \
@@ -475,10 +475,10 @@ assert "case g: nothing written under APP_DIR" test "$APP_BEFORE" = "$APP_AFTER"
 # under WORK_DIR. The restic stub lays the snapshot down at --target.
 RESTORE_RC=0
 env -u BACKUP_LOG HOME="$HOME2" \
-    HYBRID_AI_APP_DIR="$APP2" \
-    HYBRID_AI_DATA_DIR="$DATA2" \
-    HYBRID_AI_LOG_DIR="$LOG2" \
-    HYBRID_AI_WORK_DIR="$WORK2" \
+    HAVEN_APP_DIR="$APP2" \
+    HAVEN_DATA_DIR="$DATA2" \
+    HAVEN_LOG_DIR="$LOG2" \
+    HAVEN_WORK_DIR="$WORK2" \
     BACKUP_CONF_DIR="$CONF" \
     SNAPSHOT_SRC="$CAPTURE" \
     PATH="$STUB:$PATH" \
@@ -505,7 +505,7 @@ EMPTYCONF="$TMPROOT/emptyconf"; mkdir -p "$EMPTYCONF"
 rm -rf "$REPO/hermes_data" "$STAGE"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/webui_data/webui.db" 'CREATE TABLE chat(id); INSERT INTO chat VALUES (1);'
 sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1);'
-run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HYBRID_AI_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
+run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HAVEN_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
 check "case l: --stage-only exit code" 0 "$RUN_RC"
 assert "case l: staging directory kept"        test -d "$STAGE"
 assert "case l: STATUS file written"           test -f "$STAGE/STATUS"
@@ -518,7 +518,7 @@ assert "case l: stage-only loaded no credentials" bash -c "! grep -q 'No credent
 rm -rf "$REPO/hermes_data" "$STAGE"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/hermes_data/keep.db" 'CREATE TABLE t(a); INSERT INTO t VALUES (1);'
 printf 'SQLite format 3\0' > "$REPO/hermes_data/boom.db"
-run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HYBRID_AI_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
+run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HAVEN_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
 check "case m: incomplete --stage-only exit code" 3 "$RUN_RC"
 assert "case m: staging kept"                       test -d "$STAGE"
 assert "case m: STATUS is incomplete"               bash -c "grep -qx 'status=incomplete' '$STAGE/STATUS'"
@@ -527,13 +527,13 @@ assert "case m: raw db name never in STATUS"        bash -c "! grep -q 'boom' '$
 
 # Case n: --upload-only refuses when the staging directory / STATUS is missing.
 rm -rf "$STAGE"
-run_backup_env BACKUP_CONF_DIR="$CONF" HYBRID_AI_WORK_DIR="$STAGE_WORK" -- --non-interactive --upload-only
+run_backup_env BACKUP_CONF_DIR="$CONF" HAVEN_WORK_DIR="$STAGE_WORK" -- --non-interactive --upload-only
 check "case n: --upload-only refuses without staging" 1 "$RUN_RC"
 assert "case n: refusal names the missing staging" bash -c "grep -qi 'staging' '$TMPROOT/out'"
 
 # Case n2: staging exists but STATUS is missing -- also refused.
 rm -rf "$STAGE"; mkdir -p "$STAGE"
-run_backup_env BACKUP_CONF_DIR="$CONF" HYBRID_AI_WORK_DIR="$STAGE_WORK" -- --non-interactive --upload-only
+run_backup_env BACKUP_CONF_DIR="$CONF" HAVEN_WORK_DIR="$STAGE_WORK" -- --non-interactive --upload-only
 check "case n2: --upload-only refuses without STATUS" 1 "$RUN_RC"
 assert "case n2: refusal names the missing STATUS" bash -c "grep -qi 'STATUS' '$TMPROOT/out'"
 
@@ -541,10 +541,10 @@ assert "case n2: refusal names the missing STATUS" bash -c "grep -qi 'STATUS' '$
 # succeeds, the staging directory is removed, and the exit is 0.
 rm -rf "$REPO/hermes_data" "$STAGE"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1);'
-run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HYBRID_AI_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
+run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HAVEN_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
 check "case o: stage complete" 0 "$RUN_RC"
 assert "case o: staging present before upload" test -d "$STAGE"
-run_backup_env BACKUP_CONF_DIR="$CONF" HYBRID_AI_WORK_DIR="$STAGE_WORK" -- --non-interactive --upload-only
+run_backup_env BACKUP_CONF_DIR="$CONF" HAVEN_WORK_DIR="$STAGE_WORK" -- --non-interactive --upload-only
 check "case o: --upload-only exit code" 0 "$RUN_RC"
 assert "case o: staging REMOVED after successful upload" bash -c "[[ ! -d '$STAGE' ]]"
 assert "case o: complete:true tag used"  log_has 'backup_success'
@@ -554,9 +554,9 @@ assert "case o: complete:true tag used"  log_has 'backup_success'
 rm -rf "$REPO/hermes_data" "$STAGE"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/hermes_data/keep.db" 'CREATE TABLE t(a); INSERT INTO t VALUES (1);'
 printf 'SQLite format 3\0' > "$REPO/hermes_data/boom.db"
-run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HYBRID_AI_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
+run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HAVEN_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
 check "case p: stage incomplete exit code" 3 "$RUN_RC"
-run_backup_env BACKUP_CONF_DIR="$CONF" HYBRID_AI_WORK_DIR="$STAGE_WORK" -- --non-interactive --upload-only
+run_backup_env BACKUP_CONF_DIR="$CONF" HAVEN_WORK_DIR="$STAGE_WORK" -- --non-interactive --upload-only
 check "case p: --upload-only incomplete exit code" 3 "$RUN_RC"
 assert "case p: staging removed after upload" bash -c "[[ ! -d '$STAGE' ]]"
 assert "case p: backup_incomplete emitted"    log_has 'backup_incomplete'
@@ -585,7 +585,7 @@ printf '27.0.0\n' > "$CONTROL_RUN/host-info/platform-docker.txt"
 printf 'llama3:latest\n' > "$CONTROL_RUN/host-info/ollama-models.txt"
 rm -rf "$REPO/hermes_data" "$STAGE"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1);'
-run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HYBRID_AI_WORK_DIR="$STAGE_WORK" BACKUP_CONTAINER_CONTROL=external BACKUP_CONTROL_RUN_DIR="$CONTROL_RUN" -- --non-interactive --stage-only
+run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HAVEN_WORK_DIR="$STAGE_WORK" BACKUP_CONTAINER_CONTROL=external BACKUP_CONTROL_RUN_DIR="$CONTROL_RUN" -- --non-interactive --stage-only
 check "case r: external-control --stage-only exit code" 0 "$RUN_RC"
 assert "case r: NO docker command was called in external mode" bash -c "[[ ! -s '$DOCKER_LOG' ]]"
 assert "case r: CONSISTENCY is paused from the runtime file" bash -c "grep -qx 'consistency=paused' '$STAGE/STATUS'"
@@ -596,18 +596,18 @@ assert "case r: docker version came from the helper file" bash -c "grep -qx 'doc
 # Cases s1-s3: the capture guard regression. On a bootstrapped host the
 # hybrid-ai-backup account's HOME is its work directory, so with
 # CREDENTIALS_DIRECTORY and both credential-dir settings unset the default
-# HYBRID_AI_BACKUP_CRED_DIR lands INSIDE HYBRID_AI_WORK_DIR. The capture
+# HAVEN_BACKUP_CRED_DIR lands INSIDE HAVEN_WORK_DIR. The capture
 # (--stage-only) reads no credential, so it must run clean; every phase that
 # DOES read a credential must still refuse that placement.
 # ---------------------------------------------------------------------------
 # Case s1: --stage-only with HOME inside the work tree exits 0, writes
 # status=complete, and never prints the guard message. This is the exact shape
 # of the live failure; it FAILS on unpatched main with "BACKUP_CONF_DIR is
-# inside". BACKUP_CONF_DIR and HYBRID_AI_BACKUP_CRED_DIR are unset, so the
+# inside". BACKUP_CONF_DIR and HAVEN_BACKUP_CRED_DIR are unset, so the
 # credential dir defaults to $HOME/.config/hybrid-ai-backup, inside WORK_DIR.
 rm -rf "$REPO/hermes_data" "$STAGE"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1);'
-run_backup_env -u BACKUP_CONF_DIR -u HYBRID_AI_BACKUP_CRED_DIR HOME="$STAGE_WORK" HYBRID_AI_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
+run_backup_env -u BACKUP_CONF_DIR -u HAVEN_BACKUP_CRED_DIR HOME="$STAGE_WORK" HAVEN_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
 check "case s1: capture on a bootstrapped host exit code" 0 "$RUN_RC"
 assert "case s1: STATUS is complete"         bash -c "grep -qx 'status=complete' '$STAGE/STATUS'"
 assert "case s1: guard message NOT printed"  bash -c "! grep -q 'is inside' '$TMPROOT/out'"
@@ -617,16 +617,16 @@ assert "case s1: guard message NOT printed"  bash -c "! grep -q 'is inside' '$TM
 for _phase_args in "--upload-only" "" "--dry-run"; do
   rm -rf "$STAGE"; mkdir -p "$STAGE"
   # shellcheck disable=SC2086  # word-splitting the phase args is intended
-  run_backup_env -u BACKUP_CONF_DIR -u HYBRID_AI_BACKUP_CRED_DIR HOME="$STAGE_WORK" HYBRID_AI_WORK_DIR="$STAGE_WORK" -- --non-interactive $_phase_args
+  run_backup_env -u BACKUP_CONF_DIR -u HAVEN_BACKUP_CRED_DIR HOME="$STAGE_WORK" HAVEN_WORK_DIR="$STAGE_WORK" -- --non-interactive $_phase_args
   check "case s2: guard fires for '${_phase_args:-<none>}'" 1 "$RUN_RC"
   assert "case s2: guard message for '${_phase_args:-<none>}'" \
-    bash -c "grep -q 'HYBRID_AI_BACKUP_CRED_DIR is inside' '$TMPROOT/out'"
+    bash -c "grep -q 'HAVEN_BACKUP_CRED_DIR is inside' '$TMPROOT/out'"
 done
 unset _phase_args
 
 # ---------------------------------------------------------------------------
 # Cases s3-s6: defect 4 -- a manual SYSTEM-mode run must read credentials from
-# HYBRID_AI_BACKUP_CRED_DIR, not BACKUP_CONF_DIR. Fixtures are ordinary 0600
+# HAVEN_BACKUP_CRED_DIR, not BACKUP_CONF_DIR. Fixtures are ordinary 0600
 # files with dummy values (not permission tests), so these pass as root or as an
 # unprivileged uid.
 # ---------------------------------------------------------------------------
@@ -636,24 +636,24 @@ printf 'RESTIC_REPOSITORY=s3:https://example.invalid/bucket\nAWS_ACCESS_KEY_ID=t
 printf 'test-password\n' > "$SYSCRED/repo-password"
 chmod 600 "$SYSCRED/r2.env" "$SYSCRED/repo-password"
 
-# Case s3: backup.sh full run reads ${HYBRID_AI_BACKUP_CRED_DIR} and logs
+# Case s3: backup.sh full run reads ${HAVEN_BACKUP_CRED_DIR} and logs
 # backup_success, with the files ONLY there (BACKUP_CONF_DIR is empty).
 rm -rf "$REPO/hermes_data"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1);'
-run_backup_env HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$SYSCRED" BACKUP_CONF_DIR="$SYSCONF" BACKUP_NO_PAUSE=1 -- --non-interactive
+run_backup_env HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$SYSCRED" BACKUP_CONF_DIR="$SYSCONF" BACKUP_NO_PAUSE=1 -- --non-interactive
 check "case s3: system-mode backup exit code" 0 "$RUN_RC"
 assert "case s3: backup_success logged" log_has 'backup_success'
 
 # Case s4: with the files ONLY in BACKUP_CONF_DIR (empty cred dir), backup.sh
-# dies naming the HYBRID_AI_BACKUP_CRED_DIR path.
+# dies naming the HAVEN_BACKUP_CRED_DIR path.
 rm -rf "$REPO/hermes_data"; mkdir -p "$REPO/hermes_data"
-run_backup_env HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$SYSCONF" BACKUP_CONF_DIR="$SYSCRED" BACKUP_NO_PAUSE=1 -- --non-interactive
+run_backup_env HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$SYSCONF" BACKUP_CONF_DIR="$SYSCRED" BACKUP_NO_PAUSE=1 -- --non-interactive
 check "case s4: backup refuses without cred-dir files" 1 "$RUN_RC"
 assert "case s4: refusal names the cred-dir path" \
   bash -c "grep -qF 'No credentials at ${SYSCONF}/r2.env' '$TMPROOT/out'"
 
 # Case s5: restore.sh gets PAST its credential checks when the files are in
-# HYBRID_AI_BACKUP_CRED_DIR. The restic stub reports snapshots successfully, so
+# HAVEN_BACKUP_CRED_DIR. The restic stub reports snapshots successfully, so
 # an EMPTY snapshot list is the earliest observable point the harness reaches;
 # the credential checks must not have killed it.
 rm -rf "$REPO/hermes_data"; mkdir -p "$REPO/hermes_data"
@@ -667,36 +667,36 @@ run_restore_env() {  # run_restore_env <env K=V...> -- <restore args...>
   RUN_RC=0
   env "${envs[@]}" bash "$REPO/backup/restore.sh" "${args[@]}" > "$TMPROOT/out" 2>&1 || RUN_RC=$?
 }
-run_restore_env HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$SYSCRED" BACKUP_CONF_DIR="$SYSCONF" -- --list
+run_restore_env HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$SYSCRED" BACKUP_CONF_DIR="$SYSCONF" -- --list
 assert "case s5: restore did not die with 'No credentials'" bash -c "! grep -q 'No credentials' '$TMPROOT/out'"
 assert "case s5: restore did not die with 'No repository password'" bash -c "! grep -q 'No repository password' '$TMPROOT/out'"
 
 # Case s6: with the files ONLY in BACKUP_CONF_DIR, restore.sh dies naming the
-# HYBRID_AI_BACKUP_CRED_DIR path.
-run_restore_env HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$SYSCONF" BACKUP_CONF_DIR="$SYSCRED" -- --list
+# HAVEN_BACKUP_CRED_DIR path.
+run_restore_env HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$SYSCONF" BACKUP_CONF_DIR="$SYSCRED" -- --list
 check "case s6: restore refuses without cred-dir files" 1 "$RUN_RC"
 assert "case s6: refusal names the cred-dir path" \
   bash -c "grep -qF 'No credentials at ${SYSCONF}/r2.env' '$TMPROOT/out'"
 
-# Case s7: a HYBRID_AI_BACKUP_CRED_DIR inside HYBRID_AI_DATA_DIR is refused by
+# Case s7: a HAVEN_BACKUP_CRED_DIR inside HAVEN_DATA_DIR is refused by
 # BOTH scripts (backup.sh non-stage, restore.sh) with exit 1.
 INSIDE_CRED="$DATA2/cred-inside"; mkdir -p "$INSIDE_CRED"
 cp "$SYSCRED/r2.env" "$INSIDE_CRED/r2.env"; chmod 600 "$INSIDE_CRED/r2.env"
 cp "$SYSCRED/repo-password" "$INSIDE_CRED/repo-password"; chmod 600 "$INSIDE_CRED/repo-password"
-run_backup_env HYBRID_AI_APP_DIR="$APP2" HYBRID_AI_DATA_DIR="$DATA2" HYBRID_AI_WORK_DIR="$WORK2" HYBRID_AI_BACKUP_CRED_DIR="$INSIDE_CRED" BACKUP_NO_PAUSE=1 -- --non-interactive
+run_backup_env HAVEN_APP_DIR="$APP2" HAVEN_DATA_DIR="$DATA2" HAVEN_WORK_DIR="$WORK2" HAVEN_BACKUP_CRED_DIR="$INSIDE_CRED" BACKUP_NO_PAUSE=1 -- --non-interactive
 check "case s7: backup refuses a cred dir inside DATA_DIR" 1 "$RUN_RC"
 assert "case s7: backup guard names the setting" \
-  bash -c "grep -q 'HYBRID_AI_BACKUP_CRED_DIR is inside' '$TMPROOT/out'"
-run_restore_env HYBRID_AI_APP_DIR="$APP2" HYBRID_AI_DATA_DIR="$DATA2" HYBRID_AI_WORK_DIR="$WORK2" HYBRID_AI_BACKUP_CRED_DIR="$INSIDE_CRED" -- --list
+  bash -c "grep -q 'HAVEN_BACKUP_CRED_DIR is inside' '$TMPROOT/out'"
+run_restore_env HAVEN_APP_DIR="$APP2" HAVEN_DATA_DIR="$DATA2" HAVEN_WORK_DIR="$WORK2" HAVEN_BACKUP_CRED_DIR="$INSIDE_CRED" -- --list
 check "case s7: restore refuses a cred dir inside DATA_DIR" 1 "$RUN_RC"
 assert "case s7: restore guard names the setting" \
-  bash -c "grep -q 'HYBRID_AI_BACKUP_CRED_DIR is inside' '$TMPROOT/out'"
+  bash -c "grep -q 'HAVEN_BACKUP_CRED_DIR is inside' '$TMPROOT/out'"
 
 # ---------------------------------------------------------------------------
 # Cases t1-t5: defect D4 -- the credential mode check. A systemd
 # LoadCredential= copy under $CREDENTIALS_DIRECTORY is materialised 0400/0440
 # root-owned and recreated each start; it can never be chmod 600. Accept 0400
-# and 0440 there, while a file sourced from HYBRID_AI_BACKUP_CRED_DIR still has
+# and 0440 there, while a file sourced from HAVEN_BACKUP_CRED_DIR still has
 # to be exactly 0600. The failure message is mode-aware: no impossible chmod
 # advice on the systemd path.
 # ---------------------------------------------------------------------------
@@ -720,10 +720,10 @@ run_backup_env CREDENTIALS_DIRECTORY="$CRED440" BACKUP_NO_PAUSE=1 -- --non-inter
 check "case t2: systemd copy at 0440 passes" 0 "$RUN_RC"
 assert "case t2: backup_success logged" log_has 'backup_success'
 
-# Case t3: a USER-MODE (HYBRID_AI_BACKUP_CRED_DIR) file at 0644 still dies, and
+# Case t3: a USER-MODE (HAVEN_BACKUP_CRED_DIR) file at 0644 still dies, and
 # the message keeps the chmod advice.
 chmod 644 "$SYSCRED/r2.env"
-run_backup_env HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$SYSCRED" BACKUP_CONF_DIR="$SYSCONF" BACKUP_NO_PAUSE=1 -- --non-interactive
+run_backup_env HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$SYSCRED" BACKUP_CONF_DIR="$SYSCONF" BACKUP_NO_PAUSE=1 -- --non-interactive
 check "case t3: user-mode file at 0644 refused" 1 "$RUN_RC"
 assert "case t3: refusal keeps the chmod advice" \
   bash -c "grep -q 'expected 600. Fix with: chmod 600' '$TMPROOT/out'"
@@ -732,7 +732,7 @@ chmod 600 "$SYSCRED/r2.env"
 # Case t4: a USER-MODE file at 0400 also dies -- the 0400/0440 relaxation is
 # ONLY for the systemd path.
 chmod 400 "$SYSCRED/r2.env"
-run_backup_env HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$SYSCRED" BACKUP_CONF_DIR="$SYSCONF" BACKUP_NO_PAUSE=1 -- --non-interactive
+run_backup_env HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$SYSCRED" BACKUP_CONF_DIR="$SYSCONF" BACKUP_NO_PAUSE=1 -- --non-interactive
 check "case t4: user-mode file at 0400 refused" 1 "$RUN_RC"
 assert "case t4: refusal keeps the chmod advice" \
   bash -c "grep -q 'expected 600. Fix with: chmod 600' '$TMPROOT/out'"
@@ -762,7 +762,7 @@ assert "case u1: user-mode log is 0600" \
 SYSU="$TMPROOT/cred-u"; mkdir -p "$SYSU"
 cp "$CONF/r2.env" "$SYSU/r2.env"; chmod 600 "$SYSU/r2.env"
 cp "$CONF/repo-password" "$SYSU/repo-password"; chmod 600 "$SYSU/repo-password"
-run_backup_env HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$SYSU" BACKUP_NO_PAUSE=1 -- --non-interactive
+run_backup_env HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$SYSU" BACKUP_NO_PAUSE=1 -- --non-interactive
 check "case u2: system-mode run succeeds" 0 "$RUN_RC"
 assert "case u2: system-mode log is 0640" \
   bash -c "[[ \"\$(stat -c '%a' '$LOG')\" == 640 ]]"
@@ -914,7 +914,7 @@ sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1
 OH_WORK="$TMPROOT/oh-work"; mkdir -p "$OH_WORK"
 OH_STAGE="$OH_WORK/.backup-staging"
 
-run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HYBRID_AI_WORK_DIR="$OH_WORK" \
+run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HAVEN_WORK_DIR="$OH_WORK" \
   OPENHANDS_STATE_DIR="$OH_STATE" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only
 check "case x1: OpenHands capture exits 0" 0 "$RUN_RC"
 assert "case x1: v1_conversations is NOT staged" \
@@ -927,7 +927,7 @@ if [[ -n "$BASE_BACKUP" ]]; then
   rm -rf "$OH_WORK"; mkdir -p "$OH_WORK"
   : > "$LOG"; : > "$DOCKER_LOG"
   BASE_RC=0
-  env HYBRID_AI_WORK_DIR="$OH_WORK" OPENHANDS_STATE_DIR="$OH_STATE" \
+  env HAVEN_WORK_DIR="$OH_WORK" OPENHANDS_STATE_DIR="$OH_STATE" \
       BACKUP_CONF_DIR="$EMPTYCONF" BACKUP_NO_PAUSE=1 BACKUP_LOG="$LOG" \
       PATH="$STUB:$PATH" bash "$BASE_BACKUP" --non-interactive --stage-only \
       > "$TMPROOT/out" 2>&1 || BASE_RC=$?
@@ -956,7 +956,7 @@ rm -rf "$BIG_WORK/.backup-staging"
 if [[ -n "$BASE_BACKUP" ]]; then
   : > "$LOG"; : > "$DOCKER_LOG"
   BASE_RC=0
-  env HYBRID_AI_WORK_DIR="$BIG_WORK" OPENHANDS_STATE_DIR="$BIG_STATE" \
+  env HAVEN_WORK_DIR="$BIG_WORK" OPENHANDS_STATE_DIR="$BIG_STATE" \
       BACKUP_CONF_DIR="$CONF" BACKUP_NO_PAUSE=1 BACKUP_LOG="$LOG" \
       PATH="$STUB:$PATH" bash "$BASE_BACKUP" --non-interactive --dry-run \
       > "$TMPROOT/out" 2>&1 || BASE_RC=$?
@@ -969,7 +969,7 @@ else
 fi
 
 rm -rf "$BIG_WORK/.backup-staging"
-run_backup_env BACKUP_CONF_DIR="$CONF" HYBRID_AI_WORK_DIR="$BIG_WORK" \
+run_backup_env BACKUP_CONF_DIR="$CONF" HAVEN_WORK_DIR="$BIG_WORK" \
   OPENHANDS_STATE_DIR="$BIG_STATE" BACKUP_NO_PAUSE=1 -- --non-interactive --dry-run
 check "case y2: large staging tree --dry-run exits 0" 0 "$RUN_RC"
 assert "case y2: report reaches the Repository line" \
@@ -982,7 +982,7 @@ assert "case y2: report is capped at 40 entries" \
 # the work, not the escape hatch.
 rm -rf "$REPO/hermes_data" "$BIG_WORK/.backup-staging"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1);'
-run_backup_env BACKUP_CONF_DIR="$CONF" HYBRID_AI_WORK_DIR="$BIG_WORK" \
+run_backup_env BACKUP_CONF_DIR="$CONF" HAVEN_WORK_DIR="$BIG_WORK" \
   OPENHANDS_STATE_DIR="$BIG_STATE" BACKUP_NO_PAUSE=0 -- --non-interactive --dry-run
 check "case z1: dry run exits 0" 0 "$RUN_RC"
 assert "case z1: no pause/unpause argv at all" \
@@ -996,7 +996,7 @@ assert "case z1: report still reached the Repository line" \
 # open-webui then hermes-agent, an unpause follows, and the whole docker argv
 # stream is byte-identical to the base copy's.
 rm -rf "$BIG_WORK/.backup-staging"
-run_backup_env BACKUP_CONF_DIR="$CONF" HYBRID_AI_WORK_DIR="$BIG_WORK" \
+run_backup_env BACKUP_CONF_DIR="$CONF" HAVEN_WORK_DIR="$BIG_WORK" \
   OPENHANDS_STATE_DIR="$BIG_STATE" BACKUP_NO_PAUSE=0 -- --non-interactive
 check "case z2: real run exits 0" 0 "$RUN_RC"
 FIXED_DOCKER="$TMPROOT/docker-fixed.log"
@@ -1009,7 +1009,7 @@ assert "case z2: unpause follows the capture" \
 if [[ -n "$BASE_BACKUP" ]]; then
   : > "$LOG"; : > "$DOCKER_LOG"
   BASE_RC=0
-  env HYBRID_AI_WORK_DIR="$BIG_WORK" OPENHANDS_STATE_DIR="$BIG_STATE" \
+  env HAVEN_WORK_DIR="$BIG_WORK" OPENHANDS_STATE_DIR="$BIG_STATE" \
       BACKUP_CONF_DIR="$CONF" BACKUP_NO_PAUSE=0 BACKUP_LOG="$LOG" CAPTURE_DIR="$TMPROOT/capture-base" \
       PATH="$STUB:$PATH" bash "$BASE_BACKUP" --non-interactive \
       > "$TMPROOT/out" 2>&1 || BASE_RC=$?
@@ -1027,14 +1027,14 @@ printf 'open-webui\nhermes-agent\n' > "$CONTROL_DRY/paused"
 chmod 600 "$CONTROL_DRY/paused"
 printf '27.0.0\n' > "$CONTROL_DRY/host-info/platform-docker.txt"
 rm -rf "$BIG_WORK/.backup-staging"
-run_backup_env BACKUP_CONF_DIR="$CONF" HYBRID_AI_WORK_DIR="$BIG_WORK" \
+run_backup_env BACKUP_CONF_DIR="$CONF" HAVEN_WORK_DIR="$BIG_WORK" \
   OPENHANDS_STATE_DIR="$BIG_STATE" BACKUP_CONTAINER_CONTROL=external \
   BACKUP_CONTROL_RUN_DIR="$CONTROL_DRY" BACKUP_NO_PAUSE=0 -- --non-interactive --dry-run
 check "case z3: external dry run exits 0" 0 "$RUN_RC"
 assert "case z3: external dry run issued NO docker command" bash -c "[[ ! -s '$DOCKER_LOG' ]]"
 assert "case z3: external dry run reached the Repository line" \
   bash -c "grep -qF 'Repository: s3:https://example.invalid/bucket' '$TMPROOT/out'"
-run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HYBRID_AI_WORK_DIR="$BIG_WORK" \
+run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HAVEN_WORK_DIR="$BIG_WORK" \
   OPENHANDS_STATE_DIR="$BIG_STATE" BACKUP_CONTAINER_CONTROL=external \
   BACKUP_CONTROL_RUN_DIR="$CONTROL_DRY" BACKUP_NO_PAUSE=0 -- --non-interactive --dry-run --stage-only
 check "case z3: external dry-run stage exits 0" 0 "$RUN_RC"

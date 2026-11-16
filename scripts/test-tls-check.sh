@@ -209,9 +209,9 @@ stop_server() {
 # helper here would export repo-default paths and shadow the fixture env files
 # the cases below pass with --env-file.
 STACK_ENV_FILE="$(bash -c '
-  # shellcheck source=scripts/lib/hybrid-ai-env.sh
-  source "$1/lib/hybrid-ai-env.sh" >/dev/null 2>&1 || exit 1
-  printf "%s" "$HYBRID_AI_STACK_ENV_FILE"
+  # shellcheck source=scripts/lib/haven-env.sh
+  source "$1/lib/haven-env.sh" >/dev/null 2>&1 || exit 1
+  printf "%s" "$HAVEN_STACK_ENV_FILE"
 ' _ "$SCRIPT_DIR" 2>/dev/null || true)"
 [[ -n "$STACK_ENV_FILE" ]] || STACK_ENV_FILE=""
 
@@ -477,8 +477,8 @@ if [[ -n "${port10:-}" ]]; then
 fi
 
 # --- case 10: tls-audit.sh resolves its paths from the env file --------
-# Neither --cert-root nor --log-dir is passed: HYBRID_AI_DATA_DIR and
-# HYBRID_AI_LOG_DIR come from the env file, exactly as they would on the host.
+# Neither --cert-root nor --log-dir is passed: HAVEN_DATA_DIR and
+# HAVEN_LOG_DIR come from the env file, exactly as they would on the host.
 # A changed serial in the same host directory must be recorded as a renewal,
 # which is the proof-of-renewal logic and had no automated test before this.
 if [[ -x "${AUDIT}" || -f "${AUDIT}" ]]; then
@@ -490,8 +490,8 @@ if [[ -x "${AUDIT}" || -f "${AUDIT}" ]]; then
 
   audit_env="$WORK/audit.env"
   {
-    printf 'HYBRID_AI_DATA_DIR=%s\n' "$data_dir"
-    printf 'HYBRID_AI_LOG_DIR=%s\n' "$log_dir"
+    printf 'HAVEN_DATA_DIR=%s\n' "$data_dir"
+    printf 'HAVEN_LOG_DIR=%s\n' "$log_dir"
   } > "$audit_env"
 
   bash "$AUDIT" --env-file "$audit_env" >/dev/null 2>&1; audit_rc=$?
@@ -548,9 +548,9 @@ if [[ -f "$LOGROTATE" ]]; then
     ok "logrotate file contains no \${...} literal path"
   fi
   # Look only at the path line (config lines, not the header's sed example).
-  path_lines="$(grep -c '^__HYBRID_AI_LOG_DIR__/' "$LOGROTATE" 2>/dev/null || echo 0)"
-  path_ph="$(grep '^__HYBRID_AI_LOG_DIR__/' "$LOGROTATE" 2>/dev/null \
-             | grep -o '__HYBRID_AI_LOG_DIR__' | wc -l)"
+  path_lines="$(grep -c '^__HAVEN_LOG_DIR__/' "$LOGROTATE" 2>/dev/null || echo 0)"
+  path_ph="$(grep '^__HAVEN_LOG_DIR__/' "$LOGROTATE" 2>/dev/null \
+             | grep -o '__HAVEN_LOG_DIR__' | wc -l)"
   if [[ "$path_lines" -eq 1 && "$path_ph" -eq 2 ]]; then
     ok "logrotate path line names both logs with the placeholder twice"
   else

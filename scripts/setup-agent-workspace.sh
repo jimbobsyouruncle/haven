@@ -41,9 +41,9 @@ set -Eeuo pipefail
 
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
-HYBRID_AI_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/lib" && pwd)"
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${HYBRID_AI_LIB_DIR}/hybrid-ai-env.sh"
+HAVEN_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/lib" && pwd)"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${HAVEN_LIB_DIR}/haven-env.sh"
 
 NON_INTERACTIVE=0
 CHECK_ONLY=0
@@ -86,14 +86,14 @@ WORKSPACE="$OPENHANDS_WORKSPACE"
 # deployment state: the app, data, log and work directories, the directory the
 # env file lives in, and the backup credential directory.
 WORKSPACE_REAL="$(readlink -f "$WORKSPACE" 2>/dev/null || echo "$WORKSPACE")"
-APP_REAL="$(readlink -f "$HYBRID_AI_APP_DIR" 2>/dev/null || echo "$HYBRID_AI_APP_DIR")"
-ENV_DIR_REAL="$(dirname "$(readlink -f "$HYBRID_AI_ENV_FILE" 2>/dev/null || echo "$HYBRID_AI_ENV_FILE")")"
-STACK_ENV_DIR_REAL="$(dirname "$(readlink -f "$HYBRID_AI_STACK_ENV_FILE" 2>/dev/null || echo "$HYBRID_AI_STACK_ENV_FILE")")"
+APP_REAL="$(readlink -f "$HAVEN_APP_DIR" 2>/dev/null || echo "$HAVEN_APP_DIR")"
+ENV_DIR_REAL="$(dirname "$(readlink -f "$HAVEN_ENV_FILE" 2>/dev/null || echo "$HAVEN_ENV_FILE")")"
+STACK_ENV_DIR_REAL="$(dirname "$(readlink -f "$HAVEN_STACK_ENV_FILE" 2>/dev/null || echo "$HAVEN_STACK_ENV_FILE")")"
 GUARDED_REAL=(
   "$APP_REAL"
-  "$(readlink -f "$HYBRID_AI_DATA_DIR" 2>/dev/null || echo "$HYBRID_AI_DATA_DIR")"
-  "$(readlink -f "$HYBRID_AI_LOG_DIR" 2>/dev/null || echo "$HYBRID_AI_LOG_DIR")"
-  "$(readlink -f "$HYBRID_AI_WORK_DIR" 2>/dev/null || echo "$HYBRID_AI_WORK_DIR")"
+  "$(readlink -f "$HAVEN_DATA_DIR" 2>/dev/null || echo "$HAVEN_DATA_DIR")"
+  "$(readlink -f "$HAVEN_LOG_DIR" 2>/dev/null || echo "$HAVEN_LOG_DIR")"
+  "$(readlink -f "$HAVEN_WORK_DIR" 2>/dev/null || echo "$HAVEN_WORK_DIR")"
   "$ENV_DIR_REAL"
   "$STACK_ENV_DIR_REAL"
   "$(readlink -f "$BACKUP_CONF_DIR" 2>/dev/null || echo "$BACKUP_CONF_DIR")"
@@ -124,8 +124,8 @@ unset guarded
 
 # --- Find the origin URL ---------------------------------------------------
 ORIGIN_URL=""
-if git -C "$HYBRID_AI_APP_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-  ORIGIN_URL="$(git -C "$HYBRID_AI_APP_DIR" remote get-url origin 2>/dev/null || true)"
+if git -C "$HAVEN_APP_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  ORIGIN_URL="$(git -C "$HAVEN_APP_DIR" remote get-url origin 2>/dev/null || true)"
 fi
 
 # --- Check mode ------------------------------------------------------------

@@ -107,7 +107,7 @@ jobs:
         # Offline. Proves defaults equal today's paths, that an env-file value
         # is parsed and never executed, that every refused value is refused,
         # and that every isolation case is refused.
-        run: bash scripts/test-hybrid-ai-env.sh
+        run: bash scripts/test-haven-env.sh
 
       - name: Readability probe tests
         # Offline. Proves the open(2)-based readability probe used in system
@@ -124,7 +124,7 @@ jobs:
         run: bash scripts/test-backup-system-units.sh
 
       - name: Backup mode / timer tests
-        # Offline. Proves HYBRID_AI_BACKUP_MODE steers doctor.sh,
+        # Offline. Proves HAVEN_BACKUP_MODE steers doctor.sh,
         # collect-diagnostics.sh, scripts/deploy-remote.sh and backup.sh to the
         # right timer and systemctl scope in both modes.
         run: bash scripts/test-backup-mode-timers.sh
@@ -331,7 +331,7 @@ jobs:
         # writes a secret-free layout env file, installs the (never enabled)
         # deploy unit and polkit rule, and migrates a legacy fixture with moves
         # that preserve inodes. useradd, getent, systemctl, docker, git, sshd and
-        # polkit are stubbed; HYBRID_AI_BOOTSTRAP_ROOT points at a scratch tree.
+        # polkit are stubbed; HAVEN_BOOTSTRAP_ROOT points at a scratch tree.
         run: bash scripts/test-bootstrap.sh
 
       - name: Install health-gate tests
@@ -354,8 +354,8 @@ jobs:
 
       - name: Install auth env-leak tests
         # Offline, no root, no Docker, no network. Proves install.sh's compose
-        # phase cannot leak the Compose-escaped HYBRID_AI_AUTH_HASH and
-        # HYBRID_AI_AUTH_USER that STEP 2 exported: `docker compose up` reads
+        # phase cannot leak the Compose-escaped HAVEN_AUTH_HASH and
+        # HAVEN_AUTH_USER that STEP 2 exported: `docker compose up` reads
         # the process environment ahead of --env-file. Without the unset before
         # the start, the auth container received a 63-byte escaped hash for a
         # 60-byte bcrypt hash and refused every password. A stubbed docker dumps
@@ -381,7 +381,7 @@ jobs:
         # fixture conversation trees to prove the lease-less check in BOTH
         # directions: a lease-complete root passes, a root with lease-less
         # directories warns with the count and names
-        # HYBRID_AI_PRUNE_ALLOW_LEASE_LESS plus the prune unit and script,
+        # HAVEN_PRUNE_ALLOW_LEASE_LESS plus the prune unit and script,
         # an absent or unreadable root prints a skip note and leaves the exit
         # code alone. The check is warning-only, so every case asserts the
         # exit code is never 2. The harness fails against a doctor.sh without
@@ -393,7 +393,7 @@ jobs:
         # scripts/prune-docker-cache.sh caps the build cache and degrades
         # safely: docker absent -> exit 0, daemon down -> exit 0, success ->
         # the probed cap flag and cap reach the docker argv, the
-        # HYBRID_AI_BUILD_CACHE_CAP override is honoured, a --keep-storage-only
+        # HAVEN_BUILD_CACHE_CAP override is honoured, a --keep-storage-only
         # Docker falls back, prune failure -> exit 1, and no supported flag ->
         # exit 0 without invoking prune. docker/df/date are stubbed on PATH.
         # Also greps the unit files for their key lines and proves install.sh
@@ -411,7 +411,7 @@ jobs:
         # DOCKER-USER chain loses only its tagged rules (never a flush or a
         # chain delete), a hybrid-ai-* glob unit is removed, and --dry-run
         # mutates nothing. docker, systemctl, runuser, iptables, getent and id
-        # are stubbed on PATH; HYBRID_AI_UNINSTALL_ROOT points at a scratch tree.
+        # are stubbed on PATH; HAVEN_UNINSTALL_ROOT points at a scratch tree.
         run: bash scripts/test-uninstall.sh
 
       - name: Env pin migration tests
@@ -424,7 +424,7 @@ jobs:
 
       - name: Post-deploy verify-log env tests
         # Offline. Proves install.sh's STEP 8 template writes
-        # HYBRID_AI_POST_DEPLOY_VERIFY_LOG as ${VAR:-default}: with nothing set
+        # HAVEN_POST_DEPLOY_VERIFY_LOG as ${VAR:-default}: with nothing set
         # it writes the default path; an owner override loaded from the existing
         # .env survives the rewrite byte-for-byte; a second run changes nothing.
         # Docker and friends are stubbed on PATH; the run uses --no-start. The
@@ -575,7 +575,7 @@ jobs:
         # plugins.dashboard_auth.basic, open_webui.*) are fixtures, so the REAL
         # scripts/reset-passwords.sh runs every leg against a throwaway tree.
         # Proves: compose `$` escaping is doubled exactly once and is
-        # idempotent (never `$$$$`); only the HYBRID_AI_AUTH_HASH line of the
+        # idempotent (never `$$$$`); only the HAVEN_AUTH_HASH line of the
         # stack env file changes and every other line stays byte-for-byte,
         # including a file with no trailing newline; both rewritten files get a
         # timestamped 0600 backup; a configured Hermes dashboard has its
@@ -609,8 +609,8 @@ jobs:
         # name, never by value.
         run: |
           set -Eeuo pipefail
-          source scripts/lib/hybrid-ai-env.sh
-          hybrid_ai_env_load
+          source scripts/lib/haven-env.sh
+          haven_env_load
           source scripts/lib/tls.sh
 
           WORK="$(mktemp -d)"
@@ -631,7 +631,7 @@ jobs:
           TLS_DOMAIN="daemonhub.dev"
           ACME_EMAIL="ci@daemonhub.dev"
           ACME_CA="$TLS_CA_STAGING_URL"
-          HYBRID_AI_TLS_TOKEN_FILE="/run/secrets/cloudflare_dns_token"
+          HAVEN_TLS_TOKEN_FILE="/run/secrets/cloudflare_dns_token"
           TLS_VALIDATION="dns"
           ACME_DNS_PROVIDER="cloudflare"
           # Non-secret placeholders: an obviously fake user name and a
@@ -662,7 +662,7 @@ jobs:
               variants="$(tls_variants)"
             fi
             tls_prepare_render_values "$variants"
-            tls_render_to_file "${HYBRID_AI_APP_DIR}/status/Caddyfile.tmpl" "$variants" "$out"
+            tls_render_to_file "${HAVEN_APP_DIR}/status/Caddyfile.tmpl" "$variants" "$out"
             imports="$(grep -c 'import auth' "$out" || true)"
             snippets="$(grep -c '^(auth) {' "$out" || true)"
             echo "case ${name} (variants: ${variants}): ${imports} 'import auth' lines, ${snippets} '(auth)' definitions"
@@ -672,8 +672,8 @@ jobs:
               -e ACME_CA="$ACME_CA" \
               -e LOCAL_DOMAIN="$LOCAL_DOMAIN" \
               -e ACME_AUTO_HTTPS=disable_redirects \
-              -e HYBRID_AI_AUTH_USER="$HYBRID_AI_AUTH_USER" \
-              -e HYBRID_AI_AUTH_HASH="$HYBRID_AI_AUTH_HASH" \
+              -e HAVEN_AUTH_USER="$HAVEN_AUTH_USER" \
+              -e HAVEN_AUTH_HASH="$HAVEN_AUTH_HASH" \
               -v "${out}:/etc/caddy/Caddyfile:ro" \
               -v "$WORK/dummy_dns_token:/run/secrets/cloudflare_dns_token:ro" \
               hybrid-ai-caddy:ci validate --adapter caddyfile --config /etc/caddy/Caddyfile
@@ -682,16 +682,16 @@ jobs:
 
           TLS_ENABLED="no"
           AUTH_ENABLED="off"
-          HYBRID_AI_AUTH_USER=""
-          HYBRID_AI_AUTH_HASH=""
+          HAVEN_AUTH_USER=""
+          HAVEN_AUTH_HASH=""
           check_case tls_off "off"
 
           TLS_ENABLED="yes"
           check_case tls_on_auth_off "on dns"
 
           AUTH_ENABLED="on"
-          HYBRID_AI_AUTH_USER="$DUMMY_AUTH_USER"
-          HYBRID_AI_AUTH_HASH="$DUMMY_AUTH_HASH"
+          HAVEN_AUTH_USER="$DUMMY_AUTH_USER"
+          HAVEN_AUTH_HASH="$DUMMY_AUTH_HASH"
           check_case tls_on_auth_on "on dns auth"
 
           # (d) AUTH_ENABLED truthy + TLS off. The variants must be exactly
@@ -701,8 +701,8 @@ jobs:
           # the "exactly off" and byte-identical assertions before Caddy runs.
           TLS_ENABLED="no"
           AUTH_ENABLED="on"
-          HYBRID_AI_AUTH_USER="$DUMMY_AUTH_USER"
-          HYBRID_AI_AUTH_HASH="$DUMMY_AUTH_HASH"
+          HAVEN_AUTH_USER="$DUMMY_AUTH_USER"
+          HAVEN_AUTH_HASH="$DUMMY_AUTH_HASH"
           case_d_variants="$(tls_variants)"
           if [[ "$case_d_variants" != "off" ]]; then
             echo "::error::case (d) tls_variants is '${case_d_variants}', expected exactly 'off' with TLS off"
@@ -718,8 +718,8 @@ jobs:
 
       - name: Compose schema check
         # Dummy values just so the file can be parsed. "config --quiet"
-        # validates structure without starting anything. HYBRID_AI_DATA_DIR and
-        # HYBRID_AI_LOG_DIR must be set because the compose bind sources are
+        # validates structure without starting anything. HAVEN_DATA_DIR and
+        # HAVEN_LOG_DIR must be set because the compose bind sources are
         # fail-closed (`:?`), so an unset value refuses the parse. The bind
         # sources are rendered below with the path settings set to a temp tree,
         # and a parse with them unset is asserted to fail closed.
@@ -731,8 +731,8 @@ jobs:
           LOCAL_DOMAIN=example.test OPENHANDS_SANDBOX_HOST=example.test \
           OPENHANDS_WORKSPACE=/tmp/agent-workspace \
           OPENHANDS_STATE_DIR=/tmp/openhands-state \
-          HYBRID_AI_DATA_DIR=/tmp/agent-data \
-          HYBRID_AI_LOG_DIR=/tmp/agent-log \
+          HAVEN_DATA_DIR=/tmp/agent-data \
+          HAVEN_LOG_DIR=/tmp/agent-log \
           BACKUP_LOG=/tmp/agent-log/backup.log \
           BACKUP_GROUP_GID=999
           set +a
@@ -747,13 +747,13 @@ jobs:
                          config --quiet
 
           # --- Unset: compose fails closed ------------------------------------
-          # With HYBRID_AI_DATA_DIR and HYBRID_AI_LOG_DIR unset the three-file
+          # With HAVEN_DATA_DIR and HAVEN_LOG_DIR unset the three-file
           # parse must be refused (non-zero) and name ./install.sh, so nobody
           # starts the stack with silently-wrong bind sources. BACKUP_LOG is a
           # separate fail-closed bind (the status backup-log mount), so it is
           # asserted unset on its own below.
           set +e
-          FAILCLOSED_OUT="$(env -u HYBRID_AI_DATA_DIR -u HYBRID_AI_LOG_DIR -u BACKUP_LOG \
+          FAILCLOSED_OUT="$(env -u HAVEN_DATA_DIR -u HAVEN_LOG_DIR -u BACKUP_LOG \
             -u BACKUP_GROUP_GID \
             docker compose -f docker-compose.yml \
                            -f openhands/docker-compose.openhands.yml \
@@ -761,7 +761,7 @@ jobs:
           FAILCLOSED_RC=$?
           set -e
           [ "$FAILCLOSED_RC" -ne 0 ] \
-            || { echo "::error::unset HYBRID_AI_DATA_DIR/HYBRID_AI_LOG_DIR did not fail closed"; exit 1; }
+            || { echo "::error::unset HAVEN_DATA_DIR/HAVEN_LOG_DIR did not fail closed"; exit 1; }
           printf '%s\n' "$FAILCLOSED_OUT" | grep -q './install.sh' \
             || { echo "::error::fail-closed compose error did not name ./install.sh"; exit 1; }
 
@@ -798,15 +798,15 @@ jobs:
 
           # --- Set to a temp tree: bind sources move under it -----------------
           TMPTREE="$(mktemp -d)"
-          export HYBRID_AI_DATA_DIR="$TMPTREE/data" HYBRID_AI_LOG_DIR="$TMPTREE/log"
+          export HAVEN_DATA_DIR="$TMPTREE/data" HAVEN_LOG_DIR="$TMPTREE/log"
           export BACKUP_LOG="$TMPTREE/log/backup.log"
           RENDER_SET="$(docker compose -f docker-compose.yml \
                                        -f openhands/docker-compose.openhands.yml \
                                        -f hermes/docker-compose.hermes.yml config)"
           printf '%s\n' "$RENDER_SET" | grep -q "source: $TMPTREE/data/hermes_data" \
-            || { echo "::error::HYBRID_AI_DATA_DIR was not honoured"; exit 1; }
+            || { echo "::error::HAVEN_DATA_DIR was not honoured"; exit 1; }
           printf '%s\n' "$RENDER_SET" | grep -q "source: $TMPTREE/data/webui_data" \
-            || { echo "::error::HYBRID_AI_DATA_DIR was not honoured"; exit 1; }
+            || { echo "::error::HAVEN_DATA_DIR was not honoured"; exit 1; }
           printf '%s\n' "$RENDER_SET" | grep -q "source: $BACKUP_LOG" \
             || { echo "::error::BACKUP_LOG was not honoured for the status mount"; exit 1; }
           # The status service carries exactly one supplementary group built
@@ -820,24 +820,24 @@ jobs:
 
           # --- system mode: the helper's value IS the status mount source -----
           # The regression this guards against: compose used to mount
-          # ${HYBRID_AI_LOG_DIR}/backup.log, a file nothing writes in system
+          # ${HAVEN_LOG_DIR}/backup.log, a file nothing writes in system
           # mode, so the status page could never report a successful backup.
           # Resolve BACKUP_LOG through the shared helper exactly as install.sh
           # does, then prove the status service mounts THAT path.
-          export HYBRID_AI_LOG_DIR="$(mktemp -d)/log"
-          SYS_BACKUP_LOG="$(env -u BACKUP_LOG HYBRID_AI_BACKUP_MODE=system \
-            HYBRID_AI_LOG_DIR="$HYBRID_AI_LOG_DIR" \
-            bash -c 'source scripts/lib/hybrid-ai-env.sh; printf "%s" "$BACKUP_LOG"')"
+          export HAVEN_LOG_DIR="$(mktemp -d)/log"
+          SYS_BACKUP_LOG="$(env -u BACKUP_LOG HAVEN_BACKUP_MODE=system \
+            HAVEN_LOG_DIR="$HAVEN_LOG_DIR" \
+            bash -c 'source scripts/lib/haven-env.sh; printf "%s" "$BACKUP_LOG"')"
           [ "$SYS_BACKUP_LOG" = "/var/log/hybrid-ai-backup/backup.log" ] \
             || { echo "::error::system mode BACKUP_LOG is not the units' log: $SYS_BACKUP_LOG"; exit 1; }
-          RENDER_SYS="$(env BACKUP_LOG="$SYS_BACKUP_LOG" HYBRID_AI_BACKUP_MODE=system \
+          RENDER_SYS="$(env BACKUP_LOG="$SYS_BACKUP_LOG" HAVEN_BACKUP_MODE=system \
             docker compose -f docker-compose.yml \
                            -f openhands/docker-compose.openhands.yml \
                            -f hermes/docker-compose.hermes.yml config)"
           printf '%s\n' "$RENDER_SYS" | grep -q "source: $SYS_BACKUP_LOG" \
             || { echo "::error::system mode status mount does not read $SYS_BACKUP_LOG"; exit 1; }
           echo "System-mode status mount reads the units' log: $SYS_BACKUP_LOG"
-          rm -rf "$(dirname "$HYBRID_AI_LOG_DIR")"
+          rm -rf "$(dirname "$HAVEN_LOG_DIR")"
 
       - name: Validate status/Caddyfile parses
         # The allowlist assertion below reads the Caddyfile as text, so it
@@ -855,8 +855,8 @@ jobs:
         # variant offline, then lets the proxy's own image parse it.
         run: |
           set -Eeuo pipefail
-          source scripts/lib/hybrid-ai-env.sh
-          hybrid_ai_env_load
+          source scripts/lib/haven-env.sh
+          haven_env_load
           source scripts/lib/tls.sh
 
           APP_DIR="$(mktemp -d)"
@@ -882,7 +882,7 @@ jobs:
           ACME_DNS_PROVIDER="cloudflare"
           ACME_CA="$TLS_CA_STAGING_URL"
           # Variable NAME only: no token, no token file, no secret.
-          HYBRID_AI_TLS_TOKEN_FILE="/run/secrets/cloudflare_dns_token"
+          HAVEN_TLS_TOKEN_FILE="/run/secrets/cloudflare_dns_token"
           export LOCAL_DOMAIN TLS_DOMAIN ACME_EMAIL ACME_CA
 
           tls_prepare_render_values "on dns"

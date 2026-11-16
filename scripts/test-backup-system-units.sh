@@ -21,7 +21,7 @@
 #   with a stub systemd-analyze placed FIRST on PATH.
 #
 #   It also covers the two residual system-mode defects:
-#     * D2 -- the upload and check units must pin HYBRID_AI_STACK_ENV_FILE at the
+#     * D2 -- the upload and check units must pin HAVEN_STACK_ENV_FILE at the
 #       0644 LAYOUT file, or the env helper fail-closes on the 0600 root-only
 #       stack file before restic runs. A 0644 layout file naming a 0600 root-only
 #       stack file is exercised offline as an unprivileged uid; when run as root
@@ -100,8 +100,8 @@ has_line "$CAP" 'PrivateTmp=yes'                     "capture has a private tmp"
 has_line "$CAP" 'StateDirectory=hybrid-ai-backup'    "capture has a state directory (staging)"
 has_line "$CAP" 'RuntimeDirectory=hybrid-ai-backup'  "capture has a runtime directory"
 has_line "$CAP" 'LogsDirectory=hybrid-ai-backup'     "capture has a logs directory for the backup log"
-has_line "$CAP" 'Environment=HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env' "capture reads the system env file"
-has_line "$CAP" 'Environment=HYBRID_AI_BACKUP_MODE=system'    "capture selects system mode"
+has_line "$CAP" 'Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env' "capture reads the system env file"
+has_line "$CAP" 'Environment=HAVEN_BACKUP_MODE=system'    "capture selects system mode"
 has_line "$CAP" 'Environment=BACKUP_CONTAINER_CONTROL=external' "capture treats container control as external"
 has_line "$CAP" 'ExecStartPre=+/opt/haven/backup/backup-containers.sh host-info' "capture collects host info first"
 has_line "$CAP" 'ExecStartPre=+/opt/haven/backup/backup-containers.sh pause'     "capture pauses containers second"
@@ -195,7 +195,7 @@ has_line "$CHECK" 'RestartPreventExitStatus=3' "check still never retries exit 3
 # ---------------------------------------------------------------------------
 # D2: on a bootstrapped host the upload/check units must resolve their host
 # paths from the 0644 LAYOUT file, not fail closed on the 0600 root-only stack
-# file. Both units pin HYBRID_AI_STACK_ENV_FILE at the layout file, mirroring the
+# file. Both units pin HAVEN_STACK_ENV_FILE at the layout file, mirroring the
 # capture unit and PR #46. The static check below proves the pin; the dynamic
 # fixture proves the resolution offline: a 0644 layout file names a 0600
 # root-only stack file, and the env helper is sourced as an unprivileged uid.
@@ -207,8 +207,8 @@ echo "== D2: upload-path env resolution on a bootstrapped host =="
 # Static: each unit must pin STACK_ENV_FILE at exactly the file its ENV_FILE
 # names (the layout file).
 for _u in "$UP" "$CHECK"; do
-  _env_val="$(sed -n 's/^Environment=HYBRID_AI_ENV_FILE=//p' "$_u" | head -1)"
-  _stack_val="$(sed -n 's/^Environment=HYBRID_AI_STACK_ENV_FILE=//p' "$_u" | head -1)"
+  _env_val="$(sed -n 's/^Environment=HAVEN_ENV_FILE=//p' "$_u" | head -1)"
+  _stack_val="$(sed -n 's/^Environment=HAVEN_STACK_ENV_FILE=//p' "$_u" | head -1)"
   if [[ -n "$_env_val" && "$_stack_val" == "$_env_val" ]]; then
     ok "$(basename -- "$_u") pins STACK_ENV_FILE at its layout file"
   else
@@ -226,16 +226,16 @@ LAYOUT="$D2DIR/layout.env"
 STACK="$D2DIR/stack.env"
 D2DATA="$D2DIR/data"; D2WORK="$D2DIR/work"; mkdir -p "$D2DATA" "$D2WORK"
 cat > "$LAYOUT" <<EOF
-HYBRID_AI_STACK_ENV_FILE=${STACK}
-HYBRID_AI_DATA_DIR=${D2DATA}
-HYBRID_AI_WORK_DIR=${D2WORK}
-HYBRID_AI_BACKUP_MODE=system
+HAVEN_STACK_ENV_FILE=${STACK}
+HAVEN_DATA_DIR=${D2DATA}
+HAVEN_WORK_DIR=${D2WORK}
+HAVEN_BACKUP_MODE=system
 EOF
 chmod 0644 "$LAYOUT"
-printf 'HYBRID_AI_DATA_DIR=/var/lib/hybrid-ai\n' > "$STACK"
+printf 'HAVEN_DATA_DIR=/var/lib/hybrid-ai\n' > "$STACK"
 # Copy the helper so an unprivileged uid can read it without touching the repo.
-HELPER_COPY="$D2DIR/hybrid-ai-env.sh"
-cp "${REPO}/scripts/lib/hybrid-ai-env.sh" "$HELPER_COPY"
+HELPER_COPY="$D2DIR/haven-env.sh"
+cp "${REPO}/scripts/lib/haven-env.sh" "$HELPER_COPY"
 chmod 0644 "$HELPER_COPY"
 
 # Privilege drop. As root the case MUST drop to an unprivileged uid (a 0600 file
@@ -274,16 +274,16 @@ else
     D2_OUT="$("${d2_pre[@]}" env -i \
         HOME=/nonexistent \
         PATH="/usr/bin:/bin" \
-        HYBRID_AI_ENV_FILE="$LAYOUT" \
-        HYBRID_AI_STACK_ENV_FILE="$1" \
-        bash -c "source '$HELPER_COPY'; printf '%s' \"\$HYBRID_AI_STACK_ENV_FILE\"" 2>&1)" || rc=$?
+        HAVEN_ENV_FILE="$LAYOUT" \
+        HAVEN_STACK_ENV_FILE="$1" \
+        bash -c "source '$HELPER_COPY'; printf '%s' \"\$HAVEN_STACK_ENV_FILE\"" 2>&1)" || rc=$?
     D2_RC="$rc"
   }
 
   # (a) The upload unit's own pinned value must resolve without fail-closing.
   #     On the unpatched base commit there is NO pin, so the helper reads the
   #     0600 stack file and fail-closes with its own message -> this FAILS.
-  UP_STACK_VAL="$(sed -n 's/^Environment=HYBRID_AI_STACK_ENV_FILE=//p' "$UP" | head -1)"
+  UP_STACK_VAL="$(sed -n 's/^Environment=HAVEN_STACK_ENV_FILE=//p' "$UP" | head -1)"
   run_env_probe "$UP_STACK_VAL"
   if [[ "$D2_RC" == "0" && "$D2_OUT" != *"cannot be read"* ]]; then
     ok "D2: the upload unit's pinned STACK_ENV_FILE resolves without fail-closing"
@@ -303,7 +303,7 @@ else
   # (c) Negative control: NO pin -> the helper reads the unreadable stack file
   #     and fails closed with its own message. This is the reproduced defect.
   run_env_probe ""
-  if [[ "$D2_RC" != "0" && "$D2_OUT" == *"HYBRID_AI_STACK_ENV_FILE"* && "$D2_OUT" == *"cannot be read"* ]]; then
+  if [[ "$D2_RC" != "0" && "$D2_OUT" == *"HAVEN_STACK_ENV_FILE"* && "$D2_OUT" == *"cannot be read"* ]]; then
     ok "D2: without the pin the helper fails closed (the reproduced defect)"
   else
     bad "D2: expected a fail-closed without the pin (rc=$D2_RC): $D2_OUT"
@@ -325,22 +325,22 @@ has_line "$CHECK" 'LogsDirectory=hybrid-ai-backup' "check has a logs directory f
 hasnt_regex "$UP"    '^Environment=BACKUP_LOG=' "upload does not pin a divergent BACKUP_LOG"
 hasnt_regex "$CHECK" '^Environment=BACKUP_LOG=' "check does not pin a divergent BACKUP_LOG"
 
-# Resolve BACKUP_LOG the way a system-mode unit does: HYBRID_AI_BACKUP_MODE is
+# Resolve BACKUP_LOG the way a system-mode unit does: HAVEN_BACKUP_MODE is
 # the ONLY setting that steers it (no inherited BACKUP_LOG). Poison the ambient
 # environment so a stray exported BACKUP_LOG from the root deploy path cannot
 # mask the unit-path resolution. `env -i` strips the ambient environment (there
 # is no `:-` fallback in the helper that could re-read an inherited value), and
 # a decoy BACKUP_LOG is exported here to prove the poisoning is effective.
-HELPER_SRC="${REPO}/scripts/lib/hybrid-ai-env.sh"
+HELPER_SRC="${REPO}/scripts/lib/haven-env.sh"
 export BACKUP_LOG="/decoy/should/never/be/read/backup.log"
 unit_backup_log() { # <mode> <envfile>
   env -i HOME=/nonexistent PATH="/usr/bin:/bin" \
-      HYBRID_AI_ENV_FILE="$2" HYBRID_AI_BACKUP_MODE="$1" \
+      HAVEN_ENV_FILE="$2" HAVEN_BACKUP_MODE="$1" \
       bash -c "source '$HELPER_SRC' >/dev/null 2>&1; printf '%s' \"\$BACKUP_LOG\""
 }
 SYSMODE_ENV="$(mktemp)"
 D2_TMPDIRS+=("$SYSMODE_ENV")
-printf 'HYBRID_AI_BACKUP_MODE=system\n' > "$SYSMODE_ENV"
+printf 'HAVEN_BACKUP_MODE=system\n' > "$SYSMODE_ENV"
 UNIT_LOG="$(unit_backup_log system "$SYSMODE_ENV")"
 if [[ "$UNIT_LOG" == "/var/log/hybrid-ai-backup/backup.log" ]]; then
   ok "the helper resolves the system-mode BACKUP_LOG to the units' LogsDirectory path"
@@ -387,7 +387,7 @@ D6B="$(mktemp -d)"
 D2_TMPDIRS+=("$D6B")
 D6B_APP="$D6B/app"; mkdir -p "$D6B_APP/scripts/lib" "$D6B_APP/backup" \
   "$D6B_APP/webui_data" "$D6B_APP/hermes_data"
-cp "${REPO}/scripts/lib/hybrid-ai-env.sh" "$D6B_APP/scripts/lib/"
+cp "${REPO}/scripts/lib/haven-env.sh" "$D6B_APP/scripts/lib/"
 cp "${REPO}/scripts/lib/read-probe.sh" "$D6B_APP/scripts/lib/"
 cp "${REPO}/backup/backup.sh" "$D6B_APP/backup/"
 : > "$D6B_APP/docker-compose.yml"
@@ -477,9 +477,9 @@ else
     D6B_RC=0
     "${D6B_PRE[@]}" env \
         HOME="$D6B_WORK" PATH="$D6B_BIN:/usr/bin:/bin" \
-        HYBRID_AI_APP_DIR="$D6B_APP" HYBRID_AI_DATA_DIR="$D6B_APP" \
-        HYBRID_AI_WORK_DIR="$D6B_WORK" HYBRID_AI_LOG_DIR="$D6B_WORK" \
-        HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$D6B_CONF" \
+        HAVEN_APP_DIR="$D6B_APP" HAVEN_DATA_DIR="$D6B_APP" \
+        HAVEN_WORK_DIR="$D6B_WORK" HAVEN_LOG_DIR="$D6B_WORK" \
+        HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$D6B_CONF" \
         BACKUP_LOG="$D6B_LOG" BACKUP_NO_PAUSE=1 \
         bash "$D6B_APP/backup/backup.sh" --non-interactive \
         > "$D6B/out" 2>&1 || D6B_RC=$?
@@ -512,9 +512,9 @@ STUB
     D6B_RC2=0
     "${D6B_PRE[@]}" env \
         HOME="$D6B_WORK" PATH="$D6B_BIN:/usr/bin:/bin" \
-        HYBRID_AI_APP_DIR="$D6B_APP" HYBRID_AI_DATA_DIR="$D6B_APP" \
-        HYBRID_AI_WORK_DIR="$D6B_WORK" HYBRID_AI_LOG_DIR="$D6B_WORK" \
-        HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$D6B_CONF" \
+        HAVEN_APP_DIR="$D6B_APP" HAVEN_DATA_DIR="$D6B_APP" \
+        HAVEN_WORK_DIR="$D6B_WORK" HAVEN_LOG_DIR="$D6B_WORK" \
+        HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$D6B_CONF" \
         BACKUP_LOG="$D6B_LOG_ALT" BACKUP_NO_PAUSE=1 \
         bash "$D6B_APP/backup/backup.sh" --non-interactive \
         > "$D6B/out2" 2>&1 || D6B_RC2=$?
@@ -542,9 +542,9 @@ STUB
     D7_RC=0
     "${D6B_PRE[@]}" env \
         HOME="$D6B_WORK" PATH="$D6B_BIN:/usr/bin:/bin" \
-        HYBRID_AI_APP_DIR="$D6B_APP" HYBRID_AI_DATA_DIR="$D6B_APP" \
-        HYBRID_AI_WORK_DIR="$D6B_WORK" HYBRID_AI_LOG_DIR="$D6B_WORK" \
-        HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$D6B_CONF" \
+        HAVEN_APP_DIR="$D6B_APP" HAVEN_DATA_DIR="$D6B_APP" \
+        HAVEN_WORK_DIR="$D6B_WORK" HAVEN_LOG_DIR="$D6B_WORK" \
+        HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$D6B_CONF" \
         BACKUP_LOG="$D6B_LOG_ALT" RESTIC_CACHE_DIR="$D7_CACHE" \
         RUNTIME_DIRECTORY="$D7_RUNTIME" BACKUP_NO_PAUSE=1 \
         bash "$D6B_APP/backup/backup.sh" --non-interactive \
@@ -585,9 +585,9 @@ STUB
       D7B_RC=0
       "${D6B_PRE[@]}" env \
           HOME="$D6B_WORK" PATH="$D6B_BIN:/usr/bin:/bin" \
-          HYBRID_AI_APP_DIR="$D6B_APP" HYBRID_AI_DATA_DIR="$D6B_APP" \
-          HYBRID_AI_WORK_DIR="$D6B_WORK" HYBRID_AI_LOG_DIR="$D6B_WORK" \
-          HYBRID_AI_BACKUP_MODE=system HYBRID_AI_BACKUP_CRED_DIR="$D6B_CONF" \
+          HAVEN_APP_DIR="$D6B_APP" HAVEN_DATA_DIR="$D6B_APP" \
+          HAVEN_WORK_DIR="$D6B_WORK" HAVEN_LOG_DIR="$D6B_WORK" \
+          HAVEN_BACKUP_MODE=system HAVEN_BACKUP_CRED_DIR="$D6B_CONF" \
           BACKUP_LOG="$D6B_LOG_ALT" RESTIC_CACHE_DIR="$D7B_CACHE" \
           RUNTIME_DIRECTORY="$D7B_RUNTIME" BACKUP_NO_PAUSE=1 \
           bash "$D6B_APP/backup/backup.sh" --non-interactive \

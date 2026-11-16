@@ -48,9 +48,9 @@ FAILED = {
 
 def base_env(**overrides):
     env = {
-        "HYBRID_AI_AUTH_USER": USER,
-        "HYBRID_AI_AUTH_HASH": HASH,
-        "HYBRID_AI_AUTH_COOKIE_SECRET": SECRET,
+        "HAVEN_AUTH_USER": USER,
+        "HAVEN_AUTH_HASH": HASH,
+        "HAVEN_AUTH_COOKIE_SECRET": SECRET,
         "TLS_DOMAIN": DOMAIN,
     }
     env.update(overrides)
@@ -106,7 +106,7 @@ class ServerCase(unittest.TestCase):
     def verify(self, value=None, headers=None):
         sent = dict(headers or {})
         if value is not None:
-            sent["Cookie"] = "hybrid_ai_auth=%s" % value
+            sent["Cookie"] = "haven_auth=%s" % value
         return self.request("GET", "/verify", headers=sent)
 
     def signed(self, exp):
@@ -117,6 +117,13 @@ class ServerCase(unittest.TestCase):
 
 
 class VerifyTests(ServerCase):
+    def test_old_cookie(self):
+        value = self.signed(int(time.time()) + 60)
+        status, headers, _ = self.request("GET", "/verify",
+                                          headers={"Cookie": "hybrid_ai_auth=" + value})
+        self.assertEqual(status, 302)
+        self.assertIn("auth/login", headers["Location"])
+
     def test_healthz_open(self):
         status, headers, body = self.request("GET", "/healthz")
         self.assertEqual(status, 200)
@@ -277,7 +284,7 @@ class LoginTests(ServerCase):
 
 
 class RateLimitTests(ServerCase):
-    overrides = {"HYBRID_AI_AUTH_RATE_LIMIT": "3", "HYBRID_AI_AUTH_RATE_WINDOW": "60"}
+    overrides = {"HAVEN_AUTH_RATE_LIMIT": "3", "HAVEN_AUTH_RATE_WINDOW": "60"}
 
     def test_rate_limit(self):
         for attempt in range(3):
@@ -297,6 +304,21 @@ class RateLimitTests(ServerCase):
 
 
 class StartupTests(unittest.TestCase):
+    def test_legacy_import(self):
+        env = {name.replace("HAVEN_", "HYBRID_AI_"): value
+               for name, value in base_env().items()}
+        config = app.Config(env)
+        self.assertTrue(config.ok)
+        self.assertEqual(config.password_hash, HASH.encode())
+        self.assertEqual(config.cookie_secret, SECRET.encode())
+
+    def test_aliases(self):
+        config = app.Config(base_env(HYBRID_AI_AUTH_COOKIE_SECRET="other-synthetic-secret"))
+        self.assertFalse(config.ok)
+        self.assertNotIn("other-synthetic-secret", str(config.missing))
+        self.assertNotIn(SECRET, str(config.missing))
+
+
     app_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
 
     def child_env(self, **overrides):

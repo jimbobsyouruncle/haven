@@ -67,7 +67,7 @@ mkdir -p "$APP/scripts/lib" "$BIN" "$WORK/data" "$WORK/log" "$WORK/work" \
          "$WORK/ws" "$WORK/repos" "$WORK/ohstate" "$WORK/conf" "$WORK/restic" \
          "$WORK/etc/hybrid-ai" "$WORK/ws/.git/info"
 cp "$REPO/install.sh" "$APP/install.sh"
-cp "$REPO/scripts/lib/hybrid-ai-env.sh" "$APP/scripts/lib/"
+cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
 [ -f "$REPO/scripts/lib/build-gate.sh" ] || { echo "FATAL: scripts/lib/build-gate.sh is missing; the build gate does not exist in this tree." >&2; exit 2; }
 cp "$REPO/scripts/lib/build-gate.sh" "$APP/scripts/lib/"
 
@@ -86,22 +86,22 @@ chmod +x "$APP/scripts/"*.sh
 LAYOUT="$WORK/etc/hybrid-ai/hybrid-ai.env"
 STACK="$WORK/etc/hybrid-ai/stack.env"
 {
-  printf 'HYBRID_AI_APP_DIR=%s\n' "$APP"
-  printf 'HYBRID_AI_ENV_FILE=%s\n' "$LAYOUT"
-  printf 'HYBRID_AI_STACK_ENV_FILE=%s\n' "$STACK"
-  printf 'HYBRID_AI_DATA_DIR=%s\n' "$WORK/data"
-  printf 'HYBRID_AI_LOG_DIR=%s\n' "$WORK/log"
-  printf 'HYBRID_AI_WORK_DIR=%s\n' "$WORK/work"
+  printf 'HAVEN_APP_DIR=%s\n' "$APP"
+  printf 'HAVEN_ENV_FILE=%s\n' "$LAYOUT"
+  printf 'HAVEN_STACK_ENV_FILE=%s\n' "$STACK"
+  printf 'HAVEN_DATA_DIR=%s\n' "$WORK/data"
+  printf 'HAVEN_LOG_DIR=%s\n' "$WORK/log"
+  printf 'HAVEN_WORK_DIR=%s\n' "$WORK/work"
   printf 'OPENHANDS_WORKSPACE=%s\n' "$WORK/ws"
   printf 'AGENT_REPOS_DIR=%s\n' "$WORK/repos"
   printf 'OPENHANDS_STATE_DIR=%s\n' "$WORK/ohstate"
   printf 'BACKUP_CONF_DIR=%s\n' "$WORK/conf"
   printf 'RESTIC_CACHE_DIR=%s\n' "$WORK/restic"
-  printf 'HYBRID_AI_HERMES_HOME_DIR=%s\n' "$WORK/hermes"
-  printf 'HYBRID_AI_BACKUP_MODE=system\n'
+  printf 'HAVEN_HERMES_HOME_DIR=%s\n' "$WORK/hermes"
+  printf 'HAVEN_BACKUP_MODE=system\n'
   printf 'BACKUP_CONTAINER_CONTROL=external\n'
-  printf 'HYBRID_AI_UID=1000\n'
-  printf 'HYBRID_AI_GID=1000\n'
+  printf 'HAVEN_UID=1000\n'
+  printf 'HAVEN_GID=1000\n'
 } > "$LAYOUT"
 chmod 644 "$LAYOUT"
 
@@ -153,15 +153,15 @@ chmod +x "$BIN"/*
 
 run_install() { # log
   local log="$1" rc=0
-  env -u HYBRID_AI_APP_DIR -u HYBRID_AI_DATA_DIR -u HYBRID_AI_LOG_DIR \
-      -u HYBRID_AI_WORK_DIR -u HYBRID_AI_STACK_ENV_FILE \
+  env -u HAVEN_APP_DIR -u HAVEN_DATA_DIR -u HAVEN_LOG_DIR \
+      -u HAVEN_WORK_DIR -u HAVEN_STACK_ENV_FILE \
       -u OPENHANDS_WORKSPACE -u AGENT_REPOS_DIR -u OPENHANDS_STATE_DIR \
-      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HYBRID_AI_HERMES_HOME_DIR \
-      -u HYBRID_AI_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
-      -u HYBRID_AI_UID -u HYBRID_AI_GID -u HYBRID_AI_LAYOUT_UID -u HYBRID_AI_LAYOUT_GID \
+      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HAVEN_HERMES_HOME_DIR \
+      -u HAVEN_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
+      -u HAVEN_UID -u HAVEN_GID -u HAVEN_LAYOUT_UID -u HAVEN_LAYOUT_GID \
       -u OPENHANDS_IMAGE -u OPENHANDS_AGENT_IMAGE_TAG \
       PATH="$BIN:$PATH" \
-      HYBRID_AI_ENV_FILE="$LAYOUT" \
+      HAVEN_ENV_FILE="$LAYOUT" \
       LOCAL_DOMAIN=example.test OPENROUTER_API_KEY=stub RUNPOD_API_KEY=stub \
       RUNPOD_POD_ID=stub RUNPOD_HOST=stub PI_HOST=stub \
       OPENHANDS_SANDBOX_HOST=example.test PEER_HOSTNAMES="none" \
@@ -332,9 +332,9 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# HYBRID_AI_AUTH_HASH / HYBRID_AI_AUTH_USER: escape-at-write. Docker Compose
+# HAVEN_AUTH_HASH / HAVEN_AUTH_USER: escape-at-write. Docker Compose
 # interpolates `$` in env-file values, so a raw bcrypt hash (`$2a$14$...`) loses
-# its `$` fragments and the proxy's {$HYBRID_AI_AUTH_HASH} placeholder is
+# its `$` fragments and the proxy's {$HAVEN_AUTH_HASH} placeholder is
 # corrupted. STEP 8 writes the value with every `$` doubled (`$$`); compose
 # collapses it back to the operator's bytes in the container. The normalizer
 # must be idempotent: raw -> escaped once, escaped -> unchanged, never
@@ -362,42 +362,42 @@ echo
 echo "== (i1) a raw hash+user are normalized to escaped form on write =="
 : > "$LOG"
 {
-  printf 'HYBRID_AI_AUTH_USER=%s\n' "$DUMMY_USER_RAW"
-  printf 'HYBRID_AI_AUTH_HASH=%s\n' "$DUMMY_HASH_RAW"
+  printf 'HAVEN_AUTH_USER=%s\n' "$DUMMY_USER_RAW"
+  printf 'HAVEN_AUTH_HASH=%s\n' "$DUMMY_HASH_RAW"
 } > "$STACK"
 chmod 600 "$STACK"
 rc=0
 run_install "$LOG" || rc=$?
 check "install.sh exits 0 with a raw auth hash" "0" "$rc"
-check "HYBRID_AI_AUTH_HASH is written escaped" "$DUMMY_HASH_ESCAPED" "$(env_value "$STACK" HYBRID_AI_AUTH_HASH)"
-check "HYBRID_AI_AUTH_USER is written escaped" "$DUMMY_USER_ESCAPED" "$(env_value "$STACK" HYBRID_AI_AUTH_USER)"
+check "HAVEN_AUTH_HASH is written escaped" "$DUMMY_HASH_ESCAPED" "$(env_value "$STACK" HAVEN_AUTH_HASH)"
+check "HAVEN_AUTH_USER is written escaped" "$DUMMY_USER_ESCAPED" "$(env_value "$STACK" HAVEN_AUTH_USER)"
 # Round-trip: unescaping the written value yields the operator's original bytes.
-check "the written hash unescapes to the operator's bytes" "$DUMMY_HASH_RAW" "$(tls_compose_unescape "$(env_value "$STACK" HYBRID_AI_AUTH_HASH)")"
+check "the written hash unescapes to the operator's bytes" "$DUMMY_HASH_RAW" "$(tls_compose_unescape "$(env_value "$STACK" HAVEN_AUTH_HASH)")"
 
 echo
 echo "== (i2) a second run writes byte-identical auth lines =="
 # The generated header carries a fresh UTC timestamp every run, so byte-identity
 # is asserted on the auth lines the change owns, not on the whole file.
-AUTH_LINES_AFTER_1="$(grep -E '^HYBRID_AI_AUTH_' "$STACK")"
+AUTH_LINES_AFTER_1="$(grep -E '^HAVEN_AUTH_' "$STACK")"
 : > "$LOG"
 rc=0
 run_install "$LOG" || rc=$?
 check "a second install.sh run exits 0" "0" "$rc"
-check "the auth lines are byte-identical on the second run" "$AUTH_LINES_AFTER_1" "$(grep -E '^HYBRID_AI_AUTH_' "$STACK")"
+check "the auth lines are byte-identical on the second run" "$AUTH_LINES_AFTER_1" "$(grep -E '^HAVEN_AUTH_' "$STACK")"
 
 echo
 echo "== (i3) an already-escaped value is never double-escaped =="
 : > "$LOG"
 {
-  printf 'HYBRID_AI_AUTH_USER=%s\n' "$DUMMY_USER_ESCAPED"
-  printf 'HYBRID_AI_AUTH_HASH=%s\n' "$DUMMY_HASH_ESCAPED"
+  printf 'HAVEN_AUTH_USER=%s\n' "$DUMMY_USER_ESCAPED"
+  printf 'HAVEN_AUTH_HASH=%s\n' "$DUMMY_HASH_ESCAPED"
 } > "$STACK"
 chmod 600 "$STACK"
 rc=0
 run_install "$LOG" || rc=$?
 check "install.sh exits 0 with an already-escaped hash" "0" "$rc"
-check "an escaped hash stays single-escaped (no \$\$\$\$)" "$DUMMY_HASH_ESCAPED" "$(env_value "$STACK" HYBRID_AI_AUTH_HASH)"
-check "an escaped user stays single-escaped (no \$\$\$\$)" "$DUMMY_USER_ESCAPED" "$(env_value "$STACK" HYBRID_AI_AUTH_USER)"
+check "an escaped hash stays single-escaped (no \$\$\$\$)" "$DUMMY_HASH_ESCAPED" "$(env_value "$STACK" HAVEN_AUTH_HASH)"
+check "an escaped user stays single-escaped (no \$\$\$\$)" "$DUMMY_USER_ESCAPED" "$(env_value "$STACK" HAVEN_AUTH_USER)"
 
 echo
 echo "== (i4) the cookie secret is escaped and the max-age default is written =="
@@ -407,26 +407,26 @@ DUMMY_SECRET_RAW="s3cret\$value"
 DUMMY_SECRET_ESCAPED="s3cret\$\$value"
 : > "$LOG"
 {
-  printf 'HYBRID_AI_AUTH_COOKIE_SECRET=%s\n' "$DUMMY_SECRET_RAW"
+  printf 'HAVEN_AUTH_COOKIE_SECRET=%s\n' "$DUMMY_SECRET_RAW"
 } > "$STACK"
 chmod 600 "$STACK"
 rc=0
 run_install "$LOG" || rc=$?
 check "install.sh exits 0 with a raw cookie secret" "0" "$rc"
-check "HYBRID_AI_AUTH_COOKIE_SECRET is written escaped" "$DUMMY_SECRET_ESCAPED" "$(env_value "$STACK" HYBRID_AI_AUTH_COOKIE_SECRET)"
-check "the written cookie secret unescapes to the operator's bytes" "$DUMMY_SECRET_RAW" "$(tls_compose_unescape "$(env_value "$STACK" HYBRID_AI_AUTH_COOKIE_SECRET)")"
+check "HAVEN_AUTH_COOKIE_SECRET is written escaped" "$DUMMY_SECRET_ESCAPED" "$(env_value "$STACK" HAVEN_AUTH_COOKIE_SECRET)"
+check "the written cookie secret unescapes to the operator's bytes" "$DUMMY_SECRET_RAW" "$(tls_compose_unescape "$(env_value "$STACK" HAVEN_AUTH_COOKIE_SECRET)")"
 # Unset -> the default 86400 is written, so the value is visible in the file.
-check "an unset HYBRID_AI_AUTH_COOKIE_MAX_AGE is written as the 86400 default" "86400" "$(env_value "$STACK" HYBRID_AI_AUTH_COOKIE_MAX_AGE)"
+check "an unset HAVEN_AUTH_COOKIE_MAX_AGE is written as the 86400 default" "86400" "$(env_value "$STACK" HAVEN_AUTH_COOKIE_MAX_AGE)"
 # Owner-set -> preserved byte-for-byte (not clobbered by the default).
 : > "$LOG"
 {
-  printf 'HYBRID_AI_AUTH_COOKIE_SECRET=%s\n' "$DUMMY_SECRET_ESCAPED"
-  printf 'HYBRID_AI_AUTH_COOKIE_MAX_AGE=3600\n'
+  printf 'HAVEN_AUTH_COOKIE_SECRET=%s\n' "$DUMMY_SECRET_ESCAPED"
+  printf 'HAVEN_AUTH_COOKIE_MAX_AGE=3600\n'
 } > "$STACK"
 chmod 600 "$STACK"
 rc=0
 run_install "$LOG" || rc=$?
-check "an owner-set HYBRID_AI_AUTH_COOKIE_MAX_AGE is preserved" "3600" "$(env_value "$STACK" HYBRID_AI_AUTH_COOKIE_MAX_AGE)"
+check "an owner-set HAVEN_AUTH_COOKIE_MAX_AGE is preserved" "3600" "$(env_value "$STACK" HAVEN_AUTH_COOKIE_MAX_AGE)"
 
 echo
 echo "== (i5) an unset cookie secret is auto-generated as 64 lowercase hex =="
@@ -435,7 +435,7 @@ echo "== (i5) an unset cookie secret is auto-generated as 64 lowercase hex =="
 chmod 600 "$STACK"
 rc=0
 run_install "$LOG" || rc=$?
-GEN_SECRET="$(env_value "$STACK" HYBRID_AI_AUTH_COOKIE_SECRET)"
+GEN_SECRET="$(env_value "$STACK" HAVEN_AUTH_COOKIE_SECRET)"
 check "install.sh exits 0 with no cookie secret seeded" "0" "$rc"
 # Regex test, not a fixed string: the value is generated, not a constant.
 if [[ "$GEN_SECRET" =~ ^[0-9a-f]{64}$ ]]; then
@@ -443,7 +443,7 @@ if [[ "$GEN_SECRET" =~ ^[0-9a-f]{64}$ ]]; then
 else
   bad "the auto-generated cookie secret is not 64 lowercase hex chars (got ${#GEN_SECRET} chars)"
 fi
-check "the generation message is logged" "1" "$(grep -c 'Generated new HYBRID_AI_AUTH_COOKIE_SECRET' "$LOG")"
+check "the generation message is logged" "1" "$(grep -c 'Generated new HAVEN_AUTH_COOKIE_SECRET' "$LOG")"
 
 echo
 echo "== (i6) an operator-set cookie secret is preserved byte-for-byte =="
@@ -455,24 +455,24 @@ HEX_LETTERS="abcdef"
 OWNER_SECRET="${HEX_DIGITS}${HEX_LETTERS}${HEX_DIGITS}${HEX_LETTERS}${HEX_DIGITS}${HEX_LETTERS}${HEX_DIGITS}${HEX_LETTERS}"
 : > "$LOG"
 {
-  printf 'HYBRID_AI_AUTH_COOKIE_SECRET=%s\n' "$OWNER_SECRET"
+  printf 'HAVEN_AUTH_COOKIE_SECRET=%s\n' "$OWNER_SECRET"
 } > "$STACK"
 chmod 600 "$STACK"
 rc=0
 run_install "$LOG" || rc=$?
 check "install.sh exits 0 with an owner-set cookie secret" "0" "$rc"
-check "the owner-set cookie secret is preserved" "$OWNER_SECRET" "$(env_value "$STACK" HYBRID_AI_AUTH_COOKIE_SECRET)"
-check "the reuse message is logged" "1" "$(grep -c 'Reusing existing HYBRID_AI_AUTH_COOKIE_SECRET' "$LOG")"
+check "the owner-set cookie secret is preserved" "$OWNER_SECRET" "$(env_value "$STACK" HAVEN_AUTH_COOKIE_SECRET)"
+check "the reuse message is logged" "1" "$(grep -c 'Reusing existing HAVEN_AUTH_COOKIE_SECRET' "$LOG")"
 
 echo
 echo "== (i7) a second run reuses the generated secret unchanged =="
-SECRET_AFTER_1="$(env_value "$STACK" HYBRID_AI_AUTH_COOKIE_SECRET)"
+SECRET_AFTER_1="$(env_value "$STACK" HAVEN_AUTH_COOKIE_SECRET)"
 : > "$LOG"
 rc=0
 run_install "$LOG" || rc=$?
 check "the second run exits 0" "0" "$rc"
-check "the cookie secret line is unchanged on the second run" "$SECRET_AFTER_1" "$(env_value "$STACK" HYBRID_AI_AUTH_COOKIE_SECRET)"
-check "the second run logs the reuse message" "1" "$(grep -c 'Reusing existing HYBRID_AI_AUTH_COOKIE_SECRET' "$LOG")"
+check "the cookie secret line is unchanged on the second run" "$SECRET_AFTER_1" "$(env_value "$STACK" HAVEN_AUTH_COOKIE_SECRET)"
+check "the second run logs the reuse message" "1" "$(grep -c 'Reusing existing HAVEN_AUTH_COOKIE_SECRET' "$LOG")"
 
 echo
 echo "== (i8) the generated cookie secret is never leaked to the install log =="

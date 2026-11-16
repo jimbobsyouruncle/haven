@@ -47,14 +47,14 @@ cd "$SCRIPT_DIR" || exit 1
 
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/scripts/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/scripts/lib/haven-env.sh"
 # Resolving the pod's MagicDNS name to an address happens in ONE place, shared
 # with doctor.sh and install.sh.
 # shellcheck source=scripts/lib/tailscale-resolve.sh
 source "${SCRIPT_DIR}/scripts/lib/tailscale-resolve.sh"
-APP_DIR="$HYBRID_AI_APP_DIR"
-ENV_FILE="$HYBRID_AI_STACK_ENV_FILE"
+APP_DIR="$HAVEN_APP_DIR"
+ENV_FILE="$HAVEN_STACK_ENV_FILE"
 
 LOG_LINES=100
 REDACT=1
@@ -285,10 +285,10 @@ sub "$ENV_FILE (stack)"
 # secrets live in the stack file (0600) and the host layout lives in
 # /etc/hybrid-ai/hybrid-ai.env (0644). Names, paths and lengths only -- never a
 # value, and the layout file is not read as a stack env file.
-if [[ "$HYBRID_AI_STACK_ENV_FILE" != "$HYBRID_AI_ENV_FILE" ]]; then
+if [[ "$HAVEN_STACK_ENV_FILE" != "$HAVEN_ENV_FILE" ]]; then
   {
     printf 'hybrid-ai layout file: %s (mode %s)\n\n' \
-      "$HYBRID_AI_ENV_FILE" "$(stat -c '%a' "$HYBRID_AI_ENV_FILE" 2>/dev/null)"
+      "$HAVEN_ENV_FILE" "$(stat -c '%a' "$HAVEN_ENV_FILE" 2>/dev/null)"
   } 2>&1 | redact >> "$OUTFILE"
 fi
 # NOTE: this whole block is wrapped in { ... } >> "$OUTFILE" so that every
@@ -422,15 +422,15 @@ sub "Errors and exceptions across all containers"
     | grep -iE 'error|exception|traceback|critical|fatal|refused|timeout|denied' \
     | tail -60 || printf '(none found)\n'; } | redact >> "$OUTFILE"
 
-run "install.sh events" bash -c "grep '^EVENT' '$HYBRID_AI_INSTALL_LOG' 2>/dev/null | tail -25 || echo '(no install.log)'"
+run "install.sh events" bash -c "grep '^EVENT' '$HAVEN_INSTALL_LOG' 2>/dev/null | tail -25 || echo '(no install.log)'"
 
 sub "Scheduled job history (last outcome per job)"
 {
-  if [[ -f "$BACKUP_LOG" || -f "$HYBRID_AI_INSTALL_LOG" ]]; then
+  if [[ -f "$BACKUP_LOG" || -f "$HAVEN_INSTALL_LOG" ]]; then
     for ev in backup_success backup_incomplete backup_failed check_success check_failed \
               restore_success restore_test_success restore_test_failed \
               retention_applied retention_failed install_success install_failed; do
-      line="$(grep "event=${ev}" "$BACKUP_LOG" "$HYBRID_AI_INSTALL_LOG" 2>/dev/null | tail -1)"
+      line="$(grep "event=${ev}" "$BACKUP_LOG" "$HAVEN_INSTALL_LOG" 2>/dev/null | tail -1)"
       [[ -n "$line" ]] && printf '  %-24s %s\n' "$ev" "${line#*ts=}"
     done
   else
@@ -520,27 +520,27 @@ sec "8. DATA AND MODELS"
 note ""
 note "Sizes and counts only. No chat content, document text, or vectors are read."
 
-run "Data directory sizes" bash -c "du -sh '$HYBRID_AI_WEBUI_DATA_DIR' '$HYBRID_AI_OLLAMA_DATA_DIR' 2>/dev/null || echo 'not present'"
-run "webui_data layout"    bash -c "du -sh '$HYBRID_AI_WEBUI_DATA_DIR'/* 2>/dev/null | sort -rh | head -15 || echo 'not present'"
+run "Data directory sizes" bash -c "du -sh '$HAVEN_WEBUI_DATA_DIR' '$HAVEN_OLLAMA_DATA_DIR' 2>/dev/null || echo 'not present'"
+run "webui_data layout"    bash -c "du -sh '$HAVEN_WEBUI_DATA_DIR'/* 2>/dev/null | sort -rh | head -15 || echo 'not present'"
 
 sub "Database health and row counts"
 {
-  if command -v sqlite3 >/dev/null 2>&1 && [[ -f "$HYBRID_AI_WEBUI_DATA_DIR/webui.db" ]]; then
-    printf 'webui.db integrity : %s\n' "$(sqlite3 "file:$HYBRID_AI_WEBUI_DATA_DIR/webui.db?mode=ro" 'PRAGMA quick_check;' 2>&1 | head -1)"
-    printf 'webui.db size      : %s\n' "$(du -h "$HYBRID_AI_WEBUI_DATA_DIR/webui.db" 2>/dev/null | cut -f1)"
+  if command -v sqlite3 >/dev/null 2>&1 && [[ -f "$HAVEN_WEBUI_DATA_DIR/webui.db" ]]; then
+    printf 'webui.db integrity : %s\n' "$(sqlite3 "file:$HAVEN_WEBUI_DATA_DIR/webui.db?mode=ro" 'PRAGMA quick_check;' 2>&1 | head -1)"
+    printf 'webui.db size      : %s\n' "$(du -h "$HAVEN_WEBUI_DATA_DIR/webui.db" 2>/dev/null | cut -f1)"
     printf '\nrow counts (how much is configured, not what it contains):\n'
     for t in chat user function tool model knowledge prompt config; do
-      c="$(sqlite3 "file:$HYBRID_AI_WEBUI_DATA_DIR/webui.db?mode=ro" "SELECT COUNT(*) FROM ${t};" 2>/dev/null || echo 'n/a')"
+      c="$(sqlite3 "file:$HAVEN_WEBUI_DATA_DIR/webui.db?mode=ro" "SELECT COUNT(*) FROM ${t};" 2>/dev/null || echo 'n/a')"
       printf '  %-12s %s\n' "$t" "$c"
     done
     printf '\ninstalled functions/pipes (ids only):\n'
-    sqlite3 "file:$HYBRID_AI_WEBUI_DATA_DIR/webui.db?mode=ro" "SELECT '  ' || id || '  active=' || is_active FROM function;" 2>/dev/null || printf '  (none or table absent)\n'
+    sqlite3 "file:$HAVEN_WEBUI_DATA_DIR/webui.db?mode=ro" "SELECT '  ' || id || '  active=' || is_active FROM function;" 2>/dev/null || printf '  (none or table absent)\n'
   else
     printf 'sqlite3 unavailable or webui.db not present\n'
   fi
-  if [[ -f "$HYBRID_AI_WEBUI_DATA_DIR/vector_db/chroma.sqlite3" ]]; then
-    printf '\nchroma.sqlite3     : %s\n' "$(du -h "$HYBRID_AI_WEBUI_DATA_DIR/vector_db/chroma.sqlite3" 2>/dev/null | cut -f1)"
-    printf 'vector index dirs  : %s\n' "$(find "$HYBRID_AI_WEBUI_DATA_DIR/vector_db" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)"
+  if [[ -f "$HAVEN_WEBUI_DATA_DIR/vector_db/chroma.sqlite3" ]]; then
+    printf '\nchroma.sqlite3     : %s\n' "$(du -h "$HAVEN_WEBUI_DATA_DIR/vector_db/chroma.sqlite3" 2>/dev/null | cut -f1)"
+    printf 'vector index dirs  : %s\n' "$(find "$HAVEN_WEBUI_DATA_DIR/vector_db" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)"
   fi
 } 2>&1 | redact >> "$OUTFILE"
 
@@ -553,10 +553,10 @@ printf '  %s[9/9]%s Backups...\n' "$C_INF" "$C_RST"
 sec "9. BACKUPS"
 # The shared helper resolves which units and which scopes apply for the
 # configured mode, so this section cannot disagree with doctor.sh or install.sh.
-run "Timers" bash -c "systemctl $HYBRID_AI_BACKUP_SYSTEMCTL_SCOPE list-timers 'hybrid-ai-*' --no-pager 2>/dev/null || echo 'no timers in scope'"
+run "Timers" bash -c "systemctl $HAVEN_BACKUP_SYSTEMCTL_SCOPE list-timers 'hybrid-ai-*' --no-pager 2>/dev/null || echo 'no timers in scope'"
 run "Linger (required for user-mode backups to run while logged out)" bash -c "loginctl show-user \"\$USER\" 2>/dev/null | grep -i linger || echo 'unknown'"
 run "Recent backup events" bash -c "grep '^EVENT' '$BACKUP_LOG' 2>/dev/null | tail -25 || echo '(no backup.log)'"
-run "Backup service journal" bash -c "journalctl $HYBRID_AI_BACKUP_JOURNAL_SCOPE -u $HYBRID_AI_BACKUP_SERVICE_UNIT -n 40 --no-pager 2>/dev/null || echo 'unavailable'"
+run "Backup service journal" bash -c "journalctl $HAVEN_BACKUP_JOURNAL_SCOPE -u $HAVEN_BACKUP_SERVICE_UNIT -n 40 --no-pager 2>/dev/null || echo 'unavailable'"
 
 # ---------------------------------------------------------------------------
 # 10. Self-audit -- scan the finished file for anything still secret-shaped

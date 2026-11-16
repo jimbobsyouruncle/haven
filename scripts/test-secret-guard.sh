@@ -330,7 +330,7 @@ warn()  { printf '[ ! ] %s\n' "\$*" >&2; }
 ok()    { printf '[ OK ] %s\n' "\$*"; }
 event() { local name="\$1"; shift; printf 'EVENT event=%s %s\n' "\$name" "\$*" >> "\${INSTALL_LOG:-/dev/null}"; }
 APP_DIR="$APP"
-HYBRID_AI_HERMES_DATA_DIR="$DATA"
+HAVEN_HERMES_DATA_DIR="$DATA"
 
 $GUARD_FN
 EOF
@@ -495,8 +495,8 @@ echo "-- fail-safe: no profiles directory --"
 : > "$INSTALL_LOG"
 rc=0
 env PATH="$BIN_ROOT:$BIN:$PATH" INSTALL_LOG="$INSTALL_LOG" HERMES_ARGV_LOG=/dev/null \
-  HYBRID_AI_HERMES_DATA_DIR="$WORK/no-such-data" \
-  bash -c "source '$SHIM/step.sh'; HYBRID_AI_HERMES_DATA_DIR='$WORK/no-such-data' APP_DIR='$APP'; install_secret_guard_hook" \
+  HAVEN_HERMES_DATA_DIR="$WORK/no-such-data" \
+  bash -c "source '$SHIM/step.sh'; HAVEN_HERMES_DATA_DIR='$WORK/no-such-data' APP_DIR='$APP'; install_secret_guard_hook" \
   >> "$WORK/step.log" 2>&1 || rc=$?
 check "(n) a missing profiles dir exits 0" "0" "$rc"
 if grep -q 'EVENT event=secret_guard_hook_skipped .*reason=no_profiles' "$INSTALL_LOG"; then
@@ -594,10 +594,10 @@ if grep -q 'config get' "$WORK/docker-argv.log" \
 else
   bad "(p) a bare hermes invocation reached the docker stub"
 fi
-if grep -qE 'HERMES_HOME|HYBRID_AI_HERMES_DATA_DIR|docker exec -e| exec .* -e ' "$WORK/docker-argv.log"; then
-  bad "(p) a host HERMES_HOME / HYBRID_AI_HERMES_DATA_DIR was passed into the container"
+if grep -qE 'HERMES_HOME|HAVEN_HERMES_DATA_DIR|docker exec -e| exec .* -e ' "$WORK/docker-argv.log"; then
+  bad "(p) a host HERMES_HOME / HAVEN_HERMES_DATA_DIR was passed into the container"
 else
-  ok "(p) no host HERMES_HOME / HYBRID_AI_HERMES_DATA_DIR crossed into the container"
+  ok "(p) no host HERMES_HOME / HAVEN_HERMES_DATA_DIR crossed into the container"
 fi
 
 echo "-- docker transport second run (idempotency) --"

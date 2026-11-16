@@ -173,14 +173,14 @@ Two properties keep this safe:
 
 - **`:ro` is enforced by Docker.** The mount is not writable from inside the container.
 - **The clone is never a protected tree.** `scripts/setup-agent-workspace.sh` refuses a
-  workspace that is, is inside, or contains any of `HYBRID_AI_APP_DIR`,
-  `HYBRID_AI_DATA_DIR`, `HYBRID_AI_LOG_DIR`, `HYBRID_AI_WORK_DIR`, the directory the env file
+  workspace that is, is inside, or contains any of `HAVEN_APP_DIR`,
+  `HAVEN_DATA_DIR`, `HAVEN_LOG_DIR`, `HAVEN_WORK_DIR`, the directory the env file
   lives in, or `BACKUP_CONF_DIR`. The read-only mount therefore cannot expose the env file,
   the log files, or the backup credentials. `scripts/sync-agent-repos.sh` applies the same
   guard to `AGENT_REPOS_DIR`, and `backup/backup.sh` / `backup/restore.sh` refuse a
-  `HYBRID_AI_BACKUP_CRED_DIR` (the directory they read credentials from: `BACKUP_CONF_DIR`
-  in user mode, the root-owned credstore in system mode) inside `HYBRID_AI_APP_DIR`,
-  `HYBRID_AI_DATA_DIR` or `HYBRID_AI_WORK_DIR`. `backup.sh` applies that check only on the
+  `HAVEN_BACKUP_CRED_DIR` (the directory they read credentials from: `BACKUP_CONF_DIR`
+  in user mode, the root-owned credstore in system mode) inside `HAVEN_APP_DIR`,
+  `HAVEN_DATA_DIR` or `HAVEN_WORK_DIR`. `backup.sh` applies that check only on the
   phases that read a credential file, so a `--stage-only` capture — which reads none — is
   exempt; every other phase, and every `restore.sh` run, is still guarded.
 
@@ -197,8 +197,8 @@ later phase.
 | Gap | Detail |
 |---|---|
 | Hermes ports bind all interfaces | `HERMES_PORT` (default `8501`) and `HERMES_API_PORT` (default `8642`) are published on `0.0.0.0`. |
-| Hermes mounts the data directory read-write | `${HYBRID_AI_DATA_DIR}/hermes_data` is writable at `/root/.hermes`. With the default layout that directory is inside the deployment directory. |
-| Hermes runs as root | **Fixed in the image**; active on a host once `HYBRID_AI_UID` is set. `hermes/Dockerfile` now creates a dedicated `hermes` group/user and adds `USER ${HYBRID_AI_UID}:${HYBRID_AI_GID}` (default `10001`), and the compose overlay passes the ids through and pins `no-new-privileges`. A host keeps the legacy uid 0 until the account migration sets `HYBRID_AI_UID` in `.env`. Verbatim proof: the `hermes-nonroot-smoke` CI job builds the image as `10001` and runs it there. That job runs on every pull request that can change the image (its `changes` job diffs the PR base for `hermes/` and the workflow), and unconditionally on the weekly schedule and manual dispatch. |
+| Hermes mounts the data directory read-write | `${HAVEN_DATA_DIR}/hermes_data` is writable at `/root/.hermes`. With the default layout that directory is inside the deployment directory. |
+| Hermes runs as root | **Fixed in the image**; active on a host once `HAVEN_UID` is set. `hermes/Dockerfile` now creates a dedicated `hermes` group/user and adds `USER ${HAVEN_UID}:${HAVEN_GID}` (default `10001`), and the compose overlay passes the ids through and pins `no-new-privileges`. A host keeps the legacy uid 0 until the account migration sets `HAVEN_UID` in `.env`. Verbatim proof: the `hermes-nonroot-smoke` CI job builds the image as `10001` and runs it there. That job runs on every pull request that can change the image (its `changes` job diffs the PR base for `hermes/` and the workflow), and unconditionally on the weekly schedule and manual dispatch. |
 | OpenHands sandbox ports publish on all interfaces | **Fixed** by `scripts/sandbox-firewall.sh`: a tagged rule set in `DOCKER-USER` closes the random sandbox ports to the LAN and keeps sandboxes off the other Docker networks, with two named ACCEPT exceptions — the app control path (per-bridge control ports and TCP 3000) and a port-scoped sandbox-to-resolver ACCEPT on UDP/TCP 53 that sits above the CIDR DROPs. See [Sandbox port containment](#sandbox-port-containment) below. |
 | Hermes has no Docker socket | Good — listed for contrast: the read-only mount gives Hermes code visibility, not control. |
 
@@ -328,11 +328,11 @@ and never prints a secret value. No existing block rule was softened.
 **Installation.** `install.sh` STEP 9a-3 places the guard at
 `profiles/<profile>/agent-hooks/secret-guard.py` with mode `0755` (the runtime executes it) in a
 root-owned `0755` directory, for every profile directory present under
-`$HYBRID_AI_HERMES_DATA_DIR/profiles`, then declares it in that profile's `config.yaml`. Declaration
+`$HAVEN_HERMES_DATA_DIR/profiles`, then declares it in that profile's `config.yaml`. Declaration
 goes through the supported CLI only, over one of two transports: a `hermes` CLI on the host PATH, or
 `docker exec` into the running `hermes-agent` container using the absolute in-container CLI path
 `/opt/hermes-agent/.hermes/bin/hermes`. The container transport passes no host `HERMES_HOME` or
-`HYBRID_AI_HERMES_DATA_DIR` in; the container's own `/root/.hermes` is the same bind mount. The calls
+`HAVEN_HERMES_DATA_DIR` in; the container's own `/root/.hermes` is the same bind mount. The calls
 are `hermes -p <profile> config get hooks.pre_tool_call --json`, then, when the guard is not already
 there, `hermes -p <profile> config set hooks.pre_tool_call '<full list>'`. The list is read first and
 the guard entry appended to it, because `config set` replaces the whole list and a peer hook must
@@ -485,7 +485,7 @@ The gate is fail-closed. It depends on all six jobs with `if: always()`, prints 
 |---|---|
 | Client-side encryption | restic encrypts on the Pi; R2 never sees plaintext |
 | Credential separation | Backup keys live in `~/.config/hybrid-ai-backup/` (0700), outside the git repo and separate from `.env` |
-| Permission enforcement | Both scripts refuse to run if a `HYBRID_AI_BACKUP_CRED_DIR` credential file is not mode 0600. A systemd `LoadCredential=` copy under `$CREDENTIALS_DIRECTORY` is accepted at 0400/0440 instead, because systemd materialises that tmpfs copy each start and it can never be `chmod 600` |
+| Permission enforcement | Both scripts refuse to run if a `HAVEN_BACKUP_CRED_DIR` credential file is not mode 0600. A systemd `LoadCredential=` copy under `$CREDENTIALS_DIRECTORY` is accepted at 0400/0440 instead, because systemd materialises that tmpfs copy each start and it can never be `chmod 600` |
 | Least-privilege token | R2 token scoped to **Object Read & Write** on **one bucket** — cannot create, delete, or reach other buckets |
 | Passphrase not in environment | `RESTIC_PASSWORD_FILE` is used rather than `RESTIC_PASSWORD`, keeping it out of `/proc/<pid>/environ` |
 | Safe config parsing | `r2.env` is parsed line by line, never `source`d, so a crafted value cannot execute |
@@ -500,7 +500,7 @@ The gate is fail-closed. It depends on all six jobs with `if: always()`, prints 
 
 ### System mode: the privilege split
 
-`HYBRID_AI_BACKUP_MODE=system` replaces the single per-user unit with two system
+`HAVEN_BACKUP_MODE=system` replaces the single per-user unit with two system
 units under a dedicated, unprivileged account, `hybrid-ai-backup`. The control
 is the split itself: no single process can both read your data and reach the
 network or the credentials.
@@ -514,7 +514,7 @@ network or the credentials.
 | Upload has no read privilege | `hybrid-ai-backup-upload.service` sets `CapabilityBoundingSet=` (empty). It cannot read data it does not own, and does not need to: the capture already staged a copy it can read |
 | Credentials outside data trees | The upload unit reads them through `LoadCredential=r2.env:/etc/credstore/hybrid-ai-backup/r2.env` and `LoadCredential=repo-password:...`, so systemd copies them into a private tmpfs — never a copy inside a data tree |
 | Credentials root-only | `/etc/credstore/hybrid-ai-backup/` is root-owned; `r2.env` and `repo-password` are mode 0600. `install.sh` writes them there in system mode |
-| Layout file only, never the secrets file | Every system-mode unit pins `HYBRID_AI_STACK_ENV_FILE` at the 0644 layout file (`/etc/hybrid-ai/hybrid-ai.env`), so the env helper never reads the 0600 root-only `stack.env` as `hybrid-ai-backup`. The account needs no access to `stack.env`; the layout file holds only names and paths |
+| Layout file only, never the secrets file | Every system-mode unit pins `HAVEN_STACK_ENV_FILE` at the 0644 layout file (`/etc/hybrid-ai/hybrid-ai.env`), so the env helper never reads the 0600 root-only `stack.env` as `hybrid-ai-backup`. The account needs no access to `stack.env`; the layout file holds only names and paths |
 | No account in the docker group | Neither unit joins `docker`. The one root-owned helper that talks to Docker (`backup/backup-containers.sh`) is run with the leading `+` on fixed Exec lines, so privilege is bounded to one fixed command |
 | Docker socket unreachable | Both units set `InaccessiblePaths=-/run/docker.sock` and `-/var/run/docker.sock` |
 | No container ever stopped | The helper only ever pauses and unpauses the fixed container set (incident B1: a retry loop once stopped `hermes-agent`). A killed capture is unpaused by `ExecStopPost=` |
@@ -574,7 +574,7 @@ Everything below is root-owned unless noted.
 | `/etc/credstore/hybrid-ai-backup` | 0700 | `r2.env` and `repo-password`, mode 0600 |
 
 Caddy's `/data` — its managed ACME storage, and therefore the per-host TLS private
-keys once TLS is enabled — is `${HYBRID_AI_DATA_DIR}/caddy`, a SIBLING of `webui_data`.
+keys once TLS is enabled — is `${HAVEN_DATA_DIR}/caddy`, a SIBLING of `webui_data`.
 `install.sh` creates that directory as `0700`, owned by the installing user, and it is
 never group- or world-readable; Caddy's own subdirectories are `0700` and its key files
 `0600`, written by container-root. The `status` container mounts only `webui_data`
@@ -600,9 +600,9 @@ move. The sweep never deletes anything — it moves a directory into a quarantin
 root, so a wrong decision is recoverable by moving it back.
 
 The quarantine root is created mode 0750 and root-owned, and the run refuses to
-move anything unless that root is proven outside `HYBRID_AI_DATA_DIR`,
-`HYBRID_AI_APP_DIR`, `HYBRID_AI_WORK_DIR`, `HYBRID_AI_HERMES_DATA_DIR`,
-`HYBRID_AI_WEBUI_DATA_DIR` and `OPENHANDS_WORKSPACE`, which are the trees the backup
+move anything unless that root is proven outside `HAVEN_DATA_DIR`,
+`HAVEN_APP_DIR`, `HAVEN_WORK_DIR`, `HAVEN_HERMES_DATA_DIR`,
+`HAVEN_WEBUI_DATA_DIR` and `OPENHANDS_WORKSPACE`, which are the trees the backup
 captures. The unit carries no `Restart=` policy, so a failing run cannot loop.
 
 ### The deploy key moves off the login account
@@ -677,7 +677,7 @@ that can do exactly one thing: start the system unit
 | No login shell beyond the forced command | sshd runs the forced command for every connection. `restrict,command=...` disables PTY, X11, agent and port forwarding |
 | No sudo | The account is in no `sudoers` rule and needs none |
 | Not in the `docker` group | The account cannot reach the Docker socket |
-| Not in the `systemd-journal` group | The account cannot read journald. The unit writes each run to `$HYBRID_AI_LOG_DIR/deploy/<sha>.log`, mode `0640`, group `hybrid-ai-deploy`, so the account reads its own run log without journal access |
+| Not in the `systemd-journal` group | The account cannot read journald. The unit writes each run to `$HAVEN_LOG_DIR/deploy/<sha>.log`, mode `0640`, group `hybrid-ai-deploy`, so the account reads its own run log without journal access |
 | Reads the layout env file (paths only) | The forced command resolves host paths by parsing `/etc/hybrid-ai/hybrid-ai.env` (never sourcing it), the same file the unit names. The bootstrap makes it mode `0644`, root-owned, so the `hybrid-ai-deploy` AND `hybrid-ai-backup` accounts both read it. It holds paths and names only, no secret values |
 | Public fetch, no credentials | `scripts/deploy-instance.sh` fetches main only from the public https remote, with git hooks disabled and credential helpers cleared, and refuses a credential-bearing origin (userinfo in the URL) |
 | Ancestor check is mandatory | The commit must be `git merge-base --is-ancestor <sha> origin/main` or the deploy is refused (exit 7) |

@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import bcrypt
 
-COOKIE_NAME = "hybrid_ai_auth"
+COOKIE_NAME = "haven_auth"
 DEFAULT_PORT = 8080
 DEFAULT_COOKIE_MAX_AGE = 86400
 DEFAULT_RATE_LIMIT = 5
@@ -31,9 +31,9 @@ MAX_FORM_BYTES = 16384
 WILDCARD = ".".join(["0"] * 4)
 
 REQUIRED_ENV = (
-    "HYBRID_AI_AUTH_USER",
-    "HYBRID_AI_AUTH_HASH",
-    "HYBRID_AI_AUTH_COOKIE_SECRET",
+    "HAVEN_AUTH_USER",
+    "HAVEN_AUTH_HASH",
+    "HAVEN_AUTH_COOKIE_SECRET",
     "TLS_DOMAIN",
 )
 
@@ -77,7 +77,18 @@ class Config:
     """Process configuration, read once at start-up."""
 
     def __init__(self, environ):
+        environ = dict(environ)
+        aliases = tuple(name for name in REQUIRED_ENV if name.startswith("HAVEN_")) + (
+            "HAVEN_AUTH_COOKIE_MAX_AGE", "HAVEN_AUTH_RATE_LIMIT", "HAVEN_AUTH_RATE_WINDOW",
+        )
         self.missing = []
+        for name in aliases:
+            old = "HYBRID_AI_" + name.removeprefix("HAVEN_")
+            if name in environ and old in environ and environ[name] != environ[old]:
+                # No values in diagnostics, including conflicting credentials.
+                self.missing.append(name + " (conflicting aliases)")
+            elif name not in environ and old in environ:
+                environ[name] = environ[old]
         values = {}
         for name in REQUIRED_ENV:
             raw = environ.get(name)
@@ -86,18 +97,18 @@ class Config:
             else:
                 values[name] = raw.strip()
         self.ok = not self.missing
-        self.user = values.get("HYBRID_AI_AUTH_USER", "")
-        self.password_hash = values.get("HYBRID_AI_AUTH_HASH", "").encode()
-        self.cookie_secret = values.get("HYBRID_AI_AUTH_COOKIE_SECRET", "").encode()
+        self.user = values.get("HAVEN_AUTH_USER", "")
+        self.password_hash = values.get("HAVEN_AUTH_HASH", "").encode()
+        self.cookie_secret = values.get("HAVEN_AUTH_COOKIE_SECRET", "").encode()
         self.tls_domain = values.get("TLS_DOMAIN", "").lower().rstrip(".")
         self.cookie_max_age = _positive_int(
-            environ.get("HYBRID_AI_AUTH_COOKIE_MAX_AGE"), DEFAULT_COOKIE_MAX_AGE
+            environ.get("HAVEN_AUTH_COOKIE_MAX_AGE"), DEFAULT_COOKIE_MAX_AGE
         )
         self.rate_limit = _positive_int(
-            environ.get("HYBRID_AI_AUTH_RATE_LIMIT"), DEFAULT_RATE_LIMIT
+            environ.get("HAVEN_AUTH_RATE_LIMIT"), DEFAULT_RATE_LIMIT
         )
         self.rate_window = _positive_int(
-            environ.get("HYBRID_AI_AUTH_RATE_WINDOW"), DEFAULT_RATE_WINDOW
+            environ.get("HAVEN_AUTH_RATE_WINDOW"), DEFAULT_RATE_WINDOW
         )
         self.port = _positive_int(environ.get("PORT"), DEFAULT_PORT)
         # Wildcard default: the container listens on all of its own interfaces.
@@ -177,7 +188,7 @@ class TargetValidator:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "hybrid-ai-auth"
+    server_version = "haven-auth"
     sys_version = ""
     protocol_version = "HTTP/1.1"
 

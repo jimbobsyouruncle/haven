@@ -51,10 +51,10 @@
 #   --tls-dns-provider <p>    ACME_DNS_PROVIDER      cloudflare | rfc2136 (default cloudflare)
 #   --tls-acme-ca <ca>        ACME_CA                staging | production | https:// URL
 #                                                    (default staging)
-#   --tls-token-file <path>   HYBRID_AI_TLS_TOKEN_FILE
+#   --tls-token-file <path>   HAVEN_TLS_TOKEN_FILE
 #                                                    PATH to the operator-owned 0600 root
 #                                                    credential file. NEVER the token.
-#   --dry-run                 HYBRID_AI_DRY_RUN=1    print the files it would write, a
+#   --dry-run                 HAVEN_DRY_RUN=1    print the files it would write, a
 #                                                    unified diff of status/Caddyfile and
 #                                                    docker-compose.yml, and validate both.
 #                                                    Writes no host file; exits 0.
@@ -87,20 +87,20 @@ cd "$SCRIPT_DIR"
 
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/scripts/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/scripts/lib/haven-env.sh"
 # shellcheck source=scripts/lib/build-gate.sh
 source "${SCRIPT_DIR}/scripts/lib/build-gate.sh"
 
-APP_DIR="$HYBRID_AI_APP_DIR"
+APP_DIR="$HAVEN_APP_DIR"
 # The stack's env file: the one handed to `docker compose --env-file` and the
-# one this installer WRITES. HYBRID_AI_ENV_FILE is the layout file and is only
-# ever read. With HYBRID_AI_STACK_ENV_FILE unset the two are the same path, so
+# one this installer WRITES. HAVEN_ENV_FILE is the layout file and is only
+# ever read. With HAVEN_STACK_ENV_FILE unset the two are the same path, so
 # behaviour is byte-identical to before.
-ENV_FILE="$HYBRID_AI_STACK_ENV_FILE"
-DATA_DIR="$HYBRID_AI_DATA_DIR"
-LOG_DIR="$HYBRID_AI_LOG_DIR"
-WORK_DIR="$HYBRID_AI_WORK_DIR"
+ENV_FILE="$HAVEN_STACK_ENV_FILE"
+DATA_DIR="$HAVEN_DATA_DIR"
+LOG_DIR="$HAVEN_LOG_DIR"
+WORK_DIR="$HAVEN_WORK_DIR"
 TARGET_ENV_VERSION="2"
 
 # Peer hostnames to search for, in priority order.
@@ -109,7 +109,7 @@ PEER_HOSTNAME="${PEER_HOSTNAME:-${PEER_HOSTNAMES%% *}}"
 NON_INTERACTIVE=0
 NO_START=0
 WAKE_RUNPOD_FLAG=0
-DRY_RUN="${HYBRID_AI_DRY_RUN:-0}"
+DRY_RUN="${HAVEN_DRY_RUN:-0}"
 [[ "$DRY_RUN" == "1" || "$DRY_RUN" == "true" ]] && DRY_RUN=1 || DRY_RUN=0
 
 # --- Opt-in TLS / ACME flags (docs/tls-acme-design.md section 8.2) ---------
@@ -180,7 +180,7 @@ warn() { printf '%s[ ! ]%s %s\n'  "$C_WRN" "$C_RST" "$*" >&2; }
 die()  { printf '%s[ X ]%s %s\n'  "$C_ERR" "$C_RST" "$*" >&2; exit 1; }
 hr()   { printf '%s%s%s\n' "$C_DIM" "------------------------------------------------------------" "$C_RST"; }
 
-INSTALL_LOG="$HYBRID_AI_INSTALL_LOG"
+INSTALL_LOG="$HAVEN_INSTALL_LOG"
 event() {
   local name="$1"; shift
   printf 'EVENT ts=%s event=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$name" "$*" \
@@ -191,7 +191,7 @@ event "install_start" "args=$*" "user=${USER:-unknown}"
 
 trap 'event "install_aborted" "line=${LINENO}"; die "Failed at line ${LINENO}: ${BASH_COMMAND}"' ERR
 # The progress heartbeat must never outlive the run that started it.
-trap 'hybrid_progress_stop' EXIT
+trap 'haven_progress_stop' EXIT
 
 hr
 printf '  hybrid-ai :: local control plane bootstrap\n'
@@ -306,12 +306,13 @@ if [[ -f "$ENV_FILE" ]]; then
     if [[ "$_line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
       _k="${BASH_REMATCH[1]}"
       _v="${BASH_REMATCH[2]}"
+      _k="$(haven_key "$_k")"
       _v="${_v%\"}"; _v="${_v#\"}"
       _v="${_v%\'}"; _v="${_v#\'}"
       printf -v "$_k" '%s' "$_v"
       export "${_k?}"
     else
-      warn "Ignoring malformed line in .env: ${_line:0:40}"
+      warn "Ignoring malformed line in .env (contents withheld)."
     fi
   done < "$ENV_FILE"
   unset _line _k _v
@@ -449,23 +450,23 @@ if [[ -n "${TAILSCALE_IP:-}" ]]; then
 fi
 
 # The shared helper above already resolved every LAYOUT-managed setting from
-# HYBRID_AI_ENV_FILE (the layout file): the host paths, the agent workspace, the
+# HAVEN_ENV_FILE (the layout file): the host paths, the agent workspace, the
 # Hermes home, the mode selectors and the identity that decides which uid the
 # whole stack runs as. The stack file loaded just above supplies runtime config
 # and secrets only. On a bootstrapped host the two files are DIFFERENT, and a
-# legacy stack file still carries the OLD values (empty HYBRID_AI_UID=, the login
+# legacy stack file still carries the OLD values (empty HAVEN_UID=, the login
 # home's OPENHANDS_WORKSPACE, and so on). Letting those win would drop the stack
 # to uid 0 and point the containers at the trees migration moved away, so restore
 # the layout-resolved values here.
 #
-# When HYBRID_AI_STACK_ENV_FILE is unset the stack file IS the layout file and
+# When HAVEN_STACK_ENV_FILE is unset the stack file IS the layout file and
 # the helper read the SAME file, so every line below is an exact no-op.
-HYBRID_AI_UID="$HYBRID_AI_LAYOUT_UID"
-HYBRID_AI_GID="$HYBRID_AI_LAYOUT_GID"
-OPENHANDS_WORKSPACE="$HYBRID_AI_LAYOUT_OPENHANDS_WORKSPACE"
-AGENT_REPOS_DIR="$HYBRID_AI_LAYOUT_AGENT_REPOS_DIR"
-OPENHANDS_STATE_DIR="$HYBRID_AI_LAYOUT_OPENHANDS_STATE_DIR"
-export HYBRID_AI_UID HYBRID_AI_GID OPENHANDS_WORKSPACE AGENT_REPOS_DIR OPENHANDS_STATE_DIR
+HAVEN_UID="$HAVEN_LAYOUT_UID"
+HAVEN_GID="$HAVEN_LAYOUT_GID"
+OPENHANDS_WORKSPACE="$HAVEN_LAYOUT_OPENHANDS_WORKSPACE"
+AGENT_REPOS_DIR="$HAVEN_LAYOUT_AGENT_REPOS_DIR"
+OPENHANDS_STATE_DIR="$HAVEN_LAYOUT_OPENHANDS_STATE_DIR"
+export HAVEN_UID HAVEN_GID OPENHANDS_WORKSPACE AGENT_REPOS_DIR OPENHANDS_STATE_DIR
 
 # ---------------------------------------------------------------------------
 # STEP 3. Work out memory budget
@@ -556,12 +557,12 @@ esac
 # ---------------------------------------------------------------------------
 # STEP 3b. Identity for the status container and the sandbox
 # ---------------------------------------------------------------------------
-# When HYBRID_AI_UID/HYBRID_AI_GID are set, they drive BOTH the status
+# When HAVEN_UID/HAVEN_GID are set, they drive BOTH the status
 # container uid and the OpenHands sandbox uid, so the whole stack runs as the
 # dedicated non-root service account. Unset keeps today's behaviour exactly:
 # the login account's uid/gid.
-STATUS_UID="${HYBRID_AI_UID:-$(id -u)}"
-STACK_GID="${HYBRID_AI_GID:-$(id -g)}"
+STATUS_UID="${HAVEN_UID:-$(id -u)}"
+STACK_GID="${HAVEN_GID:-$(id -g)}"
 if [[ -S /var/run/docker.sock ]]; then
   DOCKER_GID="$(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo 999)"
 else
@@ -569,8 +570,8 @@ else
   DOCKER_GID="${DOCKER_GID:-999}"
 fi
 ok "status page identity: uid=${STATUS_UID} docker gid=${DOCKER_GID}"
-if [[ -n "${HYBRID_AI_UID:-}" ]]; then
-  ok "stack runs as HYBRID_AI_UID=${STATUS_UID} gid=${STACK_GID}"
+if [[ -n "${HAVEN_UID:-}" ]]; then
+  ok "stack runs as HAVEN_UID=${STATUS_UID} gid=${STACK_GID}"
 fi
 
 # The backup log's group gid. In system mode the log is 0640 owned by
@@ -582,7 +583,7 @@ fi
 # log reports success.
 # In user mode the log stays 0600 owned by the invoking account, so the only
 # value that grants nothing new is the primary gid the container already has.
-if [[ "$HYBRID_AI_BACKUP_MODE" == "system" ]]; then
+if [[ "$HAVEN_BACKUP_MODE" == "system" ]]; then
   BACKUP_GROUP_GID_DEFAULT="$(getent group hybrid-ai-backup 2>/dev/null | cut -d: -f3 || true)"
   [[ "$BACKUP_GROUP_GID_DEFAULT" =~ ^[0-9]+$ ]] \
     || die "the hybrid-ai-backup group does not exist, so the status container cannot be granted read access to BACKUP_LOG. Create it (useradd --system hybrid-ai-backup) and re-run ./install.sh."
@@ -608,11 +609,11 @@ fi
 # Generated when unset (like WEBUI_SECRET_KEY) so flipping AUTH_ENABLED=on
 # later needs no extra run; never printed or logged. Rotating it is the
 # documented manual act (replace the value -> every live session drops).
-if [[ -z "${HYBRID_AI_AUTH_COOKIE_SECRET:-}" ]]; then
-  HYBRID_AI_AUTH_COOKIE_SECRET="$(openssl rand -hex 32)"
-  ok "Generated new HYBRID_AI_AUTH_COOKIE_SECRET."
+if [[ -z "${HAVEN_AUTH_COOKIE_SECRET:-}" ]]; then
+  HAVEN_AUTH_COOKIE_SECRET="$(openssl rand -hex 32)"
+  ok "Generated new HAVEN_AUTH_COOKIE_SECRET."
 else
-  ok "Reusing existing HYBRID_AI_AUTH_COOKIE_SECRET (sessions preserved)."
+  ok "Reusing existing HAVEN_AUTH_COOKIE_SECRET (signing secret not rotated)."
 fi
 
 # ---------------------------------------------------------------------------
@@ -840,8 +841,8 @@ fi
 # ---------------------------------------------------------------------------
 log "Ensuring persistent host mounts..."
 
-for f in "$HYBRID_AI_INSTALL_LOG" "$BACKUP_LOG"; do
-  if [[ "$HYBRID_AI_BACKUP_MODE" == "system" && "$f" == "$BACKUP_LOG" ]]; then
+for f in "$HAVEN_INSTALL_LOG" "$BACKUP_LOG"; do
+  if [[ "$HAVEN_BACKUP_MODE" == "system" && "$f" == "$BACKUP_LOG" ]]; then
     # In system mode the backup log lives in the units' LogsDirectory=
     # (/var/log/hybrid-ai-backup) and is written by the hybrid-ai-backup account.
     # install.sh must not leave a root:root 0600 file the account cannot append
@@ -866,13 +867,13 @@ for f in "$HYBRID_AI_INSTALL_LOG" "$BACKUP_LOG"; do
   fi
 done
 
-mkdir -p "$HYBRID_AI_CADDY_DATA_DIR"
-chmod 700 "$HYBRID_AI_CADDY_DATA_DIR"
-mkdir -p "$HYBRID_AI_HERMES_DATA_DIR"
+mkdir -p "$HAVEN_CADDY_DATA_DIR"
+chmod 700 "$HAVEN_CADDY_DATA_DIR"
+mkdir -p "$HAVEN_HERMES_DATA_DIR"
 
 # Private status-to-host verification transport. Never publish the status API
 # or grant the verifier access to Docker/session credentials.
-STATUS_VERIFY_DIR="${HYBRID_AI_DATA_DIR}/status-verifier"
+STATUS_VERIFY_DIR="${HAVEN_DATA_DIR}/status-verifier"
 [[ ! -L "$STATUS_VERIFY_DIR" ]] || die "status verifier directory must not be a symlink"
 if [[ "$(id -u)" == 0 ]]; then
   install -d -m 0700 "$STATUS_VERIFY_DIR"
@@ -892,12 +893,12 @@ mkdir -p "$RESTIC_CACHE_DIR"
 # 42-hour outage (a root-owned nested directory under the unit cache silently
 # disabling every scheduled upload). run_backup() points a root run here instead.
 BACKUP_ROOT_CACHE_DIR="${RESTIC_CACHE_DIR}-root"
-if [[ "$HYBRID_AI_BACKUP_MODE" == "system" && "$(id -u)" == "0" ]]; then
+if [[ "$HAVEN_BACKUP_MODE" == "system" && "$(id -u)" == "0" ]]; then
   mkdir -p "$BACKUP_ROOT_CACHE_DIR"
   chmod 700 "$BACKUP_ROOT_CACHE_DIR"
 fi
 
-for d in "$HYBRID_AI_OLLAMA_DATA_DIR" "$HYBRID_AI_WEBUI_DATA_DIR" "$HYBRID_AI_HERMES_DATA_DIR"; do
+for d in "$HAVEN_OLLAMA_DATA_DIR" "$HAVEN_WEBUI_DATA_DIR" "$HAVEN_HERMES_DATA_DIR"; do
   if [[ -d "$d" ]]; then
     ok "$d exists ($(du -sh "$d" 2>/dev/null | cut -f1 || echo '0') on disk) -- untouched."
   else
@@ -980,33 +981,33 @@ HERMES_MEM_LIMIT=${HERMES_MEM_LIMIT:-2048m}
 HERMES_CPUS=${HERMES_CPUS:-1.5}
 # Dedicated non-root uid/gid for the Hermes image. No default is written: leaving
 # these unset keeps the legacy uid 0. Set them during the account migration.
-HYBRID_AI_UID=${HYBRID_AI_UID:-}
-HYBRID_AI_GID=${HYBRID_AI_GID:-}
+HAVEN_UID=${HAVEN_UID:-}
+HAVEN_GID=${HAVEN_GID:-}
 
 # --- Host paths (optional relocation) --------------------------------------
-# All host paths resolve through scripts/lib/hybrid-ai-env.sh. Left commented,
+# All host paths resolve through scripts/lib/haven-env.sh. Left commented,
 # they default to the deployment directory; uncomment to split the layout.
-#HYBRID_AI_APP_DIR=${APP_DIR}
-#HYBRID_AI_DATA_DIR=${DATA_DIR}
-#HYBRID_AI_LOG_DIR=${LOG_DIR}
-#HYBRID_AI_WORK_DIR=${WORK_DIR}
+#HAVEN_APP_DIR=${APP_DIR}
+#HAVEN_DATA_DIR=${DATA_DIR}
+#HAVEN_LOG_DIR=${LOG_DIR}
+#HAVEN_WORK_DIR=${WORK_DIR}
 
 # The post-deploy verifier's log. Unlike the paths above this one is WRITTEN,
 # not commented: docker-compose.yml interpolates it for the status service's
 # read-only mount and refuses a bind whose source is unset. Written as
 # ${VAR:-default} so an owner override in this file survives every reinstall.
-HYBRID_AI_POST_DEPLOY_VERIFY_LOG=${HYBRID_AI_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}
+HAVEN_POST_DEPLOY_VERIFY_LOG=${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}
 
 # The backup log the status service mounts read-only. WRITTEN, not commented:
 # docker-compose.yml interpolates BACKUP_LOG fail-closed for that bind. The
-# value is the one scripts/lib/hybrid-ai-env.sh already resolved from the mode
-# (user: $HYBRID_AI_LOG_DIR/backup.log, system: the units' LogsDirectory=), so
+# value is the one scripts/lib/haven-env.sh already resolved from the mode
+# (user: $HAVEN_LOG_DIR/backup.log, system: the units' LogsDirectory=), so
 # the reader cannot drift from the writer.
 BACKUP_LOG=${BACKUP_LOG}
 
 # The ONE supplementary group the status container is given, so it can read the
 # backup log without the file becoming world-readable and without the service
-# running as root. Scripts/lib/hybrid-ai-env.sh does not resolve this setting;
+# running as root. Scripts/lib/haven-env.sh does not resolve this setting;
 # install.sh does, by NAME: the hybrid-ai-backup group's gid in system mode (the
 # log's group owner), and the container's own primary gid in user mode (which
 # grants no new access). Written as ${VAR:-default} so an owner override
@@ -1034,7 +1035,7 @@ OPENHANDS_CPUS=${OPENHANDS_CPUS:-2.5}
 # 04:35 to cap the Docker BUILD CACHE (cache only; never images, containers,
 # volumes or bind-mounted data). This size is handed to whichever cap flag the
 # local docker supports (--max-used-space, else --keep-storage).
-HYBRID_AI_BUILD_CACHE_CAP=${HYBRID_AI_BUILD_CACHE_CAP:-15GB}
+HAVEN_BUILD_CACHE_CAP=${HAVEN_BUILD_CACHE_CAP:-15GB}
 
 # --- Conversation prune (quarantine sweep) ---------------------------------
 # Read by scripts/prune-conversations.sh (hybrid-ai-prune.timer, daily 04:20).
@@ -1047,8 +1048,8 @@ HYBRID_AI_BUILD_CACHE_CAP=${HYBRID_AI_BUILD_CACHE_CAP:-15GB}
 # a reinstall must preserve it rather than silently re-enable deletion. Unset
 # still yields 90. The script resolves the same way at run time, and it also
 # reads 0 as an opt-out.
-HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=${HYBRID_AI_PRUNE_ALLOW_LEASE_LESS:-}
-HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS=${HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS-90}
+HAVEN_PRUNE_ALLOW_LEASE_LESS=${HAVEN_PRUNE_ALLOW_LEASE_LESS:-}
+HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=${HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS-90}
 
 # --- Opt-in TLS / ACME (docs/tls-acme-design.md section 8.3) ---------------
 # Paths, names and public values only. The DNS token itself is NOT here and
@@ -1059,13 +1060,13 @@ ACME_EMAIL=${ACME_EMAIL:-}
 ACME_CA=${ACME_CA:-https://acme-staging-v02.api.letsencrypt.org/directory}
 TLS_VALIDATION=${TLS_VALIDATION:-dns}
 ACME_DNS_PROVIDER=${ACME_DNS_PROVIDER:-cloudflare}
-HYBRID_AI_TLS_TOKEN_FILE=${HYBRID_AI_TLS_TOKEN_FILE:-}
+HAVEN_TLS_TOKEN_FILE=${HAVEN_TLS_TOKEN_FILE:-}
 TLS_HOSTS=${TLS_HOSTS:-}
 ACME_AUTO_HTTPS=${ACME_AUTO_HTTPS:-disable_redirects}
 CADDY_IMAGE=${CADDY_IMAGE:-hybrid-ai-caddy:2.11.7-dns}
 # Login gate for the *.daemonhub.dev HTTPS sites. off by default: the rendered
 # Caddyfile is then byte-identical to the one without the gate. Turn it on with
-# AUTH_ENABLED=on plus HYBRID_AI_AUTH_USER and a bcrypt HYBRID_AI_AUTH_HASH.
+# AUTH_ENABLED=on plus HAVEN_AUTH_USER and a bcrypt HAVEN_AUTH_HASH.
 AUTH_ENABLED=${AUTH_ENABLED:-off}
 # The auth user and hash are escaped for Docker Compose: every literal dollar
 # sign is doubled so Compose's env-file interpolation yields the operator's
@@ -1073,18 +1074,18 @@ AUTH_ENABLED=${AUTH_ENABLED:-off}
 # The normalizer is idempotent: it collapses doubled signs back to one, then
 # escapes once, so a re-run is byte-identical and an already-escaped value is
 # never quadrupled. (scripts/lib/tls.sh: tls_compose_escape.)
-HYBRID_AI_AUTH_USER=$(tls_compose_escape "${HYBRID_AI_AUTH_USER:-}")
-HYBRID_AI_AUTH_HASH=$(tls_compose_escape "${HYBRID_AI_AUTH_HASH:-}")
+HAVEN_AUTH_USER=$(tls_compose_escape "${HAVEN_AUTH_USER:-}")
+HAVEN_AUTH_HASH=$(tls_compose_escape "${HAVEN_AUTH_HASH:-}")
 # The session cookie signing key. The installer generates a strong, per-host,
 # random value when it is unset (STEP 4b, openssl rand -hex 32) and writes it
 # here; it is never printed. Rotation is an explicit replacement of the value
 # in this 0600 file -> every live session drops. (The command is spelled
 # without backticks: this block is an unquoted heredoc, so a backtick would
 # run at render time.)
-HYBRID_AI_AUTH_COOKIE_SECRET=$(tls_compose_escape "${HYBRID_AI_AUTH_COOKIE_SECRET:-}")
+HAVEN_AUTH_COOKIE_SECRET=$(tls_compose_escape "${HAVEN_AUTH_COOKIE_SECRET:-}")
 # Session lifetime in seconds. The auth service defaults to 86400 (24h) when
 # unset; the installer writes that default so the value is visible in the file.
-HYBRID_AI_AUTH_COOKIE_MAX_AGE=${HYBRID_AI_AUTH_COOKIE_MAX_AGE:-86400}
+HAVEN_AUTH_COOKIE_MAX_AGE=${HAVEN_AUTH_COOKIE_MAX_AGE:-86400}
 
 # --- Zero-trace ------------------------------------------------------------
 SCARF_NO_ANALYTICS=true
@@ -1092,6 +1093,28 @@ DO_NOT_TRACK=true
 ANONYMIZED_TELEMETRY=false
 EOF
 
+# Retain unowned keys verbatim, including vendor settings. Never source the file
+# or expose its contents. Canonicalize only the explicit platform alias list.
+declare -A _haven_rendered_keys=()
+# This known retired key has its own preserve-or-remove migration above/below;
+# it is not an unowned vendor extension to blindly reappend.
+_haven_rendered_keys[TAILSCALE_IP]=1
+while IFS= read -r _line || [[ -n "$_line" ]]; do
+  [[ "$_line" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]] || continue
+  _haven_rendered_keys["${BASH_REMATCH[1]}"]=1
+done < "$TMP_ENV"
+if [[ -f "$ENV_FILE" ]]; then
+  while IFS= read -r _line || [[ -n "$_line" ]]; do
+    [[ "$_line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+    _k="${BASH_REMATCH[1]}"; _v="${BASH_REMATCH[2]}"
+    _k="$(haven_key "$_k")"
+    if [[ ! -v "_haven_rendered_keys[$_k]" ]]; then
+      printf '%s=%s\n' "$_k" "$_v" >> "$TMP_ENV"
+    fi
+  done < "$ENV_FILE"
+  unset _line _k _v
+fi
+unset _haven_rendered_keys _line
 mv -f "$TMP_ENV" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 ok ".env written (0600)."
@@ -1180,12 +1203,12 @@ prepare_openhands_workspace || warn "OpenHands workspace ACLs not applied (needs
 # changes this script's exit status. Without root, systemctl or the unit
 # template it warns and records an event.
 #
-# HYBRID_AI_SYSTEMD_UNIT_DIR is a HARNESS-ONLY override for
+# HAVEN_SYSTEMD_UNIT_DIR is a HARNESS-ONLY override for
 # scripts/test-install-health.sh, which installs into a scratch directory. Do
 # not document it: it is not in .env.example and not in STEP 8's .env template.
 install_firewall_unit() {
   local unit="hybrid-ai-firewall.service"
-  local unit_dir="${HYBRID_AI_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+  local unit_dir="${HAVEN_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
   local source_file="${APP_DIR}/deploy/${unit}"
   local target_file="${unit_dir}/${unit}"
   local was_enabled=0
@@ -1275,18 +1298,18 @@ install_firewall_unit() {
 # `Restart=` policy is added either (incident B1).
 #
 # Both functions sit before the --no-start exit so both paths place the files,
-# and neither is gated on HYBRID_AI_BACKUP_MODE: this is not backup related.
+# and neither is gated on HAVEN_BACKUP_MODE: this is not backup related.
 #
 # Fail-safe, never fail-closed: no sudo, never dies and never changes this
 # script's exit status. A failed copy leaves the previous file in place, so the
 # host keeps working with the unit it already has.
 #
-# HYBRID_AI_SYSTEMD_UNIT_DIR and HYBRID_AI_POLKIT_RULES_DIR are the HARNESS-ONLY
+# HAVEN_SYSTEMD_UNIT_DIR and HAVEN_POLKIT_RULES_DIR are the HARNESS-ONLY
 # overrides for scripts/test-deploy-wiring-install.sh, which installs into
 # scratch directories. Do not document them.
 install_deploy_unit() {
   local unit="hybrid-ai-deploy@.service"
-  local unit_dir="${HYBRID_AI_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+  local unit_dir="${HAVEN_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
   local source_file="${APP_DIR}/deploy/${unit}"
   local target_file="${unit_dir}/${unit}"
 
@@ -1353,7 +1376,7 @@ install_deploy_polkit_rule() {
     return 0
   fi
 
-  for d in ${HYBRID_AI_POLKIT_RULES_DIR:+"$HYBRID_AI_POLKIT_RULES_DIR"} \
+  for d in ${HAVEN_POLKIT_RULES_DIR:+"$HAVEN_POLKIT_RULES_DIR"} \
            /etc/polkit-1/rules.d /usr/share/polkit-1/rules.d; do
     if [[ -d "$d" ]]; then polkit_dir="$d"; break; fi
   done
@@ -1405,12 +1428,12 @@ install_deploy_polkit_rule() {
 # changes this script's exit status. Without root or without the source it warns
 # and records an event.
 #
-# HYBRID_AI_SBIN_DIR is a HARNESS-ONLY override, the same precedent as
-# HYBRID_AI_SYSTEMD_UNIT_DIR and HYBRID_AI_POLKIT_RULES_DIR above; it is not
+# HAVEN_SBIN_DIR is a HARNESS-ONLY override, the same precedent as
+# HAVEN_SYSTEMD_UNIT_DIR and HAVEN_POLKIT_RULES_DIR above; it is not
 # documented anywhere else.
 install_post_deploy_verifier() {
   local source_file="${APP_DIR}/scripts/run-post-deploy-verify.sh"
-  local sbin_dir="${HYBRID_AI_SBIN_DIR:-/usr/local/sbin}"
+  local sbin_dir="${HAVEN_SBIN_DIR:-/usr/local/sbin}"
   local target_file="${sbin_dir}/run-post-deploy-verify.sh"
 
   if [[ "$(id -u)" != "0" ]]; then
@@ -1462,11 +1485,11 @@ install_post_deploy_verifier() {
 # changes this script's exit status. Without root, systemctl or the unit
 # template it warns and records an event.
 #
-# HYBRID_AI_SYSTEMD_UNIT_DIR is the same HARNESS-ONLY override the firewall step
+# HAVEN_SYSTEMD_UNIT_DIR is the same HARNESS-ONLY override the firewall step
 # uses for scripts/test-install-health.sh; it is not documented anywhere else.
 install_prune_scheduler() {
   local unit timer
-  local unit_dir="${HYBRID_AI_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+  local unit_dir="${HAVEN_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
   local units=(hybrid-ai-prune.service hybrid-ai-prune.timer \
                hybrid-ai-docker-prune.service hybrid-ai-docker-prune.timer)
   local timers=(hybrid-ai-prune.timer hybrid-ai-docker-prune.timer)
@@ -1577,7 +1600,7 @@ run_prune_catch_up() {
 # it is inert until it is placed under a profile AND declared in that profile's
 # config.yaml. Nothing declared it before, so it never ran.
 #
-# Two halves, both per profile present under ${HYBRID_AI_HERMES_DATA_DIR}/profiles:
+# Two halves, both per profile present under ${HAVEN_HERMES_DATA_DIR}/profiles:
 #   1. place the file at profiles/<p>/agent-hooks/secret-guard.py, mode 0755
 #      (the runtime executes it, so 0644 is dead weight);
 #   2. declare it through the SUPPORTED path only -- `hermes config get` then
@@ -1593,7 +1616,7 @@ run_prune_catch_up() {
 #
 # TWO TRANSPORTS, resolved once before the loop:
 #   1. a `hermes` CLI on the host PATH -- run it directly with
-#      HERMES_HOME=${HYBRID_AI_HERMES_DATA_DIR} so it sees the bind-mounted tree;
+#      HERMES_HOME=${HAVEN_HERMES_DATA_DIR} so it sees the bind-mounted tree;
 #   2. otherwise, if `docker` exists and the `hermes-agent` container reports
 #      State.Running=true -- run the SAME calls inside that container through
 #      `docker exec` and the absolute in-container CLI path
@@ -1625,7 +1648,7 @@ run_prune_catch_up() {
 # as it was.
 install_secret_guard_hook() {
   local source_file="${APP_DIR}/hermes/agent-hooks/secret-guard.py"
-  local profiles_root="${HYBRID_AI_HERMES_DATA_DIR}/profiles"
+  local profiles_root="${HAVEN_HERMES_DATA_DIR}/profiles"
   local guard_name="secret-guard.py"
   local profile_dir profile target_dir target config_file existing merged
   local container_command installed=0 declared=0 skipped=0
@@ -1673,7 +1696,7 @@ install_secret_guard_hook() {
     target="${target_dir}/${guard_name}"
 
     # 1. Place the guard, 0755 in a root-owned 0755 directory. The runtime MUST
-    # be able to read and execute it -- it runs as HYBRID_AI_UID, which is not
+    # be able to read and execute it -- it runs as HAVEN_UID, which is not
     # root on a migrated host -- while the directory stays unwritable to that
     # uid, so the agent cannot replace the guard that constrains it.
     if [[ -f "$target" && "$(stat -c '%a' "$target" 2>/dev/null)" == "755" ]] \
@@ -1705,7 +1728,7 @@ install_secret_guard_hook() {
       existing="$(docker exec hermes-agent "$container_cli" \
         -p "$profile" config get hooks.pre_tool_call --json 2>/dev/null)" || get_rc=$?
     else
-      existing="$(HERMES_HOME="$HYBRID_AI_HERMES_DATA_DIR" \
+      existing="$(HERMES_HOME="$HAVEN_HERMES_DATA_DIR" \
         hermes -p "$profile" config get hooks.pre_tool_call --json 2>/dev/null)" || get_rc=$?
     fi
     if (( get_rc != 0 )); then
@@ -1744,7 +1767,7 @@ install_secret_guard_hook() {
       docker exec hermes-agent "$container_cli" \
         -p "$profile" config set hooks.pre_tool_call "$merged" >/dev/null 2>&1 || set_rc=$?
     else
-      HERMES_HOME="$HYBRID_AI_HERMES_DATA_DIR" \
+      HERMES_HOME="$HAVEN_HERMES_DATA_DIR" \
         hermes -p "$profile" config set hooks.pre_tool_call "$merged" >/dev/null 2>&1 || set_rc=$?
     fi
     if (( set_rc != 0 )); then
@@ -1804,7 +1827,7 @@ PHASE_UP=0
 _phase_mark=$SECONDS
 
 log "Pulling container images..."
-hybrid_progress_start "pull"
+haven_progress_start "pull"
 MAX_RETRIES=5
 ATTEMPT=1
 
@@ -1818,14 +1841,14 @@ while [ $ATTEMPT -le $MAX_RETRIES ]; do
         ATTEMPT=$((ATTEMPT + 1))
     fi
 done
-hybrid_progress_stop
+haven_progress_stop
 PHASE_PULL=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 
 if [ $ATTEMPT -gt $MAX_RETRIES ]; then
     die "Failed to pull images after $MAX_RETRIES attempts. Please check network routing."
 fi
 
-# Non-root Hermes preflight. A no-op unless HYBRID_AI_UID is set and non-zero.
+# Non-root Hermes preflight. A no-op unless HAVEN_UID is set and non-zero.
 # It refuses (before anything is started) when the uid is not a system account,
 # or when hermes_data holds entries that uid cannot read. Read-only; no sudo.
 # See scripts/check-hermes-nonroot.sh.
@@ -1860,15 +1883,15 @@ log "Starting full Hybrid-AI control plane stack..."
 # phase so its time is visible and so a cache hit can skip it.
 if [[ "$BUILD_GATE_DECISION" != "cache" ]]; then
   log "Building images..."
-  hybrid_progress_start "build"
+  haven_progress_start "build"
   if ! BUILD_INPUTS_SHA="$BUILD_GATE_SHA" "${COMPOSE[@]}" build; then
-    hybrid_progress_stop
+    haven_progress_stop
     PHASE_BUILD=$(( SECONDS - _phase_mark ))
     event "stack_build_failed"
     warn "docker compose build failed."
     die "Control plane image build did not complete."
   fi
-  hybrid_progress_stop
+  haven_progress_stop
 fi
 PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 
@@ -1879,7 +1902,7 @@ PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 # hash arrives as 63 bytes and every password is refused). Drop only these two
 # from this shell before the start; the env file itself carries them intact.
 # The fail-closed empty-value check already ran in STEP 5 (tls_auth_fail_closed).
-unset HYBRID_AI_AUTH_HASH HYBRID_AI_AUTH_USER
+unset HAVEN_AUTH_HASH HAVEN_AUTH_USER
 
 if ! "${COMPOSE[@]}" up -d --remove-orphans; then
   PHASE_UP=$(( SECONDS - _phase_mark ))
@@ -1941,7 +1964,7 @@ print_phase_summary() {
 }
 
 log "Verifying service health..."
-hybrid_progress_start "verify"
+haven_progress_start "verify"
 
 wait_for() {
   local label="$1" url="$2" max="$3" waited=0
@@ -2062,7 +2085,7 @@ case "$tls_state" in
     ;;
 esac
 unset tls_state
-hybrid_progress_stop
+haven_progress_stop
 print_phase_summary
 
 hr
@@ -2102,19 +2125,19 @@ tls_check_dns
 # ---------------------------------------------------------------------------
 # STEP 11. Encrypted offsite backups (Cloudflare R2 via restic)
 # ---------------------------------------------------------------------------
-# HYBRID_AI_BACKUP_MODE decides WHICH backup units are installed. The shared
+# HAVEN_BACKUP_MODE decides WHICH backup units are installed. The shared
 # helper resolves every derived name and path below, so install.sh, doctor.sh
 # and backup.sh cannot disagree. "user" (the default) installs the per-user
 # units under ~/.config/systemd/user, exactly as before. "system" installs the
 # two-unit privilege split from backup/system/ into /etc/systemd/system,
 # running as the dedicated hybrid-ai-backup account; this needs root, and card
 # F creates that account once (see backup/README.md).
-BACKUP_MODE="$HYBRID_AI_BACKUP_MODE"
+BACKUP_MODE="$HAVEN_BACKUP_MODE"
 
 # Credentials live OUTSIDE the app/data/work trees. In user mode that is
 # BACKUP_CONF_DIR; in system mode root writes them to the credstore the units
-# read via LoadCredential=. HYBRID_AI_BACKUP_CRED_DIR resolves this choice.
-BACKUP_CRED_DIR="$HYBRID_AI_BACKUP_CRED_DIR"
+# read via LoadCredential=. HAVEN_BACKUP_CRED_DIR resolves this choice.
+BACKUP_CRED_DIR="$HAVEN_BACKUP_CRED_DIR"
 R2_ENV_FILE="${BACKUP_CRED_DIR}/r2.env"
 RESTIC_PW_FILE="${BACKUP_CRED_DIR}/repo-password"
 
@@ -2200,10 +2223,10 @@ reconcile_backup_cache_ownership() {
 install_backup_scheduler_system() {
   local unit source_file target_file
   local install_failed=0
-  # HYBRID_AI_SYSTEMD_UNIT_DIR is the same HARNESS-ONLY override every other
+  # HAVEN_SYSTEMD_UNIT_DIR is the same HARNESS-ONLY override every other
   # unit-installing step already honours. The offline tests point it at a scratch
   # directory; on a host it is unset and this is /etc/systemd/system.
-  local unit_dir="${HYBRID_AI_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+  local unit_dir="${HAVEN_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 
   if [[ "$(id -u)" != "0" ]]; then
     warn "System-mode backup units need root to install into ${unit_dir}."
@@ -2409,7 +2432,7 @@ install_backup_scheduler() {
   # TLS certificate watchdog. Enabled ONLY when TLS is on, so a TLS-off install
   # is behaviourally identical to before. The units are installed above either
   # way; an inactive timer does nothing.
-  tls_enabled_val="$(grep -E '^[[:space:]]*TLS_ENABLED=' "${HYBRID_AI_STACK_ENV_FILE:-/dev/null}" 2>/dev/null | tail -1 | cut -d= -f2-)"
+  tls_enabled_val="$(grep -E '^[[:space:]]*TLS_ENABLED=' "${HAVEN_STACK_ENV_FILE:-/dev/null}" 2>/dev/null | tail -1 | cut -d= -f2-)"
   tls_enabled_val="${tls_enabled_val//\"/}"; tls_enabled_val="${tls_enabled_val//\'/}"
   tls_enabled_val="$(printf '%s' "$tls_enabled_val" | tr '[:upper:]' '[:lower:]')"
   case "$tls_enabled_val" in

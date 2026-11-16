@@ -7,10 +7,10 @@
 #
 #   INSTALLED BY THE OPERATOR, not by install.sh. logrotate does NOT expand
 #   shell variables, so the placeholder below must be substituted with the
-#   resolved log directory (HYBRID_AI_LOG_DIR from .env, else <repo>/logs):
+#   resolved log directory (HAVEN_LOG_DIR from .env, else <repo>/logs):
 #
-#     LOGDIR=/opt/haven/logs        # or the HYBRID_AI_LOG_DIR value from .env
-#     sudo sed "s#__HYBRID_AI_LOG_DIR__#$LOGDIR#g" deploy/logrotate/hybrid-ai-tls \
+#     LOGDIR=/opt/haven/logs        # or the HAVEN_LOG_DIR value from .env
+#     sudo sed "s#__HAVEN_LOG_DIR__#$LOGDIR#g" deploy/logrotate/hybrid-ai-tls \
 #       | sudo tee /etc/logrotate.d/hybrid-ai-tls >/dev/null
 #     sudo logrotate --debug /etc/logrotate.d/hybrid-ai-tls
 #
@@ -22,7 +22,7 @@
 #   process has to be signalled. Rotation is CONFIG, which is how an append-only
 #   log stays append-only inside the scripts themselves.
 # ---------------------------------------------------------------------------
-__HYBRID_AI_LOG_DIR__/tls-check.log __HYBRID_AI_LOG_DIR__/tls-audit.log {
+__HAVEN_LOG_DIR__/tls-check.log __HAVEN_LOG_DIR__/tls-audit.log {
     weekly
     rotate 12
     compress

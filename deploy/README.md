@@ -33,6 +33,13 @@ executed by repository development.
 
 ### Complete the existing installation-root migration
 
+This is the retained first-time installation-root procedure. Accepted installations
+already at `/opt/haven` do not repeat it. Namespace preparation uses the existing
+corrected transaction to stage a complete matched checkout; do not copy individual
+new namespace scripts into an older checkout lacking their canonical helpers.
+Review any first-time driver preparation against that selected revision's helper
+dependencies before separately authorizing it.
+
 Use one reviewed, merged main revision throughout. No bootstrap rerun, directory
 rename, proxy replacement or new recovery rehearsal is necessary. The recovery
 candidate must already be available locally; automated checks will refuse if it
@@ -188,28 +195,23 @@ bootstrap below.
 
 ---
 
-## Haven repository identity preparation (#149)
+## Canonical Haven repository identity
 
-Bootstrap, deployment fetch and the standalone post-deploy verifier accept the
-process environment setting `HYBRID_AI_REPOSITORY_SLUG`. When unset, it selects
-`jimbobsyouruncle/hybrid-ai`; the only other accepted value is
-`jimbobsyouruncle/haven`. Empty values, arbitrary repositories and URL syntax
-are rejected before network or deployment activity. Canonical clone URLs use
-`https://github.com/<selected-slug>.git`; verification uses
-`https://api.github.com/repos/<selected-slug>/actions/runs` for the requested SHA.
+Bootstrap, deployment fetch and the standalone post-deploy verifier select only
+`jimbobsyouruncle/haven`. The optional process setting `HAVEN_REPOSITORY_SLUG`
+defaults to that identity; the legacy variable spelling is a transitional import
+for installed controls. Empty values, the former slug, arbitrary repositories and
+URL syntax are rejected. The selector is not read from layout/stack files.
+Canonical clone URLs use `https://github.com/jimbobsyouruncle/haven.git`;
+verification uses the matching GitHub API path for the requested SHA.
 
-The canonical repository is now `jimbobsyouruncle/haven`; explicitly select it
-for new bootstrap invocations and deployment process configuration. The legacy
-unset default is retained for compatibility. The setting is **not**
-loaded from the layout/stack env file, written by bootstrap, or installed into
-systemd. An SSH client's environment does not configure the system service.
 `deploy-remote.sh` validates the process selector before layout reads or host
-activity and passes its resolved value explicitly with
-`systemd-run --setenv=HYBRID_AI_REPOSITORY_SLUG=<selected-slug>` to the
-transient verifier. This includes the legacy default when unset, so a different
-systemd manager environment cannot silently select another verifier repository.
-Keep all consumers on the same identity. Bootstrap still requires the checkout's origin
-to exactly match its selected canonical HTTPS URL; it never rewrites a remote.
+activity and explicitly forwards the canonical value to the transient verifier
+with `systemd-run --setenv=HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven`.
+The systemd manager's environment cannot silently select a different verifier
+repository. Bootstrap still requires an exact canonical HTTPS origin and never
+rewrites a remote. See the [configuration handoff](../docs/haven/identity/CONFIGURATION.md)
+for key imports, conflict refusal and the deliberate auth re-login.
 
 The [accepted cutover handoff](https://github.com/jimbobsyouruncle/haven/issues/151)
 records owner-attested alignment of the existing deployment service and clone.
@@ -217,19 +219,17 @@ This is bounded evidence for that installation, not automatic configuration of
 another host. For a separately approved installation or configuration change,
 review the root service's process environment and existing drop-ins/overrides,
 record prior state, and explicitly set
-`Environment=HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven` under `[Service]`
+`Environment=HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven` under `[Service]`
 in a root-owned drop-in for `hybrid-ai-deploy@.service`. Any daemon reload or
 subsequent deployment requires its own authorization. Bootstrap's invocation
 must independently select the same identity. Editing the layout file or
 exporting a variable in the SSH client does not perform this activation.
 
-`HYBRID_AI_DEPLOY_PUBLIC_REMOTE` retains its existing precedence for deployment
-fetch only, including existing HTTPS/userinfo validation. It does not configure
-bootstrap or the verifier. Keep any existing override aligned with the selected
-canonical identity.
-The new selector itself cannot select a foreign repository. The pre-existing
-remote override continues to accept other credential-free HTTPS remotes; the
-selector does not broaden or tighten that separate interface.
+`HAVEN_DEPLOY_PUBLIC_REMOTE` is accepted only when it equals the canonical
+HTTPS clone URL above. It does not configure bootstrap or verification. Align
+old redirected or custom overrides before any separately authorized deployment;
+foreign repositories, deceptive hosts, userinfo and query strings refuse before
+fetch. The former selector/default and custom remote behavior are historical.
 
 Host paths, system accounts, unit names, backup identities and image packages
 retain their compatibility names. API redirects remain errors; the verifier
@@ -259,7 +259,7 @@ the account, the files and the SSH key line on a host in a single command, and
 migrates the current Pi to the same layout:
 
 ```sh
-sudo env HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven ./scripts/bootstrap.sh --deploy-pubkey <key.pub> [--from <legacy-dir>]
+sudo env HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven ./scripts/bootstrap.sh --deploy-pubkey <key.pub> [--from <legacy-dir>]
 ```
 
 Everything after the bootstrap runs from the forced command and the unit. The
@@ -296,10 +296,10 @@ calls `sudo`.
    secret, so both `hybrid-ai-deploy` and `hybrid-ai-backup` can read it. (The
    stack's secrets live in `/etc/hybrid-ai/stack.env`, mode `0600`.) The unit
    passes its path by name only:
-   `Environment=HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env`. A bare
+   `Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env`. A bare
    invocation that does not name the layout file still finds it: when
-   `HYBRID_AI_ENV_FILE` is unset and `$HYBRID_AI_APP_DIR/.env` is absent, the
-   helper falls back to `HYBRID_AI_ENV_FILE_FALLBACK` (default
+   `HAVEN_ENV_FILE` is unset and `$HAVEN_APP_DIR/.env` is absent, the
+   helper falls back to `HAVEN_ENV_FILE_FALLBACK` (default
    `/etc/hybrid-ai/hybrid-ai.env`) when that file exists.
 6. **The SSH key line** — one line in the account's `~/.ssh/authorized_keys`,
    restricted to the forced command (see below).
@@ -331,7 +331,7 @@ The `hybrid-ai-deploy` account holds:
 - **No sudo.** It is in no `sudoers` rule and needs none.
 - **Not in the `docker` group.** It cannot talk to the Docker socket.
 - **Not in the `systemd-journal` group.** It cannot read journald. Instead the
-  unit writes each run's log to `$HYBRID_AI_LOG_DIR/deploy/<sha>.log` with mode
+  unit writes each run's log to `$HAVEN_LOG_DIR/deploy/<sha>.log` with mode
   `0640` and group `hybrid-ai-deploy`, so the account reads the log for its own
   run without any journal access.
 - **Read access to the layout env file, and only that file.** The forced command
@@ -341,7 +341,7 @@ The `hybrid-ai-deploy` account holds:
   `hybrid-ai-backup` account both read it. It holds paths and names only. (An
   earlier draft used mode `0640` group `hybrid-ai-deploy`; that would have
   locked the backup account out, so it is `0644`.) The forced command pins
-  `HYBRID_AI_STACK_ENV_FILE` at this layout file unconditionally, so it never
+  `HAVEN_STACK_ENV_FILE` at this layout file unconditionally, so it never
   reads the `0600` secrets file `/etc/hybrid-ai/stack.env` and an inherited
   value cannot point it back at that file. The account is never granted read
   access to `stack.env`, by mode, group or ACL.
@@ -380,7 +380,7 @@ after the reset.
    inputs changed, and prints a per-phase duration summary
    (see `docs/TROUBLESHOOTING.md`, "The build phase of a deploy").
 6. The forced command reads back the unit's result and prints the run log from
-   `$HYBRID_AI_LOG_DIR/deploy/<sha>.log`.
+   `$HAVEN_LOG_DIR/deploy/<sha>.log`.
 
 ---
 
@@ -400,7 +400,7 @@ It writes one `waiting for <sha> at <UTC>` line up front, then exactly one
 result line -- `PASS`, `FAIL: ...` or `TIMEOUT: ...`.
 
 It also writes that verdict as one JSON file per deploy sha at
-`${HYBRID_AI_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json` (default
+`${HAVEN_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json` (default
 `/var/lib/hybrid-ai/hermes_data/deploy-verdicts/`), which the container sees at
 `/root/.hermes/deploy-verdicts/`. The host log is not mounted in the container,
 so this file is how container-side checks read the verdict. A failure to write
@@ -420,12 +420,12 @@ deploy's verifier can have written. See
 
 The deployment directory resolves in this order:
 
-1. `HYBRID_AI_APP_DIR` from the environment. The deploy hook passes this
-   explicitly with `systemd-run --setenv=HYBRID_AI_APP_DIR=<resolved APP_DIR>`,
+1. `HAVEN_APP_DIR` from the environment. The deploy hook passes this
+   explicitly with `systemd-run --setenv=HAVEN_APP_DIR=<resolved APP_DIR>`,
    because a transient unit inherits the systemd manager's environment, not the
    deploy script's.
-2. else `HYBRID_AI_APP_DIR` parsed line by line from the layout file named by
-   `${HYBRID_AI_ENV_FILE_FALLBACK:-/etc/hybrid-ai/hybrid-ai.env}`, when that file
+2. else `HAVEN_APP_DIR` parsed line by line from the layout file named by
+   `${HAVEN_ENV_FILE_FALLBACK:-/etc/hybrid-ai/hybrid-ai.env}`, when that file
    exists and is readable. The file is read as data (`KEY=VALUE`), never sourced,
    and no value from it is printed. An unreadable existing file fails closed. The
    value must be an absolute path with no whitespace, `:` or `,`.
@@ -445,13 +445,13 @@ when it exits. An in-cgroup waiter is therefore killed at unit exit --
 grow a `KillMode=` override: the transient unit is the fix, and a relaxed kill
 mode would hide the class of bug instead of fixing it.
 
-Paths (both resolved in `scripts/lib/hybrid-ai-env.sh`):
+Paths (both resolved in `scripts/lib/haven-env.sh`):
 
 | Path | Default |
 |---|---|
 | Verifier | `/usr/local/sbin/run-post-deploy-verify.sh`, installed root:root 0755 by `install.sh` |
 | Log | `/var/log/hybrid-ai-post-deploy-verify.log`, appended by the transient unit |
-| Verdict JSON | `${HYBRID_AI_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json`, owned by configured numeric `HYBRID_AI_UID:HYBRID_AI_GID` (legacy default `0:0`), 0644 in a 0755 dir; the container reads it at `/root/.hermes/deploy-verdicts/`. Publication failure produces WARN unless already FAIL/TIMEOUT; no host `hermes` account is required. |
+| Verdict JSON | `${HAVEN_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json`, owned by configured numeric `HAVEN_UID:HAVEN_GID` (legacy default `0:0`), 0644 in a 0755 dir; the container reads it at `/root/.hermes/deploy-verdicts/`. Publication failure produces WARN unless already FAIL/TIMEOUT; no host `hermes` account is required. |
 
 After the tree check the verifier also runs the **Backups tile gate**. It reads
 `BACKUP_LOG` and `BACKUP_GROUP_GID` from process settings or the layout as data.
@@ -459,7 +459,7 @@ It asserts the log is a regular non-empty file and probes readability **as the
 status container's identity** by dropping from root with `setpriv` (configured
 status UID/primary GID and supplementary `BACKUP_GROUP_GID`, with legacy
 defaults); a root read is never claimed as a pass. The live tile state comes from
-`${HYBRID_AI_DATA_DIR}/status-verifier/backup.sock`: a mode-0600 Unix socket in
+`${HAVEN_DATA_DIR}/status-verifier/backup.sock`: a mode-0600 Unix socket in
 a status-owned mode-0700 directory provisioned by the installer. The directory
 is the only new writable status mount, and Compose refuses to auto-create it.
 The socket exposes only the Backups name/state from the existing probe logic.
@@ -560,7 +560,7 @@ owned by root and by the stack's own users; a non-root run could not move those
 directories.
 
 `install.sh` installs and enables both units **unconditionally** — not gated on
-`HYBRID_AI_BACKUP_MODE`, because pruning is unrelated to whether backups are
+`HAVEN_BACKUP_MODE`, because pruning is unrelated to whether backups are
 configured. It warns and records an event rather than failing if it is not root,
 if `systemctl` is unavailable, or if a unit template is missing, so the schedule
 can never fail a deploy. It also runs the service once at deploy time as
@@ -578,15 +578,15 @@ The prune MOVES, it does not shred: every swept directory lands in the
 date-stamped quarantine root and a plain `mv` back restores it. The only deletion
 is confined to `<YYYYMMDD>` run directories directly inside that quarantine root
 and only once they are older than
-`HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS` (default `90`; an explicitly empty
+`HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS` (default `90`; an explicitly empty
 or `0` value opts out and restores the never-delete behaviour). Deletion happens only
 after the sweep's backup assertion passes, so a quarantine root inside a captured
 tree is never touched.
 
 A directory with no `owner_lease.json` is refused on every run by the fail-safe,
-so the sweep moves nothing for it. `HYBRID_AI_PRUNE_ALLOW_LEASE_LESS` is the
+so the sweep moves nothing for it. `HAVEN_PRUNE_ALLOW_LEASE_LESS` is the
 default-OFF opt-in that lets such a directory move once its own mtime is past
-`HYBRID_AI_PRUNE_AGE_SECONDS`; `doctor.sh` warns with the count when any exist.
+`HAVEN_PRUNE_AGE_SECONDS`; `doctor.sh` warns with the count when any exist.
 The knobs and the inspection and restore steps are in the root `README.md` and
 [`../docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md#the-disk-keeps-filling-with-conversation-directories).
 
@@ -602,7 +602,7 @@ through the service's `Documentation=` target.
 | `hybrid-ai-docker-prune.timer` | `OnCalendar=*-*-* 04:35:00`, `Persistent=true`, `Unit=hybrid-ai-docker-prune.service` |
 
 The timer caps the Docker build cache at 15 GB (override
-`HYBRID_AI_BUILD_CACHE_CAP`) daily at 04:35; it removes build cache only and
+`HAVEN_BUILD_CACHE_CAP`) daily at 04:35; it removes build cache only and
 never touches images, containers, volumes or bind-mounted data. The service
 carries no `Restart=` line, deliberately: a failing prune must not loop.
 `scripts/prune-docker-cache.sh` probes `docker builder prune --help` at run time

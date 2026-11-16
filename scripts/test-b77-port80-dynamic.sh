@@ -124,8 +124,8 @@ render_variant() {  # TLS_ENABLED VARIANTS OUTDIR
   ACME_EMAIL="[EMAIL]" \
   ACME_CA="https://acme-staging-v02.api.letsencrypt.org/directory" \
   TLS_VALIDATION="dns" ACME_DNS_PROVIDER="cloudflare" \
-  HYBRID_AI_AUTH_USER="" HYBRID_AI_AUTH_HASH="" \
-  HYBRID_AI_APP_DIR="$TMPL_DIR" \
+  HAVEN_AUTH_USER="" HAVEN_AUTH_HASH="" \
+  HAVEN_APP_DIR="$TMPL_DIR" \
   bash -c '
     set -euo pipefail
     # shellcheck source=scripts/lib/tls.sh
@@ -187,8 +187,8 @@ start_proxy() {  # NAME RENDER_FILE
     -e ACME_EMAIL="ci@example.invalid" \
     -e ACME_CA="https://acme-staging-v02.api.letsencrypt.org/directory" \
     -e ACME_AUTO_HTTPS="disable_redirects" \
-    -e HYBRID_AI_AUTH_USER="operator" \
-    -e HYBRID_AI_AUTH_HASH='$2a$14$abcdefghijklmnopqrstuvABCDEFGHIJKLMNOPQRSTUVWXYZ' \
+    -e HAVEN_AUTH_USER="operator" \
+    -e HAVEN_AUTH_HASH='$2a$14$abcdefghijklmnopqrstuvABCDEFGHIJKLMNOPQRSTUVWXYZ' \
     -v "$2:/etc/caddy/Caddyfile:ro" \
     -v "$SCRATCH/secrets/cloudflare_dns_token:/run/secrets/cloudflare_dns_token:ro" \
     "$PROXY_IMAGE" >/dev/null || return 1

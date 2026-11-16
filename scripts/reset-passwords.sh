@@ -5,7 +5,7 @@
 #   Set ONE new password on all three login surfaces of this stack. The owner
 #   runs it on the host; the deploy never calls it.
 #
-#     1. the `auth` forward-auth gate  -> HYBRID_AI_AUTH_HASH in the STACK env
+#     1. the `auth` forward-auth gate  -> HAVEN_AUTH_HASH in the STACK env
 #                                         file: a bcrypt hash (cost 12) made
 #                                         inside the auth image itself
 #     2. the Open WebUI admin account  -> the app's own hash helper, against
@@ -57,16 +57,16 @@ set -Eeuo pipefail
 umask 077
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
 # shellcheck source=scripts/lib/tls.sh
 source "${SCRIPT_DIR}/lib/tls.sh"
 
-APP_DIR="$HYBRID_AI_APP_DIR"
-# The STACK env file is the 0600 file that holds HYBRID_AI_AUTH_HASH. The layout
+APP_DIR="$HAVEN_APP_DIR"
+# The STACK env file is the 0600 file that holds HAVEN_AUTH_HASH. The layout
 # file may be 0644 and is never written here. No path is hardcoded.
-ENV_FILE="$HYBRID_AI_STACK_ENV_FILE"
-HERMES_CONFIG="${HYBRID_AI_HERMES_DATA_DIR}/config.yaml"
+ENV_FILE="$HAVEN_STACK_ENV_FILE"
+HERMES_CONFIG="${HAVEN_HERMES_DATA_DIR}/config.yaml"
 COMPOSE=(docker compose -p hybrid-ai --env-file "$ENV_FILE" --project-directory "$APP_DIR"
          -f "$APP_DIR/docker-compose.yml"
          -f "$APP_DIR/openhands/docker-compose.openhands.yml"
@@ -75,7 +75,7 @@ COMPOSE=(docker compose -p hybrid-ai --env-file "$ENV_FILE" --project-directory 
 AUTH_CONTAINER="hybrid-ai-auth"
 WEBUI_CONTAINER="open-webui"
 HERMES_CONTAINER="hermes-agent"
-AUTH_HASH_KEY="HYBRID_AI_AUTH_HASH"
+AUTH_HASH_KEY="HAVEN_AUTH_HASH"
 AUTH_HASH_BYTES=60
 MIN_GENERATED_LENGTH=24
 BCRYPT_MIN_ROUNDS=12
@@ -308,7 +308,7 @@ auth_length_program() {
 import os
 import sys
 
-sys.stdout.write(str(len(os.environ.get("HYBRID_AI_AUTH_HASH", ""))) + "\n")
+sys.stdout.write(str(len(os.environ.get("HAVEN_AUTH_HASH", ""))) + "\n")
 PY
 }
 
@@ -348,7 +348,7 @@ from open_webui.utils.auth import get_password_hash
 password = sys.stdin.read()
 if password.endswith("\n"):
     password = password[:-1]
-target = os.environ["HYBRID_AI_WEBUI_TARGET_ID"]
+target = os.environ["HAVEN_WEBUI_TARGET_ID"]
 
 
 async def main():
@@ -777,7 +777,7 @@ for row in json.load(sys.stdin):
   fi
 
   note "webui: resetting the password of ${emails[index]}"
-  if ! printf '%s' "$NEW_PASSWORD" | docker exec -i -e HYBRID_AI_WEBUI_TARGET_ID="${ids[index]}" \
+  if ! printf '%s' "$NEW_PASSWORD" | docker exec -i -e HAVEN_WEBUI_TARGET_ID="${ids[index]}" \
       "$WEBUI_CONTAINER" python -c "$(webui_set_password_program)" >/dev/null 2>&1; then
     WEBUI_STATE="failed"; WEBUI_DETAIL="the in-container update failed for ${emails[index]}"
     fail_msg "webui: the in-container update failed for ${emails[index]}"

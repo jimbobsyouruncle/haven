@@ -16,7 +16,7 @@ set -Eeuo pipefail
 #
 #   It also records that verdict as JSON for Hermes consumers through the
 #   existing data mount: one file per deploy SHA at
-#   ${HYBRID_AI_DATA_DIR:-/var/lib/hybrid-ai}/hermes_data/deploy-verdicts/
+#   ${HAVEN_DATA_DIR:-/var/lib/hybrid-ai}/hermes_data/deploy-verdicts/
 #   <sha>.json. Optional missing evidence produces WARN (exit 0); mandatory
 #   missing evidence produces FAIL (exit 1). See backup/README.md for policy.
 #
@@ -33,9 +33,9 @@ set -Eeuo pipefail
 # USAGE:
 #   ./scripts/run-post-deploy-verify.sh --wait-for <full-40-hex-commit-sha>
 #
-#   APP_DIR resolves in order: HYBRID_AI_APP_DIR from the environment; else
-#   HYBRID_AI_APP_DIR parsed line by line from the layout file named by
-#   ${HYBRID_AI_ENV_FILE_FALLBACK:-/etc/hybrid-ai/hybrid-ai.env}; else /workspace.
+#   APP_DIR resolves in order: HAVEN_APP_DIR from the environment; else
+#   HAVEN_APP_DIR parsed line by line from the layout file named by
+#   ${HAVEN_ENV_FILE_FALLBACK:-/etc/hybrid-ai/hybrid-ai.env}; else /workspace.
 #   The layout file is read as DATA (KEY=VALUE), never sourced, and no value from
 #   it is ever printed. Tests point APP_DIR at a throwaway checkout.
 #
@@ -49,20 +49,50 @@ set -Eeuo pipefail
 
 # Embedded for the standalone /usr/local/sbin installation. The identity
 # fixture suite checks this block against scripts/lib/repository-identity.sh.
+# BEGIN Haven environment compatibility
+# Transitional process aliases for installed controls. Values are data; diagnostics
+# name keys only. Keep this block identical in the standalone verifier.
+_HAVEN_ALIAS_SUFFIXES=( AGENT_CONTEXT_GENERATOR ALERT_WEBHOOK_URL APP_DIR AUTH_COOKIE_MAX_AGE AUTH_COOKIE_SECRET AUTH_HASH
+  AUTH_RATE_LIMIT AUTH_RATE_WINDOW AUTH_USER BACKUP_CHECK_TIMER_UNIT BACKUP_CRED_DIR BACKUP_JOURNAL_SCOPE
+  BACKUP_MODE BACKUP_SERVICE_UNIT BACKUP_STAGING_DIR BACKUP_SYSTEMCTL_SCOPE BACKUP_TIMER_UNIT BOOTSTRAP_ROOT
+  BUILD_CACHE_CAP CADDY_CERT_ROOT CADDY_DATA_DIR DATA_DIR DEFAULT_REPO_DIR DEPLOY_LOCK_FILE
+  DEPLOY_PUBLIC_REMOTE DEPLOY_VERDICT_DIR DRY_RUN ENV_FILE ENV_FILE_FALLBACK ENV_FILE_FALLBACK_DEFAULT
+  EXPLICIT_SETTINGS GID HERMES_DATA_DIR HERMES_HOME_DIR INSTALL_LOG INSTALL_ROOT_HANDOFF
+  LAYOUT_AGENT_REPOS_DIR LAYOUT_GID LAYOUT_OPENHANDS_STATE_DIR LAYOUT_OPENHANDS_WORKSPACE LAYOUT_UID LIB
+  LIB_DIR LOG_DIR OLLAMA_DATA_DIR POLKIT_RULES_DIR POST_DEPLOY_VERIFY_CMD POST_DEPLOY_VERIFY_LOG
+  PRUNE_AGE_SECONDS PRUNE_ALLOW_LEASE_LESS PRUNE_GRACE_SECONDS PRUNE_MAX_MOVES PRUNE_QUARANTINE_BASE PRUNE_QUARANTINE_RETENTION_DAYS
+  REPOSITORY_SLUG RESTORE_WORK_DIR SBIN_DIR STACK_ENV_FILE SYSTEMD_UNIT_DIR TLS_TOKEN_FILE
+  UID UNINSTALL_ROOT VERIFY_BACKUP_GATES VERIFY_INSTALL_ROOT WEBUI_DATA_DIR WEBUI_TARGET_ID
+  WORK_DIR )
+for _haven_import_suffix in "${_HAVEN_ALIAS_SUFFIXES[@]}"; do
+  _haven_import_canonical="HAVEN_${_haven_import_suffix}"
+  _haven_import_legacy="HYBRID_AI_${_haven_import_suffix}"
+  if [[ -v "$_haven_import_canonical" && -v "$_haven_import_legacy" && "${!_haven_import_canonical}" != "${!_haven_import_legacy}" ]]; then
+    printf 'haven-env: conflicting aliases for %s; refusing configuration\n' "$_haven_import_canonical" >&2
+    exit 2
+  fi
+  if [[ ! -v "$_haven_import_canonical" && -v "$_haven_import_legacy" ]]; then
+    printf -v "$_haven_import_canonical" '%s' "${!_haven_import_legacy}"
+    export "${_haven_import_canonical?}"
+  fi
+done
+unset _haven_import_suffix _haven_import_canonical _haven_import_legacy
+# END Haven environment compatibility
+
 # BEGIN repository identity selector
-hybrid_ai_repository_slug() {
-  case "${HYBRID_AI_REPOSITORY_SLUG-jimbobsyouruncle/hybrid-ai}" in
-    jimbobsyouruncle/hybrid-ai|jimbobsyouruncle/haven)
-      printf '%s' "${HYBRID_AI_REPOSITORY_SLUG-jimbobsyouruncle/hybrid-ai}"
+haven_repository_slug() {
+  case "${HAVEN_REPOSITORY_SLUG-jimbobsyouruncle/haven}" in
+    jimbobsyouruncle/haven)
+      printf '%s' "${HAVEN_REPOSITORY_SLUG-jimbobsyouruncle/haven}"
       ;;
     *)
-      printf 'repository identity: HYBRID_AI_REPOSITORY_SLUG must select an approved repository\n' >&2
+      printf 'repository identity: HAVEN_REPOSITORY_SLUG must select an approved repository\n' >&2
       return 2
       ;;
   esac
 }
 # END repository identity selector
-REPO_SLUG="$(hybrid_ai_repository_slug)" || exit 2
+REPO_SLUG="$(haven_repository_slug)" || exit 2
 POLL_SECONDS=30
 DEADLINE_SECONDS=3600
 USER_AGENT="hybrid-ai-post-deploy-verify"
@@ -82,7 +112,7 @@ record_gate() { # <name> <required:true|false> <state> <reason>
 }
 
 verdict_dir() {
-  printf '%s' "${HYBRID_AI_DEPLOY_VERDICT_DIR:-${DATA_DIR}/hermes_data/deploy-verdicts}"
+  printf '%s' "${HAVEN_DEPLOY_VERDICT_DIR:-${DATA_DIR}/hermes_data/deploy-verdicts}"
 }
 
 # Records a per-SHA receipt using the numeric identity used by Compose. No
@@ -93,8 +123,8 @@ write_verdict() { # <verdict> <rc> [detail]
   local dir at head="" json ids_json="null" tmp target
   local owner_uid owner_gid
   dir="$(verdict_dir)"
-  owner_uid="${HYBRID_AI_UID:-$(layout_value HYBRID_AI_UID)}"
-  owner_gid="${HYBRID_AI_GID:-$(layout_value HYBRID_AI_GID)}"
+  owner_uid="${HAVEN_UID:-$(layout_value HAVEN_UID)}"
+  owner_gid="${HAVEN_GID:-$(layout_value HAVEN_GID)}"
   owner_uid="${owner_uid:-0}"; owner_gid="${owner_gid:-0}"
   if [[ ! "$owner_uid" =~ ^[0-9]+$ || ! "$owner_gid" =~ ^[0-9]+$ ]]; then
     return 1
@@ -148,7 +178,7 @@ finish() { # <PASS|FAIL|TIMEOUT> <rc> [detail]
     esac
   fi
   local receipt_required=false
-  [[ "${HYBRID_AI_VERIFY_INSTALL_ROOT:-0}" == 1 ]] && receipt_required=true
+  [[ "${HAVEN_VERIFY_INSTALL_ROOT:-0}" == 1 ]] && receipt_required=true
   record_gate verdict_file "$receipt_required" PASS "receipt published with configured numeric ownership"
   if ! write_verdict "$verdict" "$rc" "$detail"; then
     printf 'run-post-deploy-verify: could not publish verdict receipt with configured numeric ownership\n' >&2
@@ -187,41 +217,62 @@ printf 'waiting for %s at %s\n' "$SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Resolve APP_DIR in three steps. The layout file is read as DATA, one KEY=VALUE
 # line at a time -- it is NEVER sourced, and no value read from it is printed.
 # An unreadable EXISTING file fails closed and names the setting, never a value.
-HYBRID_AI_ENV_FILE_FALLBACK="${HYBRID_AI_ENV_FILE_FALLBACK:-/etc/hybrid-ai/hybrid-ai.env}"
+HAVEN_ENV_FILE_FALLBACK="${HAVEN_ENV_FILE_FALLBACK:-/etc/hybrid-ai/hybrid-ai.env}"
 
 # Check this even with an APP_DIR environment override: otherwise an unreadable
 # system-mode layout could silently select optional user-mode verification.
-if [[ -e "$HYBRID_AI_ENV_FILE_FALLBACK" && ! -r "$HYBRID_AI_ENV_FILE_FALLBACK" ]]; then
+if [[ -e "$HAVEN_ENV_FILE_FALLBACK" && ! -r "$HAVEN_ENV_FILE_FALLBACK" ]]; then
   printf 'FAIL: layout file is unreadable; refusing defaults\n'
   exit 1
 fi
 
+file_value() {
+  local file="$1" key="$2" line candidate="" old_candidate="" raw
+  local seen=0 old_seen=0 legacy=""
+  [[ -f "$file" ]] || return 0
+  [[ -r "$file" ]] || {
+    printf "run-post-deploy-verify: unreadable configuration\n" >&2
+    return 1
+  }
+  [[ "$key" != HAVEN_* ]] || legacy="HYBRID_AI_${key#HAVEN_}"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+    raw="${BASH_REMATCH[2]}"
+    raw="${raw%\"}"; raw="${raw#\"}"
+    raw="${raw%\'}"; raw="${raw#\'}"
+    if [[ "${BASH_REMATCH[1]}" == "$key" ]]; then
+      candidate="$raw"; seen=1
+    elif [[ -n "$legacy" && "${BASH_REMATCH[1]}" == "$legacy" ]]; then
+      old_candidate="$raw"; old_seen=1
+    fi
+  done < "$file"
+  if (( seen && old_seen )) && [[ "$candidate" != "$old_candidate" ]]; then
+    printf 'haven-env: conflicting aliases for %s; refusing configuration\n' "$key" >&2
+    return 2
+  fi
+  if (( seen )); then printf '%s' "$candidate"; else printf '%s' "$old_candidate"; fi
+}
+
 resolve_app_dir() {
   local value="" line key
 
-  if [[ -n "${HYBRID_AI_APP_DIR:-}" ]]; then
-    printf '%s' "$HYBRID_AI_APP_DIR"
+  if [[ -n "${HAVEN_APP_DIR:-}" ]]; then
+    printf '%s' "$HAVEN_APP_DIR"
     return 0
   fi
 
-  if [[ -e "$HYBRID_AI_ENV_FILE_FALLBACK" ]]; then
-    if [[ ! -r "$HYBRID_AI_ENV_FILE_FALLBACK" ]]; then
-      printf 'run-post-deploy-verify: HYBRID_AI_ENV_FILE_FALLBACK (%s) exists but is not readable\n' \
-        "$HYBRID_AI_ENV_FILE_FALLBACK" >&2
+  if [[ -e "$HAVEN_ENV_FILE_FALLBACK" ]]; then
+    if [[ ! -r "$HAVEN_ENV_FILE_FALLBACK" ]]; then
+      printf 'run-post-deploy-verify: HAVEN_ENV_FILE_FALLBACK (%s) exists but is not readable\n' \
+        "$HAVEN_ENV_FILE_FALLBACK" >&2
       return 1
     fi
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      line="${line#"${line%%[![:space:]]*}"}"
-      [[ "$line" == HYBRID_AI_APP_DIR=* ]] || continue
-      value="${line#HYBRID_AI_APP_DIR=}"
-      key="$value"
-      [[ "$key" == /* ]] || { value=""; break; }
-      if [[ "$key" == *[[:space:]]* || "$key" == *:* || "$key" == *","* ]]; then
-        value=""
-        break
-      fi
-      break
-    done < "$HYBRID_AI_ENV_FILE_FALLBACK"
+    value="$(file_value "$HAVEN_ENV_FILE_FALLBACK" HAVEN_APP_DIR)" || return 1
+    key="$value"
+    if [[ -n "$value" ]]; then
+    [[ "$key" == /* && "$key" != / && "$key" != *[[:space:]]* &&
+       "$key" != *:* && "$key" != *","* ]] || return 1
+    fi
     if [[ -n "$value" ]]; then
       printf '%s' "$value"
       return 0
@@ -232,6 +283,10 @@ resolve_app_dir() {
   return 0
 }
 
+for _haven_suffix in APP_DIR DATA_DIR BACKUP_MODE VERIFY_BACKUP_GATES UID GID LOG_DIR; do
+  file_value "$HAVEN_ENV_FILE_FALLBACK" "HAVEN_${_haven_suffix}" >/dev/null || exit 1
+done
+unset _haven_suffix
 APP_DIR="$(resolve_app_dir)" || { printf 'FAIL: application directory could not be resolved\n'; exit 1; }
 API_URL="https://api.github.com/repos/${REPO_SLUG}/actions/runs?head_sha=${SHA}"
 
@@ -255,32 +310,20 @@ gate_skip() {
 }
 
 # Read ONE allowlisted key from a configuration file as literal data.
-file_value() { # <file> <KEY>; literal data only, never shell evaluation
-  local file="$1" key="$2" line value=""
-  [[ -f "$file" && -r "$file" ]] || return 0
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line#"${line%%[![:space:]]*}"}"
-    [[ "$line" == "$key="* ]] || continue
-    value="${line#*=}"
-    value="${value%\"}"; value="${value#\"}"
-    value="${value%\'}"; value="${value#\'}"
-  done < "$file"
-  printf '%s' "$value"
-}
 
 layout_value() { # <KEY>
-  file_value "$HYBRID_AI_ENV_FILE_FALLBACK" "$1"
+  file_value "$HAVEN_ENV_FILE_FALLBACK" "$1"
 }
 
 # Standalone installation cannot source repository helpers. Resolve only
 # non-secret layout keys as data, matching the shared helper's mode defaults.
-DATA_DIR="${HYBRID_AI_DATA_DIR:-$(layout_value HYBRID_AI_DATA_DIR)}"
+DATA_DIR="${HAVEN_DATA_DIR:-$(layout_value HAVEN_DATA_DIR)}"
 DATA_DIR="${DATA_DIR:-/var/lib/hybrid-ai}"
-BACKUP_MODE="${HYBRID_AI_BACKUP_MODE:-$(layout_value HYBRID_AI_BACKUP_MODE)}"
+BACKUP_MODE="${HAVEN_BACKUP_MODE:-$(layout_value HAVEN_BACKUP_MODE)}"
 BACKUP_MODE="${BACKUP_MODE:-user}"
-BACKUP_POLICY="${HYBRID_AI_VERIFY_BACKUP_GATES:-$(layout_value HYBRID_AI_VERIFY_BACKUP_GATES)}"
+BACKUP_POLICY="${HAVEN_VERIFY_BACKUP_GATES:-$(layout_value HAVEN_VERIFY_BACKUP_GATES)}"
 BACKUP_POLICY="${BACKUP_POLICY:-optional}"
-STATUS_RUN_UID="${VERIFY_STATUS_UID:-${HYBRID_AI_UID:-$(layout_value HYBRID_AI_UID)}}"
+STATUS_RUN_UID="${VERIFY_STATUS_UID:-${HAVEN_UID:-$(layout_value HAVEN_UID)}}"
 STATUS_RUN_UID="${STATUS_RUN_UID:-${STATUS_UID:-$(layout_value STATUS_UID)}}"
 STATUS_RUN_UID="${STATUS_RUN_UID:-1000}"
 STATUS_RUN_GID="${VERIFY_STATUS_GID:-${DOCKER_GID:-$(layout_value DOCKER_GID)}}"
@@ -378,7 +421,7 @@ check_backup_tile() {
     if [[ "$BACKUP_MODE" == system ]]; then
       log=/var/log/hybrid-ai-backup/backup.log
     else
-      log_dir="${HYBRID_AI_LOG_DIR:-$(layout_value HYBRID_AI_LOG_DIR)}"
+      log_dir="${HAVEN_LOG_DIR:-$(layout_value HAVEN_LOG_DIR)}"
       [[ -z "$log_dir" ]] || log="${log_dir}/backup.log"
     fi
   fi
@@ -544,7 +587,7 @@ while :; do
       fi
 
       record_gate deployed_head true PASS "deployed HEAD matches requested SHA"
-      if [[ "${HYBRID_AI_VERIFY_INSTALL_ROOT:-0}" == 1 ]]; then
+      if [[ "${HAVEN_VERIFY_INSTALL_ROOT:-0}" == 1 ]]; then
         record_gate installation_root true FAIL "installation wiring not verified"
         record_gate runtime_health true FAIL "runtime health not verified"
         if ! python3 "$APP_DIR/scripts/install-root.py" verify "$SHA"; then

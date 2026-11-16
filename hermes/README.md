@@ -193,8 +193,8 @@ rebuilds. The gate never records a cause for a mismatch; treat a mismatch as
 |---|---|---|---|
 | *none (baked into the image)* | `/opt/hermes-agent` | **read-only to the runtime uid** | The pinned Hermes Agent code and its toolchain. Root-owned, outside every mount, so the runtime never writes here. The WebUI is pinned to it with `HERMES_WEBUI_AGENT_DIR`. |
 | *none (baked into the image)* | `/app` | **read-only to the runtime uid** | The pinned Hermes WebUI code (the container PID 1). Root-owned; byte-compiled at build. `.git` is removed, so it carries no checkout fingerprint. |
-| `${HYBRID_AI_DATA_DIR}/hermes_data` | `/root/.hermes` | read-write | Persistent memory, SQLite state, FTS5 indexes and acquired skills. With the default layout this is `./hermes_data` under the deployment directory — see the gaps below. The image's own `/root/.hermes` is empty; the code is not stored here. |
-| `${HYBRID_AI_DATA_DIR}/hermes_data/workspace` | `/root/workspace` | read-write | Persistent WebUI workspace; the same host folder the container also sees at `/root/.hermes/workspace`. |
+| `${HAVEN_DATA_DIR}/hermes_data` | `/root/.hermes` | read-write | Persistent memory, SQLite state, FTS5 indexes and acquired skills. With the default layout this is `./hermes_data` under the deployment directory — see the gaps below. The image's own `/root/.hermes` is empty; the code is not stored here. |
+| `${HAVEN_DATA_DIR}/hermes_data/workspace` | `/root/workspace` | read-write | Persistent WebUI workspace; the same host folder the container also sees at `/root/.hermes/workspace`. |
 | `${OPENHANDS_WORKSPACE}` | `/workspace` | **read-only** | The OpenHands clone. Read-only so Hermes can read code without editing it. |
 | `${OPENHANDS_WORKSPACE}` | `/agent-repo` | **read-only** | The same clone again, under a name that makes its purpose explicit: the read-only view of the OpenHands working clone. Writes here fail inside the container. |
 | `${AGENT_REPOS_DIR}` | `/agent-repos` | **read-only** | The agent repo reference tree: one read-only clone of every non-fork repo you own, each on its own default branch, built by `scripts/sync-agent-repos.sh`. Defaults to `${HOME}/hybrid-ai-repos` when unset. |
@@ -238,8 +238,8 @@ repositories, each on its default branch, so a second, separate tree is mounted 
 - It takes an `flock` so two runs cannot collide, and it is idempotent, reads no credentials,
   and writes only under `AGENT_REPOS_DIR`.
 - It **refuses** a target that is, is inside, or contains any protected tree —
-  `HYBRID_AI_APP_DIR`, `HYBRID_AI_DATA_DIR`, `HYBRID_AI_LOG_DIR`,
-  `HYBRID_AI_WORK_DIR`, the directory the env file lives in, `OPENHANDS_WORKSPACE`
+  `HAVEN_APP_DIR`, `HAVEN_DATA_DIR`, `HAVEN_LOG_DIR`,
+  `HAVEN_WORK_DIR`, the directory the env file lives in, `OPENHANDS_WORKSPACE`
   or `BACKUP_CONF_DIR` — so mounting it read-only cannot expose the env file, the
   logs, or the backup credentials.
 
@@ -390,12 +390,12 @@ Nothing declared it before this change, so it never ran: the file was on the hos
 0644, registered by no profile. Two things make it real.
 
 **1. `install.sh` STEP 9a-3 installs and declares it.** For EVERY profile directory present under
-`$HYBRID_AI_HERMES_DATA_DIR/profiles`:
+`$HAVEN_HERMES_DATA_DIR/profiles`:
 
 ```bash
 # place the guard executable (the runtime executes it; 0644 is dead weight)
 install -m 0755 hermes/agent-hooks/secret-guard.py \
-  "$HYBRID_AI_HERMES_DATA_DIR/profiles/<profile>/agent-hooks/secret-guard.py"
+  "$HAVEN_HERMES_DATA_DIR/profiles/<profile>/agent-hooks/secret-guard.py"
 
 # declare it through the supported path -- there is no `hermes hooks add` verb
 hermes -p <profile> config get hooks.pre_tool_call --json     # read the current list
@@ -405,7 +405,7 @@ hermes -p <profile> config set hooks.pre_tool_call '<full list>'   # append, the
 Two transports are resolved once, before the profile loop:
 
 - **Host CLI.** A `hermes` binary on the host PATH is run directly with
-  `HERMES_HOME=$HYBRID_AI_HERMES_DATA_DIR`, so it reads the bind-mounted tree.
+  `HERMES_HOME=$HAVEN_HERMES_DATA_DIR`, so it reads the bind-mounted tree.
 - **Container.** With no host CLI, `install.sh` uses `docker exec` into the running `hermes-agent`
   container. It checks `docker inspect -f '{{.State.Running}}' hermes-agent` for `true`, then issues
   the same two calls through the absolute in-container CLI path:
@@ -415,7 +415,7 @@ Two transports are resolved once, before the profile loop:
   docker exec hermes-agent /opt/hermes-agent/.hermes/bin/hermes -p <profile> config set hooks.pre_tool_call '<full list>'
   ```
 
-  No host `HERMES_HOME` or `HYBRID_AI_HERMES_DATA_DIR` is passed into the container: the container
+  No host `HERMES_HOME` or `HAVEN_HERMES_DATA_DIR` is passed into the container: the container
   already has `/root/.hermes` as its profile root, and that is the same bind mount. The guard file is
   still written on the host at `profiles/<p>/agent-hooks/secret-guard.py`, which the container sees
   through the mount.
@@ -486,7 +486,7 @@ Referenced by name only; values live in `.env`, which is gitignored.
 
 | Name | Read by | Purpose |
 |---|---|---|
-| `HYBRID_AI_HERMES_HOME_DIR` | `backup/backup.sh`, `backup/restore.sh`, `scripts/lib/hybrid-ai-env.sh` | The per-user Hermes home the system-mode backup captures. Default `$HOME/.hermes`; the host bootstrap sets it to `/var/lib/hybrid-ai/hermes-home`, created empty and owned by the `hybrid-ai` account. |
+| `HAVEN_HERMES_HOME_DIR` | `backup/backup.sh`, `backup/restore.sh`, `scripts/lib/haven-env.sh` | The per-user Hermes home the system-mode backup captures. Default `$HOME/.hermes`; the host bootstrap sets it to `/var/lib/hybrid-ai/hermes-home`, created empty and owned by the `hybrid-ai` account. |
 | `OPENHANDS_WORKSPACE` | `docker-compose.hermes.yml` | Host path mounted at `/workspace` and `/agent-repo`. Required. |
 | `AGENT_REPOS_DIR` | `docker-compose.hermes.yml`, `scripts/sync-agent-repos.sh` | Host path of the agent repo reference tree, mounted at `/agent-repos` read-only. Defaults to `${HOME}/hybrid-ai-repos` when unset. |
 | `AGENT_REPOS_OWNER` | `scripts/sync-agent-repos.sh` | Account whose owned, non-fork repos are inventoried. Blank means: derive it from the owner in this clone's git origin URL. |
@@ -503,12 +503,12 @@ Referenced by name only; values live in `.env`, which is gitignored.
 | `HERMES_WEBUI_SERVER_CWD` | image `ENV` | The server's working directory; a runtime-writable path (`/root/.hermes/webui`) in the data volume, since the agent dir is read-only to the runtime uid. |
 | `HERMES_WEBUI_DISABLE_LOCAL_VENV` | image `ENV` | `1` makes bootstrap fail closed instead of creating `/app/.venv` at runtime (a write into the read-only WebUI tree) when the pinned interpreter cannot import both the WebUI deps and the Agent. |
 | `HERMES_HOME` | image `ENV` | Pins runtime dependency state (incl. the venv generation `.leases`) to the data volume `/root/.hermes`. Must never be `/opt/hermes-agent`, which is read-only to the runtime uid. |
-| `HYBRID_AI_UID` | `docker-compose.hermes.yml`, `docker-compose.yml` (status `user:`), `openhands/docker-compose.openhands.yml` (`SANDBOX_USER_ID`), `hermes/Dockerfile`, `install.sh`, `doctor.sh` | Dedicated non-root uid. Drives the Hermes container uid, the status-container `user:`, and the OpenHands sandbox uid, so the whole stack runs as that account. Unset keeps today's behaviour: the login account's uid. Set by the account migration. |
-| `HYBRID_AI_GID` | `docker-compose.hermes.yml`, `hermes/Dockerfile`, `install.sh` | Group id matching `HYBRID_AI_UID`. Unset keeps the login account's gid. |
-| `HYBRID_AI_DATA_DIR` | `docker-compose.yml`, `hermes/docker-compose.hermes.yml`, `scripts/lib/hybrid-ai-env.sh` | Host data root. `hermes_data/`, `webui_data/` and `ollama_data/` live under it, names unchanged. The helper default is the repo directory; the compose bind source is fail-closed (`${HYBRID_AI_DATA_DIR:?HYBRID_AI_DATA_DIR must be set - run ./install.sh}/hermes_data`), so compose refuses to parse unless the installer has exported it. |
+| `HAVEN_UID` | `docker-compose.hermes.yml`, `docker-compose.yml` (status `user:`), `openhands/docker-compose.openhands.yml` (`SANDBOX_USER_ID`), `hermes/Dockerfile`, `install.sh`, `doctor.sh` | Dedicated non-root uid. Drives the Hermes container uid, the status-container `user:`, and the OpenHands sandbox uid, so the whole stack runs as that account. Unset keeps today's behaviour: the login account's uid. Set by the account migration. |
+| `HAVEN_GID` | `docker-compose.hermes.yml`, `hermes/Dockerfile`, `install.sh` | Group id matching `HAVEN_UID`. Unset keeps the login account's gid. |
+| `HAVEN_DATA_DIR` | `docker-compose.yml`, `hermes/docker-compose.hermes.yml`, `scripts/lib/haven-env.sh` | Host data root. `hermes_data/`, `webui_data/` and `ollama_data/` live under it, names unchanged. The helper default is the repo directory; the compose bind source is fail-closed (`${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/hermes_data`), so compose refuses to parse unless the installer has exported it. |
 | `OPENROUTER_API_KEY` | container env, and each profile's own `.env` | Model provider for agent work. Each board-running profile (default, builder, reviewer) also needs `OPENROUTER_API_KEY` in its own profile `.env` under `hermes_data/` (e.g. `hermes_data/.env`, `hermes_data/profiles/builder/.env`, `hermes_data/profiles/reviewer/.env`); a profile without it stalls its board. |
 | `LOCAL_DOMAIN` | container env | Used for local subdomain routing. |
-| `HERMES_DATA_DIR` | `.env.example` only | Documented as the memory directory; the overlay now binds `${HYBRID_AI_DATA_DIR:?HYBRID_AI_DATA_DIR must be set - run ./install.sh}/hermes_data`. |
+| `HERMES_DATA_DIR` | `.env.example` only | Documented as the memory directory; the overlay now binds `${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/hermes_data`. |
 
 ---
 
@@ -604,7 +604,7 @@ something this change introduced. They are addressed in a later phase.
 |---|---|---|
 | Hermes ports bind all interfaces | `8501` and `8642` are published on `0.0.0.0`, so anyone on the LAN or tailnet can reach them. | Narrowing the binds is out of scope; this change adds no binds and does not widen any. |
 | Hermes mounts the deployment directory read-write | `./hermes_data` is a subdirectory of the deployment directory, mounted read-write at `/root/.hermes`. | The memory store must be writable; relocating it is a later phase. |
-| Hermes runs as root | **Fixed in the image.** `hermes/Dockerfile` creates a dedicated `hermes` group/user and ends with `USER ${HYBRID_AI_UID}:${HYBRID_AI_GID}` (default `10001`); the compose overlay passes the ids through from `.env`, sets `user:`, and pins `no-new-privileges`. A host keeps the legacy uid 0 until the account migration sets `HYBRID_AI_UID`. | Merging needs no admin action: unset keeps uid 0. |
+| Hermes runs as root | **Fixed in the image.** `hermes/Dockerfile` creates a dedicated `hermes` group/user and ends with `USER ${HAVEN_UID}:${HAVEN_GID}` (default `10001`); the compose overlay passes the ids through from `.env`, sets `user:`, and pins `no-new-privileges`. A host keeps the legacy uid 0 until the account migration sets `HAVEN_UID`. | Merging needs no admin action: unset keeps uid 0. |
 | OpenHands sandbox ports publish on all interfaces | Sandboxes created by OpenHands publish their agent-server port on the host. Adjacent to this service, not part of it. | Later phase. |
 
 ---

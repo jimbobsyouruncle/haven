@@ -86,7 +86,7 @@
 #                     at a throwaway fixture tree. It never relaxes a gate: the
 #                     workflows and check scripts are read from DIR.
 #   --generator PATH  the pinned agent-context generate.py. Resolution order:
-#                     this flag, HYBRID_AI_AGENT_CONTEXT_GENERATOR, then
+#                     this flag, HAVEN_AGENT_CONTEXT_GENERATOR, then
 #                     <root>/.shared-actions/agent-context/generate.py (the
 #                     checkout path agent-context.yml uses). The generator is
 #                     NEVER fetched from the network.
@@ -192,15 +192,22 @@ for wf in "$VALIDATE_WF" "$AGENT_WF"; do
   fi
 done
 
-if [ -z "$GENERATOR" ] && [ -n "${HYBRID_AI_AGENT_CONTEXT_GENERATOR:-}" ]; then
-  GENERATOR="$HYBRID_AI_AGENT_CONTEXT_GENERATOR"
+# Transitional installed-process alias; unequal values refuse before action.
+if [[ -v HAVEN_AGENT_CONTEXT_GENERATOR && -v HYBRID_AI_AGENT_CONTEXT_GENERATOR &&
+      "$HAVEN_AGENT_CONTEXT_GENERATOR" != "$HYBRID_AI_AGENT_CONTEXT_GENERATOR" ]]; then
+  printf 'haven-env: conflicting aliases for HAVEN_AGENT_CONTEXT_GENERATOR\n' >&2
+  exit 2
+fi
+HAVEN_AGENT_CONTEXT_GENERATOR="${HAVEN_AGENT_CONTEXT_GENERATOR-${HYBRID_AI_AGENT_CONTEXT_GENERATOR-}}"
+if [ -z "$GENERATOR" ] && [ -n "${HAVEN_AGENT_CONTEXT_GENERATOR:-}" ]; then
+  GENERATOR="$HAVEN_AGENT_CONTEXT_GENERATOR"
 fi
 if [ -z "$GENERATOR" ] && [ -f "$ROOT_ABS/$SHARED_CHECKOUT_REL" ]; then
   GENERATOR="$ROOT_ABS/$SHARED_CHECKOUT_REL"
 fi
 if [ -z "$GENERATOR" ] || [ ! -f "$GENERATOR" ]; then
   echo "error: missing prerequisite: agent-context generator not found." >&2
-  echo "Pass --generator PATH, set HYBRID_AI_AGENT_CONTEXT_GENERATOR, or check" >&2
+  echo "Pass --generator PATH, set HAVEN_AGENT_CONTEXT_GENERATOR, or check" >&2
   echo "the pinned generator out to $SHARED_CHECKOUT_REL inside the tree." >&2
   echo "Get it with:" >&2
   echo "  git clone https://github.com/jimbobsyouruncle/shared-actions /tmp/shared-actions" >&2

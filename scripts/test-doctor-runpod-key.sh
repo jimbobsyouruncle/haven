@@ -322,7 +322,7 @@ for f in "$BIN"/*; do
 done
 
 # --- scratch app ------------------------------------------------------------
-cp "$REPO_ROOT/scripts/lib/hybrid-ai-env.sh" "$APPD/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/haven-env.sh" "$APPD/scripts/lib/"
 # doctor.sh resolves the pod MagicDNS name through this shared lib.
 cp "$REPO_ROOT/scripts/lib/tailscale-resolve.sh" "$APPD/scripts/lib/"
 cp "$DOCTOR" "$APPD/doctor.sh"
@@ -362,7 +362,7 @@ run_doctor() { # fixture runpod_host rp_mode [path] ; sets RC, writes $WORK/out.
     cd "$APPD" || exit 1
     RP_MODE="$mode" RECORD="$RECORD" FIXTURE_KEY="$FIXTURE_KEY" \
     PATH="${RUN_PATH:-$BIN:$PATH}" HOME="$WORK/home" SHELL=/bin/bash \
-    HYBRID_AI_DATA_DIR="$APPD" HYBRID_AI_LOG_DIR="$APPD" HYBRID_AI_WORK_DIR="$APPD" \
+    HAVEN_DATA_DIR="$APPD" HAVEN_LOG_DIR="$APPD" HAVEN_WORK_DIR="$APPD" \
     timeout 120 bash "$doc" --no-cloud
   ) > "$WORK/out.$fixture" 2>&1
   RC=$?
