@@ -26,7 +26,7 @@ set -Eeuo pipefail
 #   WHY THE LOG IS READ FROM A FILE, NOT THE JOURNAL:
 #     The deploy account is deliberately NOT in the systemd-journal group, so
 #     it cannot read journald. The unit writes its output to
-#     $HYBRID_AI_LOG_DIR/deploy/<sha>.log with mode 0640 and group
+#     $HAVEN_LOG_DIR/deploy/<sha>.log with mode 0640 and group
 #     hybrid-ai-deploy (see scripts/deploy-instance.sh), so this account can
 #     read the log without any journal access.
 #
@@ -39,9 +39,9 @@ set -Eeuo pipefail
 #
 #   LAYOUT-FILE-ONLY ENVIRONMENT:
 #     This account is allowed to read ONLY the 0644 LAYOUT file, and it needs
-#     only layout paths. HYBRID_AI_STACK_ENV_FILE is pinned at the layout file
+#     only layout paths. HAVEN_STACK_ENV_FILE is pinned at the layout file
 #     UNCONDITIONALLY, so an inherited value can never point it back at the
-#     root-only 0600 secrets file. Below, export HYBRID_AI_STACK_ENV_FILE is
+#     root-only 0600 secrets file. Below, export HAVEN_STACK_ENV_FILE is
 #     given no :- fallback and never consults the incoming environment.
 #
 # USAGE:
@@ -56,18 +56,18 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # Resolve host paths the SAME way the unit does: point at the same system env
 # file the unit names, unless the account's environment already sets one. This
-# is what makes this script and the unit agree on $HYBRID_AI_LOG_DIR (and so on
+# is what makes this script and the unit agree on $HAVEN_LOG_DIR (and so on
 # the run-log path). The helper only ever PARSES the file, never sources it.
-export HYBRID_AI_ENV_FILE="${HYBRID_AI_ENV_FILE:-/etc/hybrid-ai/hybrid-ai.env}"
+export HAVEN_ENV_FILE="${HAVEN_ENV_FILE:-/etc/hybrid-ai/hybrid-ai.env}"
 # This account reads only the 0644 layout file. It needs only layout paths
-# ($HYBRID_AI_LOG_DIR), never a secret. Pin STACK_ENV_FILE at the layout file
+# ($HAVEN_LOG_DIR), never a secret. Pin STACK_ENV_FILE at the layout file
 # UNCONDITIONALLY (no :- fallback) so an inherited value cannot point it back
 # at the root-only secrets file.
-export HYBRID_AI_STACK_ENV_FILE="$HYBRID_AI_ENV_FILE"
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
+export HAVEN_STACK_ENV_FILE="$HAVEN_ENV_FILE"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
 
-LOG_DIR="${HYBRID_AI_LOG_DIR}/deploy"
+LOG_DIR="${HAVEN_LOG_DIR}/deploy"
 
 # Refuse everything that is not the one accepted command. Nothing is run.
 refuse() {

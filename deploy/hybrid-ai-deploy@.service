@@ -45,8 +45,8 @@ User=root
 WorkingDirectory=/opt/haven
 
 # Paths by name only, never a value. The env file carries the host layout.
-Environment=HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
-Environment=HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven
+Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
+Environment=HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven
 
 # `%i` is the 40-hex commit; deploy-instance.sh re-validates it, then fetches,
 # checks ancestry, resets, asserts HEAD, and execs deploy-remote.sh.

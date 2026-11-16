@@ -61,7 +61,7 @@ Usage: tls-check.sh [options]
   --ca-file PATH       verify against this trust store instead of the system store
   --warn-days N        WARN below N days (default 14)
   --crit-days N        CRITICAL below N days (default 7)
-  --audit-log PATH     append one audit line per host (default $HYBRID_AI_LOG_DIR/tls-check.log)
+  --audit-log PATH     append one audit line per host (default $HAVEN_LOG_DIR/tls-check.log)
   --audit              shorthand for --audit-log with the default path
   --alert              call scripts/tls-alert.sh when the result is not OK
   --no-alert           do not alert (default)
@@ -185,17 +185,17 @@ done
 # An explicit --env-file is handed to the helper BEFORE it loads, so a fixture
 # still wins over the ambient environment (the helper reads environment first,
 # then the file).
-if [[ -n "$ENV_FILE" && -z "${HYBRID_AI_ENV_FILE:-}" ]]; then
-  export HYBRID_AI_ENV_FILE="$ENV_FILE"
+if [[ -n "$ENV_FILE" && -z "${HAVEN_ENV_FILE:-}" ]]; then
+  export HAVEN_ENV_FILE="$ENV_FILE"
 fi
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
 
 # This script reads stack settings (TLS_ENABLED and friends) and passes the same
 # file to the alert hook, so it is the STACK file the helper resolved. A
-# --env-file fixture set above is already the resolved HYBRID_AI_ENV_FILE, and
-# HYBRID_AI_STACK_ENV_FILE defaults to it, so the fixture keeps working.
-[[ -n "$ENV_FILE" ]] || ENV_FILE="$HYBRID_AI_STACK_ENV_FILE"
+# --env-file fixture set above is already the resolved HAVEN_ENV_FILE, and
+# HAVEN_STACK_ENV_FILE defaults to it, so the fixture keeps working.
+[[ -n "$ENV_FILE" ]] || ENV_FILE="$HAVEN_STACK_ENV_FILE"
 
 # --- settings: exported environment first, then the env file ---------------
 # The env file is never sourced and no value is ever printed. An exported
@@ -262,7 +262,7 @@ fi
 
 # The log directory is the one the helper resolved, so the watchdog's audit log
 # lands beside the backups and logrotate finds it.
-[[ -n "$AUDIT_LOG" ]] || AUDIT_LOG="${HYBRID_AI_LOG_DIR}/tls-check.log"
+[[ -n "$AUDIT_LOG" ]] || AUDIT_LOG="${HAVEN_LOG_DIR}/tls-check.log"
 
 # --- TLS disabled: SKIPPED (exit 3, never an error) -------------------------
 if (( ! TLS_ENABLED )); then

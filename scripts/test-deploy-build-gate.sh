@@ -145,16 +145,16 @@ check "f) equal label is a cache hit" "cache:inputs-unchanged" \
 echo "== g) progress cadence: one line per interval during pull and build =="
 PROG_LOG="$WORK/progress.log"
 : > "$PROG_LOG"
-HYBRID_PROGRESS_INTERVAL=1 bash -c '
+HAVEN_PROGRESS_INTERVAL=1 bash -c '
   set -uo pipefail
   source "$1"
-  INTERVAL="${HYBRID_PROGRESS_INTERVAL:-60}"
+  INTERVAL="${HAVEN_PROGRESS_INTERVAL:-60}"
   log() { printf "[ * ] %s %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
   for phase in pull build; do
-    hybrid_progress_start "$phase"
+    haven_progress_start "$phase"
     # Two intervals plus a margin: the heartbeat must fire at least twice.
     sleep $(( INTERVAL * 2 + 1 ))
-    hybrid_progress_stop
+    haven_progress_stop
   done
 ' _ "$LIB" > "$PROG_LOG" 2>&1
 pull_lines="$(grep -c 'phase=pull' "$PROG_LOG" || true)"
@@ -166,7 +166,7 @@ check "g) at least one build line per interval" "yes" \
 # The loop must be gone once stopped: no line appears after the stop call.
 before="$(grep -c 'phase=build' "$PROG_LOG" || true)"
 sleep 2
-check "g) the heartbeat stops after hybrid_progress_stop" "$before" \
+check "g) the heartbeat stops after haven_progress_stop" "$before" \
   "$(grep -c 'phase=build' "$PROG_LOG" || true)"
 
 echo "== h) timestamp format on every log line =="

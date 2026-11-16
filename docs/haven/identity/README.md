@@ -90,10 +90,18 @@ production activation follows accepted canonical cutover. No extra activation PR
 reconciliation service, generalized filesystem engine, retirement-manifest engine
 or second comprehensive verifier is required.
 
-## This revision and authorization
+## Canonical configuration preparation
 
-PR #201 on `feature/haven-final-identity` revises documentation and live issue/PR
-dispositions only. No migration code is implemented. Rollback is a documentation
+See the [configuration handoff](CONFIGURATION.md) for canonical source interfaces,
+transitional installed readers, literal alias/refusal rules, credential preservation,
+one-time auth re-login and recovery boundaries. Host resource names and paths stay
+at their existing values until the coordinated handoff; source preparation alone
+does not activate the final platform identity or continuous deployment.
+
+## Architecture baseline and authorization
+
+PR #201 revised architecture documentation and live issue/PR dispositions; it
+implemented no migration code. Rollback is a documentation
 revert; it does not affect production. Validate inventory integrity/scanner fixtures,
 map freshness, static checks and current-head CI/SAST. Preserve baseline inventory
 and ADR-0006/#187 evidence rather than rescanning completed runtime work.

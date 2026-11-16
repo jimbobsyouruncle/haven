@@ -24,7 +24,7 @@
 #
 # The pinned agent-context generator is required for the map gate and is
 # resolved the same way the runner resolves it: --generator, then
-# HYBRID_AI_AGENT_CONTEXT_GENERATOR, then .shared-actions/agent-context/
+# HAVEN_AGENT_CONTEXT_GENERATOR, then .shared-actions/agent-context/
 # generate.py in this tree. It is never fetched from the network.
 #
 # Usage:
@@ -48,7 +48,7 @@ if [ ! -f "$RUNNER" ]; then
   exit 2
 fi
 
-GENERATOR="${1:-${HYBRID_AI_AGENT_CONTEXT_GENERATOR:-}}"
+GENERATOR="${1:-${HAVEN_AGENT_CONTEXT_GENERATOR:-}}"
 if [ -z "$GENERATOR" ] && [ -f "$REPO_ROOT/.shared-actions/agent-context/generate.py" ]; then
   GENERATOR="$REPO_ROOT/.shared-actions/agent-context/generate.py"
 fi

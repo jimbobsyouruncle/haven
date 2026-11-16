@@ -30,9 +30,9 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/hybrid-ai-tls-dryrun-test.XXXXXX")" || exit 1
 # helper here would export repo-default paths and shadow the fixture env files
 # passed with --env-file below.
 STACK_ENV_FILE="$(bash -c '
-  # shellcheck source=scripts/lib/hybrid-ai-env.sh
-  source "$1/lib/hybrid-ai-env.sh" >/dev/null 2>&1 || exit 1
-  printf "%s" "$HYBRID_AI_STACK_ENV_FILE"
+  # shellcheck source=scripts/lib/haven-env.sh
+  source "$1/lib/haven-env.sh" >/dev/null 2>&1 || exit 1
+  printf "%s" "$HAVEN_STACK_ENV_FILE"
 ' _ "$SCRIPT_DIR" 2>/dev/null || true)"
 [[ -n "$STACK_ENV_FILE" ]] || STACK_ENV_FILE=""
 # Idempotent: called on the normal exit path AND from the trap.

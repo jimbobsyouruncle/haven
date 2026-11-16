@@ -46,7 +46,7 @@
 #     -h | --help    print this header and exit 0
 #
 # TEST-ONLY:
-#   HYBRID_AI_UNINSTALL_ROOT  a filesystem prefix for the offline test. UNSET
+#   HAVEN_UNINSTALL_ROOT  a filesystem prefix for the offline test. UNSET
 #                             means "/" (the real filesystem), the default.
 #                             scripts/test-uninstall.sh sets it to a scratch
 #                             tree, so the whole script runs with no root, no
@@ -85,10 +85,17 @@ shopt -s nullglob
 
 # --- Test-only filesystem prefix -------------------------------------------
 # UNSET (the default) means "/", the real filesystem. scripts/test-uninstall.sh
-# sets HYBRID_AI_UNINSTALL_ROOT to a scratch directory so the whole script can
+# sets HAVEN_UNINSTALL_ROOT to a scratch directory so the whole script can
 # be exercised with no root, no Docker and no systemd.
-ROOT_PREFIX="${HYBRID_AI_UNINSTALL_ROOT:-/}"
-[[ "$ROOT_PREFIX" == /* ]] || { printf 'uninstall: HYBRID_AI_UNINSTALL_ROOT must be an absolute path.\n' >&2; exit 1; }
+# Transitional installed-process alias; unequal values refuse before action.
+if [[ -v HAVEN_UNINSTALL_ROOT && -v HYBRID_AI_UNINSTALL_ROOT &&
+      "$HAVEN_UNINSTALL_ROOT" != "$HYBRID_AI_UNINSTALL_ROOT" ]]; then
+  printf 'haven-env: conflicting aliases for HAVEN_UNINSTALL_ROOT\n' >&2
+  exit 2
+fi
+HAVEN_UNINSTALL_ROOT="${HAVEN_UNINSTALL_ROOT-${HYBRID_AI_UNINSTALL_ROOT-}}"
+ROOT_PREFIX="${HAVEN_UNINSTALL_ROOT:-/}"
+[[ "$ROOT_PREFIX" == /* ]] || { printf 'uninstall: HAVEN_UNINSTALL_ROOT must be an absolute path.\n' >&2; exit 1; }
 ROOT_PREFIX="${ROOT_PREFIX%/}"
 # Prefix a host path. With ROOT_PREFIX empty (the default "/") this is the
 # identity. A path that already sits under the prefix is returned unchanged, so
@@ -156,27 +163,40 @@ BACKUP_LOG_DIR="$(host_path /var/log/hybrid-ai-backup)"
 
 # --- Layout-file reader (PARSE, never source) ------------------------------
 # Read ONE key from a layout file, line by line. The value is DATA, never code,
-# and it is never printed. Last match wins, matching scripts/lib/hybrid-ai-env.sh.
-parse_env_value() { # file key
-  local file="$1" key="$2" line candidate=""
-  if [[ ! -f "$file" || ! -r "$file" ]]; then
-    printf ''
-    return 0
-  fi
+# and it is never printed. Last match wins, matching scripts/lib/haven-env.sh.
+parse_env_value() {
+  local file="$1" key="$2" line candidate="" old_candidate="" raw
+  local seen=0 old_seen=0 legacy=""
+  [[ -f "$file" ]] || return 0
+  [[ -r "$file" ]] || {
+    printf "uninstall: unreadable layout; refusing defaults\n" >&2
+    return 1
+  }
+  [[ "$key" != HAVEN_* ]] || legacy="HYBRID_AI_${key#HAVEN_}"
   while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ "$line" =~ ^[[:space:]]*${key}=(.*)$ ]] || continue
-    candidate="${BASH_REMATCH[1]}"
-    candidate="${candidate%\"}"; candidate="${candidate#\"}"
-    candidate="${candidate%\'}"; candidate="${candidate#\'}"
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+    raw="${BASH_REMATCH[2]}"
+    raw="${raw%\"}"; raw="${raw#\"}"
+    raw="${raw%\'}"; raw="${raw#\'}"
+    if [[ "${BASH_REMATCH[1]}" == "$key" ]]; then
+      candidate="$raw"; seen=1
+    elif [[ -n "$legacy" && "${BASH_REMATCH[1]}" == "$legacy" ]]; then
+      old_candidate="$raw"; old_seen=1
+    fi
   done < "$file"
-  printf '%s' "$candidate"
+  if (( seen && old_seen )) && [[ "$candidate" != "$old_candidate" ]]; then
+    printf 'haven-env: conflicting aliases for %s; refusing configuration\n' "$key" >&2
+    return 2
+  fi
+  if (( seen )); then printf '%s' "$candidate"; else printf '%s' "$old_candidate"; fi
 }
+
 
 # Apply one layout setting over a default. A relative value is refused with a
 # message naming the SETTING; the value itself is never printed.
 apply_layout_setting() { # varname setting
   local var="$1" name="$2" v
-  v="$(parse_env_value "$LAYOUT_ENV" "$name")"
+  v="$(parse_env_value "$LAYOUT_ENV" "$name")" || exit 2
   [[ -n "$v" ]] || return 0
   case "$v" in
     /*) printf -v "$var" '%s' "$v" ;;
@@ -191,32 +211,32 @@ apply_layout_setting() { # varname setting
 resolve_paths() {
   # Resolve the selected root before loading its helper. A retained legacy
   # checkout must not become active merely because it still exists for rollback.
-  apply_layout_setting APP_DIR HYBRID_AI_APP_DIR
+  apply_layout_setting APP_DIR HAVEN_APP_DIR
   APP_DIR="$(host_path "$APP_DIR")"
   if [[ ! -e "$LAYOUT_ENV" && ! -e "$APP_DIR" ]]; then
     APP_DIR="$(host_path /opt/hybrid-ai)"
   fi
-  local clone_lib="${APP_DIR}/scripts/lib/hybrid-ai-env.sh"
+  local clone_lib="${APP_DIR}/scripts/lib/haven-env.sh"
   if [[ -r "$clone_lib" ]]; then
     # Point the library's fallback probe at this run's layout file. With
     # ROOT_PREFIX "/" this equals the built-in default, so it is a no-op there.
-    export HYBRID_AI_ENV_FILE_FALLBACK="$LAYOUT_ENV"
+    export HAVEN_ENV_FILE_FALLBACK="$LAYOUT_ENV"
     # The path is dynamic (it comes from the resolved app dir), so tell the
     # linter to skip following it rather than name a literal relative path.
     # shellcheck source=/dev/null
     source "$clone_lib"
-    APP_DIR="$(host_path "$HYBRID_AI_APP_DIR")"
-    DATA_DIR="$(host_path "$HYBRID_AI_DATA_DIR")"
-    LOG_DIR="$(host_path "$HYBRID_AI_LOG_DIR")"
-    WORK_DIR="$(host_path "$HYBRID_AI_WORK_DIR")"
-    LAYOUT_ENV="$(host_path "$HYBRID_AI_ENV_FILE")"
+    APP_DIR="$(host_path "$HAVEN_APP_DIR")"
+    DATA_DIR="$(host_path "$HAVEN_DATA_DIR")"
+    LOG_DIR="$(host_path "$HAVEN_LOG_DIR")"
+    WORK_DIR="$(host_path "$HAVEN_WORK_DIR")"
+    LAYOUT_ENV="$(host_path "$HAVEN_ENV_FILE")"
     ETC_DIR="$(dirname "$LAYOUT_ENV")"
-    STACK_ENV="$(host_path "$HYBRID_AI_STACK_ENV_FILE")"
+    STACK_ENV="$(host_path "$HAVEN_STACK_ENV_FILE")"
     if [[ -n "${RESTIC_CACHE_DIR:-}" ]]; then
       RESTIC_CACHE="$(host_path "$RESTIC_CACHE_DIR")"
     fi
-    if [[ -n "${HYBRID_AI_BACKUP_CRED_DIR:-}" ]]; then
-      CRED_DIR="$(host_path "$HYBRID_AI_BACKUP_CRED_DIR")"
+    if [[ -n "${HAVEN_BACKUP_CRED_DIR:-}" ]]; then
+      CRED_DIR="$(host_path "$HAVEN_BACKUP_CRED_DIR")"
     fi
     # Sibling trees and the backup log directory, all resolved by the library.
     # Each keeps the built-in default when the library did not set it.
@@ -233,13 +253,13 @@ resolve_paths() {
   fi
 
   warn "no clone at ${APP_DIR}; using the built-in FHS defaults and parsing ${LAYOUT_ENV}"
-  apply_layout_setting APP_DIR      HYBRID_AI_APP_DIR
-  apply_layout_setting DATA_DIR     HYBRID_AI_DATA_DIR
-  apply_layout_setting LOG_DIR      HYBRID_AI_LOG_DIR
-  apply_layout_setting WORK_DIR     HYBRID_AI_WORK_DIR
+  apply_layout_setting APP_DIR      HAVEN_APP_DIR
+  apply_layout_setting DATA_DIR     HAVEN_DATA_DIR
+  apply_layout_setting LOG_DIR      HAVEN_LOG_DIR
+  apply_layout_setting WORK_DIR     HAVEN_WORK_DIR
   apply_layout_setting RESTIC_CACHE RESTIC_CACHE_DIR
-  apply_layout_setting CRED_DIR     HYBRID_AI_BACKUP_CRED_DIR
-  apply_layout_setting STACK_ENV    HYBRID_AI_STACK_ENV_FILE
+  apply_layout_setting CRED_DIR     HAVEN_BACKUP_CRED_DIR
+  apply_layout_setting STACK_ENV    HAVEN_STACK_ENV_FILE
   apply_layout_setting AGENT_WS     OPENHANDS_WORKSPACE
   apply_layout_setting AGENT_REPOS  AGENT_REPOS_DIR
   # BACKUP_LOG is a FILE setting: the directory it lives in is what gets removed.
@@ -329,8 +349,8 @@ IPT=( iptables -w "$IPT_LOCK_WAIT" )
 # The data directories, each with the setting that named it, so a refusal can
 # name the setting. The last five are the bootstrapped siblings, the two fixed
 # account homes and the backup log directory. Every entry is allowlist-checked.
-DATA_SETTINGS=( HYBRID_AI_DATA_DIR HYBRID_AI_WORK_DIR HYBRID_AI_LOG_DIR \
-                RESTIC_CACHE_DIR HYBRID_AI_BACKUP_CRED_DIR HYBRID_AI_ENV_FILE \
+DATA_SETTINGS=( HAVEN_DATA_DIR HAVEN_WORK_DIR HAVEN_LOG_DIR \
+                RESTIC_CACHE_DIR HAVEN_BACKUP_CRED_DIR HAVEN_ENV_FILE \
                 OPENHANDS_WORKSPACE AGENT_REPOS_DIR \
                 "fixed-layout DEPLOY_HOME" "fixed-layout BACKUP_HOME" \
                 "BACKUP_LOG directory" )
@@ -656,7 +676,7 @@ step_firewall() {
 step_remove_app_dir() {
   hr; log "Removing the program directory"; hr
   if ! allowlisted_path "$APP_DIR"; then
-    warn "refusing to remove ${APP_DIR} (setting HYBRID_AI_APP_DIR): outside the allowlist. It is left untouched."
+    warn "refusing to remove ${APP_DIR} (setting HAVEN_APP_DIR): outside the allowlist. It is left untouched."
     return 0
   fi
   if [[ ! -e "$APP_DIR" ]]; then

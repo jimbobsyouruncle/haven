@@ -82,18 +82,18 @@ done
 # --- paths come from the shared resolver -----------------------------------
 # An explicit --env-file is handed to the helper BEFORE it loads, so a fixture
 # still wins over the ambient environment.
-if [[ -n "$ENV_FILE" && -z "${HYBRID_AI_ENV_FILE:-}" ]]; then
-  export HYBRID_AI_ENV_FILE="$ENV_FILE"
+if [[ -n "$ENV_FILE" && -z "${HAVEN_ENV_FILE:-}" ]]; then
+  export HAVEN_ENV_FILE="$ENV_FILE"
 fi
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
 
 # ACME_CA is a stack setting, so it comes from the STACK file the helper
 # resolved. The certificate root is the helper's ONE derivation of Caddy's
 # managed storage, so a future relocation edits one line.
-[[ -n "$ENV_FILE" ]] || ENV_FILE="$HYBRID_AI_STACK_ENV_FILE"
-[[ -n "$CERT_ROOT" ]] || CERT_ROOT="$HYBRID_AI_CADDY_CERT_ROOT"
-[[ -n "$COMPOSE_FILE" ]] || COMPOSE_FILE="${HYBRID_AI_APP_DIR}/docker-compose.yml"
+[[ -n "$ENV_FILE" ]] || ENV_FILE="$HAVEN_STACK_ENV_FILE"
+[[ -n "$CERT_ROOT" ]] || CERT_ROOT="$HAVEN_CADDY_CERT_ROOT"
+[[ -n "$COMPOSE_FILE" ]] || COMPOSE_FILE="${HAVEN_APP_DIR}/docker-compose.yml"
 
 # --- staging-only gate (no override, by design) ----------------------------
 ACME_CA_VAL="$(env_read_key "$ENV_FILE" ACME_CA || true)"

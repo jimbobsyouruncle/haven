@@ -20,8 +20,8 @@
 # CASES:
 #   (a) fail-before: with the unset line removed from install.sh (the base
 #       code path), the environment at the stubbed compose up carries
-#       HYBRID_AI_AUTH_HASH (63 bytes, the escaped 60-byte fixture) and
-#       HYBRID_AI_AUTH_USER
+#       HAVEN_AUTH_HASH (63 bytes, the escaped 60-byte fixture) and
+#       HAVEN_AUTH_USER
 #   (b) pass-after: with the fix, neither variable is present in that
 #       environment, the compose argv still passes --env-file, and the env file
 #       still holds the escaped pair intact (63 bytes, un-escapes to the 60-byte
@@ -79,7 +79,7 @@ mkdir -p "$APP/scripts/lib" "$APP/deploy" "$APP/status" "$BIN" "$SYSD" \
          "$WORK/ohstate" "$WORK/conf" "$WORK/restic" "$WORK/etc/hybrid-ai" \
          "$WORK/sysstate"
 cp "$REPO/install.sh" "$APP/install.sh"
-cp "$REPO/scripts/lib/hybrid-ai-env.sh" "$APP/scripts/lib/"
+cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
 [ -f "$REPO/scripts/lib/build-gate.sh" ] || { echo "FATAL: scripts/lib/build-gate.sh is missing" >&2; exit 2; }
 cp "$REPO/scripts/lib/build-gate.sh" "$APP/scripts/lib/"
 cp "$REPO/scripts/lib/tls.sh" "$APP/scripts/lib/"
@@ -97,22 +97,22 @@ chmod +x "$APP/scripts/"*.sh
 LAYOUT="$WORK/etc/hybrid-ai/hybrid-ai.env"
 STACK="$WORK/etc/hybrid-ai/stack.env"
 {
-  printf 'HYBRID_AI_APP_DIR=%s\n' "$APP"
-  printf 'HYBRID_AI_ENV_FILE=%s\n' "$LAYOUT"
-  printf 'HYBRID_AI_STACK_ENV_FILE=%s\n' "$STACK"
-  printf 'HYBRID_AI_DATA_DIR=%s\n' "$WORK/data"
-  printf 'HYBRID_AI_LOG_DIR=%s\n' "$WORK/log"
-  printf 'HYBRID_AI_WORK_DIR=%s\n' "$WORK/work"
+  printf 'HAVEN_APP_DIR=%s\n' "$APP"
+  printf 'HAVEN_ENV_FILE=%s\n' "$LAYOUT"
+  printf 'HAVEN_STACK_ENV_FILE=%s\n' "$STACK"
+  printf 'HAVEN_DATA_DIR=%s\n' "$WORK/data"
+  printf 'HAVEN_LOG_DIR=%s\n' "$WORK/log"
+  printf 'HAVEN_WORK_DIR=%s\n' "$WORK/work"
   printf 'OPENHANDS_WORKSPACE=%s\n' "$WORK/ws"
   printf 'AGENT_REPOS_DIR=%s\n' "$WORK/repos"
   printf 'OPENHANDS_STATE_DIR=%s\n' "$WORK/ohstate"
   printf 'BACKUP_CONF_DIR=%s\n' "$WORK/conf"
   printf 'RESTIC_CACHE_DIR=%s\n' "$WORK/restic"
-  printf 'HYBRID_AI_HERMES_HOME_DIR=%s\n' "$WORK/hermes"
-  printf 'HYBRID_AI_BACKUP_MODE=system\n'
+  printf 'HAVEN_HERMES_HOME_DIR=%s\n' "$WORK/hermes"
+  printf 'HAVEN_BACKUP_MODE=system\n'
   printf 'BACKUP_CONTAINER_CONTROL=external\n'
-  printf 'HYBRID_AI_UID=1000\n'
-  printf 'HYBRID_AI_GID=1000\n'
+  printf 'HAVEN_UID=1000\n'
+  printf 'HAVEN_GID=1000\n'
 } > "$LAYOUT"
 chmod 644 "$LAYOUT"
 
@@ -122,8 +122,8 @@ seed_stack() {
   {
     printf 'ENV_VERSION=2\n'
     printf 'AUTH_ENABLED=on\n'
-    printf 'HYBRID_AI_AUTH_USER=operator\n'
-    printf 'HYBRID_AI_AUTH_HASH=%s\n' "$ESCAPED_HASH"
+    printf 'HAVEN_AUTH_USER=operator\n'
+    printf 'HAVEN_AUTH_HASH=%s\n' "$ESCAPED_HASH"
   } > "$STACK"
   chmod 600 "$STACK"
 }
@@ -203,7 +203,7 @@ if [[ "${1:-}" == "compose" ]]; then
   for a in "$@"; do
     if [[ "$a" == "up" ]]; then
       cap="${COMPOSE_ENV_CAPTURE:-/dev/null}"
-      for v in HYBRID_AI_AUTH_HASH HYBRID_AI_AUTH_USER; do
+      for v in HAVEN_AUTH_HASH HAVEN_AUTH_USER; do
         if [[ -n "${!v+x}" ]]; then
           len="$(printf '%s' "${!v}" | wc -c | tr -d ' ')"
           printf '%s set %s\n' "$v" "$len" >> "$cap"
@@ -231,17 +231,17 @@ run_install() {
   local log="$1" rc=0
   shift
   : > "$CAPTURE"; : > "$DOCKER_ARGV"
-  env -u HYBRID_AI_APP_DIR -u HYBRID_AI_DATA_DIR -u HYBRID_AI_LOG_DIR \
-      -u HYBRID_AI_WORK_DIR -u HYBRID_AI_STACK_ENV_FILE \
+  env -u HAVEN_APP_DIR -u HAVEN_DATA_DIR -u HAVEN_LOG_DIR \
+      -u HAVEN_WORK_DIR -u HAVEN_STACK_ENV_FILE \
       -u OPENHANDS_WORKSPACE -u AGENT_REPOS_DIR -u OPENHANDS_STATE_DIR \
-      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HYBRID_AI_HERMES_HOME_DIR \
-      -u HYBRID_AI_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
-      -u HYBRID_AI_UID -u HYBRID_AI_GID \
-      -u HYBRID_AI_AUTH_HASH -u HYBRID_AI_AUTH_USER -u HYBRID_AI_AUTH_COOKIE_SECRET \
+      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HAVEN_HERMES_HOME_DIR \
+      -u HAVEN_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
+      -u HAVEN_UID -u HAVEN_GID \
+      -u HAVEN_AUTH_HASH -u HAVEN_AUTH_USER -u HAVEN_AUTH_COOKIE_SECRET \
       -u AUTH_ENABLED -u TLS_ENABLED -u ENV_VERSION \
       PATH="$BIN:$PATH" \
-      HYBRID_AI_ENV_FILE="$LAYOUT" \
-      HYBRID_AI_SYSTEMD_UNIT_DIR="$SYSD" \
+      HAVEN_ENV_FILE="$LAYOUT" \
+      HAVEN_SYSTEMD_UNIT_DIR="$SYSD" \
       INSTALL_ARGV_LOG="$INSTALL_ARGV" \
       SUDO_ARGV_LOG="$SUDO_ARGV" \
       SYSTEMCTL_LOG="$SYSTEMCTL_ARGV" \
@@ -258,7 +258,7 @@ run_install() {
 }
 
 # The fix under test: this exact line, immediately before the compose up.
-UNSET_LINE='unset HYBRID_AI_AUTH_HASH HYBRID_AI_AUTH_USER'
+UNSET_LINE='unset HAVEN_AUTH_HASH HAVEN_AUTH_USER'
 FIXED_SH="$REPO/install.sh"
 
 # ---------------------------------------------------------------------------
@@ -283,13 +283,13 @@ cp "$WORK/install-unfixed.sh" "$APP/install.sh"
 rc=0
 run_install "$WORK/a.log" || rc=$?
 check "(a) the unfixed run exits 0" "0" "$rc"
-if grep -qxF 'HYBRID_AI_AUTH_HASH set 63' "$CAPTURE"; then
+if grep -qxF 'HAVEN_AUTH_HASH set 63' "$CAPTURE"; then
   ok "(a) the escaped hash (63 bytes) was visible to compose up"
 else
   bad "(a) the escaped hash was NOT visible to compose up"
   sed 's/^/      /' "$CAPTURE" >&2
 fi
-if grep -qxF 'HYBRID_AI_AUTH_USER set 8' "$CAPTURE"; then
+if grep -qxF 'HAVEN_AUTH_USER set 8' "$CAPTURE"; then
   ok "(a) the auth user was visible to compose up"
 else
   bad "(a) the auth user was NOT visible to compose up"
@@ -300,20 +300,24 @@ echo
 echo "== (b) pass-after: the fix keeps the pair out of the compose environment =="
 cp "$FIXED_SH" "$APP/install.sh"
 seed_stack
+# Exercise an installed legacy stack through the real installer. Unknown vendor
+# keys and literal dollar bytes survive; known platform keys become canonical.
+sed -i 's/^HAVEN_/HYBRID_AI_/' "$STACK"
+printf '%s\n' "VENDOR_KEEP=literal\$\$value" 'VENDOR_DUP=first' 'VENDOR_DUP=last' >> "$STACK"
 : > "$INSTALL_LOG"
 rc=0
 run_install "$WORK/b.log" || rc=$?
 check "(b) the fixed run exits 0" "0" "$rc"
-if grep -qxF 'HYBRID_AI_AUTH_HASH unset' "$CAPTURE"; then
-  ok "(b) HYBRID_AI_AUTH_HASH is absent from the compose environment"
+if grep -qxF 'HAVEN_AUTH_HASH unset' "$CAPTURE"; then
+  ok "(b) HAVEN_AUTH_HASH is absent from the compose environment"
 else
-  bad "(b) HYBRID_AI_AUTH_HASH is still present at compose up"
+  bad "(b) HAVEN_AUTH_HASH is still present at compose up"
   sed 's/^/      /' "$CAPTURE" >&2
 fi
-if grep -qxF 'HYBRID_AI_AUTH_USER unset' "$CAPTURE"; then
-  ok "(b) HYBRID_AI_AUTH_USER is absent from the compose environment"
+if grep -qxF 'HAVEN_AUTH_USER unset' "$CAPTURE"; then
+  ok "(b) HAVEN_AUTH_USER is absent from the compose environment"
 else
-  bad "(b) HYBRID_AI_AUTH_USER is still present at compose up"
+  bad "(b) HAVEN_AUTH_USER is still present at compose up"
 fi
 if grep -q -- '--env-file' "$DOCKER_ARGV" && grep -qF -- "--env-file $STACK" "$DOCKER_ARGV"; then
   ok "(b) compose up still receives --env-file <stack env>"
@@ -323,8 +327,8 @@ fi
 
 # The env file is what the container is told to use, so it must still carry the
 # escaped form byte-for-byte: Compose un-escapes it back to the 60-byte hash.
-file_hash="$(sed -n 's/^HYBRID_AI_AUTH_HASH=//p' "$STACK")"
-file_user="$(sed -n 's/^HYBRID_AI_AUTH_USER=//p' "$STACK")"
+file_hash="$(sed -n 's/^HAVEN_AUTH_HASH=//p' "$STACK")"
+file_user="$(sed -n 's/^HAVEN_AUTH_USER=//p' "$STACK")"
 check "(b) the env file still holds the 63-byte escaped hash" "63" "${#file_hash}"
 if [[ "$file_hash" == "$ESCAPED_HASH" ]]; then
   ok "(b) the env file hash is byte-identical to the escaped fixture"
@@ -348,6 +352,9 @@ check "(b) the env file is still 0600" "600" "$(stat -c '%a' "$STACK" 2>/dev/nul
 # ---------------------------------------------------------------------------
 echo
 AT='@'
+check "legacy auth keys were translated, not retained as active aliases" "0" "$(grep -c '^HYBRID_AI_AUTH_' "$STACK" || true)"
+check "unowned literal dollars survive rewriting" "VENDOR_KEEP=literal\$\$value" "$(grep '^VENDOR_KEEP=' "$STACK")"
+check "unowned duplicate keys retain last-value semantics" 'VENDOR_DUP=last' "$(grep '^VENDOR_DUP=' "$STACK" | tail -n 1)"
 echo "== (c) the fail-closed refusal for an empty login-gate value still fires =="
 # TLS on, AUTH_ENABLED=on and an EMPTY hash: the refusal must fire before any
 # start. The address is built from fragments so the source holds no literal.
@@ -358,8 +365,8 @@ echo "== (c) the fail-closed refusal for an empty login-gate value still fires =
   printf 'ACME_EMAIL=operator%sauth-leak.example.test\n' "$AT"
   printf 'TLS_VALIDATION=http\n'
   printf 'AUTH_ENABLED=on\n'
-  printf 'HYBRID_AI_AUTH_USER=operator\n'
-  printf 'HYBRID_AI_AUTH_HASH=\n'
+  printf 'HAVEN_AUTH_USER=operator\n'
+  printf 'HAVEN_AUTH_HASH=\n'
 } > "$STACK"
 chmod 600 "$STACK"
 if grep -qx 'AUTH_ENABLED=on' "$STACK" && grep -qx 'TLS_ENABLED=yes' "$STACK"; then
@@ -375,13 +382,13 @@ if (( rc != 0 )); then
 else
   bad "(c) the empty hash was accepted"
 fi
-if grep -q 'HYBRID_AI_AUTH_HASH' "$WORK/c.log"; then
+if grep -q 'HAVEN_AUTH_HASH' "$WORK/c.log"; then
   ok "(c) the refusal names the missing key"
 else
   bad "(c) the refusal does not name the missing key"
   sed 's/^/      /' "$WORK/c.log" >&2
 fi
-if grep -qxF 'HYBRID_AI_AUTH_HASH set 63' "$CAPTURE"; then
+if grep -qxF 'HAVEN_AUTH_HASH set 63' "$CAPTURE"; then
   bad "(c) a compose up ran with the escaped hash"
 else
   ok "(c) no compose up ran with the escaped pair"

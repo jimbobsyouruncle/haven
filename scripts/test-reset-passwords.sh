@@ -14,7 +14,7 @@
 # WHAT IS PROVEN:
 #   Escape            a `$` value is doubled once, and escaping an already
 #                     escaped value never produces `$$$$` (idempotent)
-#   Env file          only the HYBRID_AI_AUTH_HASH line changes; every other
+#   Env file          only the HAVEN_AUTH_HASH line changes; every other
 #                     line is byte-for-byte preserved, in order, including a
 #                     file with no trailing newline
 #   Backups           the stack env file and the Hermes config are copied to a
@@ -58,8 +58,8 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
 # shellcheck source=scripts/lib/tls.sh
 source "${SCRIPT_DIR}/lib/tls.sh"
 
@@ -307,11 +307,11 @@ case "$container" in
   hybrid-ai-auth)
     value=""
     if [[ -f "${STUB_STACK_FILE:-}" ]]; then
-      value="$(grep -E '^[[:space:]]*HYBRID_AI_AUTH_HASH=' "$STUB_STACK_FILE" | tail -n 1 || true)"
-      value="${value#HYBRID_AI_AUTH_HASH=}"
+      value="$(grep -E '^[[:space:]]*HAVEN_AUTH_HASH=' "$STUB_STACK_FILE" | tail -n 1 || true)"
+      value="${value#HAVEN_AUTH_HASH=}"
       value="${value//\$\$/\$}"
     fi
-    envs+=("HYBRID_AI_AUTH_HASH=${value}")
+    envs+=("HAVEN_AUTH_HASH=${value}")
     ;;
   open-webui)
     envs+=("STUB_WEBUI_USERS=${state}/webui_users.json")
@@ -365,8 +365,8 @@ fresh_fixture() { # <name> -> creates FX with an app dir, a data dir and env fil
   mkdir -p "$FX/app" "$FX/data/hermes_data" "$FX/env"
   : > "$FX/app/docker-compose.yml"
   cat > "$FX/env/layout.env" <<EOF
-HYBRID_AI_ENV_FILE=${FX}/env/layout.env
-HYBRID_AI_STACK_ENV_FILE=${FX}/env/stack.env
+HAVEN_ENV_FILE=${FX}/env/layout.env
+HAVEN_STACK_ENV_FILE=${FX}/env/stack.env
 EOF
   # A `$`-rich legacy placeholder. It exercises compose escaping and
   # byte-preservation without being a real hash, or even a bcrypt-shaped one, so
@@ -375,10 +375,10 @@ EOF
   printf '%s\n' "# operator notes, do not reorder" \
     "TLS_DOMAIN=daemonhub.dev" \
     "" \
-    "HYBRID_AI_AUTH_USER=owner" \
-    "HYBRID_AI_AUTH_HASH=${LEGACY_FIXTURE_HASH}" \
+    "HAVEN_AUTH_USER=owner" \
+    "HAVEN_AUTH_HASH=${LEGACY_FIXTURE_HASH}" \
     "AUTH_ENABLED=on" \
-    "HYBRID_AI_AUTH_COOKIE_SECRET=fixture-cookie-secret" \
+    "HAVEN_AUTH_COOKIE_SECRET=fixture-cookie-secret" \
     "WEBUI_AUTH=true" \
     "WEBUI_SECRET_KEY=fixture-webui-secret" \
     'QUOTED="keep  my   spacing"' \
@@ -442,10 +442,10 @@ run_reset() {
     "STUB_BCRYPT_ECHO_PASSWORD=${STUB_BCRYPT_ECHO_PASSWORD:-}"
     "STUB_HERMES_ECHO_SENTINEL=${STUB_HERMES_ECHO_SENTINEL:-}"
     "STUB_WEBUI_UPDATE_RESULT=${STUB_WEBUI_UPDATE_RESULT:-}"
-    "HYBRID_AI_ENV_FILE=${FX}/env/layout.env"
-    "HYBRID_AI_STACK_ENV_FILE=${FX}/env/stack.env"
-    "HYBRID_AI_APP_DIR=${FX}/app"
-    "HYBRID_AI_DATA_DIR=${FX}/data"
+    "HAVEN_ENV_FILE=${FX}/env/layout.env"
+    "HAVEN_STACK_ENV_FILE=${FX}/env/stack.env"
+    "HAVEN_APP_DIR=${FX}/app"
+    "HAVEN_DATA_DIR=${FX}/data"
   )
   set +e
   if [[ -n "$pw" ]]; then
@@ -478,10 +478,10 @@ run_reset_tty() {
     "STUB_BCRYPT_ECHO_PASSWORD=${STUB_BCRYPT_ECHO_PASSWORD:-}"
     "STUB_HERMES_ECHO_SENTINEL=${STUB_HERMES_ECHO_SENTINEL:-}"
     "STUB_WEBUI_UPDATE_RESULT=${STUB_WEBUI_UPDATE_RESULT:-}"
-    "HYBRID_AI_ENV_FILE=${FX}/env/layout.env"
-    "HYBRID_AI_STACK_ENV_FILE=${FX}/env/stack.env"
-    "HYBRID_AI_APP_DIR=${FX}/app"
-    "HYBRID_AI_DATA_DIR=${FX}/data"
+    "HAVEN_ENV_FILE=${FX}/env/layout.env"
+    "HAVEN_STACK_ENV_FILE=${FX}/env/stack.env"
+    "HAVEN_APP_DIR=${FX}/app"
+    "HAVEN_DATA_DIR=${FX}/data"
   )
   set +e
   timeout "${TTY_TIMEOUT:-25}" env "${run_env[@]}" \
@@ -570,8 +570,8 @@ check "webui leg applied" "yes" "$(grep -q 'Open WebUI admin  *applied' "${LOGS}
 check "hermes leg applied" "yes" "$(grep -q 'Hermes dashboard  *applied' "${LOGS}/happy.out" && echo yes || echo no)"
 
 # --- env file: only the hash line changed, byte for byte -------------------
-grep -v -E '^[[:space:]]*HYBRID_AI_AUTH_HASH=' "${FX}/stack.before" > "${WORK}/before-rest.txt"
-grep -v -E '^[[:space:]]*HYBRID_AI_AUTH_HASH=' "${FX}/env/stack.env" > "${WORK}/after-rest.txt"
+grep -v -E '^[[:space:]]*HAVEN_AUTH_HASH=' "${FX}/stack.before" > "${WORK}/before-rest.txt"
+grep -v -E '^[[:space:]]*HAVEN_AUTH_HASH=' "${FX}/env/stack.env" > "${WORK}/after-rest.txt"
 if cmp -s "${WORK}/before-rest.txt" "${WORK}/after-rest.txt"; then
   ok "every other env-file line is byte-for-byte preserved"
 else
@@ -579,16 +579,16 @@ else
   diff -u "${WORK}/before-rest.txt" "${WORK}/after-rest.txt" >&2 || true
 fi
 check "AUTH_ENABLED is untouched" "on" "$(env_value "${FX}/env/stack.env" AUTH_ENABLED)"
-check "the auth user is untouched" "owner" "$(env_value "${FX}/env/stack.env" HYBRID_AI_AUTH_USER)"
+check "the auth user is untouched" "owner" "$(env_value "${FX}/env/stack.env" HAVEN_AUTH_USER)"
 check "the cookie secret is untouched" "fixture-cookie-secret" \
-  "$(env_value "${FX}/env/stack.env" HYBRID_AI_AUTH_COOKIE_SECRET)"
+  "$(env_value "${FX}/env/stack.env" HAVEN_AUTH_COOKIE_SECRET)"
 check "WEBUI_AUTH is untouched" "true" "$(env_value "${FX}/env/stack.env" WEBUI_AUTH)"
 check "WEBUI_SECRET_KEY is untouched" "fixture-webui-secret" \
   "$(env_value "${FX}/env/stack.env" WEBUI_SECRET_KEY)"
 check "exactly one hash line is written" "1" \
-  "$(grep -c -E '^HYBRID_AI_AUTH_HASH=' "${FX}/env/stack.env" || true)"
+  "$(grep -c -E '^HAVEN_AUTH_HASH=' "${FX}/env/stack.env" || true)"
 
-written_hash="$(env_value "${FX}/env/stack.env" HYBRID_AI_AUTH_HASH)"
+written_hash="$(env_value "${FX}/env/stack.env" HAVEN_AUTH_HASH)"
 check "the hash is escaped for compose" "yes" \
   "$(if [[ "$written_hash" == *'$$'* ]]; then echo yes; else echo no; fi)"
 check "the hash is never quadrupled" "no" \
@@ -778,7 +778,7 @@ echo "== env file without a trailing newline =="
 fresh_fixture nonewline
 hermes_config_with_password "${FX}/data/hermes_data/config.yaml"
 printf '%s\n%s\n%s' "TLS_DOMAIN=daemonhub.dev" \
-  'HYBRID_AI_AUTH_HASH=$2a$14$LEGACYPLACEHOLDER' "LAST_LINE=no-newline" \
+  'HAVEN_AUTH_HASH=$2a$14$LEGACYPLACEHOLDER' "LAST_LINE=no-newline" \
   > "${FX}/env/stack.env"
 run_reset nonewline "$PASSWORD" --no-restart
 check "exit status is 0" "0" "$RUN_RC"
@@ -976,9 +976,9 @@ set +e
 printf '%s\n\n' "$PASSWORD" | env \
   PATH="${BIN}:${PATH}" STUB_STATE="$STATE" STUB_PY="$PYSTUB" \
   STUB_STACK_FILE="${FX}/env/stack.env" \
-  HYBRID_AI_ENV_FILE="${FX}/env/layout.env" \
-  HYBRID_AI_STACK_ENV_FILE="${FX}/env/stack.env" \
-  HYBRID_AI_APP_DIR="${FX}/app" HYBRID_AI_DATA_DIR="${FX}/data" \
+  HAVEN_ENV_FILE="${FX}/env/layout.env" \
+  HAVEN_STACK_ENV_FILE="${FX}/env/stack.env" \
+  HAVEN_APP_DIR="${FX}/app" HAVEN_DATA_DIR="${FX}/data" \
   "$RESET_SCRIPT" --no-restart > "${LOGS}/emptysecond.out" 2> "${LOGS}/emptysecond.err"
 RUN_RC=$?
 set -e

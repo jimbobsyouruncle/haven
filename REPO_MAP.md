@@ -100,6 +100,7 @@
 - docs/haven/adr/0007-complete-platform-identity.md - ADR-0007 — Complete Haven identity and restore automatic deployment
 ## docs/haven/identity
 
+- docs/haven/identity/CONFIGURATION.md - Canonical source and configuration handoff
 - docs/haven/identity/CONTINUOUS-DEPLOYMENT.md - Restore automatic deployment through the existing workflow
 - docs/haven/identity/CUTOVER.md - Production cutover, existing verification and operator cleanup
 - docs/haven/identity/DEPENDENCIES.md - Identity dependency register
@@ -219,8 +220,8 @@
 - scripts/test-doctor-sandbox-image.sh - FILE: scripts/test-doctor-sandbox-image.sh
 - scripts/test-doctor-startup-grace.sh - FILE: scripts/test-doctor-startup-grace.sh
 - scripts/test-env-pin-migration.sh - FILE: scripts/test-env-pin-migration.sh
+- scripts/test-haven-env.sh - FILE: scripts/test-haven-env.sh
 - scripts/test-hermes-nonroot-preflight.sh - FILE: scripts/test-hermes-nonroot-preflight.sh
-- scripts/test-hybrid-ai-env.sh - FILE: scripts/test-hybrid-ai-env.sh
 - scripts/test-install-auth-env-leak.sh - FILE: scripts/test-install-auth-env-leak.sh
 - scripts/test-install-health.sh - FILE: scripts/test-install-health.sh
 - scripts/test-install-root.py - Offline real-Git migration tests; no network, Docker, systemd or root.
@@ -251,7 +252,8 @@
 ## scripts/lib
 
 - scripts/lib/build-gate.sh - FILE: scripts/lib/build-gate.sh
-- scripts/lib/hybrid-ai-env.sh - FILE: scripts/lib/hybrid-ai-env.sh
+- scripts/lib/haven-env.sh - FILE: scripts/lib/haven-env.sh
+- scripts/lib/hybrid-ai-env.sh - Transitional import for installed legacy callers; no independent defaults.
 - scripts/lib/read-probe.sh - FILE: scripts/lib/read-probe.sh
 - scripts/lib/repository-identity.sh - Source-only repository identity selection. Process environment only: never
 - scripts/lib/tailscale-resolve.sh - FILE: scripts/lib/tailscale-resolve.sh

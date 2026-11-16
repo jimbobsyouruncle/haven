@@ -12,7 +12,7 @@
 #   * DELETION is confined to the quarantine root itself, and only for
 #     <YYYYMMDD> run directories older than the retention window. Nothing in
 #     the live conversations tree is ever deleted, and nothing inside the
-#     window is ever deleted. Setting HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS
+#     window is ever deleted. Setting HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS
 #     empty or 0 opts out and restores the never-delete behaviour exactly.
 #
 #   A directory is moved only when ALL of these hold:
@@ -27,7 +27,7 @@
 #        the quarantine lives on the same filesystem.
 #
 #   A MISSING lease keeps the directory, and that fail-safe stays the default.
-#   HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=1 opts in to treating an absent lease like
+#   HAVEN_PRUNE_ALLOW_LEASE_LESS=1 opts in to treating an absent lease like
 #   an expired one: the directory still has to pass every other guard, so it
 #   moves only once its own mtime is past the age limit. Inside the age limit it
 #   is refused with reason lease-less-recent.
@@ -38,30 +38,30 @@
 #
 # CONFIGURATION (all overridable by environment; seconds are used internally so
 # an offline harness can drive cases quickly):
-#   HYBRID_AI_PRUNE_AGE_SECONDS         default 604800 (7 days)
+#   HAVEN_PRUNE_AGE_SECONDS         default 604800 (7 days)
 #       A directory whose mtime is NEWER than this many seconds is kept.
-#   HYBRID_AI_PRUNE_GRACE_SECONDS       default 86400 (24 hours)
+#   HAVEN_PRUNE_GRACE_SECONDS       default 86400 (24 hours)
 #       An expired lease is kept until it has been expired this long.
-#   HYBRID_AI_PRUNE_MAX_MOVES           default 20
+#   HAVEN_PRUNE_MAX_MOVES           default 20
 #       Upper bound on moves for one run. Further eligible directories are
 #       refused with reason=cap-reached.
-#   HYBRID_AI_PRUNE_QUARANTINE_BASE     optional
+#   HAVEN_PRUNE_QUARANTINE_BASE     optional
 #       Quarantine root override. Default: the sibling directory
-#       <dirname HYBRID_AI_DATA_DIR>/hybrid-ai-conversation-quarantine.
+#       <dirname HAVEN_DATA_DIR>/hybrid-ai-conversation-quarantine.
 #       It is still checked against every tree the backup captures.
-#   HYBRID_AI_PRUNE_ALLOW_LEASE_LESS    default empty (OFF)
+#   HAVEN_PRUNE_ALLOW_LEASE_LESS    default empty (OFF)
 #       Set to 1/true/yes to let a directory with NO owner_lease.json be swept
-#       once its own mtime is older than HYBRID_AI_PRUNE_AGE_SECONDS. Every
+#       once its own mtime is older than HAVEN_PRUNE_AGE_SECONDS. Every
 #       other guard still applies. Unset or any other value keeps today's
 #       fail-safe: a missing lease is refused with reason lease-missing.
-#   HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS  default 90
+#   HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS  default 90
 #       Days a <YYYYMMDD> run directory may stay in the quarantine root before
 #       the sweep deletes it. Deletion runs only after the backup assertion
 #       passes, is path-confined to the quarantine root, and is logged per
 #       directory. An explicitly EMPTY or 0 value opts out and never deletes
 #       anything, as before.
 #
-#   All host paths come from scripts/lib/hybrid-ai-env.sh, the one resolver.
+#   All host paths come from scripts/lib/haven-env.sh, the one resolver.
 #   No default in that file is changed here.
 #
 # LEASE SCHEMA (observed, not assumed):
@@ -82,7 +82,7 @@
 #   An ISO-8601 string without a zone is read as UTC.
 #
 # WHY THE BACKUP LIST MATTERS:
-#   backup/backup.sh captures HYBRID_AI_DATA_DIR, the app tree
+#   backup/backup.sh captures HAVEN_DATA_DIR, the app tree
 #   (openhands/, hermes/, scripts/, status/, compose files), the work tree
 #   through its staging directory, hermes_data, webui_data and the .openhands
 #   state. A quarantine inside any of those would be swept into the next
@@ -99,8 +99,8 @@ set -u
 set -o pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
 
 # --- Output helpers (match install.sh / backup.sh) --------------------------
 if [[ -t 1 ]]; then
@@ -113,14 +113,14 @@ warn() { printf '%s[ ! ]%s %s\n' "$C_WRN" "$C_RST" "$*" >&2; }
 refuse() { printf '%s[ X ]%s %s\n' "$C_ERR" "$C_RST" "$*" >&2; }
 
 # --- Configuration ---------------------------------------------------------
-PRUNE_AGE_SECONDS="${HYBRID_AI_PRUNE_AGE_SECONDS:-604800}"
-PRUNE_GRACE_SECONDS="${HYBRID_AI_PRUNE_GRACE_SECONDS:-86400}"
-PRUNE_MAX_MOVES="${HYBRID_AI_PRUNE_MAX_MOVES:-20}"
-PRUNE_QUARANTINE_BASE="${HYBRID_AI_PRUNE_QUARANTINE_BASE:-}"
-PRUNE_ALLOW_LEASE_LESS="${HYBRID_AI_PRUNE_ALLOW_LEASE_LESS:-}"
+PRUNE_AGE_SECONDS="${HAVEN_PRUNE_AGE_SECONDS:-604800}"
+PRUNE_GRACE_SECONDS="${HAVEN_PRUNE_GRACE_SECONDS:-86400}"
+PRUNE_MAX_MOVES="${HAVEN_PRUNE_MAX_MOVES:-20}"
+PRUNE_QUARANTINE_BASE="${HAVEN_PRUNE_QUARANTINE_BASE:-}"
+PRUNE_ALLOW_LEASE_LESS="${HAVEN_PRUNE_ALLOW_LEASE_LESS:-}"
 # -90, not :-90: an explicitly EMPTY value opts out of retention; an unset one
 # keeps the default window ON.
-PRUNE_QUARANTINE_RETENTION_DAYS="${HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS-90}"
+PRUNE_QUARANTINE_RETENTION_DAYS="${HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS-90}"
 
 EXPIRY_KEYS="expiry expires_at expires expire_at expiresAt expiry_epoch expires_at_epoch"
 
@@ -227,11 +227,11 @@ fi
 if [[ -n "$PRUNE_QUARANTINE_BASE" ]]; then
   QUARANTINE_BASE_RAW="$PRUNE_QUARANTINE_BASE"
 else
-  if [[ -z "${HYBRID_AI_DATA_DIR:-}" ]]; then
-    warn "quarantine: HYBRID_AI_DATA_DIR is empty, so the default quarantine root cannot be derived; refusing to sweep."
+  if [[ -z "${HAVEN_DATA_DIR:-}" ]]; then
+    warn "quarantine: HAVEN_DATA_DIR is empty, so the default quarantine root cannot be derived; refusing to sweep."
     finish
   fi
-  QUARANTINE_BASE_RAW="$(dirname -- "${HYBRID_AI_DATA_DIR%/}")/hybrid-ai-conversation-quarantine"
+  QUARANTINE_BASE_RAW="$(dirname -- "${HAVEN_DATA_DIR%/}")/hybrid-ai-conversation-quarantine"
 fi
 
 QUARANTINE_BASE="$(canon "$QUARANTINE_BASE_RAW")" || QUARANTINE_BASE=""
@@ -247,8 +247,8 @@ fi
 # --- Backup assertion: the quarantine must never enter a captured tree ------
 backup_assert_ok() {
   local name val cval
-  for name in HYBRID_AI_DATA_DIR HYBRID_AI_APP_DIR HYBRID_AI_WORK_DIR \
-              HYBRID_AI_HERMES_DATA_DIR HYBRID_AI_WEBUI_DATA_DIR OPENHANDS_WORKSPACE; do
+  for name in HAVEN_DATA_DIR HAVEN_APP_DIR HAVEN_WORK_DIR \
+              HAVEN_HERMES_DATA_DIR HAVEN_WEBUI_DATA_DIR OPENHANDS_WORKSPACE; do
     val="${!name:-}"
     if [[ -z "$val" ]]; then
       warn "backup-assertion: ${name} is unset or empty; refusing to move anything."

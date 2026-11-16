@@ -55,7 +55,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run ShellCheck
-        # The shared path helper (scripts/lib/hybrid-ai-env.sh) is sourced by
+        # The shared path helper (scripts/lib/haven-env.sh) is sourced by
         # many scripts and must be followed and analysed, not skipped.
         # check_together is the action's documented remedy for SC1090/SC1091:
         # it runs shellcheck over all files in ONE invocation, so the sourced
@@ -216,7 +216,7 @@ jobs:
           fi
 
   # Proves the Hermes image runs as a dedicated non-root uid. It builds the
-  # image with HYBRID_AI_UID=10001, runs it as 10001 with an empty data dir,
+  # image with HAVEN_UID=10001, runs it as 10001 with an empty data dir,
   # no capabilities and no secrets, and checks the WebUI and liveness. The
   # runner is arm64 (ubuntu-24.04-arm) because the supported target is a
   # Raspberry Pi (aarch64).
@@ -236,8 +236,8 @@ jobs:
       - name: Build the Hermes image as uid 10001
         run: |
           docker build \
-            --build-arg HYBRID_AI_UID=10001 \
-            --build-arg HYBRID_AI_GID=10001 \
+            --build-arg HAVEN_UID=10001 \
+            --build-arg HAVEN_GID=10001 \
             -t hermes-nonroot-smoke hermes
 
       - name: Run as 10001 and check uid, WebUI and liveness

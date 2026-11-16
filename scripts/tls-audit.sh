@@ -37,13 +37,13 @@ usage() {
 Usage: tls-audit.sh [options]
 
   --cert-root PATH   Caddy managed certificate root
-                     (default $HYBRID_AI_DATA_DIR/caddy/caddy/certificates,
+                     (default $HAVEN_DATA_DIR/caddy/caddy/certificates,
                       else <repo>/data/caddy/caddy/certificates)
   --log-dir DIR      directory for the log and state file
-                     (default $HYBRID_AI_LOG_DIR, else $HYBRID_AI_DATA_DIR/logs)
+                     (default $HAVEN_LOG_DIR, else $HAVEN_DATA_DIR/logs)
   --audit-log PATH   append-only audit log (default <log dir>/tls-audit.log)
   --state-file PATH  serial state file (default <log dir>/tls-audit.state)
-  --env-file PATH    env file to read HYBRID_AI_DATA_DIR and HYBRID_AI_LOG_DIR
+  --env-file PATH    env file to read HAVEN_DATA_DIR and HAVEN_LOG_DIR
                      from (default <repo>/.env; never sourced)
   --renewal-window N days-to-expiry that counts as "renewal overdue" (default 30)
   -h, --help         this text
@@ -75,18 +75,18 @@ command -v openssl >/dev/null 2>&1 || die_usage "required tool not found: openss
 # still wins over the ambient environment (the helper reads environment first,
 # then the file). The certificate root is defined ONCE, in the helper, so a
 # future relocation of Caddy's data touches one line.
-if [[ -n "$ENV_FILE" && -z "${HYBRID_AI_ENV_FILE:-}" ]]; then
-  export HYBRID_AI_ENV_FILE="$ENV_FILE"
+if [[ -n "$ENV_FILE" && -z "${HAVEN_ENV_FILE:-}" ]]; then
+  export HAVEN_ENV_FILE="$ENV_FILE"
 fi
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
 
 # Consumers here read stack settings (ACME_CA and friends), so the env file to
 # read is the STACK file the helper resolved.
-[[ -n "$ENV_FILE" ]] || ENV_FILE="$HYBRID_AI_STACK_ENV_FILE"
+[[ -n "$ENV_FILE" ]] || ENV_FILE="$HAVEN_STACK_ENV_FILE"
 
-[[ -n "$CERT_ROOT" ]] || CERT_ROOT="$HYBRID_AI_CADDY_CERT_ROOT"
-[[ -n "$LOG_DIR" ]] || LOG_DIR="$HYBRID_AI_LOG_DIR"
+[[ -n "$CERT_ROOT" ]] || CERT_ROOT="$HAVEN_CADDY_CERT_ROOT"
+[[ -n "$LOG_DIR" ]] || LOG_DIR="$HAVEN_LOG_DIR"
 [[ -n "$AUDIT_LOG" ]] || AUDIT_LOG="${LOG_DIR}/tls-audit.log"
 [[ -n "$STATE_FILE" ]] || STATE_FILE="${LOG_DIR}/tls-audit.state"
 

@@ -137,7 +137,7 @@ curl -s "$( [ "$(grep -c '^TLS_ENABLED=yes' .env 2>/dev/null)" = 1 ] \
 | The `hybrid-ai-proxy` container reports unhealthy | It should not. The healthcheck probes loopback on :80 with the address literal as `Host`, which matches no site in either render. It asserts one thing: Caddy answered. `wget` exit codes decide that, and they differ by build: GNU `wget` without `-f` exits 0 even on a 404, while BusyBox `wget` (the Alpine image) exits non-zero on any 4xx/5xx. So on the image we ship, a healthcheck pass means Caddy returned a 2xx for the unmatched `Host`; a 4xx would fail it. `scripts/test-b77-port80-dynamic.sh` records Caddy's real answer in CI, in both renders | `docker compose logs proxy`, then `docker compose exec proxy wget -S -qO /dev/null http://127.0.0.1:80/status/healthz` |
 | Page loads, containers show "not found" | Socket group mismatch | Compare `DOCKER_GID` in `.env` with `stat -c '%g' /var/run/docker.sock`, then `./install.sh` |
 | Everything on the page fails | Status container cannot reach the others | `docker network inspect hybrid-ai` |
-| The Backups tile says "no successful backup recorded" although backups succeed | The status container is reading a different file than the backup units write. The reader and the writer must name ONE resolved path: `scripts/lib/hybrid-ai-env.sh` resolves `BACKUP_LOG` from the mode (system mode: the units' `LogsDirectory=` at `/var/log/hybrid-ai-backup/backup.log`; user mode: `$HYBRID_AI_LOG_DIR/backup.log`), `install.sh` writes that resolved value into the stack env file, and the status mount is `${BACKUP_LOG:?...}` | Confirm the value the helper resolves matches what compose mounted, then re-run `./install.sh` so the stack env file carries it. See [Relocated paths](#relocated-paths-split-layout) |
+| The Backups tile says "no successful backup recorded" although backups succeed | The status container is reading a different file than the backup units write. The reader and the writer must name ONE resolved path: `scripts/lib/haven-env.sh` resolves `BACKUP_LOG` from the mode (system mode: the units' `LogsDirectory=` at `/var/log/hybrid-ai-backup/backup.log`; user mode: `$HAVEN_LOG_DIR/backup.log`), `install.sh` writes that resolved value into the stack env file, and the status mount is `${BACKUP_LOG:?...}` | Confirm the value the helper resolves matches what compose mounted, then re-run `./install.sh` so the stack env file carries it. See [Relocated paths](#relocated-paths-split-layout) |
 
 Full detail in [`status/README.md`](../status/README.md). The status page is optional — chat works without it, which is why `doctor.sh` reports its absence as a warning rather than a failure.
 
@@ -148,8 +148,8 @@ their `LogsDirectory=` file, `/var/log/hybrid-ai-backup/backup.log`. The status
 container reads whatever single file is bind-mounted at `/data/backup.log`.
 Both sides must be the same resolved path:
 
-1. `scripts/lib/hybrid-ai-env.sh` resolves `BACKUP_LOG` once from
-   `HYBRID_AI_BACKUP_MODE` (a set value still wins).
+1. `scripts/lib/haven-env.sh` resolves `BACKUP_LOG` once from
+   `HAVEN_BACKUP_MODE` (a set value still wins).
 2. `install.sh` STEP 8 writes `BACKUP_LOG=<resolved>` into the stack env file.
 3. `docker-compose.yml` mounts `${BACKUP_LOG:?...}` read-only into the status
    service. An unset value refuses the parse rather than mounting a path nothing
@@ -158,12 +158,12 @@ Both sides must be the same resolved path:
 Check what was resolved and what compose renders:
 
 ```bash
-bash -c 'source scripts/lib/hybrid-ai-env.sh; printf "%s\n" "$BACKUP_LOG"'
+bash -c 'source scripts/lib/haven-env.sh; printf "%s\n" "$BACKUP_LOG"'
 docker compose --env-file .env -f docker-compose.yml config | grep -A2 'backup.log'
 ```
 
 If the first command prints the units' log but the second shows an old
-`$HYBRID_AI_LOG_DIR/backup.log`, the stack env file predates the fix: re-run
+`$HAVEN_LOG_DIR/backup.log`, the stack env file predates the fix: re-run
 `./install.sh`. The status tile names which of the three faults it hit: `no
 backup log found` (the mounted path does not exist), `backup log is empty` (the
 file exists with no lines), or `backup log not readable — permission denied for
@@ -255,7 +255,7 @@ sudo journalctl -u 'hybrid-ai-post-deploy-verify-*' --since -2h
 ```
 
 Each run also writes the same verdict as JSON, one file per deploy sha, at
-`${HYBRID_AI_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json` (default
+`${HAVEN_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json` (default
 `/var/lib/hybrid-ai/hermes_data/deploy-verdicts/`). The container sees that
 directory at `/root/.hermes/deploy-verdicts/`, so this is how a check inside the
 container reads the verdict of the deploy that put it there. The host log above
@@ -358,12 +358,12 @@ The unit's script, `scripts/deploy-instance.sh` (run as root by
 | `2` | Missing argument, or not a 40-lowercase-hex commit | Pass the full 40-character lowercase hex commit |
 | `3` | Another deploy holds the lock | Wait for the running deploy to finish, then retry |
 | `4` | The origin remote carries a credential (userinfo in its URL) | Remove the credential from the origin URL; the deploy fetches only from the public https remote |
-| `5` | The public remote is unsafe (not https, or carries userinfo) | Point `HYBRID_AI_DEPLOY_PUBLIC_REMOTE` at the public https remote, by name only |
+| `5` | The public remote is unsafe (not https, or carries userinfo) | Point `HAVEN_DEPLOY_PUBLIC_REMOTE` at the public https remote, by name only |
 | `6` | Fetching main from the public remote failed | Check network and the remote URL, then retry |
 | `7` | The commit is not an ancestor of `origin/main` | Deploy a commit that is on `main` |
 | `8` | `HEAD` is not the commit after `git reset --hard` | Investigate the checkout; the reset did not land on the validated revision |
 
-Every run's output is written to `$HYBRID_AI_LOG_DIR/deploy/<sha>.log` (mode
+Every run's output is written to `$HAVEN_LOG_DIR/deploy/<sha>.log` (mode
 `0640`, group `hybrid-ai-deploy`). The deploy account reads its own run log there
 without any systemd-journal access. Full detail is in
 [`deploy/README.md`](../deploy/README.md).
@@ -534,7 +534,7 @@ control fired.
 | `4` | Legacy root exists, or `/opt/haven` is conflicting, untrusted, symlinked or has an unexpected origin | Use normal authorized deployment for legacy migration; review conflicting state without merging or deleting directories |
 | `5` | polkitd is absent, or its version predates `.rules` (JavaScript) support | Install or upgrade polkit; the bootstrap never edits polkit's own config |
 | `6` | A migration move is cross-device, or a move target already exists and is not empty (refused BEFORE any move) | Put the data on one filesystem, or empty the target, then re-run |
-| `7` | `install.sh` failed | Read the install log under `HYBRID_AI_LOG_DIR`; the cut-off steps did not run |
+| `7` | `install.sh` failed | Read the install log under `HAVEN_LOG_DIR`; the cut-off steps did not run |
 | `8` | `doctor.sh` reported failures (exit `2` or any code other than `0`/`1`) | Fix the reported problem, then re-run the bootstrap. Warnings (`1`) do not stop the run |
 
 In migration mode the three cut-off steps (disable the login account's timers,
@@ -580,7 +580,7 @@ check the Hermes container logs.
 ### `OPENHANDS_WORKSPACE is ... a protected directory` after bootstrap
 
 `scripts/setup-agent-workspace.sh` and `scripts/sync-agent-repos.sh` refuse a
-workspace or repo tree that is inside `HYBRID_AI_DATA_DIR`. The bootstrap now
+workspace or repo tree that is inside `HAVEN_DATA_DIR`. The bootstrap now
 renders these two paths as SIBLINGS of the data dir, `/var/lib/hybrid-ai-agent`
 and `/var/lib/hybrid-ai-repos`, never as `/var/lib/hybrid-ai/agent-*`. A run
 against a tree that an earlier, wrong bootstrap left under `/var/lib/hybrid-ai/`
@@ -594,18 +594,18 @@ hand, empty one, then re-run. See
 
 ## Relocated paths (split layout)
 
-Every host path resolves through `scripts/lib/hybrid-ai-env.sh`. If you set
-`HYBRID_AI_APP_DIR`, `HYBRID_AI_ENV_FILE`, `HYBRID_AI_STACK_ENV_FILE`,
-`HYBRID_AI_DATA_DIR`, `HYBRID_AI_LOG_DIR` or `HYBRID_AI_WORK_DIR` (in the
+Every host path resolves through `scripts/lib/haven-env.sh`. If you set
+`HAVEN_APP_DIR`, `HAVEN_ENV_FILE`, `HAVEN_STACK_ENV_FILE`,
+`HAVEN_DATA_DIR`, `HAVEN_LOG_DIR` or `HAVEN_WORK_DIR` (in the
 environment or the env file), a mistake shows up as one of these:
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | `hybrid-ai-env: ... must be an absolute path` (or whitespace / `:` / `,` / `/`) | A relocated path is relative or contains a forbidden character | Use a plain absolute path. The helper refuses the value rather than guessing |
-| `hybrid-ai-env: ... exists and cannot be read. refusing to fall back to the built-in defaults` | `HYBRID_AI_ENV_FILE` or `HYBRID_AI_STACK_ENV_FILE` names a file that exists but this user cannot read | Fix the file's permissions, or run as a user that can read it. The helper fails closed rather than silently using the wrong paths |
+| `hybrid-ai-env: ... exists and cannot be read. refusing to fall back to the built-in defaults` | `HAVEN_ENV_FILE` or `HAVEN_STACK_ENV_FILE` names a file that exists but this user cannot read | Fix the file's permissions, or run as a user that can read it. The helper fails closed rather than silently using the wrong paths |
 | `doctor.sh` prints `<NAME> = <path>` then warns it does not exist | The setting is named but the directory was never created | Create the directory, or unset the setting to fall back to the default |
-| Compose cannot find the env file | The stack file moved, or `HYBRID_AI_STACK_ENV_FILE` is unset while compose reads a different file | Point `HYBRID_AI_STACK_ENV_FILE` at the file compose and the installer share. With it unset it defaults to `HYBRID_AI_ENV_FILE` |
-| `HYBRID_AI_BACKUP_CRED_DIR is inside ...` | Backup credentials were placed inside the app, data or work tree | Move `HYBRID_AI_BACKUP_CRED_DIR` (in user mode, `BACKUP_CONF_DIR`) outside every relocated tree |
+| Compose cannot find the env file | The stack file moved, or `HAVEN_STACK_ENV_FILE` is unset while compose reads a different file | Point `HAVEN_STACK_ENV_FILE` at the file compose and the installer share. With it unset it defaults to `HAVEN_ENV_FILE` |
+| `HAVEN_BACKUP_CRED_DIR is inside ...` | Backup credentials were placed inside the app, data or work tree | Move `HAVEN_BACKUP_CRED_DIR` (in user mode, `BACKUP_CONF_DIR`) outside every relocated tree |
 | `OPENHANDS_WORKSPACE is ... a protected directory` | The workspace is, is inside, or contains a relocated tree | Use a sibling path outside every tree that holds credentials or state |
 
 `./doctor.sh` is the quick check: it prints each resolved path (never a value from the env
@@ -613,68 +613,68 @@ file) and warns about any set path that does not exist.
 
 ### The layout fallback on a bootstrapped host
 
-When `HYBRID_AI_ENV_FILE` is unset and `$HYBRID_AI_APP_DIR/.env` does not
+When `HAVEN_ENV_FILE` is unset and `$HAVEN_APP_DIR/.env` does not
 exist, the helper falls back to the host LAYOUT file
 `/etc/hybrid-ai/hybrid-ai.env` if that file exists. This is what makes a bare
 `sudo /opt/haven/doctor.sh --no-cloud` report the paths the units actually
-use: the layout file is read, so `HYBRID_AI_BACKUP_MODE=system` takes effect,
+use: the layout file is read, so `HAVEN_BACKUP_MODE=system` takes effect,
 `BACKUP_LOG` resolves to `/var/log/hybrid-ai-backup/backup.log`, and
-`HYBRID_AI_BACKUP_CRED_DIR` resolves to `/etc/credstore/hybrid-ai-backup`.
+`HAVEN_BACKUP_CRED_DIR` resolves to `/etc/credstore/hybrid-ai-backup`.
 
 The fallback location is a named environment variable,
-`HYBRID_AI_ENV_FILE_FALLBACK` (default `/etc/hybrid-ai/hybrid-ai.env`). An
-explicit `HYBRID_AI_ENV_FILE` always wins and the fallback is then never
-consulted; an existing `$HYBRID_AI_APP_DIR/.env` is never replaced. Only the
+`HAVEN_ENV_FILE_FALLBACK` (default `/etc/hybrid-ai/hybrid-ai.env`). An
+explicit `HAVEN_ENV_FILE` always wins and the fallback is then never
+consulted; an existing `$HAVEN_APP_DIR/.env` is never replaced. Only the
 `0644` layout file is probed -- never the `0600` secrets file.
 
 Bare invocations on a bootstrapped host need root or an explicit
-`HYBRID_AI_ENV_FILE`. As root, `sudo ./doctor.sh --no-cloud` reads the layout
+`HAVEN_ENV_FILE`. As root, `sudo ./doctor.sh --no-cloud` reads the layout
 file and reports the system-mode paths. As a non-root account that cannot read
 the layout file, the helper fails closed with the setting name and path (no
 value) instead of silently using user-mode defaults. Pass the layout file
 explicitly when you are not root:
 
 ```bash
-HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env ./doctor.sh --no-cloud
+HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env ./doctor.sh --no-cloud
 ```
 
 
 ### The layout file and the stack file
 
-Two files matter here. `HYBRID_AI_ENV_FILE` is the LAYOUT file: it holds path
-and identity settings only, never a secret. `HYBRID_AI_STACK_ENV_FILE` is the
+Two files matter here. `HAVEN_ENV_FILE` is the LAYOUT file: it holds path
+and identity settings only, never a secret. `HAVEN_STACK_ENV_FILE` is the
 STACK file: the one handed to `docker compose --env-file`, alongside the three
 compose files (`docker-compose.yml`, `openhands/docker-compose.openhands.yml`
 and `hermes/docker-compose.hermes.yml`); `install.sh` writes it, and it holds the
 secrets. On a bootstrapped host the layout file
 is `/etc/hybrid-ai/hybrid-ai.env` and the stack file is
 `/etc/hybrid-ai/stack.env`; they are separate files, and `install.sh` writes ONLY
-the stack file. When `HYBRID_AI_STACK_ENV_FILE` is unset the two resolve to the
+the stack file. When `HAVEN_STACK_ENV_FILE` is unset the two resolve to the
 same path, which is today's single-file behaviour.
 
 For the settings that decide host paths and the stack's identity
-(`HYBRID_AI_UID`, `HYBRID_AI_GID`, `OPENHANDS_WORKSPACE`, `AGENT_REPOS_DIR`,
+(`HAVEN_UID`, `HAVEN_GID`, `OPENHANDS_WORKSPACE`, `AGENT_REPOS_DIR`,
 `OPENHANDS_STATE_DIR`), the LAYOUT file wins. `install.sh` reads the stack file
 for runtime config and secrets, then restores those settings from the layout
 file before it writes the new stack file. This matters after a migration: the
 legacy `.env` becomes the stack file and still carries the OLD values (an empty
-`HYBRID_AI_UID=`, the login account's workspace paths). Without the restore, the
+`HAVEN_UID=`, the login account's workspace paths). Without the restore, the
 empty id would make the whole stack run as uid 0 and the old paths would point
 the containers at trees the migration had already moved away.
 
 If the whole stack unexpectedly runs as root (`docker compose --env-file .env -f
 docker-compose.yml -f openhands/docker-compose.openhands.yml -f
 hermes/docker-compose.hermes.yml ps` shows `root` for the Hermes or status
-container), check `HYBRID_AI_UID` in the layout
+container), check `HAVEN_UID` in the layout
 file, then confirm the stack file's copy after the next `install.sh` run matches
 it.
 
-### `HYBRID_AI_STACK_ENV_FILE` names the root-only secrets file on a deploy
+### `HAVEN_STACK_ENV_FILE` names the root-only secrets file on a deploy
 
 Symptom: a deploy fails and the run log shows
 
 ```
-hybrid-ai-env: HYBRID_AI_STACK_ENV_FILE is set to /etc/hybrid-ai/stack.env, but that file exists and cannot be read.
+hybrid-ai-env: HAVEN_STACK_ENV_FILE is set to /etc/hybrid-ai/stack.env, but that file exists and cannot be read.
 hybrid-ai-env: refusing to fall back to the built-in defaults.
 ```
 
@@ -685,17 +685,17 @@ so the deploy stops before the unit starts.
 
 Cause: a deploy-side caller exported or consumed the root-only secrets path
 (`/etc/hybrid-ai/stack.env`) instead of the `0644` LAYOUT file
-(`/etc/hybrid-ai/hybrid-ai.env`). Because `HYBRID_AI_STACK_ENV_FILE` is read from
+(`/etc/hybrid-ai/hybrid-ai.env`). Because `HAVEN_STACK_ENV_FILE` is read from
 the environment before the layout file, an inherited value pointed the helper
 back at the file this account is deliberately not allowed to read.
 
-Fix: the forced command now pins `HYBRID_AI_STACK_ENV_FILE` at the layout file
+Fix: the forced command now pins `HAVEN_STACK_ENV_FILE` at the layout file
 unconditionally, so it reads only paths it is allowed to read and never the
 `0600` secrets file. Check that the deploy caller passed
-`HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env` (or nothing, in which case the
+`HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env` (or nothing, in which case the
 helper falls back to the default layout file `/etc/hybrid-ai/hybrid-ai.env` when
-`$HYBRID_AI_APP_DIR/.env` does not exist) and did not export
-`HYBRID_AI_STACK_ENV_FILE`. Do NOT grant the deploy account read access to
+`$HAVEN_APP_DIR/.env` does not exist) and did not export
+`HAVEN_STACK_ENV_FILE`. Do NOT grant the deploy account read access to
 `stack.env` -- not by mode, group or ACL. The fix belongs in the forced command,
 not in the secrets file's permissions.
 
@@ -819,7 +819,7 @@ docker compose --env-file .env \
 
 **Permission errors after switching Hermes to a non-root uid**
 
-The Hermes image now runs as a dedicated non-root uid when `HYBRID_AI_UID` is
+The Hermes image now runs as a dedicated non-root uid when `HAVEN_UID` is
 set in `.env`. If the files under `hermes_data` were still created by root, the
 non-root process cannot read or write them. You see this as `permission denied`
 in the Hermes logs, or as a failed start.
@@ -829,12 +829,12 @@ their names. `./doctor.sh` warns about it too. The fix is to give the uid
 ownership of the data directory:
 
 ```bash
-# Set to the same value as HYBRID_AI_UID in .env.
+# Set to the same value as HAVEN_UID in .env.
 sudo chown -R 10001:10001 hermes_data
 ./install.sh
 ```
 
-To undo the switch, comment out `HYBRID_AI_UID` and `HYBRID_AI_GID` in `.env`
+To undo the switch, comment out `HAVEN_UID` and `HAVEN_GID` in `.env`
 (leave them unset). Hermes then runs as uid 0 again, exactly as before the
 migration.
 
@@ -861,7 +861,7 @@ The `auth` container is holding a hash it cannot parse, so it treats every
 password as wrong and answers 401. Compose reads the shell environment ahead of
 `--env-file`, and `install.sh` loads the stack env file into its own shell, so an
 earlier build could hand the container the Compose-escaped form of
-`HYBRID_AI_AUTH_HASH` (63 bytes for a 60-byte bcrypt hash) instead of the value
+`HAVEN_AUTH_HASH` (63 bytes for a 60-byte bcrypt hash) instead of the value
 the file carries. `install.sh` now clears that pair from its shell before
 `docker compose up`, so a current deploy cannot do this.
 
@@ -870,7 +870,7 @@ the container sees with the byte count in the file. The file value is escaped
 (`$$` for each `$`); the container should see the shorter, un-escaped hash:
 
 ```bash
-docker exec hybrid-ai-auth printenv HYBRID_AI_AUTH_HASH | wc -c
+docker exec hybrid-ai-auth printenv HAVEN_AUTH_HASH | wc -c
 ```
 
 The next deploy of a tree with the fix re-delivers the value straight from the
@@ -1977,9 +1977,9 @@ summary: scanned=N kept-live=N kept-recent=N moved=N moved-lease-less=N retentio
 |---|---|
 | `scanned` | Directories seen at the top level of the conversations root |
 | `kept-live` | Kept: lease still valid, inside its grace period, or a running container mounts it |
-| `kept-recent` | Kept: mtime newer than `HYBRID_AI_PRUNE_AGE_SECONDS` |
+| `kept-recent` | Kept: mtime newer than `HAVEN_PRUNE_AGE_SECONDS` |
 | `moved` | Moved into the quarantine. Includes the lease-less moves counted below |
-| `moved-lease-less` | Subset of `moved`: directories that had no lease and moved because `HYBRID_AI_PRUNE_ALLOW_LEASE_LESS` is ON |
+| `moved-lease-less` | Subset of `moved`: directories that had no lease and moved because `HAVEN_PRUNE_ALLOW_LEASE_LESS` is ON |
 | `retention-deleted` | Quarantine run directories deleted past the retention window. `0` when retention is opted out |
 | `refused` | Refused, with the reasons listed in `refusals` |
 | `quarantine` | The per-run directory, `<root>/<UTC YYYYMMDD>`; `none` when the run refused to sweep |
@@ -1998,12 +1998,12 @@ Read the common ones this way:
 
 | What you see | What it means | What to do |
 |---|---|---|
-| `moved=0` and every entry `kept-live` | The leases are still valid, so the sweep is working as designed | Wait. Check again once the app has been idle for `HYBRID_AI_PRUNE_GRACE_SECONDS` |
+| `moved=0` and every entry `kept-live` | The leases are still valid, so the sweep is working as designed | Wait. Check again once the app has been idle for `HAVEN_PRUNE_GRACE_SECONDS` |
 | `refused=3 lease-missing`, `moved=0` | The directories carry no `owner_lease.json`, so the fail-safe refuses them on every run and nothing moves | See [the lease-less state](#quarantine-retention-and-the-lease-less-state) |
-| `refused=... lease-less-recent` | The opt-in is ON, but those lease-less directories are newer than `HYBRID_AI_PRUNE_AGE_SECONDS` | Nothing to do; they become eligible once their mtime ages out |
-| `refused=... cap-reached` | More eligible directories than one run may move | Raise `HYBRID_AI_PRUNE_MAX_MOVES`, or let the next daily run continue |
+| `refused=... lease-less-recent` | The opt-in is ON, but those lease-less directories are newer than `HAVEN_PRUNE_AGE_SECONDS` | Nothing to do; they become eligible once their mtime ages out |
+| `refused=... cap-reached` | More eligible directories than one run may move | Raise `HAVEN_PRUNE_MAX_MOVES`, or let the next daily run continue |
 | `quarantine=none`, `moved=0` | The run refused to sweep: a path would not canonicalise, the root was missing, or the quarantine root was inside a backup-captured tree | Read the `[ ! ]` warning line above the summary; it names the setting |
-| `cross-device` | The quarantine root is on another filesystem | Point `HYBRID_AI_PRUNE_QUARANTINE_BASE` at the same filesystem as the conversations tree |
+| `cross-device` | The quarantine root is on another filesystem | Point `HAVEN_PRUNE_QUARANTINE_BASE` at the same filesystem as the conversations tree |
 | A `container-guard=unavailable` line | No usable `docker`, so only the lease and age guards decided | Not a failure; install or start Docker to enable the container check |
 
 A degraded run (missing conversations root, missing `python3`, no Docker) still
@@ -2011,11 +2011,11 @@ logs and exits 0. The units call no `systemctl`, so the script runs by hand too.
 
 ### Inspect and restore the quarantine
 
-The default root is `$(dirname "$HYBRID_AI_DATA_DIR")/hybrid-ai-conversation-quarantine`,
+The default root is `$(dirname "$HAVEN_DATA_DIR")/hybrid-ai-conversation-quarantine`,
 created mode 0750 and root-owned, one subdirectory per UTC run date:
 
 ```bash
-Q="$(dirname "$(grep -E '^HYBRID_AI_DATA_DIR=' /etc/hybrid-ai/hybrid-ai.env | cut -d= -f2-)")/hybrid-ai-conversation-quarantine"
+Q="$(dirname "$(grep -E '^HAVEN_DATA_DIR=' /etc/hybrid-ai/hybrid-ai.env | cut -d= -f2-)")/hybrid-ai-conversation-quarantine"
 sudo ls -la "$Q"                 # one directory per run date
 sudo du -sh "$Q"/*               # space held per run
 ```
@@ -2036,7 +2036,7 @@ Two things bound the quarantine and make a stuck sweep visible.
 
 **Retention.** The quarantine root is not unbounded. Every `<YYYYMMDD>` directory
 directly inside it is deleted once that directory's own mtime is older than
-`HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS` days (default `90`). Deletion runs
+`HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS` days (default `90`). Deletion runs
 only after the backup assertion passes, is confined to the quarantine root, never
 follows a symlink, and is logged per directory:
 
@@ -2067,11 +2067,11 @@ The check is warning-only, so it raises the exit code to **1**, never 2.
 
 To sweep them, opt in deliberately:
 
-1. Set `HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=1` in `.env` and re-run `./install.sh`.
+1. Set `HAVEN_PRUNE_ALLOW_LEASE_LESS=1` in `.env` and re-run `./install.sh`.
 2. Run the sweep: `sudo systemctl start hybrid-ai-prune`, or
    `sudo /opt/haven/scripts/prune-conversations.sh`.
 3. Confirm `moved-lease-less=` in the summary. A directory still inside
-   `HYBRID_AI_PRUNE_AGE_SECONDS` is refused with reason `lease-less-recent`.
+   `HAVEN_PRUNE_AGE_SECONDS` is refused with reason `lease-less-recent`.
 
 Only the lease verdict changes: a lease-less directory still has to pass the
 symlink, path-escape, age, container, cap, destination, filesystem and backup
@@ -2085,15 +2085,15 @@ Set these in `.env` (or the layout env file on a bootstrapped host) and re-run
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `HYBRID_AI_PRUNE_AGE_SECONDS` | `604800` | Seconds. A directory with a newer mtime is kept |
-| `HYBRID_AI_PRUNE_GRACE_SECONDS` | `86400` | Seconds. An expired lease is kept this long after expiry |
-| `HYBRID_AI_PRUNE_MAX_MOVES` | `20` | Count. Moves allowed in one run |
-| `HYBRID_AI_PRUNE_QUARANTINE_BASE` | unset | Quarantine root override; still asserted outside every captured tree |
-| `HYBRID_AI_PRUNE_ALLOW_LEASE_LESS` | empty (OFF) | Opt-in. `1`, `true` or `yes` lets a lease-less directory move once past the age limit |
-| `HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS` | `90` | Days a quarantine run directory is kept. Empty or `0` opts out and never deletes |
+| `HAVEN_PRUNE_AGE_SECONDS` | `604800` | Seconds. A directory with a newer mtime is kept |
+| `HAVEN_PRUNE_GRACE_SECONDS` | `86400` | Seconds. An expired lease is kept this long after expiry |
+| `HAVEN_PRUNE_MAX_MOVES` | `20` | Count. Moves allowed in one run |
+| `HAVEN_PRUNE_QUARANTINE_BASE` | unset | Quarantine root override; still asserted outside every captured tree |
+| `HAVEN_PRUNE_ALLOW_LEASE_LESS` | empty (OFF) | Opt-in. `1`, `true` or `yes` lets a lease-less directory move once past the age limit |
+| `HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS` | `90` | Days a quarantine run directory is kept. Empty or `0` opts out and never deletes |
 
 A non-numeric value in any numeric knob is a refusal: the run logs a warning and
-moves nothing. An empty `HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS` is the one
+moves nothing. An empty `HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS` is the one
 accepted empty value, because it is the documented opt-out.
 
 ---
@@ -2115,7 +2115,7 @@ A healthy run logs `backup_success` followed by `retention_applied`. A run that 
 
 ### System mode (two units, one account)
 
-With `HYBRID_AI_BACKUP_MODE=system` there are two units, not one, and the
+With `HAVEN_BACKUP_MODE=system` there are two units, not one, and the
 commands change scope. Use `--system` and the two unit names:
 
 ```bash
@@ -2147,24 +2147,24 @@ The upload unit holds the R2 credentials (from
 `StartLimitBurst=2` per `StartLimitIntervalSec=1h`. The capture unit holds no
 credentials and has no network.
 
-Every system-mode unit pins `HYBRID_AI_STACK_ENV_FILE` at the 0644 layout file
+Every system-mode unit pins `HAVEN_STACK_ENV_FILE` at the 0644 layout file
 (`/etc/hybrid-ai/hybrid-ai.env`), never the 0600 root-only `stack.env`. The
 backup account has no read access to `stack.env` and needs none; the layout file
 holds only names and paths. Without the pin the shared env helper fails closed
-(`HYBRID_AI_STACK_ENV_FILE ... exists and cannot be read`) and the unit exits 1
+(`HAVEN_STACK_ENV_FILE ... exists and cannot be read`) and the unit exits 1
 before restic runs.
 
 The credential files under `$CREDENTIALS_DIRECTORY` are systemd's
 `LoadCredential=` tmpfs copies, materialised 0400/0440 and recreated each start.
 `backup.sh` accepts 0400 or 0440 there; a file read from
-`HYBRID_AI_BACKUP_CRED_DIR` must still be exactly 0600. On the systemd path a
+`HAVEN_BACKUP_CRED_DIR` must still be exactly 0600. On the systemd path a
 mode error names that rule, not an impossible `chmod 600`.
 
 **The backup log: one path, in the units' `LogsDirectory=`.** In system mode the
 units run under `ProtectSystem=strict`, so the only directory they can write is
 the one systemd grants by name. `backup.sh` resolves `BACKUP_LOG` from the mode:
 system mode gives `/var/log/hybrid-ai-backup/backup.log` (the units'
-`LogsDirectory=hybrid-ai-backup`), user mode keeps `$HYBRID_AI_LOG_DIR/backup.log`.
+`LogsDirectory=hybrid-ai-backup`), user mode keeps `$HAVEN_LOG_DIR/backup.log`.
 `doctor.sh` reads the SAME resolved path, so "no successful backup recorded yet"
 now means a genuinely missing event, not a path mismatch.
 
@@ -2205,7 +2205,7 @@ A manual `sudo` run resolves USER-mode paths, even on a system-mode host. Name
 the layout file so the script reads the system-mode settings:
 
 ```bash
-sudo env HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env ./backup/backup.sh --check
+sudo env HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env ./backup/backup.sh --check
 ```
 
 **`skip: <unit> (host paths not installed)`.** The static test
@@ -2368,12 +2368,12 @@ Both the installer and the pod emit structured, greppable records of what happen
 
 | Log | Location | Contents |
 |---|---|---|
-| Installer | `${HYBRID_AI_LOG_DIR:?HYBRID_AI_LOG_DIR must be set - run ./install.sh}/install.log` on the Pi (gitignored, mode 0600) | One entry per `install.sh` run |
-| Backup | the resolved `BACKUP_LOG`: `${HYBRID_AI_LOG_DIR:?HYBRID_AI_LOG_DIR must be set - run ./install.sh}/backup.log` in user mode, the units' `/var/log/hybrid-ai-backup/backup.log` in system mode | One entry per backup/restore run |
+| Installer | `${HAVEN_LOG_DIR:?HAVEN_LOG_DIR must be set - run ./install.sh}/install.log` on the Pi (gitignored, mode 0600) | One entry per `install.sh` run |
+| Backup | the resolved `BACKUP_LOG`: `${HAVEN_LOG_DIR:?HAVEN_LOG_DIR must be set - run ./install.sh}/backup.log` in user mode, the units' `/var/log/hybrid-ai-backup/backup.log` in system mode | One entry per backup/restore run |
 | Pod | `/var/log/hybrid-ai-events.log` and the RunPod console | Pod lifecycle, watchdog, vLLM health |
 | Pipe | `docker compose --env-file .env -f docker-compose.yml -f openhands/docker-compose.openhands.yml -f hermes/docker-compose.hermes.yml logs open-webui` | Per-request outcomes |
 
-Each path is resolved by `scripts/lib/hybrid-ai-env.sh`. With no settings the
+Each path is resolved by `scripts/lib/haven-env.sh`. With no settings the
 helper default is the deployment directory. The compose bind sources are
 fail-closed (`:?`), so a compose parse with no settings is refused with a
 `run ./install.sh` message rather than silently falling back.
@@ -2479,7 +2479,7 @@ If the layout file names a path outside the allowlist, the script refuses it and
 prints a message naming the setting, for example:
 
 ```
-[ ! ] refusing to remove /srv/elsewhere (setting HYBRID_AI_DATA_DIR): outside the allowlist. It is left untouched.
+[ ! ] refusing to remove /srv/elsewhere (setting HAVEN_DATA_DIR): outside the allowlist. It is left untouched.
 ```
 
 The path survives. To remove it, do so by hand, or correct the setting in

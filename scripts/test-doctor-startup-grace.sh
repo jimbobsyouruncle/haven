@@ -344,7 +344,7 @@ printf '{"items":[{"id":"t-offsetless","status":"ERROR","updated_at":"%s","error
   "$OFFSETLESS_ISO" > "$FIXDIR/offsetless.page1.json"
 
 # --- scratch app ------------------------------------------------------------
-cp "$REPO_ROOT/scripts/lib/hybrid-ai-env.sh" "$APPD/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/haven-env.sh" "$APPD/scripts/lib/"
 # doctor.sh resolves the pod MagicDNS name through this shared lib.
 cp "$REPO_ROOT/scripts/lib/tailscale-resolve.sh" "$APPD/scripts/lib/"
 cp "$DOCTOR" "$APPD/doctor.sh"
@@ -379,7 +379,7 @@ run_doctor() { # fixture [timezone] ; sets RC, writes $WORK/out.<fixture>
     [[ -n "$tz" ]] && export TZ="$tz"
     FIXTURE="$fixture" FIXDIR="$FIXDIR" \
     PATH="$BIN:$PATH" HOME="$WORK/home" SHELL=/bin/bash \
-    HYBRID_AI_DATA_DIR="$APPD" HYBRID_AI_LOG_DIR="$APPD" HYBRID_AI_WORK_DIR="$APPD" \
+    HAVEN_DATA_DIR="$APPD" HAVEN_LOG_DIR="$APPD" HAVEN_WORK_DIR="$APPD" \
     timeout 120 bash "$APPD/doctor.sh" --no-cloud
   ) > "$WORK/out.$fixture" 2>&1
   RC=$?

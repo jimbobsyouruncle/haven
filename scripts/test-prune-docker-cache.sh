@@ -15,7 +15,7 @@
 #     (b) daemon unreachable    -> exit 0, prune never invoked.
 #     (c) success, --max-used-space listed -> prune invoked with
 #         "--max-used-space 15GB" and exit 0.
-#     (d) HYBRID_AI_BUILD_CACHE_CAP override reaches the argv.
+#     (d) HAVEN_BUILD_CACHE_CAP override reaches the argv.
 #     (e) only --keep-storage listed -> that flag is used, not --max-used-space.
 #     (f) prune failure -> exit 1.
 #     (g) neither flag listed -> exit 0 without invoking prune.
@@ -185,7 +185,7 @@ fi
 
 # --- (d) cap override reaches the argv --------------------------------------
 DOCKER_ARGV_LOG="$WORK/argv-d.log"; : > "$DOCKER_ARGV_LOG"
-run_prune DOCKER_INFO_RC=0 DOCKER_HELP=max HYBRID_AI_BUILD_CACHE_CAP=5GB
+run_prune DOCKER_INFO_RC=0 DOCKER_HELP=max HAVEN_BUILD_CACHE_CAP=5GB
 check "(d) exit code is 0" "$RUN_RC" "0"
 has   "(d) the overridden cap 5GB was passed" "$(prune_invocations)" "5GB"
 has   "(d) the probed flag was still used" "$(prune_invocations)" "--max-used-space"
@@ -314,7 +314,7 @@ done
 check "(j2) the real script still yields no offenders" \
   "$(cache_only_offenders "$PRUNE" "$OFFENDERS_ERE" | wc -l | tr -d ' ')" "0"
 
-# --- (k)/(l) install.sh writes and preserves HYBRID_AI_BUILD_CACHE_CAP -------
+# --- (k)/(l) install.sh writes and preserves HAVEN_BUILD_CACHE_CAP -------
 # The unit reads the cap from the stack .env. install.sh STEP 8 rewrites that
 # file from a ${VAR:-default} template, so this fixture proves the default is
 # written when the owner has not set one, and that an owner value survives a
@@ -327,7 +327,7 @@ mkdir -p "$I_APP/scripts/lib" "$I_BIN" "$WORK/i-data" "$WORK/i-log" \
          "$WORK/i-work" "$WORK/i-ws/.git/info" "$WORK/i-repos" "$WORK/i-ohstate" \
          "$WORK/i-conf" "$WORK/i-restic" "$WORK/i-etc"
 cp "$REPO/install.sh" "$I_APP/install.sh"
-cp "$REPO/scripts/lib/hybrid-ai-env.sh" "$I_APP/scripts/lib/"
+cp "$REPO/scripts/lib/haven-env.sh" "$I_APP/scripts/lib/"
 cp "$REPO/scripts/lib/build-gate.sh" "$I_APP/scripts/lib/"
 
 # install.sh sources scripts/lib/tls.sh and its TLS render step reads the
@@ -344,22 +344,22 @@ chmod +x "$I_APP/scripts/"*.sh
 I_LAYOUT="$WORK/i-etc/hybrid-ai.env"
 I_STACK="$WORK/i-etc/stack.env"
 {
-  printf 'HYBRID_AI_APP_DIR=%s\n' "$I_APP"
-  printf 'HYBRID_AI_ENV_FILE=%s\n' "$I_LAYOUT"
-  printf 'HYBRID_AI_STACK_ENV_FILE=%s\n' "$I_STACK"
-  printf 'HYBRID_AI_DATA_DIR=%s\n' "$WORK/i-data"
-  printf 'HYBRID_AI_LOG_DIR=%s\n' "$WORK/i-log"
-  printf 'HYBRID_AI_WORK_DIR=%s\n' "$WORK/i-work"
+  printf 'HAVEN_APP_DIR=%s\n' "$I_APP"
+  printf 'HAVEN_ENV_FILE=%s\n' "$I_LAYOUT"
+  printf 'HAVEN_STACK_ENV_FILE=%s\n' "$I_STACK"
+  printf 'HAVEN_DATA_DIR=%s\n' "$WORK/i-data"
+  printf 'HAVEN_LOG_DIR=%s\n' "$WORK/i-log"
+  printf 'HAVEN_WORK_DIR=%s\n' "$WORK/i-work"
   printf 'OPENHANDS_WORKSPACE=%s\n' "$WORK/i-ws"
   printf 'AGENT_REPOS_DIR=%s\n' "$WORK/i-repos"
   printf 'OPENHANDS_STATE_DIR=%s\n' "$WORK/i-ohstate"
   printf 'BACKUP_CONF_DIR=%s\n' "$WORK/i-conf"
   printf 'RESTIC_CACHE_DIR=%s\n' "$WORK/i-restic"
-  printf 'HYBRID_AI_HERMES_HOME_DIR=%s\n' "$WORK/i-hermes"
-  printf 'HYBRID_AI_BACKUP_MODE=system\n'
+  printf 'HAVEN_HERMES_HOME_DIR=%s\n' "$WORK/i-hermes"
+  printf 'HAVEN_BACKUP_MODE=system\n'
   printf 'BACKUP_CONTAINER_CONTROL=external\n'
-  printf 'HYBRID_AI_UID=1000\n'
-  printf 'HYBRID_AI_GID=1000\n'
+  printf 'HAVEN_UID=1000\n'
+  printf 'HAVEN_GID=1000\n'
 } > "$I_LAYOUT"
 chmod 644 "$I_LAYOUT"
 # shellcheck disable=SC2016  # $0 must expand inside the generated stub
@@ -384,16 +384,16 @@ chmod +x "$I_BIN"/*
 
 run_install() {
   local log="$1" rc=0
-  env -u HYBRID_AI_APP_DIR -u HYBRID_AI_DATA_DIR -u HYBRID_AI_LOG_DIR \
-      -u HYBRID_AI_WORK_DIR -u HYBRID_AI_STACK_ENV_FILE \
+  env -u HAVEN_APP_DIR -u HAVEN_DATA_DIR -u HAVEN_LOG_DIR \
+      -u HAVEN_WORK_DIR -u HAVEN_STACK_ENV_FILE \
       -u OPENHANDS_WORKSPACE -u AGENT_REPOS_DIR -u OPENHANDS_STATE_DIR \
-      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HYBRID_AI_HERMES_HOME_DIR \
-      -u HYBRID_AI_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
-      -u HYBRID_AI_UID -u HYBRID_AI_GID \
+      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HAVEN_HERMES_HOME_DIR \
+      -u HAVEN_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
+      -u HAVEN_UID -u HAVEN_GID \
       -u OPENHANDS_IMAGE -u OPENHANDS_AGENT_IMAGE_TAG \
-      -u HYBRID_AI_BUILD_CACHE_CAP \
+      -u HAVEN_BUILD_CACHE_CAP \
       PATH="$I_BIN:$PATH" \
-      HYBRID_AI_ENV_FILE="$I_LAYOUT" \
+      HAVEN_ENV_FILE="$I_LAYOUT" \
       LOCAL_DOMAIN=example.test OPENROUTER_API_KEY=stub RUNPOD_API_KEY=stub \
       RUNPOD_POD_ID=stub RUNPOD_HOST=stub PI_HOST=stub \
       OPENHANDS_SANDBOX_HOST=example.test PEER_HOSTNAMES="none" \
@@ -409,21 +409,21 @@ rm -f "$I_STACK"
 rc=0
 run_install "$I_LOG" || rc=$?
 check "(k) install.sh exits 0 with --no-start" "$rc" "0"
-check "(k) the 15GB cap default was written" "$(env_value "$I_STACK" HYBRID_AI_BUILD_CACHE_CAP)" "15GB"
+check "(k) the 15GB cap default was written" "$(env_value "$I_STACK" HAVEN_BUILD_CACHE_CAP)" "15GB"
 
 : > "$I_LOG"
-printf 'HYBRID_AI_BUILD_CACHE_CAP=7GB\n' > "$I_STACK"
+printf 'HAVEN_BUILD_CACHE_CAP=7GB\n' > "$I_STACK"
 chmod 600 "$I_STACK"
 rc=0
 run_install "$I_LOG" || rc=$?
 check "(l) install.sh exits 0 with an owner cap" "$rc" "0"
-check "(l) the owner cap 7GB was preserved" "$(env_value "$I_STACK" HYBRID_AI_BUILD_CACHE_CAP)" "7GB"
-AFTER_ONE="$(env_value "$I_STACK" HYBRID_AI_BUILD_CACHE_CAP)"
+check "(l) the owner cap 7GB was preserved" "$(env_value "$I_STACK" HAVEN_BUILD_CACHE_CAP)" "7GB"
+AFTER_ONE="$(env_value "$I_STACK" HAVEN_BUILD_CACHE_CAP)"
 : > "$I_LOG"
 rc=0
 run_install "$I_LOG" || rc=$?
 check "(l) a second run exits 0" "$rc" "0"
-check "(l) the owner cap is byte-for-byte identical" "$AFTER_ONE" "$(env_value "$I_STACK" HYBRID_AI_BUILD_CACHE_CAP)"
+check "(l) the owner cap is byte-for-byte identical" "$AFTER_ONE" "$(env_value "$I_STACK" HAVEN_BUILD_CACHE_CAP)"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 (( fail == 0 ))

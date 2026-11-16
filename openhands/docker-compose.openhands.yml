@@ -77,7 +77,7 @@ services:
       # SANDBOX_USER_ID. The sandbox always runs as the image's unprivileged
       # uid, so this line is inert. The scoped /etc/gitconfig mount below is
       # what makes git work in the sandbox. Kept unchanged (harmless).
-      SANDBOX_USER_ID: ${HYBRID_AI_UID:-${STATUS_UID:-1000}}
+      SANDBOX_USER_ID: ${HAVEN_UID:-${STATUS_UID:-1000}}
 
       # The isolated clone -- NOT this directory. See note 2 above.
       # No default: fail loudly rather than fall back to something unsafe.
@@ -115,7 +115,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Holds LLM provider credentials. Lives outside the repo so it is never
       # committed and never visible to the sandbox. Mode 0700. Resolved by
-      # scripts/lib/hybrid-ai-env.sh; the default keeps today's path.
+      # scripts/lib/haven-env.sh; the default keeps today's path.
       - ${OPENHANDS_STATE_DIR:-${HOME}/.openhands}:/.openhands
 
     extra_hosts:

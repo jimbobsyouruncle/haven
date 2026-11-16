@@ -9,7 +9,7 @@
 # TRANSPORT A (always): one structured line on stderr, which journald captures:
 #   ts=<ISO8601> source=tls severity=<warn|critical|missing|test> subject="..." body="..."
 #
-# TRANSPORT B (only when HYBRID_AI_ALERT_WEBHOOK_URL is set): POST the same
+# TRANSPORT B (only when HAVEN_ALERT_WEBHOOK_URL is set): POST the same
 #   JSON body to that URL with curl. https:// only; http:// and any URL carrying
 #   userinfo are refused. The URL NEVER appears in argv, in output or in a log:
 #   it is handed to curl through a 0600 --config file in a private mktemp dir,
@@ -41,7 +41,7 @@ Usage: tls-alert.sh [options]
   --body TEXT          alert body (or pipe it on stdin)
   --test               fire a synthetic self-test alert (severity=test)
   --sink-dir DIR       write to DIR/tls-alert-test.log instead of the network
-  --env-file PATH      env file to read HYBRID_AI_ALERT_WEBHOOK_URL from
+  --env-file PATH      env file to read HAVEN_ALERT_WEBHOOK_URL from
   -h, --help           this text
 EOF
 }
@@ -98,14 +98,14 @@ case "$SEVERITY" in warn|critical|missing|test) ;; *) die_usage "invalid severit
 # --- paths come from the shared resolver -----------------------------------
 # An explicit --env-file is handed to the helper BEFORE it loads, so a fixture
 # still wins over the ambient environment.
-if [[ -n "$ENV_FILE" && -z "${HYBRID_AI_ENV_FILE:-}" ]]; then
-  export HYBRID_AI_ENV_FILE="$ENV_FILE"
+if [[ -n "$ENV_FILE" && -z "${HAVEN_ENV_FILE:-}" ]]; then
+  export HAVEN_ENV_FILE="$ENV_FILE"
 fi
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
 
 # The webhook is a stack setting, so read the STACK file the helper resolved.
-[[ -n "$ENV_FILE" ]] || ENV_FILE="$HYBRID_AI_STACK_ENV_FILE"
+[[ -n "$ENV_FILE" ]] || ENV_FILE="$HAVEN_STACK_ENV_FILE"
 
 if [[ -z "$BODY" && ! -t 0 ]]; then
   BODY="$(cat)"
@@ -148,7 +148,7 @@ if [[ -n "$SINK_DIR" ]]; then
   fi
 else
   # --- transport B: webhook (network) ------------------------------------
-  webhook="$(env_read_key "$ENV_FILE" HYBRID_AI_ALERT_WEBHOOK_URL || true)"
+  webhook="$(env_read_key "$ENV_FILE" HAVEN_ALERT_WEBHOOK_URL || true)"
   if [[ -z "$webhook" ]]; then
     attempted+=("webhook")
     results+=("webhook=not-configured")

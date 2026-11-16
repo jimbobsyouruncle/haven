@@ -100,10 +100,10 @@ Each system check is a row with a state (`ok`, `warn`, `fail` or `info`), a one-
 The **Backups** tile reads the same log the backup system writes, mounted
 read-only as a single file at `/data/backup.log` (`BACKUP_LOG_PATH`). The host
 side of that mount is `${BACKUP_LOG:?BACKUP_LOG must be set - run ./install.sh}`:
-`scripts/lib/hybrid-ai-env.sh` resolves it once from the mode, and `install.sh`
+`scripts/lib/haven-env.sh` resolves it once from the mode, and `install.sh`
 writes that resolved value into the stack env file. In system mode it is the
 units' `LogsDirectory=` file (`/var/log/hybrid-ai-backup/backup.log`); in user
-mode it is `$HYBRID_AI_LOG_DIR/backup.log`, exactly as before. Writer and reader
+mode it is `$HAVEN_LOG_DIR/backup.log`, exactly as before. Writer and reader
 therefore name one path, which is why `Backup: ok` appears after a real success.
 
 A log the container cannot open, a log that does not exist, and a log that
@@ -153,7 +153,7 @@ A deploy runs `scripts/run-post-deploy-verify.sh` in a transient unit after ever
 - **`fail`** — the verifier reported `FAIL` or `TIMEOUT`; the tile quotes the verdict and points at `journalctl -u 'hybrid-ai-post-deploy-verify-*'` for the full run.
 - **`warn`** — no verdict is readable: the log is absent, empty, a directory (Docker creates one when the bind source does not exist yet), unreadable by the status container, or has no parseable `waiting for` line. The detail says which.
 
-The log is mounted **read-only, single file** into the container at `/data/post-deploy-verify.log` from `${HYBRID_AI_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}`, the same pattern as `backup.log` and `install.log`. It holds only shas, timestamps and verdict lines — no credential, no environment value — and every emitted string still passes `redact()`.
+The log is mounted **read-only, single file** into the container at `/data/post-deploy-verify.log` from `${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}`, the same pattern as `backup.log` and `install.log`. It holds only shas, timestamps and verdict lines — no credential, no environment value — and every emitted string still passes `redact()`.
 
 This complements the check `doctor.sh` added in PR #94, which surfaces the verdict at the **next** deploy; this tile is visible within about a minute of the verdict being written.
 
@@ -203,7 +203,7 @@ Network restriction stops the internet. It does not stop a guest on your wifi or
 
 The gate is off by default. With it off, the rendered Caddyfile is byte-identical to the one without the gate, and the `http://*.jarvis.lan` names stay open during the transition.
 
-When the gate is on, Caddy's `(auth)` snippet does a `forward_auth` to a small `auth` service. Caddy asks the service to `/verify` on every request. A valid session cookie passes; anything else gets the login page, and the service sends the browser back to where it was headed after a successful login. The service issues a signed cookie (`hybrid_ai_auth`) whose `Domain` is your `TLS_DOMAIN`, so one login covers the apex, `hermes.`, `status.` and the wildcard. The cookie lives for `HYBRID_AI_AUTH_COOKIE_MAX_AGE` seconds (default 86400, one day).
+When the gate is on, Caddy's `(auth)` snippet does a `forward_auth` to a small `auth` service. Caddy asks the service to `/verify` on every request. A valid session cookie passes; anything else gets the login page, and the service sends the browser back to where it was headed after a successful login. The service issues a signed cookie (`haven_auth`) whose `Domain` is your `TLS_DOMAIN`, so one login covers the apex, `hermes.`, `status.` and the wildcard. The cookie lives for `HAVEN_AUTH_COOKIE_MAX_AGE` seconds (default 86400, one day).
 
 1. Generate a bcrypt hash. The plaintext never enters the repository:
 
@@ -215,12 +215,12 @@ When the gate is on, Caddy's `(auth)` snippet does a `forward_auth` to a small `
 
    ```
    AUTH_ENABLED=on
-   HYBRID_AI_AUTH_USER=<your-user-name>
-   HYBRID_AI_AUTH_HASH=<the-bcrypt-hash-from-step-1>
-   HYBRID_AI_AUTH_COOKIE_MAX_AGE=86400
+   HAVEN_AUTH_USER=<your-user-name>
+   HAVEN_AUTH_HASH=<the-bcrypt-hash-from-step-1>
+   HAVEN_AUTH_COOKIE_MAX_AGE=86400
    ```
 
-   The cookie signing key (`HYBRID_AI_AUTH_COOKIE_SECRET`) needs no entry here:
+   The cookie signing key (`HAVEN_AUTH_COOKIE_SECRET`) needs no entry here:
    `install.sh` generates a strong, per-host, random value when it is unset and
    writes it into the 0600 stack env. Set it yourself only to pin a value, and a
    value you set is honoured and kept.
@@ -242,13 +242,13 @@ When the gate is on, Caddy's `(auth)` snippet does a `forward_auth` to a small `
    ./install.sh
    ```
 
-The install fail-closes before it renders anything: with TLS on and `AUTH_ENABLED=on`, an empty `HYBRID_AI_AUTH_USER` or `HYBRID_AI_AUTH_HASH` stops the install with a message naming every missing variable. The cookie secret is not a fail-closed case: `install.sh` generates it automatically when it is unset. A password is never invented. The auth service refuses to start without all of them too, as a second layer.
+The install fail-closes before it renders anything: with TLS on and `AUTH_ENABLED=on`, an empty `HAVEN_AUTH_USER` or `HAVEN_AUTH_HASH` stops the install with a message naming every missing variable. The cookie secret is not a fail-closed case: `install.sh` generates it automatically when it is unset. A password is never invented. The auth service refuses to start without all of them too, as a second layer.
 
 The credentials reach only the `auth` service; they no longer go to the proxy container, and no credential literal is ever written into a tracked file.
 
 `/health` is deliberately exempt: it is the open endpoint the external uptime monitor polls, so it answers without a prompt. Every other route on the gated sites, and the `hermes.`, `status.` and wildcard site blocks, require a login.
 
-**Sessions and rotation.** The login page's session expires after `HYBRID_AI_AUTH_COOKIE_MAX_AGE` seconds. To log everyone out at once, replace `HYBRID_AI_AUTH_COOKIE_SECRET` with a fresh `openssl rand -hex 32` and re-run `install.sh`: every cookie signed with the old key stops verifying. Changing the password or the user name does not drop existing sessions; rotate the secret when you need that.
+**Sessions and rotation.** The login page's session expires after `HAVEN_AUTH_COOKIE_MAX_AGE` seconds. To log everyone out at once, replace `HAVEN_AUTH_COOKIE_SECRET` with a fresh `openssl rand -hex 32` and re-run `install.sh`: every cookie signed with the old key stops verifying. Changing the password or the user name does not drop existing sessions; rotate the secret when you need that.
 
 ---
 
@@ -319,7 +319,7 @@ To disable the status page entirely, remove the `status` and `proxy` services fr
 
 Compose configures `STATUS_BACKUP_SOCKET=/run/status-verifier/backup.sock` in
 the status process. The installer provisions its dedicated host bind directory,
-`${HYBRID_AI_DATA_DIR}/status-verifier`, with mode 0700 owned by the status UID;
+`${HAVEN_DATA_DIR}/status-verifier`, with mode 0700 owned by the status UID;
 the socket has mode 0600. Only status and the trusted root host verifier can
 access it through ordinary filesystem permissions. Other processes running as
 that UID or root are within this trust boundary; it is not an isolation control

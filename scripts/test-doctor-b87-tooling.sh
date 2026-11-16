@@ -207,7 +207,7 @@ for n in docker curl jq getfacl iptables df findmnt nvme lsblk dmesg vcgencmd \
 done
 
 # --- scratch app ------------------------------------------------------------
-cp "$REPO_ROOT/scripts/lib/hybrid-ai-env.sh" "$APPD/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/haven-env.sh" "$APPD/scripts/lib/"
 cp "$DOCTOR" "$APPD/doctor.sh"
 chmod +x "$APPD/doctor.sh"
 
@@ -293,9 +293,9 @@ run_doctor() {
     env "$@" \
       PATH="$BIN:$PATH" HOME="$WORK/home" SHELL=/bin/bash \
       REAL_JQ="$REAL_JQ" BRIDGE_IP="$BRIDGE_IP" \
-      HYBRID_AI_APP_DIR="$APPD" HYBRID_AI_ENV_FILE="$APPD/.env" \
-      HYBRID_AI_DATA_DIR="$APPD" HYBRID_AI_LOG_DIR="$APPD" HYBRID_AI_WORK_DIR="$APPD" \
-      HYBRID_AI_HERMES_DATA_DIR="$APPD/hermes_data" \
+      HAVEN_APP_DIR="$APPD" HAVEN_ENV_FILE="$APPD/.env" \
+      HAVEN_DATA_DIR="$APPD" HAVEN_LOG_DIR="$APPD" HAVEN_WORK_DIR="$APPD" \
+      HAVEN_HERMES_DATA_DIR="$APPD/hermes_data" \
       timeout 120 bash "$doc" --no-cloud
   ) > "$OUT" 2>&1
   RC=$?

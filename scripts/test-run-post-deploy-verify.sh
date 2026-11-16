@@ -6,7 +6,7 @@ set -Eeuo pipefail
 #   Offline tests for scripts/run-post-deploy-verify.sh. They need no network,
 #   no Docker and no access to /etc. curl and jq are stubbed on PATH, and the
 #   deployed tree is a throwaway git checkout in a temp dir. A fixture layout
-#   file is pointed at with HYBRID_AI_ENV_FILE_FALLBACK.
+#   file is pointed at with HAVEN_ENV_FILE_FALLBACK.
 #
 #   They prove the three-step APP_DIR resolution (environment, then layout file,
 #   then /workspace) and the two tree-check verdicts (PASS on the expected SHA,
@@ -21,9 +21,9 @@ set -Eeuo pipefail
 # ---------------------------------------------------------------------------
 
 # Cases control the selector explicitly; ignore the invoking shell setting.
-unset HYBRID_AI_REPOSITORY_SLUG HYBRID_AI_BACKUP_MODE HYBRID_AI_VERIFY_BACKUP_GATES
-unset HYBRID_AI_DATA_DIR HYBRID_AI_LOG_DIR DOCKER_GID STATUS_UID
-unset HYBRID_AI_STACK_ENV_FILE
+unset HAVEN_REPOSITORY_SLUG HAVEN_BACKUP_MODE HAVEN_VERIFY_BACKUP_GATES
+unset HAVEN_DATA_DIR HAVEN_LOG_DIR DOCKER_GID STATUS_UID
+unset HAVEN_STACK_ENV_FILE
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VERIFY_SCRIPT="$SCRIPT_DIR/run-post-deploy-verify.sh"
@@ -131,9 +131,9 @@ export PATH="$BINDIR:$PATH"
 
 # --- Throwaway git trees ----------------------------------------------------
 REAL_GIT="$(command -v git)"
-HYBRID_AI_UID="$(id -u)"
-HYBRID_AI_GID="$(id -g)"
-export HYBRID_AI_UID HYBRID_AI_GID
+HAVEN_UID="$(id -u)"
+HAVEN_GID="$(id -g)"
+export HAVEN_UID HAVEN_GID
 
 # A git stub that records its argv (so the tests can see which -C directory the
 # verifier resolved) and then delegates to the real git.
@@ -170,7 +170,7 @@ fi
 
 LAYOUT="$WORKDIR/hybrid-ai.env"
 write_layout() { # <app-dir>
-  printf 'HYBRID_AI_APP_DIR=%s\n' "$1" > "$LAYOUT"
+  printf 'HAVEN_APP_DIR=%s\n' "$1" > "$LAYOUT"
 }
 
 # A green, completed API run for SHA_A.
@@ -186,35 +186,35 @@ run_verify() {
   local app="$1" layout="$2" vdir="${3:-$WORKDIR/verdicts}"
   local env_args=() owner_args=() receipt_args=()
   [[ ! -v TEST_LOCAL_DOMAIN ]] || receipt_args+=(LOCAL_DOMAIN="$TEST_LOCAL_DOMAIN")
-  [[ ! -v TEST_STACK_FILE ]] || receipt_args+=(HYBRID_AI_STACK_ENV_FILE="$TEST_STACK_FILE")
+  [[ ! -v TEST_STACK_FILE ]] || receipt_args+=(HAVEN_STACK_ENV_FILE="$TEST_STACK_FILE")
   if [[ "${TEST_OWNER_LAYOUT:-0}" == 1 ]]; then
-    owner_args=(-u HYBRID_AI_UID -u HYBRID_AI_GID)
+    owner_args=(-u HAVEN_UID -u HAVEN_GID)
   fi
   if [[ "$app" != "__unset__" ]]; then
-    env_args+=(HYBRID_AI_APP_DIR="$app")
+    env_args+=(HAVEN_APP_DIR="$app")
   else
-    env_args+=(-u HYBRID_AI_APP_DIR)
+    env_args+=(-u HAVEN_APP_DIR)
   fi
   if [[ "$layout" != "__absent__" ]]; then
-    env_args+=(HYBRID_AI_ENV_FILE_FALLBACK="$layout")
+    env_args+=(HAVEN_ENV_FILE_FALLBACK="$layout")
   else
-    env_args+=(HYBRID_AI_ENV_FILE_FALLBACK="$WORKDIR/no-such-layout.env")
+    env_args+=(HAVEN_ENV_FILE_FALLBACK="$WORKDIR/no-such-layout.env")
   fi
 
   if [[ "$vdir" == __layout__ ]]; then
-    owner_args+=(-u HYBRID_AI_DATA_DIR)
-    owner_args+=(-u HYBRID_AI_DEPLOY_VERDICT_DIR)
+    owner_args+=(-u HAVEN_DATA_DIR)
+    owner_args+=(-u HAVEN_DEPLOY_VERDICT_DIR)
   else
-    receipt_args+=(HYBRID_AI_DEPLOY_VERDICT_DIR="$vdir")
+    receipt_args+=(HAVEN_DEPLOY_VERDICT_DIR="$vdir")
   fi
 
   rm -f "$GIT_CALL_LOG" "$CURL_CALL_LOG" "$VERIFY_CLOCK_MARKER"
   set +e
   # Scrub the gate's inputs so a value leaked into the caller's environment
   # cannot make a case pass: the layout file must be the only source here.
-  # HYBRID_AI_DEPLOY_VERDICT_DIR keeps every case out of the real data dir.
+  # HAVEN_DEPLOY_VERDICT_DIR keeps every case out of the real data dir.
   env -u BACKUP_LOG -u BACKUP_GROUP_GID -u LOCAL_DOMAIN -u VERIFY_STATUS_UID \
-    -u VERIFY_STATUS_GID -u HYBRID_AI_STACK_ENV_FILE "${owner_args[@]}" "${env_args[@]}" GIT_CALL_LOG="$GIT_CALL_LOG" \
+    -u VERIFY_STATUS_GID -u HAVEN_STACK_ENV_FILE "${owner_args[@]}" "${env_args[@]}" GIT_CALL_LOG="$GIT_CALL_LOG" \
     "${receipt_args[@]}" \
     "$VERIFY_SCRIPT" --wait-for "$SHA_A" > "$WORKDIR/out" 2> "$WORKDIR/err"
   RC=$?
@@ -235,7 +235,7 @@ echo "== Running run-post-deploy-verify.sh tests =="
 write_layout "$TREE_B"
 run_verify "$TREE_A" "$LAYOUT"
 if [[ "$RC" -eq 0 && "$RESOLVED" == "$TREE_A" ]] && grep -qE '^(PASS|WARN: optional verification evidence missing or warning)$' <<<"$OUT"; then
-  pass "env HYBRID_AI_APP_DIR wins over the layout file (PASS)"
+  pass "env HAVEN_APP_DIR wins over the layout file (PASS)"
 else
   fail "env should win over the layout file: rc $RC, resolved '$RESOLVED', out '$OUT'"
 fi
@@ -277,13 +277,13 @@ else
 fi
 
 # Case 6: a layout value that is not an absolute path is refused; the run falls
-# through to /workspace rather than trusting the value.
-printf 'HYBRID_AI_APP_DIR=relative/path\n' > "$LAYOUT"
+# stops before any tree inspection instead of silently selecting /workspace.
+printf 'HAVEN_APP_DIR=relative/path\n' > "$LAYOUT"
 run_verify "__unset__" "$LAYOUT"
-if [[ "$RESOLVED" == "/workspace" ]]; then
-  pass "a non-absolute layout value is ignored -> /workspace fallback"
+if [[ "$RC" == 1 && -z "$RESOLVED" ]]; then
+  pass "a non-absolute layout value is refused before tree inspection"
 else
-  fail "expected a non-absolute layout value to be ignored, resolved '$RESOLVED'"
+  fail "unsafe layout was not refused"
 fi
 
 # --- Backups tile gate ------------------------------------------------------
@@ -293,8 +293,8 @@ fi
 # pass), so the verdict is driven by (a) the file check and (c) the tile query,
 # which is exactly the contract.
 BLOG="$WORKDIR/backup.log"
-export HYBRID_AI_DATA_DIR="$WORKDIR/data"
-SOCKET_DIR="$HYBRID_AI_DATA_DIR/status-verifier"
+export HAVEN_DATA_DIR="$WORKDIR/data"
+SOCKET_DIR="$HAVEN_DATA_DIR/status-verifier"
 mkdir -p "$SOCKET_DIR"
 chmod 700 "$SOCKET_DIR"
 python3 - "$SOCKET_DIR/backup.sock" <<'PY_SOCKET'
@@ -304,7 +304,7 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
 os.chmod(sys.argv[1], 0o600)
 PY_SOCKET
 write_gate_layout() { # <app-dir> <log-path>
-  printf 'HYBRID_AI_APP_DIR=%s\nBACKUP_LOG=%s\nBACKUP_GROUP_GID=982\nLOCAL_DOMAIN=example.test\n' \
+  printf 'HAVEN_APP_DIR=%s\nBACKUP_LOG=%s\nBACKUP_GROUP_GID=982\nLOCAL_DOMAIN=example.test\n' \
     "$1" "$2" > "$LAYOUT"
 }
 
@@ -360,7 +360,7 @@ unset CURL_TILE_CODE JQ_STUB_TILE
 
 # --- Verdict JSON -----------------------------------------------------------
 # The container cannot see the host log, so each deploy SHA gets a JSON file in
-# the data dir. Every case above already ran with HYBRID_AI_DEPLOY_VERDICT_DIR
+# the data dir. Every case above already ran with HAVEN_DEPLOY_VERDICT_DIR
 # pointed at $WORKDIR/verdicts and still had to print the same result line.
 VDIR="$WORKDIR/verdicts"
 VDIR_FILE="$VDIR/$SHA_A.json"
@@ -481,8 +481,8 @@ rm -rf "$VDIR"
 run_verify "$TREE_A" "__absent__"
 if [[ -f "$VDIR_FILE" ]] && [[ "$(stat -c '%a' "$VDIR")" == 755 ]] \
    && [[ "$(stat -c '%a' "$VDIR_FILE")" == 644 ]] \
-   && [[ "$(stat -c '%u:%g' "$VDIR_FILE")" == "$HYBRID_AI_UID:$HYBRID_AI_GID" ]] \
-   && [[ "$(stat -c '%u:%g' "$VDIR")" == "$HYBRID_AI_UID:$HYBRID_AI_GID" ]] \
+   && [[ "$(stat -c '%u:%g' "$VDIR_FILE")" == "$HAVEN_UID:$HAVEN_GID" ]] \
+   && [[ "$(stat -c '%u:%g' "$VDIR")" == "$HAVEN_UID:$HAVEN_GID" ]] \
    && ! grep -q 'hermes account' <<<"$OUT_STDERR"; then
   pass "numeric owner and existing 0755/0644 modes without a host hermes account"
 else fail "numeric ownership/mode contract failed: $OUT"; fi
@@ -490,7 +490,7 @@ else fail "numeric ownership/mode contract failed: $OUT"; fi
 echo "== repository identity, standalone installation and fail-closed HTTP =="
 export CURL_STUB_CODE=200 JQ_STUB_ROWS=$'1\tcompleted\tsuccess\n'
 run_verify "$TREE_A" "__absent__"
-if grep -Fq "https://api.github.com/repos/jimbobsyouruncle/hybrid-ai/actions/runs?head_sha=$SHA_A" "$CURL_CALL_LOG"; then
+if grep -Fq "https://api.github.com/repos/jimbobsyouruncle/haven/actions/runs?head_sha=$SHA_A" "$CURL_CALL_LOG"; then
   pass "default verifier API identity remains hybrid-ai"
 else fail "default API identity changed"; fi
 # Simulate install.sh copying only this executable into /usr/local/sbin.
@@ -498,7 +498,7 @@ SOURCE_VERIFY="$VERIFY_SCRIPT"
 mkdir -p "$WORKDIR/sbin"
 cp "$VERIFY_SCRIPT" "$WORKDIR/sbin/run-post-deploy-verify.sh"
 VERIFY_SCRIPT="$WORKDIR/sbin/run-post-deploy-verify.sh"
-export HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven
+export HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven
 run_verify "$TREE_A" "__absent__"
 if [[ "$RC" == 0 ]] && grep -q '^WARN:' <<< "$OUT_STDOUT" && grep -Fq "https://api.github.com/repos/jimbobsyouruncle/haven/actions/runs?head_sha=$SHA_A" "$CURL_CALL_LOG"; then
   pass "standalone installed verifier selects Haven without a sibling helper"
@@ -521,7 +521,7 @@ run_verify "$TREE_A" "__absent__"
 if [[ "$RC" == 1 ]] && grep -qxF "TIMEOUT: no completed run for $SHA_A after 60 minutes" <<< "$OUT_STDOUT"; then
   pass "empty run list reaches deadline without a real wait"
 else fail "empty run deadline did not fail: $OUT"; fi
-unset VERIFY_FAKE_CLOCK HYBRID_AI_REPOSITORY_SLUG
+unset VERIFY_FAKE_CLOCK HAVEN_REPOSITORY_SLUG
 VERIFY_SCRIPT="$SOURCE_VERIFY"
 
 echo "== coverage policy and system layout =="
@@ -554,20 +554,20 @@ VERIFY_SCRIPT="$WORKDIR/verify-path.sh"
 export VERIFY_RESOLVED_LOG="$WORKDIR/resolved-log" VERIFY_FIXTURE_LOG="$BLOG"
 export VERIFY_MOCK_ROOT=1 CURL_TILE_CODE=200 JQ_STUB_TILE=ok
 write_layout "$TREE_A"
-printf 'HYBRID_AI_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\nLOCAL_DOMAIN=example.test\nHYBRID_AI_UID=%s\n' "$HYBRID_AI_UID" >> "$LAYOUT"
+printf 'HAVEN_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\nLOCAL_DOMAIN=example.test\nHAVEN_UID=%s\n' "$HAVEN_UID" >> "$LAYOUT"
 run_verify "__unset__" "$LAYOUT"
 if [[ "$(cat "$VERIFY_RESOLVED_LOG")" == /var/log/hybrid-ai-backup/backup.log ]] \
    && [[ "$RC" == 0 ]] && grep -qx PASS <<<"$OUT_STDOUT" \
    && "$REAL_JQ" -e 'all(.gates[]; .state == "PASS") and .gates.backup_log.required' "$VDIR_FILE" >/dev/null; then
   pass "system layout resolves units log and all executed gates produce PASS"
 else fail "system resolution/complete PASS failed: $OUT"; fi
-if grep -q -- "--reuid=$HYBRID_AI_UID" "$VERIFY_PRIV_LOG" \
+if grep -q -- "--reuid=$HAVEN_UID" "$VERIFY_PRIV_LOG" \
    && grep -q -- '--groups=982 --inh-caps=-all --bounding-set=-all' "$VERIFY_PRIV_LOG"; then
   pass "status probe uses configured numeric UID and drops capabilities"
 else fail "wrong status probe identity: $(cat "$VERIFY_PRIV_LOG")"; fi
 # The private transport works independently of TLS/domain/stack configuration.
 write_layout "$TREE_A"
-printf 'HYBRID_AI_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\n' >> "$LAYOUT"
+printf 'HAVEN_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\n' >> "$LAYOUT"
 run_verify "__unset__" "$LAYOUT"
 if [[ "$RC" == 0 ]] && grep -qx PASS <<<"$OUT_STDOUT" \
    && grep -qF -- "--unix-socket $SOCKET_DIR/backup.sock" "$CURL_CALL_LOG" \
@@ -627,7 +627,7 @@ mv "$SOCKET_DIR/saved.sock" "$SOCKET_DIR/backup.sock"
 
 # Restore the legacy single-file fixture and explicit log override.
 write_layout "$TREE_A"
-printf 'HYBRID_AI_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\nLOCAL_DOMAIN=example.test\nHYBRID_AI_UID=%s\n' "$HYBRID_AI_UID" >> "$LAYOUT"
+printf 'HAVEN_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\nLOCAL_DOMAIN=example.test\nHAVEN_UID=%s\n' "$HAVEN_UID" >> "$LAYOUT"
 # Explicit BACKUP_LOG overrides the system default.
 printf 'BACKUP_LOG=/fixture/explicit.log\n' >> "$LAYOUT"
 run_verify "__unset__" "$LAYOUT"
@@ -635,17 +635,17 @@ if [[ "$(cat "$VERIFY_RESOLVED_LOG")" == /fixture/explicit.log ]]; then
   pass "explicit layout log overrides system default"
 else fail "system override ignored"; fi
 # Numeric identity resolves from layout even without corresponding host names.
-printf 'HYBRID_AI_GID=%s\n' "$HYBRID_AI_GID" >> "$LAYOUT"
+printf 'HAVEN_GID=%s\n' "$HAVEN_GID" >> "$LAYOUT"
 export TEST_OWNER_LAYOUT=1
 run_verify "__unset__" "$LAYOUT"
 if [[ "$RC" == 0 ]] && grep -qx PASS <<<"$OUT_STDOUT" \
-   && [[ "$(stat -c '%u:%g' "$VDIR_FILE")" == "$HYBRID_AI_UID:$HYBRID_AI_GID" ]]; then
+   && [[ "$(stat -c '%u:%g' "$VDIR_FILE")" == "$HAVEN_UID:$HAVEN_GID" ]]; then
   pass "receipt numeric ownership resolves from non-secret layout"
 else fail "layout numeric ownership failed: $OUT"; fi
 unset TEST_OWNER_LAYOUT
 # User-mode defaults use the configured log directory, not the system path.
 write_layout "$TREE_A"
-printf 'HYBRID_AI_LOG_DIR=/fixture/user-log\n' >> "$LAYOUT"
+printf 'HAVEN_LOG_DIR=/fixture/user-log\n' >> "$LAYOUT"
 run_verify "__unset__" "$LAYOUT"
 if [[ "$(cat "$VERIFY_RESOLVED_LOG")" == /fixture/user-log/backup.log ]]; then
   pass "user-mode log directory resolution"
@@ -654,7 +654,7 @@ VERIFY_SCRIPT="$SOURCE_VERIFY"
 
 # Required missing API evidence must fail even if a user-mode policy says optional.
 write_gate_layout "$TREE_A" "$BLOG"
-printf 'HYBRID_AI_BACKUP_MODE=system\nHYBRID_AI_VERIFY_BACKUP_GATES=optional\n' >> "$LAYOUT"
+printf 'HAVEN_BACKUP_MODE=system\nHAVEN_VERIFY_BACKUP_GATES=optional\n' >> "$LAYOUT"
 export CURL_TILE_CODE=000
 run_verify "__unset__" "$LAYOUT"
 if [[ "$RC" == 1 ]] && "$REAL_JQ" -e '.verdict == "FAIL" and .gates.backup_tile.state == "SKIPPED" and .gates.backup_tile.required' "$VDIR_FILE" >/dev/null; then
@@ -662,7 +662,7 @@ if [[ "$RC" == 1 ]] && "$REAL_JQ" -e '.verdict == "FAIL" and .gates.backup_tile.
 else fail "missing mandatory API evidence passed: $OUT"; fi
 # User-mode can opt into mandatory coverage; missing privilege evidence also fails.
 write_gate_layout "$TREE_A" "$BLOG"
-printf 'HYBRID_AI_VERIFY_BACKUP_GATES=required\n' >> "$LAYOUT"
+printf 'HAVEN_VERIFY_BACKUP_GATES=required\n' >> "$LAYOUT"
 export CURL_TILE_CODE=200
 unset VERIFY_MOCK_ROOT
 run_verify "__unset__" "$LAYOUT"
@@ -697,7 +697,7 @@ for state in warn nonsense ''; do
 done
 # Layout data directory controls the actual standalone receipt destination.
 write_layout "$TREE_A"
-printf 'HYBRID_AI_DATA_DIR=%s\n' "$WORKDIR/layout-data" >> "$LAYOUT"
+printf 'HAVEN_DATA_DIR=%s\n' "$WORKDIR/layout-data" >> "$LAYOUT"
 run_verify "__unset__" "$LAYOUT" __layout__
 if [[ -f "$WORKDIR/layout-data/hermes_data/deploy-verdicts/$SHA_A.json" ]]; then
   pass "standalone receipt directory resolves from non-secret layout"
@@ -712,14 +712,14 @@ if [[ "$("$REAL_ID" -u)" != 0 ]]; then
 fi
 # Invalid policies fail closed; file values are never executed as shell code.
 write_layout "$TREE_A"
-printf 'HYBRID_AI_VERIFY_BACKUP_GATES=invalid\n' >> "$LAYOUT"
+printf 'HAVEN_VERIFY_BACKUP_GATES=invalid\n' >> "$LAYOUT"
 run_verify "__unset__" "$LAYOUT"
 if [[ "$RC" == 1 ]] && ! grep -qx PASS <<<"$OUT_STDOUT"; then
   pass "invalid backup policy fails closed"
 else fail "invalid policy accepted"; fi
 write_layout "$TREE_A"
 # shellcheck disable=SC2016  # Injection fixture must remain literal data.
-printf 'HYBRID_AI_UID=$(touch %s)\n' "$WORKDIR/injected" >> "$LAYOUT"
+printf 'HAVEN_UID=$(touch %s)\n' "$WORKDIR/injected" >> "$LAYOUT"
 export TEST_OWNER_LAYOUT=1
 run_verify "__unset__" "$LAYOUT"
 unset TEST_OWNER_LAYOUT
@@ -757,7 +757,7 @@ cat > "$TREE_A/doctor.sh" <<'EOF'
 exit "${FIXTURE_DOCTOR_RC:-0}"
 EOF
 chmod +x "$TREE_A/doctor.sh"
-export HYBRID_AI_VERIFY_INSTALL_ROOT=1
+export HAVEN_VERIFY_INSTALL_ROOT=1
 # The preceding symlink/invalid-owner cases intentionally poison the default
 # receipt directory. Use a clean destination for installation acceptance.
 rm -f "$VDIR_FILE"
@@ -791,7 +791,7 @@ run_verify "$TREE_A" "__absent__" "$BLOCKER/deploy-verdicts"
 if [[ "$RC" == 1 ]] && grep -q '^FAIL: mandatory installation receipt' <<< "$OUT_STDOUT"; then
   pass "missing mandatory installation receipt fails closed"
 else fail "missing mandatory installation receipt did not block"; fi
-unset HYBRID_AI_VERIFY_INSTALL_ROOT
+unset HAVEN_VERIFY_INSTALL_ROOT
 
 echo "== done =="
 if [[ "$failures" -ne 0 ]]; then

@@ -20,7 +20,7 @@ Everything below is grounded in the current repository:
   `hybrid-ai-proxy`, `restart: unless-stopped`, `depends_on` open-webui and
   status, `mem_limit: 128m`, `cpus: "0.5"`, publishes `"80:80"` only, mounts
   `./status/Caddyfile:/etc/caddy/Caddyfile:ro` and
-  `${HYBRID_AI_DATA_DIR}/caddy:/data`, sets `LOCAL_DOMAIN` and
+  `${HAVEN_DATA_DIR}/caddy:/data`, sets `LOCAL_DOMAIN` and
   `DO_NOT_TRACK`, `security_opt: no-new-privileges:true`, healthcheck probing
   `http://[IP_ADDRESS]:80/status/healthz`, json-file logging with rotation), and
   the `status` service, whose own healthcheck probes
@@ -33,7 +33,7 @@ Everything below is grounded in the current repository:
   `-h|--help` usage block at the top of the file. Every line number here was
   re-checked with `grep -n` against the tree at `origin/main` after this branch
   was rebased onto it.
-- `.env.example` -- `LOCAL_DOMAIN=yourhostname.com`, `HYBRID_AI_DATA_DIR`
+- `.env.example` -- `LOCAL_DOMAIN=yourhostname.com`, `HAVEN_DATA_DIR`
   layout settings.
 - `status/app.py` -- `GET /status/healthz`, `GET /status/health-summary`,
   `GET /status/api`, `GET /status`, `GET /hub`.
@@ -71,7 +71,7 @@ Marked so a later reader can challenge them, not left open:
 - (Assumption) Pi-hole is the LAN resolver, so dnsmasq drop-ins under
   `/etc/dnsmasq.d/` are the correct local-resolver surface (section 3).
 - (Assumption) The existing install is the one described by `REPO_MAP.md`:
-  `LOCAL_DOMAIN=jarvis.lan`, data under `HYBRID_AI_DATA_DIR`, containers
+  `LOCAL_DOMAIN=jarvis.lan`, data under `HAVEN_DATA_DIR`, containers
   `ollama`, `open-webui`, `status`, `hybrid-ai-proxy`, `openhands`, `hermes`.
 - (Assumption) `openhands` stays loopback-only and gets no public hostname in
   this change. Only `daemonhub.dev`, `hermes.daemonhub.dev` and
@@ -286,7 +286,7 @@ the operator asks for it. Either way the stock image is never used for TLS.
 | Mode in container | `0444`, on an in-memory mount, visible only inside the `proxy` container |
 | Referenced from | `status/Caddyfile` as `{file./run/secrets/cloudflare_dns_token}` |
 | Not stored in | git, `.env`, `.env.example`, the image, a Dockerfile `ARG`, an env var, a command line, an install log |
-| Overridable path | `HYBRID_AI_TLS_TOKEN_FILE` in `.env` (path only, never the value) |
+| Overridable path | `HAVEN_TLS_TOKEN_FILE` in `.env` (path only, never the value) |
 
 For RFC 2136, the same rules apply to `/etc/hybrid-ai/acme/rfc2136_key_secret`,
 mounted at `/run/secrets/rfc2136_key_secret`.
@@ -295,7 +295,7 @@ mounted at `/run/secrets/rfc2136_key_secret`.
 provisions the TLS app, and the rendered solver reads its credential from
 `/run/secrets/<name>` by design, so the credential must be present *inside* the
 throwaway validator too. The installer therefore mounts
-`${HYBRID_AI_TLS_TOKEN_FILE}` read-only at `/run/secrets/<name>` (the same name
+`${HAVEN_TLS_TOKEN_FILE}` read-only at `/run/secrets/<name>` (the same name
 the render reads) for the duration of the validation run, under `--network none`.
 The validation container is short-lived and reaches no network, so the token
 cannot leave the host. It is never copied, printed or passed as a value.
@@ -814,21 +814,21 @@ Notes on the diff, all deliberate:
 | Item | Value |
 |---|---|
 | Inside the container | `/data/caddy/certificates/` (Caddy's `$XDG_DATA_HOME` under `/data`) |
-| On the host | `${HYBRID_AI_DATA_DIR}/caddy/caddy/certificates/` -- the `proxy` mount is `…/caddy:/data`, so `/data/caddy` lands one level deeper (outside the `status` container's read-only `webui_data` mount) |
+| On the host | `${HAVEN_DATA_DIR}/caddy/caddy/certificates/` -- the `proxy` mount is `…/caddy:/data`, so `/data/caddy` lands one level deeper (outside the `status` container's read-only `webui_data` mount) |
 | Production CA directory | `acme-v02.api.letsencrypt.org-directory/<hostname>/` |
 | Staging CA directory | `acme-staging-v02.api.letsencrypt.org-directory/<hostname>/` |
 | Files per host | `<host>.crt`, `<host>.key`, `<host>.json` (metadata: `sans`, `not_after`, `renewal_info`) |
 | Owner | `root:root` inside the container (the caddy image runs as root by default and must, to bind 80/443 and write `/data`) |
 | Modes | Caddy creates `0700` directories and `0600` files on first write. Do not relax them. |
-| Parent directory owner | The installing user owns `${HYBRID_AI_DATA_DIR}/caddy`; Caddy's earlier writes may have created it as the container's root user. The installer ensures the directory exists and is `0700` before the first start, and never makes it group- or world-readable. |
+| Parent directory owner | The installing user owns `${HAVEN_DATA_DIR}/caddy`; Caddy's earlier writes may have created it as the container's root user. The installer ensures the directory exists and is `0700` before the first start, and never makes it group- or world-readable. |
 | Read by | The `proxy` container only. **The `status` container must not mount it**, because it contains private keys; `status` never needs key material (section 6). |
 
 Verified after issuance:
 
 ```bash
-sudo ls -l "${HYBRID_AI_DATA_DIR}/caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/daemonhub.dev/"
+sudo ls -l "${HAVEN_DATA_DIR}/caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/daemonhub.dev/"
 # expected: -rw------- root root  <host>.crt/.key/.json
-sudo stat -c '%a %U:%G' "${HYBRID_AI_DATA_DIR}/caddy/caddy/certificates"
+sudo stat -c '%a %U:%G' "${HAVEN_DATA_DIR}/caddy/caddy/certificates"
 # expected: 700 root:root
 ```
 
@@ -875,7 +875,7 @@ inside the container, not a client request.
        - ./status/Caddyfile:/etc/caddy/Caddyfile:ro
        # Caddy validates its config at boot; a syntax error here stops the
        # proxy only, leaving Open WebUI reachable on :3000.
-       - ${HYBRID_AI_DATA_DIR:?HYBRID_AI_DATA_DIR must be set - run ./install.sh}/caddy:/data
+       - ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/caddy:/data
 +    secrets:
 +      - cloudflare_dns_token
      environment:
@@ -908,7 +908,7 @@ plus, at the top level (compose file secrets are file-backed, no Swarm needed):
 ```yaml
 secrets:
   cloudflare_dns_token:
-    file: ${HYBRID_AI_TLS_TOKEN_FILE:?HYBRID_AI_TLS_TOKEN_FILE must be set when TLS is enabled}
+    file: ${HAVEN_TLS_TOKEN_FILE:?HAVEN_TLS_TOKEN_FILE must be set when TLS is enabled}
 ```
 
 When TLS is disabled the `secrets:` stanza and the `443` entries are **not**
@@ -1043,10 +1043,10 @@ reachable.
 (open), `GET` and `POST /auth/login`, and `GET /verify`. It has no published
 ports: Caddy reaches it by service name on the stack network. It runs with
 `no-new-privileges:true` and a memory limit, and its healthcheck hits
-`/healthz`. It reads `HYBRID_AI_AUTH_USER`, `HYBRID_AI_AUTH_HASH`,
-`HYBRID_AI_AUTH_COOKIE_SECRET`, `HYBRID_AI_AUTH_COOKIE_MAX_AGE` and
+`/healthz`. It reads `HAVEN_AUTH_USER`, `HAVEN_AUTH_HASH`,
+`HAVEN_AUTH_COOKIE_SECRET`, `HAVEN_AUTH_COOKIE_MAX_AGE` and
 `TLS_DOMAIN` from the compose `environment:` block. The cookie
-(`hybrid_ai_auth=<exp>.<hmac-sha256-hex>`) is `Domain={TLS_DOMAIN}; Path=/;
+(`haven_auth=<exp>.<hmac-sha256-hex>`) is `Domain={TLS_DOMAIN}; Path=/;
 Secure; HttpOnly; SameSite=Lax`, so one login covers the apex, `hermes.`,
 `status.` and the wildcard. Rotation is re-keying the secret: every live
 session drops.
@@ -1065,7 +1065,7 @@ failure, never a change of exit status) in that combination so the operator is
 not misled into thinking the gate is live.
 
 **Auto-generated cookie secret.** `install.sh` generates
-`HYBRID_AI_AUTH_COOKIE_SECRET` with `openssl rand -hex 32` when it is empty
+`HAVEN_AUTH_COOKIE_SECRET` with `openssl rand -hex 32` when it is empty
 (STEP 4b), so a fresh host has a strong, per-host key without a manual step. The
 value is written to the 0600 stack env and is never logged or printed. This runs
 unconditionally when the variable is unset, not only when `AUTH_ENABLED=on`, so
@@ -1075,8 +1075,8 @@ flipping the gate on later needs no extra run.
 whose `basic_auth` expanded to nothing. The render no longer carries the
 credentials, so the validator can no longer see them empty; the control moved
 to the installer. `tls_auth_fail_closed` runs BEFORE any render and dies when
-`AUTH_ENABLED=on` (with TLS on) and `HYBRID_AI_AUTH_USER`,
-`HYBRID_AI_AUTH_HASH` or `HYBRID_AI_AUTH_COOKIE_SECRET` is empty. Because
+`AUTH_ENABLED=on` (with TLS on) and `HAVEN_AUTH_USER`,
+`HAVEN_AUTH_HASH` or `HAVEN_AUTH_COOKIE_SECRET` is empty. Because
 `install.sh` auto-generates the cookie secret when unset, that secret branch is
 normally unreachable through the installer; it stays as defence in depth for
 hand-run and partial-env cases. It names every missing variable and is never
@@ -1089,8 +1089,8 @@ placeholders, because the render no longer contains them.
 inside env-file values, so a bcrypt hash written raw (`$2a$14$...`) loses its
 `$` fragments (`$iGdy2Gi` resolves to blank, and the deploy log shows `The
 "iGdy2Gi" variable is not set. Defaulting to a blank string.`). The fix is
-escape-at-write: `install.sh` STEP 8 writes `HYBRID_AI_AUTH_USER`,
-`HYBRID_AI_AUTH_HASH` and `HYBRID_AI_AUTH_COOKIE_SECRET` with every `$`
+escape-at-write: `install.sh` STEP 8 writes `HAVEN_AUTH_USER`,
+`HAVEN_AUTH_HASH` and `HAVEN_AUTH_COOKIE_SECRET` with every `$`
 doubled (`$$`), and Compose collapses it back to the operator's original bytes
 in the auth container. The normalizer collapses to raw first and then escapes
 once (`tls_compose_escape`), so it is idempotent: a raw value is escaped once,
@@ -1116,7 +1116,7 @@ secret) against the relocated control.
 
 **Known limitation (owner-accepted, 2026-10-29).** The gate now has a real
 server-side expiry: the session cookie is `Max-Age` bounded
-(`HYBRID_AI_AUTH_COOKIE_MAX_AGE`, default 86400). Unlike the former Basic auth,
+(`HAVEN_AUTH_COOKIE_MAX_AGE`, default 86400). Unlike the former Basic auth,
 closing the browser is not required to end a session, and a secret rotation
 drops every live session at once. The gate never transmits the password on
 later requests: only the signed cookie travels, and every gated site is HTTPS
@@ -1238,8 +1238,8 @@ openssl s_client -connect 127.0.0.1:443 -servername daemonhub.dev </dev/null 2>/
 # 4. Force a renewal without waiting 60 days: move the certificate aside and
 #    restart the proxy. Caddy sees no managed certificate and reissues.
 docker compose stop proxy
-sudo mv "${HYBRID_AI_DATA_DIR}/caddy/caddy/certificates/acme-staging-v02.api.letsencrypt.org-directory/daemonhub.dev" \
-        "${HYBRID_AI_DATA_DIR}/caddy/caddy/certificates/staging-hold/daemonhub.dev.$(date +%s)"
+sudo mv "${HAVEN_DATA_DIR}/caddy/caddy/certificates/acme-staging-v02.api.letsencrypt.org-directory/daemonhub.dev" \
+        "${HAVEN_DATA_DIR}/caddy/caddy/certificates/staging-hold/daemonhub.dev.$(date +%s)"
 docker compose start proxy
 docker compose logs --since 2m proxy | grep -iE 'obtaining|renew|certificate' | head
 # expected: "obtaining certificate" then "certificate obtained successfully"
@@ -1255,7 +1255,7 @@ Where renewal events appear:
   `not_after` and `renewal_info`; comparing `not_after` over time is the
   durable proof, independent of log rotation.
 - **The audit record** (section 6.5): `scripts/tls-check.sh` appends one line
-  per observation to `${HYBRID_AI_LOG_DIR}/tls-check.log`, so issuance and
+  per observation to `${HAVEN_LOG_DIR}/tls-check.log`, so issuance and
   renewal show up as a jump in `not_after`.
 
 Then switch to production:
@@ -1437,7 +1437,7 @@ channel.**
   reuses the same `OnFailure=` target as `hybrid-ai-check.service`. No new
   mail relay, no new webhook secret.
 - The audit record is append-only text, one line per host per run, in
-  `${HYBRID_AI_LOG_DIR}/tls-check.log` (`0600`, owned by the installing user):
+  `${HAVEN_LOG_DIR}/tls-check.log` (`0600`, owned by the installing user):
 
 ```text
 ts=2026-10-28T06:10:02Z host=daemonhub.dev issuer="CN=R11" not_after=2027-01-20T00:00:00Z days=84 severity=ok exit=0
@@ -1567,7 +1567,7 @@ production switch, and do not spend that window debugging a public site:
 
 ```bash
 # 1. Revert the Caddyfile to the previous version (HTTPS blocks removed).
-git -C "${HYBRID_AI_APP_DIR}" stash push -- status/Caddyfile   # or restore from backup
+git -C "${HAVEN_APP_DIR}" stash push -- status/Caddyfile   # or restore from backup
 docker compose exec proxy caddy validate --config /etc/caddy/Caddyfile
 docker compose exec proxy caddy reload --config /etc/caddy/Caddyfile
 
@@ -1577,7 +1577,7 @@ docker compose up -d proxy
 
 # 3. Revert .env TLS keys. Setting TLS_ENABLED=no is enough; the installer
 #    renders the TLS-less compose variant on the next run.
-sed -i 's/^TLS_ENABLED=.*/TLS_ENABLED=no/' "${HYBRID_AI_ENV_FILE}"
+sed -i 's/^TLS_ENABLED=.*/TLS_ENABLED=no/' "${HAVEN_ENV_FILE}"
 
 # 4. Revert DNS. Two independent halves:
 #    a) Public: delete the _acme-challenge TXT records Caddy created and any
@@ -1593,7 +1593,7 @@ curl -sS http://hermes.jarvis.lan/            # -> 200
 curl -sS http://status.jarvis.lan/status/healthz  # -> ok
 ```
 
-The certificate storage under `${HYBRID_AI_DATA_DIR}/caddy/caddy/certificates`
+The certificate storage under `${HAVEN_DATA_DIR}/caddy/caddy/certificates`
 is deliberately **left in place** by a rollback: it holds no state that hurts,
 and re-enabling TLS then resumes with the existing certificate instead of
 issuing a duplicate and burning rate limit. Delete it only when the rollback is
@@ -1616,7 +1616,7 @@ undoing a destructive change.
 | ACME account email | `ACME_EMAIL` | none (required) | Only if TLS enabled |
 | Validation method | `TLS_VALIDATION` | `dns` | Only if TLS enabled; prints the tradeoff text from section 1.4 first |
 | DNS provider | `ACME_DNS_PROVIDER` | `cloudflare` | Only if `TLS_VALIDATION=dns` |
-| Provider credential file path | `HYBRID_AI_TLS_TOKEN_FILE` | `/etc/hybrid-ai/acme/cloudflare_dns_token` | Only if `TLS_VALIDATION=dns`; the installer verifies it is a readable regular file, `0600`, and not inside the repo, and never prints its contents |
+| Provider credential file path | `HAVEN_TLS_TOKEN_FILE` | `/etc/hybrid-ai/acme/cloudflare_dns_token` | Only if `TLS_VALIDATION=dns`; the installer verifies it is a readable regular file, `0600`, and not inside the repo, and never prints its contents |
 | Certificate authority | `ACME_CA` | staging | Only if TLS enabled; the prompt offers `staging` (default) or `production` and maps to the URL |
 
 All prompts go through the existing `prompt_secret` helper so an existing `.env`
@@ -1634,8 +1634,8 @@ the file.
 | `--tls-validation <dns\|http\|tlsalpn>` | `TLS_VALIDATION=<...>` | Validation method |
 | `--tls-dns-provider <cloudflare\|rfc2136>` | `ACME_DNS_PROVIDER=<...>` | DNS plugin |
 | `--tls-acme-ca <staging\|production\|url>` | `ACME_CA=<url>` | CA endpoint |
-| `--tls-token-file <path>` | `HYBRID_AI_TLS_TOKEN_FILE=<path>` | **Path**, never the token |
-| `--dry-run` | `HYBRID_AI_DRY_RUN=1` | Render and validate, change nothing |
+| `--tls-token-file <path>` | `HAVEN_TLS_TOKEN_FILE=<path>` | **Path**, never the token |
+| `--dry-run` | `HAVEN_DRY_RUN=1` | Render and validate, change nothing |
 | (existing) `--non-interactive` | -- | Never prompt; fail on a missing required value |
 | (existing) `--no-start` | -- | Write config, do not touch Docker |
 
@@ -1648,7 +1648,7 @@ or any file. It is the required way to preview the change on the live host.
 For a DNS-01 render that container also gets the operator's token file mounted
 read-only at `/run/secrets/<name>`, still under `--network none`, so validation
 provisions the TLS app exactly as the proxy will without needing the network. The
-dry run therefore requires `HYBRID_AI_TLS_TOKEN_FILE` to name a non-empty,
+dry run therefore requires `HAVEN_TLS_TOKEN_FILE` to name a non-empty,
 readable regular file; otherwise it fails closed with the path and the fix and
 writes nothing. A non-DNS render validates without any token mount. Because a
 bare host `caddy` cannot be given that file, a DNS render is only validated when
@@ -1662,10 +1662,10 @@ and in the same style as `--wake-runpod`; an unknown flag still exits `2`.
 
 | File | Content | Mode |
 |---|---|---|
-| `$ENV_FILE` (stack env, e.g. `.env`) | Adds `TLS_ENABLED`, `TLS_DOMAIN`, `ACME_EMAIL`, `ACME_CA`, `TLS_VALIDATION`, `ACME_DNS_PROVIDER`, `HYBRID_AI_TLS_TOKEN_FILE`, `TLS_HOSTS`, `ACME_AUTO_HTTPS`, `CADDY_IMAGE`. No secret values. | `0600` (unchanged) |
+| `$ENV_FILE` (stack env, e.g. `.env`) | Adds `TLS_ENABLED`, `TLS_DOMAIN`, `ACME_EMAIL`, `ACME_CA`, `TLS_VALIDATION`, `ACME_DNS_PROVIDER`, `HAVEN_TLS_TOKEN_FILE`, `TLS_HOSTS`, `ACME_AUTO_HTTPS`, `CADDY_IMAGE`. No secret values. | `0600` (unchanged) |
 | `status/Caddyfile` | Rendered from `status/Caddyfile.tmpl` with the HTTPS blocks present or absent | `0644` (unchanged; not a secret) |
 | `docker-compose.yml` | Rendered from `docker-compose.yml.tmpl`, TLS or non-TLS variant | `0644` |
-| `${HYBRID_AI_LOG_DIR}/install.log` | Existing event log; gains `event tls_enabled`, `event tls_cert_issued host=…` lines. No token. | `0600` |
+| `${HAVEN_LOG_DIR}/install.log` | Existing event log; gains `event tls_enabled`, `event tls_cert_issued host=…` lines. No token. | `0600` |
 | `/etc/hybrid-ai/acme/` drop-in | **Not written by the installer.** The operator creates the token file. The installer only validates it. | `0700` dir / `0600` file |
 
 The templates live beside the files they render, and the rendered files stay
@@ -1682,7 +1682,7 @@ Re-running the installer must be a no-op when nothing changed:
    renderer strips any existing managed region and writes exactly one. Running
    twice produces a byte-identical file (`sha256sum` comparison is the test).
 2. **Certificates are never clobbered.** The install never deletes
-   `${HYBRID_AI_DATA_DIR}/caddy/caddy/certificates`. Reissuing is
+   `${HAVEN_DATA_DIR}/caddy/caddy/certificates`. Reissuing is
    Caddy's decision, not the installer's. The only file the installer *moves* is
    under an explicit `--force-reissue`, and it moves rather than deletes.
 3. **.env is rewritten, not appended** (existing behaviour: `mv -f` then
@@ -1705,7 +1705,7 @@ Re-running the installer must be a no-op when nothing changed:
 | `TLS_VALIDATION` | One of `dns`, `http`, `tlsalpn` | `die` |
 | `ACME_DNS_PROVIDER` | One of `cloudflare`, `rfc2136` | `die` |
 | `ACME_CA` | `staging`, `production`, or an `https://` URL | `die` |
-| `HYBRID_AI_TLS_TOKEN_FILE` | Absolute path, exists, regular file, not a symlink out of `/etc/hybrid-ai`, mode `0600` or stricter, owner root, not under `HYBRID_AI_APP_DIR` | `die` with the exact fix command |
+| `HAVEN_TLS_TOKEN_FILE` | Absolute path, exists, regular file, not a symlink out of `/etc/hybrid-ai`, mode `0600` or stricter, owner root, not under `HAVEN_APP_DIR` | `die` with the exact fix command |
 | `TLS_DOMAIN` + `TLS_VALIDATION=http` | Warn loudly: HTTP-01 cannot issue a wildcard, so the installation degrades to three per-host certificates and no wildcard | `warn`, continue |
 | `TLS_DOMAIN` + no port forward, `TLS_VALIDATION=dns` | Nothing to check locally; the CA reports it | -- |
 | DNS resolution of `TLS_DOMAIN` | If `getent hosts` fails, warn and print the dnsmasq lines from section 3.2 (same as today's subdomain check at line 1791) | `warn` |
@@ -1728,7 +1728,7 @@ app, and the rendered DNS solver reads its credential from
 operator's token file as one extra read-only mount:
 
 ```
--v "${HYBRID_AI_TLS_TOKEN_FILE}:/run/secrets/<resolved secret name>:ro"
+-v "${HAVEN_TLS_TOKEN_FILE}:/run/secrets/<resolved secret name>:ro"
 ```
 
 `<resolved secret name>` is the same name the render reads
@@ -1739,7 +1739,7 @@ The CI matrix step (`.github/workflows/validate.yml`) mounts its own dummy token
 for the same reason.
 
 **Fail-closed token checks, before any container starts.** On the DNS path only,
-the validator dies when the token cannot be presented: `HYBRID_AI_TLS_TOKEN_FILE`
+the validator dies when the token cannot be presented: `HAVEN_TLS_TOKEN_FILE`
 unset or empty, the path absent, not a regular file, unreadable, or empty
 (0 bytes). Every message names the path and the fix command, and reports only
 existence and length: the file's content is never echoed.
@@ -1852,16 +1852,16 @@ Restated explicitly, because every later task will be judged against this list.
    Storage is `0700` directories and `0600` files, owned by container root.
    Health checks use a TLS handshake, not the key files.
 
-   Caddy's `/data` bind source is `${HYBRID_AI_DATA_DIR}/caddy`, a sibling of
+   Caddy's `/data` bind source is `${HAVEN_DATA_DIR}/caddy`, a sibling of
    `webui_data`, so the ACME key tree is **outside** the `webui_data` directory
    the `status` container mounts read-only at `/data/webui_data`. The parent
    directory is created by the installer as `0700`, owned by the installing
    user, and is never group- or world-readable.
 
-   The old `${HYBRID_AI_DATA_DIR}/webui_data/caddy` directory is **not**
+   The old `${HAVEN_DATA_DIR}/webui_data/caddy` directory is **not**
    removed or migrated: it is left in place as a harmless orphan and may be
    deleted after upgrade. A host that ever enabled TLS must inspect it for key
-   material (`sudo ls -la "${HYBRID_AI_DATA_DIR}/webui_data/caddy"`) before
+   material (`sudo ls -la "${HAVEN_DATA_DIR}/webui_data/caddy"`) before
    deleting it, because an earlier Caddy run may have written private keys
    there.
 
@@ -1881,21 +1881,21 @@ Everything this design creates or changes. "Repo" means this git repository;
 | 5 | `docker-compose.yml.tmpl` | repo | **create** | Same managed-region pattern for the TLS / non-TLS compose variants | `0644` |
 | 6 | `install.sh` | repo | modify | New flags (8.2), TLS prompts after `LOCAL_DOMAIN` (8.1), validation (8.5), rendering + idempotency (8.3/8.4), `--dry-run`, DNS verification for `TLS_DOMAIN`, dual URL printing (7.4), `--help` text | `0755` |
 | 7 | `scripts/lib/tls.sh` | repo | **create** | Installer helper sourced by `install.sh`: argument parsing for `--tls-*`, prompt text from 1.4, input validation, token-file checks, template rendering, compose/Caddyfile validation, dry-run output. Keeps `install.sh` readable. | `0644` (sourced, not executed) |
-| 8 | `scripts/tls-check.sh` | repo | **create** | Certificate health CLI: live handshake per hostname, thresholds 14/7 days, exit codes 0/1/2/3 (6.2), one-line audit record to `${HYBRID_AI_LOG_DIR}/tls-check.log`, `--quiet`. Called by `doctor.sh` and the timer. | `0755` |
+| 8 | `scripts/tls-check.sh` | repo | **create** | Certificate health CLI: live handshake per hostname, thresholds 14/7 days, exit codes 0/1/2/3 (6.2), one-line audit record to `${HAVEN_LOG_DIR}/tls-check.log`, `--quiet`. Called by `doctor.sh` and the timer. | `0755` |
 | 9 | `status/app.py` | repo | modify | `TLS_*` constants, `collect_tls_status()`, `GET /status/tls`, `"tls"` key in `/status/api`, TLS clause in `/status/health-summary`, TLS row in `/status` and `/hub`, endpoint list comment at line ~53. No new writes, no key access. | `0644` |
 | 10 | `doctor.sh` | repo | modify | Call `scripts/tls-check.sh`, map exit `1` to warn, `2`/`3` to its own failure/skip handling, so one command still diagnoses everything | `0755` |
 | 11 | `deploy/hybrid-ai-tls-check.service` | repo | **create** | Daily read-only watchdog unit (5.2): `Type=oneshot`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, same `OnFailure=` target as `hybrid-ai-check.service` | `0644` |
 | 12 | `deploy/hybrid-ai-tls-check.timer` | repo | **create** | `OnCalendar=*-*-* 06:10:00`, `Persistent=true` | `0644` |
 | 13 | `caddy/Dockerfile` | repo | **create** | `xcaddy` build of Caddy 2.11.7 with `dns.providers.cloudflare` + `dns.providers.rfc2136`, pinned versions, with a build-time `caddy list-modules` gate (2.3) | `0644` |
 | 14 | `caddy/.dockerignore` | repo | **create** | Keep the build context to one file; nothing from the repo or any secret can enter a layer | `0644` |
-| 15 | `.env.example` | repo | modify | Document `TLS_ENABLED`, `TLS_DOMAIN`, `ACME_EMAIL`, `ACME_CA`, `TLS_VALIDATION`, `ACME_DNS_PROVIDER`, `HYBRID_AI_TLS_TOKEN_FILE`, `TLS_HOSTS`, `ACME_AUTO_HTTPS`, `CADDY_IMAGE` -- **paths and defaults only, no token** | `0644` |
+| 15 | `.env.example` | repo | modify | Document `TLS_ENABLED`, `TLS_DOMAIN`, `ACME_EMAIL`, `ACME_CA`, `TLS_VALIDATION`, `ACME_DNS_PROVIDER`, `HAVEN_TLS_TOKEN_FILE`, `TLS_HOSTS`, `ACME_AUTO_HTTPS`, `CADDY_IMAGE` -- **paths and defaults only, no token** | `0644` |
 | 16 | `REPO_MAP.md`, `CODE_INDEX.md` | repo | regenerate | Produced by the agent-context workflow, not by hand; listed so the build task runs it | generated |
 | 17 | `/etc/hybrid-ai/acme/cloudflare_dns_token` | host | **create (operator)** | Cloudflare API token, `Zone:DNS:Edit` + `Zone:Zone:Read` on `daemonhub.dev` only | `0600`, `root:root`; parent dir `0700 root:root` |
 | 18 | `/etc/hybrid-ai/acme/rfc2136_key_secret` | host | create (operator, only for the RFC 2136 provider) | TSIG secret for dynamic DNS updates | `0600`, `root:root` |
 | 19 | `/etc/dnsmasq.d/05-hybrid-ai.conf` | host (Pi-hole) | **create** | Split-horizon rewrite for `daemonhub.dev` (3.2). Host state, not a repo file. | `0644`, `root:root`; read by `pihole-FTL` |
-| 20 | `${HYBRID_AI_DATA_DIR}/caddy/caddy/certificates/` | host | created by Caddy | Certificate and key storage; `acme-v02…` and `acme-staging-v02…` subdirectories per CA | `0700` dirs, `0600` files, `root:root` (container root) |
-| 21 | `${HYBRID_AI_LOG_DIR}/tls-check.log` | host | created by `tls-check.sh` | Append-only audit record of every issuance and renewal observation | `0600`, installing user |
-| 22 | `${HYBRID_AI_LOG_DIR}/install.log` | host | appended by `install.sh` | Existing event log; gains `tls_enabled` / `tls_cert_issued` events, never a token | `0600` |
+| 20 | `${HAVEN_DATA_DIR}/caddy/caddy/certificates/` | host | created by Caddy | Certificate and key storage; `acme-v02…` and `acme-staging-v02…` subdirectories per CA | `0700` dirs, `0600` files, `root:root` (container root) |
+| 21 | `${HAVEN_LOG_DIR}/tls-check.log` | host | created by `tls-check.sh` | Append-only audit record of every issuance and renewal observation | `0600`, installing user |
+| 22 | `${HAVEN_LOG_DIR}/install.log` | host | appended by `install.sh` | Existing event log; gains `tls_enabled` / `tls_cert_issued` events, never a token | `0600` |
 
 Not changed by this design, deliberately: `openhands/docker-compose.openhands.yml`,
 `hermes/`, `openwebui/`, `backup/`, `runpod/`, `.gitignore` (already covers the
@@ -1916,7 +1916,7 @@ design touches.
 | `OPENROUTER_API_KEY` (existing) | Inference API key | `$ENV_FILE` | `0600` | `open-webui`, `openhands`, `hermes` | Existing risk, unchanged. Not used by TLS. |
 | `RUNPOD_API_KEY` (existing) | RunPod control-plane key | `$ENV_FILE` | `0600` | `install.sh`, `openwebui` pipe | Existing risk, unchanged. Not used by TLS. |
 | `ACME_EMAIL` | **Not a secret.** Account contact address | `$ENV_FILE`, rendered into the Caddyfile | `0600` file, `0644` config | `caddy` | Public metadata in the issued certificate's CA account and in CT logs. No access granted. |
-| Certificate private keys | Per-host private keys | `${HYBRID_AI_DATA_DIR}/caddy/caddy/certificates/` | `0600`, `0700` dirs | `caddy` only; **not** mounted into `status` | Attacker can impersonate the site to clients that do not check the chain and can decrypt recorded traffic to that site if they also control the network path. Cannot reach any service credential. Rotate: delete the host directory and let Caddy reissue (section 5.4 step 4). |
+| Certificate private keys | Per-host private keys | `${HAVEN_DATA_DIR}/caddy/caddy/certificates/` | `0600`, `0700` dirs | `caddy` only; **not** mounted into `status` | Attacker can impersonate the site to clients that do not check the chain and can decrypt recorded traffic to that site if they also control the network path. Cannot reach any service credential. Rotate: delete the host directory and let Caddy reissue (section 5.4 step 4). |
 | `TLS_HOSTS`, `TLS_DOMAIN`, `ACME_CA`, `TLS_VALIDATION`, `ACME_DNS_PROVIDER` | **Not secrets.** Configuration | `$ENV_FILE`, compose env | `0600` file | `caddy`, `status` | Reveal hostnames and the CA in use. No access granted. |
 
 ---
@@ -1933,7 +1933,7 @@ unexpected result and follow the rollback in 7.6.
 ### Step 1 -- Pre-flight, no changes
 
 ```bash
-cd "${HYBRID_AI_APP_DIR:-$HOME/hybrid-ai}"
+cd "${HAVEN_APP_DIR:-$HOME/hybrid-ai}"
 git status --short          # expected: clean, or only files you intend to change
 docker compose ps           # expected: ollama, open-webui, status, hybrid-ai-proxy Up/healthy
 curl -sS http://jarvis.lan/status/healthz   # expected: ok
@@ -2050,7 +2050,7 @@ dig +short TXT _acme-challenge.daemonhub.dev @1.1.1.1   # expected: empty before
 # render needs the DNS-capable image (section 8.5). That image is cache, so the
 # host files are still untouched.
 # Validation provisions the TLS app with the DNS-01 token: the token file named
-# by HYBRID_AI_TLS_TOKEN_FILE (section 2.5) is mounted read-only into the
+# by HAVEN_TLS_TOKEN_FILE (section 2.5) is mounted read-only into the
 # throwaway validator at /run/secrets/cloudflare_dns_token under --network none.
 # A missing, unreadable or empty token file fails the dry run with the path and
 # the fix; a host-only caddy cannot do this, so a DNS render is skipped (rc 3)
@@ -2082,7 +2082,7 @@ docker compose exec proxy sh -c \
   'ls /data/caddy/certificates/acme-staging-v02.api.letsencrypt.org-directory/'
 # expected: daemonhub.dev  wildcard_.daemonhub.dev   (hermes. and status. reuse the wildcard)
 
-sudo stat -c '%a %U:%G' "${HYBRID_AI_DATA_DIR}/caddy/caddy/certificates"
+sudo stat -c '%a %U:%G' "${HAVEN_DATA_DIR}/caddy/caddy/certificates"
 # expected: 700 root:root
 
 openssl s_client -connect 127.0.0.1:443 -servername daemonhub.dev </dev/null 2>/dev/null \
@@ -2122,7 +2122,7 @@ openssl s_client -connect 127.0.0.1:443 -servername hermes.daemonhub.dev </dev/n
 ```bash
 ./scripts/tls-check.sh; echo "exit=$?"
 # expected: 3 OK lines with ~90 days, then exit=0
-tail -3 "${HYBRID_AI_LOG_DIR}/tls-check.log"
+tail -3 "${HAVEN_LOG_DIR}/tls-check.log"
 # expected: one ts=… line per host with days≈90 severity=ok
 ./doctor.sh --quiet; echo "exit=$?"      # expected: exit=0
 ```

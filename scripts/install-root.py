@@ -122,6 +122,13 @@ class Transaction:
             match = re.fullmatch(r'\s*([A-Z_][A-Z_0-9]*)=(.*)', line)
             if match:
                 values[match[1]] = match[2].strip('"\'')
+        for old in ('HYBRID_AI_APP_DIR', 'HYBRID_AI_STACK_ENV_FILE',
+                    'HYBRID_AI_DATA_DIR', 'HYBRID_AI_LOG_DIR', 'HYBRID_AI_WORK_DIR'):
+            canonical = 'HAVEN_' + old.removeprefix('HYBRID_AI_')
+            if old in values and canonical in values and values[old] != values[canonical]:
+                raise Refusal('conflicting layout aliases')
+            if canonical in values:
+                values[old] = values[canonical]
         return values
 
     def source(self):
@@ -530,8 +537,8 @@ class Transaction:
             stage.rename(self.app)
             self.sync(self.app.parent)
             layout = self.layout.read_text()
-            layout = re.sub(r'^\s*HYBRID_AI_APP_DIR=.*$',
-                            'HYBRID_AI_APP_DIR=' + str(self.app), layout, flags=re.M)
+            layout = re.sub(r'^\s*((?:HYBRID_AI|HAVEN)_APP_DIR)=.*$',
+                            lambda match: match[1] + '=' + str(self.app), layout, flags=re.M)
             self.atomic(self.layout, layout.encode(), 0o644)
             key_data = self.keys.read_bytes()
             old = f'command="{source}/scripts/deploy-forced-command.sh"'.encode()
@@ -555,7 +562,10 @@ class Transaction:
             journal['phase'] = 'awaiting_verifier'
             self.save(journal)
             env = os.environ.copy()
-            env.update(HYBRID_AI_APP_DIR=str(self.app), HYBRID_AI_ENV_FILE=str(self.layout),
+            env.update(HAVEN_APP_DIR=str(self.app), HAVEN_ENV_FILE=str(self.layout),
+                       HAVEN_INSTALL_ROOT_HANDOFF='1', HAVEN_VERIFY_INSTALL_ROOT='1',
+                       HAVEN_REPOSITORY_SLUG='jimbobsyouruncle/haven',
+                       HYBRID_AI_APP_DIR=str(self.app), HYBRID_AI_ENV_FILE=str(self.layout),
                        HYBRID_AI_INSTALL_ROOT_HANDOFF='1', HYBRID_AI_VERIFY_INSTALL_ROOT='1',
                        HYBRID_AI_REPOSITORY_SLUG='jimbobsyouruncle/haven')
             self.run(['bash', str(self.app / 'scripts/deploy-remote.sh'), sha],

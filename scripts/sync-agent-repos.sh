@@ -106,9 +106,9 @@ set -Eeuo pipefail
 
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
-HYBRID_AI_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/lib" && pwd)"
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${HYBRID_AI_LIB_DIR}/hybrid-ai-env.sh"
+HAVEN_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/lib" && pwd)"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${HAVEN_LIB_DIR}/haven-env.sh"
 
 # --- Output helpers (match install.sh / setup-agent-workspace.sh) ----------
 if [[ -t 1 ]]; then
@@ -133,7 +133,7 @@ usage() {
 # helper. Never `source` it -- a value containing $(...) would run as code.
 env_value() {
   local key="$1" line candidate
-  [[ -f "${HYBRID_AI_ENV_FILE}" ]] || return 0
+  [[ -f "${HAVEN_ENV_FILE}" ]] || return 0
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^[[:space:]]*${key}=(.*)$ ]] || continue
     candidate="${BASH_REMATCH[1]}"
@@ -141,7 +141,7 @@ env_value() {
     candidate="${candidate%\'}"; candidate="${candidate#\'}"
     printf '%s' "$candidate"
     return 0
-  done < "${HYBRID_AI_ENV_FILE}"
+  done < "${HAVEN_ENV_FILE}"
 }
 
 # Expand a leading ~ by hand: a value read from .env is not tilde-expanded.
@@ -227,7 +227,7 @@ relay_cred() {
   done <<<"$1"
 }
 
-CRED_CHECK="${HYBRID_AI_APP_DIR}/scripts/check-git-remotes.sh"
+CRED_CHECK="${HAVEN_APP_DIR}/scripts/check-git-remotes.sh"
 
 # --- THE CONTROL: the tree must never touch protected trees -----------------
 # Everything else here is convenience. These checks are the boundary. A
@@ -238,13 +238,13 @@ CRED_CHECK="${HYBRID_AI_APP_DIR}/scripts/check-git-remotes.sh"
 # the backup credential directory. A --check writes nothing, so it is exempt.
 if [[ "$MODE" != "check" ]]; then
   WORKSPACE_REAL="$(readlink -f "$OPENHANDS_WORKSPACE" 2>/dev/null || echo "$OPENHANDS_WORKSPACE")"
-  ENV_DIR_REAL="$(dirname "$(readlink -f "$HYBRID_AI_ENV_FILE" 2>/dev/null || echo "$HYBRID_AI_ENV_FILE")")"
-  STACK_ENV_DIR_REAL="$(dirname "$(readlink -f "$HYBRID_AI_STACK_ENV_FILE" 2>/dev/null || echo "$HYBRID_AI_STACK_ENV_FILE")")"
+  ENV_DIR_REAL="$(dirname "$(readlink -f "$HAVEN_ENV_FILE" 2>/dev/null || echo "$HAVEN_ENV_FILE")")"
+  STACK_ENV_DIR_REAL="$(dirname "$(readlink -f "$HAVEN_STACK_ENV_FILE" 2>/dev/null || echo "$HAVEN_STACK_ENV_FILE")")"
   GUARDED_REAL=(
-    "$(readlink -f "$HYBRID_AI_APP_DIR" 2>/dev/null || echo "$HYBRID_AI_APP_DIR")"
-    "$(readlink -f "$HYBRID_AI_DATA_DIR" 2>/dev/null || echo "$HYBRID_AI_DATA_DIR")"
-    "$(readlink -f "$HYBRID_AI_LOG_DIR" 2>/dev/null || echo "$HYBRID_AI_LOG_DIR")"
-    "$(readlink -f "$HYBRID_AI_WORK_DIR" 2>/dev/null || echo "$HYBRID_AI_WORK_DIR")"
+    "$(readlink -f "$HAVEN_APP_DIR" 2>/dev/null || echo "$HAVEN_APP_DIR")"
+    "$(readlink -f "$HAVEN_DATA_DIR" 2>/dev/null || echo "$HAVEN_DATA_DIR")"
+    "$(readlink -f "$HAVEN_LOG_DIR" 2>/dev/null || echo "$HAVEN_LOG_DIR")"
+    "$(readlink -f "$HAVEN_WORK_DIR" 2>/dev/null || echo "$HAVEN_WORK_DIR")"
     "$ENV_DIR_REAL"
     "$STACK_ENV_DIR_REAL"
     "$WORKSPACE_REAL"
@@ -356,7 +356,7 @@ fi
 # ===========================================================================
 OWNER="${AGENT_REPOS_OWNER:-$(env_value AGENT_REPOS_OWNER)}"
 if [[ -z "$OWNER" ]]; then
-  ORIGIN_URL="$(git -C "$HYBRID_AI_APP_DIR" remote get-url origin 2>/dev/null || true)"
+  ORIGIN_URL="$(git -C "$HAVEN_APP_DIR" remote get-url origin 2>/dev/null || true)"
   if [[ "$ORIGIN_URL" =~ github\.com[:/]+([^/]+)/[^/]+$ ]]; then
     OWNER="${BASH_REMATCH[1]}"
   fi
@@ -475,7 +475,7 @@ fi
 # Excluding a repo stops future syncing of it; it does NOT delete a copy that
 # already exists on disk. This script never deletes anything.
 AGENT_REPOS_MANIFEST="${AGENT_REPOS_MANIFEST:-$(env_value AGENT_REPOS_MANIFEST)}"
-AGENT_REPOS_MANIFEST="${AGENT_REPOS_MANIFEST:-${HYBRID_AI_APP_DIR}/agent-repos.local}"
+AGENT_REPOS_MANIFEST="${AGENT_REPOS_MANIFEST:-${HAVEN_APP_DIR}/agent-repos.local}"
 AGENT_REPOS_MANIFEST="$(expand_tilde "$AGENT_REPOS_MANIFEST")"
 
 manifest_default_branch() {  # owner/name base -> branch on stdout, non-zero on failure

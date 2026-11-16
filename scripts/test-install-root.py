@@ -187,6 +187,13 @@ class MigrationTests(unittest.TestCase):
         self.assertTrue(self.tx.legacy.is_dir())
         self.assertFalse(self.tx.app.is_symlink())
 
+    def test_canonical_layout(self):
+        self.tx.layout.write_text(self.tx.layout.read_text().replace('HYBRID_AI_', 'HAVEN_'))
+        self.tx.deploy(self.sha)
+        self.assertIn('HAVEN_APP_DIR=' + str(self.tx.app), self.tx.layout.read_text())
+        self.tx.accept(self.sha, self.receipt())
+        self.tx.wiring(self.sha)
+
     def test_legacy_and_repeated_deployment(self):
         self.tx.deploy(self.sha)
         self.assertEqual(self.tx.load()['phase'], 'awaiting_verifier')

@@ -29,7 +29,7 @@
 #
 # CONFIGURATION (environment; also read from the stack .env via the unit's
 # EnvironmentFile):
-#   HYBRID_AI_BUILD_CACHE_CAP   default 15GB
+#   HAVEN_BUILD_CACHE_CAP   default 15GB
 #       Size cap handed to the probed flag. Only this variable is read; no
 #       other .env value is ever printed.
 #
@@ -54,7 +54,14 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-CAP="${HYBRID_AI_BUILD_CACHE_CAP:-15GB}"
+# Transitional installed-process alias; unequal values refuse before action.
+if [[ -v HAVEN_BUILD_CACHE_CAP && -v HYBRID_AI_BUILD_CACHE_CAP &&
+      "$HAVEN_BUILD_CACHE_CAP" != "$HYBRID_AI_BUILD_CACHE_CAP" ]]; then
+  printf 'haven-env: conflicting aliases for HAVEN_BUILD_CACHE_CAP\n' >&2
+  exit 2
+fi
+HAVEN_BUILD_CACHE_CAP="${HAVEN_BUILD_CACHE_CAP-${HYBRID_AI_BUILD_CACHE_CAP-}}"
+CAP="${HAVEN_BUILD_CACHE_CAP:-15GB}"
 
 log()  { printf '%s [ * ] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 warn() { printf '%s [ ! ] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }

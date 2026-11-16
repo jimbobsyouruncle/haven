@@ -200,14 +200,14 @@ The deploy prints disk usage of both data folders after the run, so every deploy
 On your own machine — **not** on the Pi:
 
 ```bash
-ssh-keygen -t ed25519 -C "github-actions-hybrid-ai" -f ~/.ssh/hybrid_ai_deploy
+ssh-keygen -t ed25519 -C "github-actions-hybrid-ai" -f ~/.ssh/haven_deploy
 ```
 
 Install the **public** half on the Pi through the bootstrap, which writes it to
 the dedicated `hybrid-ai-deploy` account and pins it to the forced command:
 
 ```bash
-sudo ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/hybrid_ai_deploy.pub
+sudo ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/haven_deploy.pub
 ```
 
 Do not copy it to the admin account with `ssh-copy-id`: the deploy no longer logs
@@ -253,7 +253,7 @@ GitHub repo → **Settings** → **Secrets and variables** → **Actions** → *
 | `TS_OAUTH_CLIENT_ID` | OAuth client ID | Step 2 |
 | `TS_OAUTH_SECRET` | OAuth client secret | Step 2 |
 | `PI_TAILSCALE_FULL_DOMAIN` | The Pi's MagicDNS name, e.g. `jarvis.tailXXXX.ts.net` | `tailscale status` on the Pi — the peer's `DNSName` without its trailing dot. Use the name, not the address: a re-registered Pi keeps its name but can change its mesh address |
-| `PI_SSH_KEY` | **Private** key contents | `cat ~/.ssh/hybrid_ai_deploy` — include the BEGIN and END lines. The matching public key is pinned to the forced command on the `hybrid-ai-deploy` account |
+| `PI_SSH_KEY` | **Private** key contents | `cat ~/.ssh/haven_deploy` — include the BEGIN and END lines. The matching public key is pinned to the forced command on the `hybrid-ai-deploy` account |
 | `PI_SSH_HOST_KEY` | The Pi's SSH host key fingerprint | `ssh-keyscan -t ed25519 $(tailscale ip -4) \| ssh-keygen -lf -` on the Pi — use the SHA256:... field, not the raw known_hosts line |
 | `PI_SSH_USER` | **Unused** | May be deleted by the owner |
 | `PI_REPO_PATH` | **Unused** | May be deleted by the owner |
@@ -287,7 +287,7 @@ Watch the **Actions** tab. First run takes 2–4 minutes.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `Pi ... is unreachable over the tailnet` | ACL rule missing, or Pi offline | Verify the `tag:ci` ACL; check `tailscale status` on the Pi |
-| SSH `permission denied (publickey)` | Wrong key, or public half not installed | Re-run `sudo ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/hybrid_ai_deploy.pub` on the Pi; confirm you pasted the **private** key into the secret. `ssh-copy-id` will not work — the deploy account's key is pinned to the forced command |
+| SSH `permission denied (publickey)` | Wrong key, or public half not installed | Re-run `sudo ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/haven_deploy.pub` on the Pi; confirm you pasted the **private** key into the secret. `ssh-copy-id` will not work — the deploy account's key is pinned to the forced command |
 | `RUNPOD_API_KEY missing and --non-interactive was requested` | `.env` does not exist on the Pi yet | Run `./install.sh` interactively on the Pi once first |
 | `Open WebUI failed its health check` | Container did not start | The workflow output includes the last 50 log lines — read those |
 | OAuth client errors | Wrong scope or missing tag | Client needs `auth_keys` write scope and `tag:ci` |

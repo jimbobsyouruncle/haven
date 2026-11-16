@@ -22,11 +22,11 @@ umask 022
 #      deploy key. That is this script.
 #   2. The stack's secrets and the host LAYOUT used to share one env file, and
 #      install.sh REWROTE that file on every run. A root deploy would therefore
-#      erase HYBRID_AI_BACKUP_MODE=system and could not leave the file readable
+#      erase HAVEN_BACKUP_MODE=system and could not leave the file readable
 #      by the backup account it needed. The layout now lives in
 #      /etc/hybrid-ai/hybrid-ai.env (mode 0644, names and paths only) and the
 #      secrets live in /etc/hybrid-ai/stack.env (mode 0600). install.sh writes
-#      ONLY the stack file. See scripts/lib/hybrid-ai-env.sh.
+#      ONLY the stack file. See scripts/lib/haven-env.sh.
 #
 # SAFE TO RE-RUN; NOT SAFE TO SKIP:
 #   The accounts are least-privilege by construction: each gets its own group
@@ -56,7 +56,7 @@ umask 022
 #   -h | --help               print this header and exit 0
 #
 # TEST-ONLY:
-#   HYBRID_AI_BOOTSTRAP_ROOT  a filesystem prefix for the offline test. UNSET
+#   HAVEN_BOOTSTRAP_ROOT  a filesystem prefix for the offline test. UNSET
 #                             means "/" (the real filesystem), which is the
 #                             default. scripts/test-bootstrap.sh sets it to a
 #                             scratch directory.
@@ -90,12 +90,41 @@ warn() { printf '%s[ ! ]%s %s\n' "$C_WRN" "$C_RST" "$*" >&2; }
 die()  { local code="$1"; shift; printf '%s[ X ]%s %s\n' "$C_ERR" "$C_RST" "$*" >&2; exit "$code"; }
 hr()   { printf '%s%s%s\n' "$C_RST" "------------------------------------------------------------" "$C_RST"; }
 
+# BEGIN Haven environment compatibility
+# Transitional process aliases for installed controls. Values are data; diagnostics
+# name keys only. Keep this block identical in the standalone verifier.
+for _haven_import_suffix in AGENT_CONTEXT_GENERATOR ALERT_WEBHOOK_URL APP_DIR AUTH_COOKIE_MAX_AGE AUTH_COOKIE_SECRET AUTH_HASH \
+  AUTH_RATE_LIMIT AUTH_RATE_WINDOW AUTH_USER BACKUP_CHECK_TIMER_UNIT BACKUP_CRED_DIR BACKUP_JOURNAL_SCOPE \
+  BACKUP_MODE BACKUP_SERVICE_UNIT BACKUP_STAGING_DIR BACKUP_SYSTEMCTL_SCOPE BACKUP_TIMER_UNIT BOOTSTRAP_ROOT \
+  BUILD_CACHE_CAP CADDY_CERT_ROOT CADDY_DATA_DIR DATA_DIR DEFAULT_REPO_DIR DEPLOY_LOCK_FILE \
+  DEPLOY_PUBLIC_REMOTE DEPLOY_VERDICT_DIR DRY_RUN ENV_FILE ENV_FILE_FALLBACK ENV_FILE_FALLBACK_DEFAULT \
+  EXPLICIT_SETTINGS GID HERMES_DATA_DIR HERMES_HOME_DIR INSTALL_LOG INSTALL_ROOT_HANDOFF \
+  LAYOUT_AGENT_REPOS_DIR LAYOUT_GID LAYOUT_OPENHANDS_STATE_DIR LAYOUT_OPENHANDS_WORKSPACE LAYOUT_UID LIB \
+  LIB_DIR LOG_DIR OLLAMA_DATA_DIR POLKIT_RULES_DIR POST_DEPLOY_VERIFY_CMD POST_DEPLOY_VERIFY_LOG \
+  PRUNE_AGE_SECONDS PRUNE_ALLOW_LEASE_LESS PRUNE_GRACE_SECONDS PRUNE_MAX_MOVES PRUNE_QUARANTINE_BASE PRUNE_QUARANTINE_RETENTION_DAYS \
+  REPOSITORY_SLUG RESTORE_WORK_DIR SBIN_DIR STACK_ENV_FILE SYSTEMD_UNIT_DIR TLS_TOKEN_FILE \
+  UID UNINSTALL_ROOT VERIFY_BACKUP_GATES VERIFY_INSTALL_ROOT WEBUI_DATA_DIR WEBUI_TARGET_ID \
+  WORK_DIR; do
+  _haven_import_canonical="HAVEN_${_haven_import_suffix}"
+  _haven_import_legacy="HYBRID_AI_${_haven_import_suffix}"
+  if [[ -v "$_haven_import_canonical" && -v "$_haven_import_legacy" && "${!_haven_import_canonical}" != "${!_haven_import_legacy}" ]]; then
+    printf 'haven-env: conflicting aliases for %s; refusing configuration\n' "$_haven_import_canonical" >&2
+    exit 2
+  fi
+  if [[ ! -v "$_haven_import_canonical" && -v "$_haven_import_legacy" ]]; then
+    printf -v "$_haven_import_canonical" '%s' "${!_haven_import_legacy}"
+    export "${_haven_import_canonical?}"
+  fi
+done
+unset _haven_import_suffix _haven_import_canonical _haven_import_legacy
+# END Haven environment compatibility
+
 # --- Test-only filesystem prefix -------------------------------------------
 # UNSET (the default) means "/", the real filesystem. scripts/test-bootstrap.sh
-# sets HYBRID_AI_BOOTSTRAP_ROOT to a scratch directory so the whole script can
+# sets HAVEN_BOOTSTRAP_ROOT to a scratch directory so the whole script can
 # be exercised with no root, no Docker and no network.
-ROOT_PREFIX="${HYBRID_AI_BOOTSTRAP_ROOT:-/}"
-[[ "$ROOT_PREFIX" == /* ]] || { printf 'bootstrap: HYBRID_AI_BOOTSTRAP_ROOT must be an absolute path.\n' >&2; exit 1; }
+ROOT_PREFIX="${HAVEN_BOOTSTRAP_ROOT:-/}"
+[[ "$ROOT_PREFIX" == /* ]] || { printf 'bootstrap: HAVEN_BOOTSTRAP_ROOT must be an absolute path.\n' >&2; exit 1; }
 ROOT_PREFIX="${ROOT_PREFIX%/}"
 # Prefix a host path. With ROOT_PREFIX empty (the default "/") this is the
 # identity. A path that already sits under the prefix (as a stubbed getent
@@ -121,7 +150,7 @@ WORK_DIR="${DATA_DIR}/work"
 LOG_DIR="$(host_path /var/log/hybrid-ai)"
 # The agent workspace and the repo reference tree are SIBLINGS of the data dir,
 # never children of it. setup-agent-workspace.sh and sync-agent-repos.sh both
-# refuse a path inside HYBRID_AI_DATA_DIR (it would sit one traversal away from
+# refuse a path inside HAVEN_DATA_DIR (it would sit one traversal away from
 # the stack env file and the backup credentials), so the bootstrap must render
 # these two paths outside it.
 AGENT_WS="$(host_path /var/lib/hybrid-ai-agent)"
@@ -140,7 +169,7 @@ LOGIN_DEFS="$(host_path /etc/login.defs)"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/repository-identity.sh
 source "${SCRIPT_DIR}/lib/repository-identity.sh"
-REPO_SLUG="$(hybrid_ai_repository_slug)" || exit 2
+REPO_SLUG="$(haven_repository_slug)" || exit 2
 PUBLIC_REMOTE="https://github.com/${REPO_SLUG}.git"
 
 # Account names. Names only -- never a credential.
@@ -152,16 +181,16 @@ usage() { awk 'NR==1{next} /^set -Eeuo pipefail/{exit} {sub(/^# ?/,""); print}' 
 
 print_paths() {
   printf 'root                     = %s\n' "${ROOT_PREFIX:-/}"
-  printf 'HYBRID_AI_APP_DIR        = %s\n' "$APP_DIR"
-  printf 'HYBRID_AI_ENV_FILE       = %s\n' "$LAYOUT_ENV"
-  printf 'HYBRID_AI_STACK_ENV_FILE = %s\n' "$STACK_ENV"
-  printf 'HYBRID_AI_DATA_DIR       = %s\n' "$DATA_DIR"
-  printf 'HYBRID_AI_LOG_DIR        = %s\n' "$LOG_DIR"
-  printf 'HYBRID_AI_WORK_DIR       = %s\n' "$WORK_DIR"
+  printf 'HAVEN_APP_DIR        = %s\n' "$APP_DIR"
+  printf 'HAVEN_ENV_FILE       = %s\n' "$LAYOUT_ENV"
+  printf 'HAVEN_STACK_ENV_FILE = %s\n' "$STACK_ENV"
+  printf 'HAVEN_DATA_DIR       = %s\n' "$DATA_DIR"
+  printf 'HAVEN_LOG_DIR        = %s\n' "$LOG_DIR"
+  printf 'HAVEN_WORK_DIR       = %s\n' "$WORK_DIR"
   printf 'OPENHANDS_WORKSPACE      = %s\n' "$AGENT_WS"
   printf 'AGENT_REPOS_DIR          = %s\n' "$AGENT_REPOS"
   printf 'OPENHANDS_STATE_DIR      = %s\n' "$OPENHANDS_STATE"
-  printf 'HYBRID_AI_HERMES_HOME_DIR= %s\n' "$HERMES_HOME"
+  printf 'HAVEN_HERMES_HOME_DIR= %s\n' "$HERMES_HOME"
   printf 'RESTIC_CACHE_DIR         = %s\n' "$RESTIC_CACHE"
   printf 'creds                    = %s\n' "$CRED_DIR"
 }
@@ -430,7 +459,7 @@ make_dir 0755 root:root "$OPENHANDS_STATE"
 # Empty, owned by the stack account: it is that account's per-user Hermes home.
 make_dir 0700 "${STACK_ACCOUNT}:${STACK_ACCOUNT}" "$HERMES_HOME"
 # Pre-created and owned by the stack account: install.sh's non-root Hermes
-# preflight refuses unless the configured HYBRID_AI_UID owns every entry in
+# preflight refuses unless the configured HAVEN_UID owns every entry in
 # hermes_data, and install.sh cannot chown it itself.
 make_dir 0755 "${STACK_ACCOUNT}:${STACK_ACCOUNT}" "$HERMES_DATA"
 make_dir 0755 "${BACKUP_ACCOUNT}:${BACKUP_ACCOUNT}" "$RESTIC_CACHE"
@@ -447,24 +476,24 @@ render_layout() {
 # GENERATED BY scripts/bootstrap.sh -- the host LAYOUT. NAMES AND PATHS ONLY.
 # Mode 0644, root-owned: the backup account and the deploy account read it.
 # NEVER put a secret in this file. Secrets live in
-# HYBRID_AI_STACK_ENV_FILE (mode 0600), which install.sh writes.
-# Every setting below is resolved by scripts/lib/hybrid-ai-env.sh.
+# HAVEN_STACK_ENV_FILE (mode 0600), which install.sh writes.
+# Every setting below is resolved by scripts/lib/haven-env.sh.
 # ---------------------------------------------------------------------------
-HYBRID_AI_APP_DIR=${APP_DIR}
-HYBRID_AI_ENV_FILE=${LAYOUT_ENV}
-HYBRID_AI_STACK_ENV_FILE=${STACK_ENV}
-HYBRID_AI_DATA_DIR=${DATA_DIR}
-HYBRID_AI_LOG_DIR=${LOG_DIR}
-HYBRID_AI_WORK_DIR=${WORK_DIR}
+HAVEN_APP_DIR=${APP_DIR}
+HAVEN_ENV_FILE=${LAYOUT_ENV}
+HAVEN_STACK_ENV_FILE=${STACK_ENV}
+HAVEN_DATA_DIR=${DATA_DIR}
+HAVEN_LOG_DIR=${LOG_DIR}
+HAVEN_WORK_DIR=${WORK_DIR}
 OPENHANDS_WORKSPACE=${AGENT_WS}
 AGENT_REPOS_DIR=${AGENT_REPOS}
 OPENHANDS_STATE_DIR=${OPENHANDS_STATE}
 RESTIC_CACHE_DIR=${RESTIC_CACHE}
-HYBRID_AI_HERMES_HOME_DIR=${HERMES_HOME}
-HYBRID_AI_BACKUP_MODE=system
+HAVEN_HERMES_HOME_DIR=${HERMES_HOME}
+HAVEN_BACKUP_MODE=system
 BACKUP_CONTAINER_CONTROL=external
-HYBRID_AI_UID=${STACK_UID}
-HYBRID_AI_GID=${STACK_GID}
+HAVEN_UID=${STACK_UID}
+HAVEN_GID=${STACK_GID}
 EOF
 }
 
@@ -781,7 +810,7 @@ run_migration() {
   # (j) Refuse the Hermes uid change before install.sh starts: the preflight
   # reads hermes_data, so its ownership had to be set above first.
   if [[ -x "${APP_DIR}/scripts/check-hermes-nonroot.sh" ]]; then
-    if ! HYBRID_AI_UID="$STACK_UID" HERMES_DATA_DIR="$HERMES_DATA" \
+    if ! HAVEN_UID="$STACK_UID" HERMES_DATA_DIR="$HERMES_DATA" \
          "${APP_DIR}/scripts/check-hermes-nonroot.sh"; then
       die 1 "the ${STACK_ACCOUNT} uid cannot read ${HERMES_DATA}; fix ownership, then re-run"
     fi
@@ -802,9 +831,9 @@ fi
 
 # --- 10. Hand-off: install.sh, then doctor.sh -------------------------------
 # Point the hand-off at the LAYOUT file by name, so install.sh resolves the
-# layout paths and learns HYBRID_AI_STACK_ENV_FILE from it. install.sh then
+# layout paths and learns HAVEN_STACK_ENV_FILE from it. install.sh then
 # writes ONLY the stack file, so this layout file survives the deploy.
-HANDOFF_ENV=(HYBRID_AI_ENV_FILE="$LAYOUT_ENV")
+HANDOFF_ENV=(HAVEN_ENV_FILE="$LAYOUT_ENV")
 run_install() {
   if [[ -t 0 ]]; then
     env "${HANDOFF_ENV[@]}" "${APP_DIR}/install.sh"

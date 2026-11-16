@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------------
 # FILE: scripts/test-backup-mode-timers.sh
 # PURPOSE (plain English):
-#   Proves the ONE setting HYBRID_AI_BACKUP_MODE steers every tool that reports
+#   Proves the ONE setting HAVEN_BACKUP_MODE steers every tool that reports
 #   or checks the nightly backup timer. In user mode they must keep the per-user
 #   unit and systemctl --user; in system mode they must use the capture timer
 #   through systemctl --system (and drop the user-only linger check).
@@ -78,7 +78,7 @@ export JOURNALCTL_LOG
 APPD="$WORK/app"
 mkdir -p "$APPD/scripts/lib" "$APPD/backup" "$APPD/openhands" "$APPD/hermes" \
          "$APPD/webui_data" "$APPD/hermes_data"
-cp "$REPO_SRC/scripts/lib/hybrid-ai-env.sh" "$APPD/scripts/lib/"
+cp "$REPO_SRC/scripts/lib/haven-env.sh" "$APPD/scripts/lib/"
 cp "$REPO_SRC/scripts/lib/repository-identity.sh" "$APPD/scripts/lib/"
 cp "$REPO_SRC/scripts/lib/read-probe.sh" "$APPD/scripts/lib/"
 cp "$REPO_SRC/backup/backup.sh" "$APPD/backup/"
@@ -111,16 +111,16 @@ chmod +x "$APPD/install.sh"
 
 run_doctor() { # mode
   : > "$SYSCTL_LOG"
-  ( cd "$APPD" && PATH="$BIN:$PATH" HYBRID_AI_BACKUP_MODE="$1" HYBRID_AI_BACKUP_CRED_DIR="$CRED" \
-      HYBRID_AI_WORK_DIR="$APPD" HOME="$WORK/home" \
+  ( cd "$APPD" && PATH="$BIN:$PATH" HAVEN_BACKUP_MODE="$1" HAVEN_BACKUP_CRED_DIR="$CRED" \
+      HAVEN_WORK_DIR="$APPD" HOME="$WORK/home" \
       timeout 60 bash ./doctor.sh --no-cloud ) > "$WORK/doctor.$1.out" 2>&1
   return 0
 }
 
 run_deploy() { # mode
   : > "$SYSCTL_LOG"
-  ( cd "$APPD" && PATH="$BIN:$PATH" HYBRID_AI_BACKUP_MODE="$1" \
-      HYBRID_AI_WORK_DIR="$APPD" HOME="$WORK/home" \
+  ( cd "$APPD" && PATH="$BIN:$PATH" HAVEN_BACKUP_MODE="$1" \
+      HAVEN_WORK_DIR="$APPD" HOME="$WORK/home" \
       timeout 60 bash ./scripts/deploy-remote.sh "$SHA" ) > "$WORK/deploy.$1.out" 2>&1
   return 0
 }
@@ -128,8 +128,8 @@ run_deploy() { # mode
 run_collect() { # mode
   : > "$SYSCTL_LOG"
   : > "$JOURNALCTL_LOG"
-  ( cd "$APPD" && PATH="$BIN:$PATH" HYBRID_AI_BACKUP_MODE="$1" HYBRID_AI_BACKUP_CRED_DIR="$CRED" \
-      HYBRID_AI_WORK_DIR="$APPD" HOME="$WORK/home" \
+  ( cd "$APPD" && PATH="$BIN:$PATH" HAVEN_BACKUP_MODE="$1" HAVEN_BACKUP_CRED_DIR="$CRED" \
+      HAVEN_WORK_DIR="$APPD" HOME="$WORK/home" \
       timeout 90 bash ./collect-diagnostics.sh --output "$WORK/diag.$1.txt" --lines 5 ) \
       > "$WORK/collect.$1.out" 2>&1
   return 0
@@ -138,8 +138,8 @@ run_collect() { # mode
 run_backup() { # mode
   : > "$SYSCTL_LOG"
   rm -rf "$APPD/.backup-staging"
-  ( cd "$APPD" && PATH="$BIN:$PATH" HYBRID_AI_BACKUP_MODE="$1" BACKUP_CONF_DIR="$CRED" \
-      HYBRID_AI_WORK_DIR="$APPD" HYBRID_AI_LOG_DIR="$APPD" HOME="$WORK/home" \
+  ( cd "$APPD" && PATH="$BIN:$PATH" HAVEN_BACKUP_MODE="$1" BACKUP_CONF_DIR="$CRED" \
+      HAVEN_WORK_DIR="$APPD" HAVEN_LOG_DIR="$APPD" HOME="$WORK/home" \
       BACKUP_NO_PAUSE=1 \
       timeout 60 bash ./backup/backup.sh --non-interactive --stage-only ) > "$WORK/backup.$1.out" 2>&1
   return 0

@@ -19,11 +19,11 @@ set -Eeuo pipefail
 
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
-HYBRID_AI_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../scripts/lib" && pwd)"
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${HYBRID_AI_LIB_DIR}/hybrid-ai-env.sh"
-ROOT="$HYBRID_AI_APP_DIR"
-ENV_FILE="$HYBRID_AI_STACK_ENV_FILE"
+HAVEN_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../scripts/lib" && pwd)"
+# shellcheck source=scripts/lib/haven-env.sh
+source "${HAVEN_LIB_DIR}/haven-env.sh"
+ROOT="$HAVEN_APP_DIR"
+ENV_FILE="$HAVEN_STACK_ENV_FILE"
 cd "$ROOT"
 
 [[ -f "$ENV_FILE" ]] || { echo "Missing env file ($ENV_FILE). Run ./install.sh first." >&2; exit 1; }

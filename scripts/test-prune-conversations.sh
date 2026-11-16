@@ -29,7 +29,7 @@
 #     (e) a conversation entry that is a symlink -> refused as symlink, not
 #         followed, and the target contents are untouched.
 #     (f) the per-run cap is honoured: three eligible directories with
-#         HYBRID_AI_PRUNE_MAX_MOVES=1 -> moved=1 and two cap-reached refusals.
+#         HAVEN_PRUNE_MAX_MOVES=1 -> moved=1 and two cap-reached refusals.
 #     (g) a second consecutive run over the same tree -> moved=0, exit 0, and
 #         nothing changes.
 #     (h) the quarantine root is created mode 0750, and owned by uid 0 when the
@@ -39,7 +39,7 @@
 #         ${OPENHANDS_WORKSPACE}/conversations that is itself a symlink pointing
 #         outside the workspace makes the script refuse to sweep (exit 0,
 #         nothing moved outside).
-#     (j) HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=1 -> a lease-less directory past the
+#     (j) HAVEN_PRUNE_ALLOW_LEASE_LESS=1 -> a lease-less directory past the
 #         age limit moves (moved-lease-less=1, reason lease-less-moved) with its
 #         files intact, and a lease-less directory inside the age limit is
 #         refused with reason lease-less-recent.
@@ -147,30 +147,30 @@ run_prune() {
   # A completely unset retention knob must behave like the documented default
   # (90 days ON), so every case that does not set it unsets it explicitly.
   if [[ -z "$RETENTION_DAYS" ]]; then
-    unset_args+=("-u" "HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS")
+    unset_args+=("-u" "HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS")
   fi
   if [[ -z "$ALLOW_LEASE_LESS" ]]; then
-    unset_args+=("-u" "HYBRID_AI_PRUNE_ALLOW_LEASE_LESS")
+    unset_args+=("-u" "HAVEN_PRUNE_ALLOW_LEASE_LESS")
   fi
   local -a e=(
     "PATH=${STUB_BIN}:${PATH}"
-    "HYBRID_AI_ENV_FILE=${tree}/hybrid-ai.env"
-    "HYBRID_AI_APP_DIR=${tree}/app"
-    "HYBRID_AI_DATA_DIR=${tree}/data"
-    "HYBRID_AI_WORK_DIR=${tree}/work"
+    "HAVEN_ENV_FILE=${tree}/hybrid-ai.env"
+    "HAVEN_APP_DIR=${tree}/app"
+    "HAVEN_DATA_DIR=${tree}/data"
+    "HAVEN_WORK_DIR=${tree}/work"
     "OPENHANDS_WORKSPACE=${tree}/workspace"
-    "HYBRID_AI_PRUNE_AGE_SECONDS=${AGE}"
-    "HYBRID_AI_PRUNE_GRACE_SECONDS=${GRACE}"
-    "HYBRID_AI_PRUNE_MAX_MOVES=${MAX_MOVES}"
+    "HAVEN_PRUNE_AGE_SECONDS=${AGE}"
+    "HAVEN_PRUNE_GRACE_SECONDS=${GRACE}"
+    "HAVEN_PRUNE_MAX_MOVES=${MAX_MOVES}"
   )
   if [[ -n "$QBASE" ]]; then
-    e+=("HYBRID_AI_PRUNE_QUARANTINE_BASE=${QBASE}")
+    e+=("HAVEN_PRUNE_QUARANTINE_BASE=${QBASE}")
   fi
   if [[ -n "$ALLOW_LEASE_LESS" ]]; then
-    e+=("HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=${ALLOW_LEASE_LESS}")
+    e+=("HAVEN_PRUNE_ALLOW_LEASE_LESS=${ALLOW_LEASE_LESS}")
   fi
   if [[ -n "$RETENTION_DAYS" ]]; then
-    e+=("HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS=${RETENTION_DAYS}")
+    e+=("HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=${RETENTION_DAYS}")
   fi
   local rc=0
   RUN_OUT="$(env "${unset_args[@]}" "${e[@]}" bash "$PRUNE" 2>&1)" || rc=$?
@@ -367,7 +367,7 @@ check "(j) the old lease-less directory is gone" "$([[ -e "${CONV}/orphan-old" ]
 check "(j) the recent lease-less directory is still present" "$([[ -d "${CONV}/orphan-new" ]] && echo yes || echo no)" "yes"
 check "(j) inner file preserved" "$(cat "${QROOT}/${QDATE}/orphan-old/inner.txt" 2>/dev/null || echo missing)" "keep-me"
 check "(j) nested file preserved" "$(cat "${QROOT}/${QDATE}/orphan-old/nested/deep.txt" 2>/dev/null || echo missing)" "deep"
-case_end "(j) HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=1 moves an old lease-less directory only"
+case_end "(j) HAVEN_PRUNE_ALLOW_LEASE_LESS=1 moves an old lease-less directory only"
 
 # --- (j2) knob OFF is byte-identical: no new fields except the summary ------
 case_begin
@@ -426,14 +426,14 @@ for optout in "" 0; do
   age_dir "$OLD_RUN" "$(( 400 * 86400 ))"
   RETENTION_DAYS="$optout"
   rc=0
-  RUN_OUT="$(env -u HYBRID_AI_PRUNE_ALLOW_LEASE_LESS \
+  RUN_OUT="$(env -u HAVEN_PRUNE_ALLOW_LEASE_LESS \
     "PATH=${STUB_BIN}:${PATH}" \
-    "HYBRID_AI_ENV_FILE=${TREE}/hybrid-ai.env" \
-    "HYBRID_AI_APP_DIR=${TREE}/app" "HYBRID_AI_DATA_DIR=${TREE}/data" \
-    "HYBRID_AI_WORK_DIR=${TREE}/work" "OPENHANDS_WORKSPACE=${TREE}/workspace" \
-    "HYBRID_AI_PRUNE_AGE_SECONDS=${AGE}" "HYBRID_AI_PRUNE_GRACE_SECONDS=${GRACE}" \
-    "HYBRID_AI_PRUNE_MAX_MOVES=${MAX_MOVES}" \
-    "HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS=${optout}" \
+    "HAVEN_ENV_FILE=${TREE}/hybrid-ai.env" \
+    "HAVEN_APP_DIR=${TREE}/app" "HAVEN_DATA_DIR=${TREE}/data" \
+    "HAVEN_WORK_DIR=${TREE}/work" "OPENHANDS_WORKSPACE=${TREE}/workspace" \
+    "HAVEN_PRUNE_AGE_SECONDS=${AGE}" "HAVEN_PRUNE_GRACE_SECONDS=${GRACE}" \
+    "HAVEN_PRUNE_MAX_MOVES=${MAX_MOVES}" \
+    "HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=${optout}" \
     bash "$PRUNE" 2>&1)" || rc=$?
   RETENTION_DAYS=""
   RUN_RC="$rc"
@@ -480,33 +480,33 @@ if [[ -s "$STEP8_TMPL" ]]; then ok "(l) extracted the STEP 8 heredoc template"; 
 
 render_step8() { # optional_extra_shell
   (
-    unset HYBRID_AI_PRUNE_ALLOW_LEASE_LESS HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS
+    unset HAVEN_PRUNE_ALLOW_LEASE_LESS HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS
     [[ -n "${1:-}" ]] && eval "$1"
     # Only the prune block is rendered: every other ${...} line is skipped, so
     # this fixture never needs the rest of install.sh's environment.
-    grep -E '^HYBRID_AI_PRUNE_(ALLOW_LEASE_LESS|QUARANTINE_RETENTION_DAYS)=' "$STEP8_TMPL" \
+    grep -E '^HAVEN_PRUNE_(ALLOW_LEASE_LESS|QUARANTINE_RETENTION_DAYS)=' "$STEP8_TMPL" \
       | while IFS= read -r line; do eval "printf '%s\n' \"${line}\""; done
   )
 }
 
 R_UNSET="$(render_step8 "")"
 check "(l) ALLOW_LEASE_LESS defaults to empty when unset" \
-  "$(printf '%s\n' "$R_UNSET" | grep -E '^HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=' || true)" \
-  "HYBRID_AI_PRUNE_ALLOW_LEASE_LESS="
+  "$(printf '%s\n' "$R_UNSET" | grep -E '^HAVEN_PRUNE_ALLOW_LEASE_LESS=' || true)" \
+  "HAVEN_PRUNE_ALLOW_LEASE_LESS="
 check "(l) RETENTION_DAYS defaults to 90 when unset" \
-  "$(printf '%s\n' "$R_UNSET" | grep -E '^HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS=' || true)" \
-  "HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS=90"
-R_SET="$(render_step8 'export HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=1 HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS=30')"
+  "$(printf '%s\n' "$R_UNSET" | grep -E '^HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=' || true)" \
+  "HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=90"
+R_SET="$(render_step8 'export HAVEN_PRUNE_ALLOW_LEASE_LESS=1 HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=30')"
 check "(l) an owner-set ALLOW_LEASE_LESS is preserved" \
-  "$(printf '%s\n' "$R_SET" | grep -E '^HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=' || true)" \
-  "HYBRID_AI_PRUNE_ALLOW_LEASE_LESS=1"
+  "$(printf '%s\n' "$R_SET" | grep -E '^HAVEN_PRUNE_ALLOW_LEASE_LESS=' || true)" \
+  "HAVEN_PRUNE_ALLOW_LEASE_LESS=1"
 check "(l) an owner-set RETENTION_DAYS is preserved" \
-  "$(printf '%s\n' "$R_SET" | grep -E '^HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS=' || true)" \
-  "HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS=30"
-R_OFF="$(render_step8 'export HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS=')"
+  "$(printf '%s\n' "$R_SET" | grep -E '^HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=' || true)" \
+  "HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=30"
+R_OFF="$(render_step8 'export HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=')"
 check "(l) an explicit empty RETENTION_DAYS (opt-out) survives a reinstall" \
-  "$(printf '%s\n' "$R_OFF" | grep -E '^HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS=' || true)" \
-  "HYBRID_AI_PRUNE_QUARANTINE_RETENTION_DAYS="
+  "$(printf '%s\n' "$R_OFF" | grep -E '^HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=' || true)" \
+  "HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS="
 case_end "(l) install.sh writes both knobs with the documented defaults and preserves an owner value"
 
 printf '%d passed, %d failed, %d skipped\n' "$pass" "$fail" "$skip"

@@ -63,10 +63,10 @@ SuccessExitStatus=3
 StateDirectory=hybrid-ai-backup
 RuntimeDirectory=hybrid-ai-backup
 LogsDirectory=hybrid-ai-backup
-Environment=HYBRID_AI_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
-Environment=HYBRID_AI_BACKUP_MODE=system
+Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
+Environment=HAVEN_BACKUP_MODE=system
 Environment=BACKUP_CONTAINER_CONTROL=external
-Environment=HYBRID_AI_WORK_DIR=/var/lib/hybrid-ai-backup
+Environment=HAVEN_WORK_DIR=/var/lib/hybrid-ai-backup
 Environment=BACKUP_LOG=/var/log/hybrid-ai-backup/backup.log
 
 # Give up rather than run forever.

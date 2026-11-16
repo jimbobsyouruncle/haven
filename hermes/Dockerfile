@@ -196,12 +196,12 @@ RUN set -eu; \
 # steps, which run as root at build time; the image then runs as this uid.
 # Defaults match the compose `build.args`, so a build with no args still gets a
 # valid non-root uid.
-ARG HYBRID_AI_UID=10001
-ARG HYBRID_AI_GID=10001
-RUN groupadd --gid "${HYBRID_AI_GID}" hermes && \
-    useradd --uid "${HYBRID_AI_UID}" --gid "${HYBRID_AI_GID}" \
+ARG HAVEN_UID=10001
+ARG HAVEN_GID=10001
+RUN groupadd --gid "${HAVEN_GID}" hermes && \
+    useradd --uid "${HAVEN_UID}" --gid "${HAVEN_GID}" \
         --home-dir /root --no-create-home --shell /usr/sbin/nologin hermes && \
-    chown -R "${HYBRID_AI_UID}:${HYBRID_AI_GID}" /root
+    chown -R "${HAVEN_UID}:${HAVEN_GID}" /root
 
 # Only /root (the data-volume mount point) becomes writable by the runtime uid.
 # /app (the WebUI) and /opt/hermes-agent (the agent) are LEFT ROOT-OWNED, so the
@@ -212,8 +212,8 @@ RUN groupadd --gid "${HYBRID_AI_GID}" hermes && \
 # the root-owned /usr/local/bin/hermes symlink. /opt is never chowned.
 RUN "${HERMES_INSTALL_DIR}/.hermes/venv/bin/python" -m compileall -q /app \
  && test "$(stat -c '%u' /app)" = "0" \
- && ! find /app -user "${HYBRID_AI_UID}" -print -quit | grep -q . \
- && ! find "${HERMES_INSTALL_DIR}" -user "${HYBRID_AI_UID}" -print -quit | grep -q .
+ && ! find /app -user "${HAVEN_UID}" -print -quit | grep -q . \
+ && ! find "${HERMES_INSTALL_DIR}" -user "${HAVEN_UID}" -print -quit | grep -q .
 
 # --- PM install state: readable by the runtime uid, still root-owned ----------
 # The Hermes PM writes install-state files into the sealed /opt tree as mode
@@ -366,7 +366,7 @@ ENV HERMES_WEBUI_DISABLE_LOCAL_VENV=1
 
 EXPOSE 8501 8642
 
-USER ${HYBRID_AI_UID}:${HYBRID_AI_GID}
+USER ${HAVEN_UID}:${HAVEN_GID}
 
 # --- Fail the build if the packaged PM runtime does not resolve ---------------
 # Runs the same resolver pm/runtime.py uses at runtime, as the RUNTIME uid, so a

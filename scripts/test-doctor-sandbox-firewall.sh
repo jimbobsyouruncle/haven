@@ -378,7 +378,7 @@ printf '{"items":[{"id":"t-ok","status":"COMPLETED","updated_at":"%s","error":nu
   "$NOW_ISO" > "$FIXDIR/ok.page1.json"
 
 # --- scratch app ------------------------------------------------------------
-cp "$REPO_ROOT/scripts/lib/hybrid-ai-env.sh" "$APPD/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/haven-env.sh" "$APPD/scripts/lib/"
 # doctor.sh resolves the pod MagicDNS name through this shared lib.
 cp "$REPO_ROOT/scripts/lib/tailscale-resolve.sh" "$APPD/scripts/lib/"
 cp "$PARENT_SCRIPT" "$APPD/scripts/sandbox-firewall.sh"
@@ -464,7 +464,7 @@ run_doctor() { # name doctor-path state-file [extra env assignments...] ; sets R
     cd "$APPD" || exit 1
     env IPT_MODE=ok "$@" IPT_STATE="$st" \
       PATH="$BIN:$PATH" HOME="$WORK/home" SHELL=/bin/bash \
-      HYBRID_AI_DATA_DIR="$APPD" HYBRID_AI_LOG_DIR="$APPD" HYBRID_AI_WORK_DIR="$APPD" \
+      HAVEN_DATA_DIR="$APPD" HAVEN_LOG_DIR="$APPD" HAVEN_WORK_DIR="$APPD" \
       timeout 120 bash "$doc" --no-cloud
   ) > "$WORK/out.$name" 2>&1
   RC=$?
@@ -623,7 +623,7 @@ NOMIN_PATH="$BIN:/usr/local/bin:/usr/bin:/bin"
 (
   cd "$APPD" || exit 1
   env -u IPT_STATE PATH="$NOMIN_PATH" HOME="$WORK/home" SHELL=/bin/bash \
-    HYBRID_AI_DATA_DIR="$APPD" HYBRID_AI_LOG_DIR="$APPD" HYBRID_AI_WORK_DIR="$APPD" \
+    HAVEN_DATA_DIR="$APPD" HAVEN_LOG_DIR="$APPD" HAVEN_WORK_DIR="$APPD" \
     timeout 120 bash "$APPD/doctor.sh" --no-cloud
 ) > "$WORK/out.noiptables" 2>&1
 RC=$?

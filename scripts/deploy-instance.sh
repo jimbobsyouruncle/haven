@@ -23,7 +23,7 @@ set -Eeuo pipefail
 #   controls: they close the gap between "CI validated a commit" and "the host
 #   runs exactly that commit". They must never be skipped.
 #
-#   Each run writes its output to $HYBRID_AI_LOG_DIR/deploy/<sha>.log with
+#   Each run writes its output to $HAVEN_LOG_DIR/deploy/<sha>.log with
 #   mode 0640 (owner read/write, group read only) and group hybrid-ai-deploy,
 #   so the unprivileged deploy account can read the log without any
 #   systemd-journal access. The deploy/ subdirectory is created mode 0750.
@@ -50,16 +50,16 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/repository-identity.sh
 source "${SCRIPT_DIR}/lib/repository-identity.sh"
-REPO_SLUG="$(hybrid_ai_repository_slug)" || exit 2
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
+REPO_SLUG="$(haven_repository_slug)" || exit 2
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
 
-APP_DIR="$HYBRID_AI_APP_DIR"
-DEPLOY_LOG_DIR="${HYBRID_AI_LOG_DIR}/deploy"
-LOCK_FILE="${HYBRID_AI_DEPLOY_LOCK_FILE:-/run/lock/hybrid-ai-deploy.lock}"
+APP_DIR="$HAVEN_APP_DIR"
+DEPLOY_LOG_DIR="${HAVEN_LOG_DIR}/deploy"
+LOCK_FILE="${HAVEN_DEPLOY_LOCK_FILE:-/run/lock/hybrid-ai-deploy.lock}"
 # The PUBLIC https remote, by name only -- never a value in the tree. The
 # default is this repository's canonical https URL.
-PUBLIC_REMOTE="${HYBRID_AI_DEPLOY_PUBLIC_REMOTE:-https://github.com/${REPO_SLUG}.git}"
+PUBLIC_REMOTE="${HAVEN_DEPLOY_PUBLIC_REMOTE:-https://github.com/${REPO_SLUG}.git}"
 
 die() { # code message...
   local code="$1"; shift
@@ -126,6 +126,9 @@ if ! url_is_https "$PUBLIC_REMOTE"; then
 fi
 if url_has_userinfo "$PUBLIC_REMOTE"; then
   die 5 "the public remote carries userinfo; refusing"
+fi
+if [[ "$PUBLIC_REMOTE" != "https://github.com/jimbobsyouruncle/haven.git" ]]; then
+  die 5 "the public remote is not the canonical Haven repository; refusing"
 fi
 
 # Hooks disabled (core.hooksPath=/dev/null), credential helpers cleared

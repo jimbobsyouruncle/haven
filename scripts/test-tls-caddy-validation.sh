@@ -25,14 +25,14 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
-if ! hybrid_ai_env_load; then
-  printf 'FATAL: hybrid_ai_env_load failed; cannot resolve the repository directory.\n' >&2
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
+if ! haven_env_load; then
+  printf 'FATAL: haven_env_load failed; cannot resolve the repository directory.\n' >&2
   exit 2
 fi
 # shellcheck source=scripts/lib/tls.sh
-source "${HYBRID_AI_APP_DIR}/scripts/lib/tls.sh"
+source "${HAVEN_APP_DIR}/scripts/lib/tls.sh"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf -- "$WORK"' EXIT
@@ -45,8 +45,8 @@ fail() { printf '[FAIL] %s\n' "$*" >&2; FAILED=1; }
 # --- Render the real TLS-on Caddyfile into a throwaway APP_DIR --------------
 APP_DIR="$WORK/app"
 mkdir -p "$APP_DIR/status"
-cp "${HYBRID_AI_APP_DIR}/status/Caddyfile.tmpl" "$APP_DIR/status/Caddyfile.tmpl"
-cp "${HYBRID_AI_APP_DIR}/docker-compose.yml.tmpl" "$APP_DIR/docker-compose.yml.tmpl"
+cp "${HAVEN_APP_DIR}/status/Caddyfile.tmpl" "$APP_DIR/status/Caddyfile.tmpl"
+cp "${HAVEN_APP_DIR}/docker-compose.yml.tmpl" "$APP_DIR/docker-compose.yml.tmpl"
 
 LOCAL_DOMAIN="jarvis.lan"
 TLS_ENABLED="yes"
@@ -67,7 +67,7 @@ tls_render_to_file "$APP_DIR/status/Caddyfile.tmpl" "on dns" "$CADDYFILE"
 DNS_TOKEN_FILE="$WORK/dns_token"
 TOKEN_SENTINEL="SENTINEL-TOKEN-VALUE-DO-NOT-PRINT-9f3c"
 printf '%s\n' "$TOKEN_SENTINEL" > "$DNS_TOKEN_FILE"
-HYBRID_AI_TLS_TOKEN_FILE="$DNS_TOKEN_FILE"
+HAVEN_TLS_TOKEN_FILE="$DNS_TOKEN_FILE"
 
 # A non-DNS (http-01) render. It must keep the old invocation byte for byte: no
 # token mount, no token check. Rendered in a subshell so the DNS render values
@@ -300,7 +300,7 @@ assert_token_failure() {  # LABEL FILE EXPECT_SUBSTRING
   local label="$1" token_path="$2" want="$3" rc=0 out
   # shellcheck disable=SC2030  # scoped to the probed subshell on purpose
   out="$( (
-    export HYBRID_AI_TLS_TOKEN_FILE="$token_path"
+    export HAVEN_TLS_TOKEN_FILE="$token_path"
     docker() {
       if [[ "${1:-}" == info ]]; then return 0; fi
       printf '%s\n' "$@" >> "$WORK/docker.token.args"
@@ -350,11 +350,11 @@ fi
 
 # An unset variable is the same fail-closed path.
 unset_token_rc=0
-unset_token_out="$( ( unset HYBRID_AI_TLS_TOKEN_FILE
+unset_token_out="$( ( unset HAVEN_TLS_TOKEN_FILE
   docker() { [[ "${1:-}" == info ]] && return 0; return 0; }
   export -f docker
   PATH="$EMPTY_BIN" tls_validate_caddyfile "$CADDYFILE" ) 2>&1 )" || unset_token_rc=$?
-if (( unset_token_rc != 0 )) && [[ "$unset_token_out" == *"HYBRID_AI_TLS_TOKEN_FILE is empty"* ]]; then
+if (( unset_token_rc != 0 )) && [[ "$unset_token_out" == *"HAVEN_TLS_TOKEN_FILE is empty"* ]]; then
   pass "dns path, unset token file: fails closed"
 else
   fail "dns path, unset token file: did not fail closed (rc ${unset_token_rc}: ${unset_token_out})"
@@ -443,7 +443,7 @@ export -f docker
 
 # The build step reads caddy/Dockerfile from the render tree.
 mkdir -p "$APP_DIR/caddy"
-cp "${HYBRID_AI_APP_DIR}/caddy/Dockerfile" "$APP_DIR/caddy/Dockerfile"
+cp "${HAVEN_APP_DIR}/caddy/Dockerfile" "$APP_DIR/caddy/Dockerfile"
 
 run_order_case() {  # TLS_ENABLED TLS_VALIDATION CADDYFILE
   : > "$WORK/docker.order"
@@ -451,15 +451,15 @@ run_order_case() {  # TLS_ENABLED TLS_VALIDATION CADDYFILE
   # from inside the child shell; the token path goes with it, because the DNS
   # path now requires the file to exist before any container starts.
   # shellcheck disable=SC2031  # the value is re-passed explicitly below
-  WORK="$WORK" HYBRID_AI_TLS_TOKEN_FILE="$HYBRID_AI_TLS_TOKEN_FILE" \
+  WORK="$WORK" HAVEN_TLS_TOKEN_FILE="$HAVEN_TLS_TOKEN_FILE" \
     PATH="$EMPTY_BIN" bash -c '
-    source "$1/lib/hybrid-ai-env.sh" >/dev/null 2>&1
+    source "$1/lib/haven-env.sh" >/dev/null 2>&1
     source "$1/scripts/lib/tls.sh"
     APP_DIR="$2"
     TLS_ENABLED="$3"
     TLS_VALIDATION="$4"
     if [[ -n "${5:-}" ]]; then tls_build_validate_image "$5"; tls_validate_caddyfile "$5"; fi
-  ' _ "$HYBRID_AI_APP_DIR" "$APP_DIR" "$1" "$2" "${3:-}" >/dev/null 2>&1 || true
+  ' _ "$HAVEN_APP_DIR" "$APP_DIR" "$1" "$2" "${3:-}" >/dev/null 2>&1 || true
 }
 
 run_order_case yes dns "$CADDYFILE"
@@ -556,7 +556,7 @@ fi
 # (a1) the STEP 8 env write itself: install.sh expands this exact template
 # line inside an unquoted heredoc, so the normalized value is what lands in
 # the file. The label must not survive to the write.
-env_line_template="$(grep -m1 '^ACME_CA=' "${HYBRID_AI_APP_DIR}/install.sh" || true)"
+env_line_template="$(grep -m1 '^ACME_CA=' "${HAVEN_APP_DIR}/install.sh" || true)"
 if [[ "$env_line_template" == *"\${ACME_CA:-"* ]]; then
   pass "install.sh STEP 8 still writes ACME_CA from the shell variable"
 else
@@ -582,8 +582,8 @@ ca_b="$(
   LOCAL_DOMAIN="jarvis.lan" TLS_ENABLED="yes" TLS_DOMAIN="daemonhub.dev" \
   ACME_EMAIL="ops@example.com" TLS_VALIDATION="http" ACME_DNS_PROVIDER="" \
   ACME_CA="staging" TLS_ARG_CA="" \
-  bash -c 'source "$1/lib/hybrid-ai-env.sh" >/dev/null 2>&1; source "$1/scripts/lib/tls.sh"; tls_validate_settings >/dev/null 2>&1; printf "%s\n" "$ACME_CA"' _ \
-    "$HYBRID_AI_APP_DIR"
+  bash -c 'source "$1/lib/haven-env.sh" >/dev/null 2>&1; source "$1/scripts/lib/tls.sh"; tls_validate_settings >/dev/null 2>&1; printf "%s\n" "$ACME_CA"' _ \
+    "$HAVEN_APP_DIR"
 )"
 if [[ "$ca_b" == "$TLS_CA_STAGING_URL" ]]; then
   pass "fixture 3b: ACME_CA=staging from the env file normalizes to the staging URL"
@@ -614,7 +614,7 @@ echo "== B77: the TLS render is redirect-only on port 80 =="
 
 B77_WORK="$WORK/b77"
 mkdir -p "$B77_WORK/app/status"
-cp "${HYBRID_AI_APP_DIR}/status/Caddyfile.tmpl" "$B77_WORK/app/status/Caddyfile.tmpl"
+cp "${HAVEN_APP_DIR}/status/Caddyfile.tmpl" "$B77_WORK/app/status/Caddyfile.tmpl"
 
 # Literal Caddy placeholders: these are the render's own {$NAME} tokens.
 B77_LD=\$LOCAL_DOMAIN
@@ -728,11 +728,11 @@ b77_render_off() {
   tls_render_to_file "$B77_WORK/app/status/Caddyfile.tmpl" "off" "$B77_WORK/Caddyfile.off"
 }
 b77_render_off || fail "B77: the TLS-off render failed"
-if cmp -s "$B77_WORK/Caddyfile.off" "${HYBRID_AI_APP_DIR}/status/Caddyfile"; then
+if cmp -s "$B77_WORK/Caddyfile.off" "${HAVEN_APP_DIR}/status/Caddyfile"; then
   pass "B77: the TLS-off render is byte-identical to the committed status/Caddyfile"
 else
   fail "B77: the TLS-off render differs from the committed status/Caddyfile"
-  diff -u "${HYBRID_AI_APP_DIR}/status/Caddyfile" "$B77_WORK/Caddyfile.off" | head -30 >&2
+  diff -u "${HAVEN_APP_DIR}/status/Caddyfile" "$B77_WORK/Caddyfile.off" | head -30 >&2
 fi
 
 if (( FAILED )); then

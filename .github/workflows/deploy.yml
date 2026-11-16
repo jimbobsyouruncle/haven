@@ -55,7 +55,7 @@
 #                          account; the login name is the literal
 #                          `hybrid-ai-deploy`. May be deleted by the owner.
 #     PI_REPO_PATH         UNUSED. The remote path is resolved on the host by
-#                          scripts/deploy-instance.sh via HYBRID_AI_APP_DIR.
+#                          scripts/deploy-instance.sh via HAVEN_APP_DIR.
 #                          May be deleted by the owner.
 #
 #   You must also add an ACL rule in Tailscale allowing tag:ci to reach the Pi

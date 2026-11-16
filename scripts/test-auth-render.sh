@@ -33,21 +33,21 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
-if ! hybrid_ai_env_load; then
-  printf 'FATAL: hybrid_ai_env_load failed; cannot resolve the repository directory.\n' >&2
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
+if ! haven_env_load; then
+  printf 'FATAL: haven_env_load failed; cannot resolve the repository directory.\n' >&2
   exit 2
 fi
 # shellcheck source=scripts/lib/tls.sh
-source "${HYBRID_AI_APP_DIR}/scripts/lib/tls.sh"
+source "${HAVEN_APP_DIR}/scripts/lib/tls.sh"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf -- "$WORK"' EXIT
 
 APP_DIR="$WORK/app"
 mkdir -p "$APP_DIR/status"
-cp "${HYBRID_AI_APP_DIR}/status/Caddyfile.tmpl" "$APP_DIR/status/Caddyfile.tmpl"
+cp "${HAVEN_APP_DIR}/status/Caddyfile.tmpl" "$APP_DIR/status/Caddyfile.tmpl"
 
 FAILED=0
 pass() { printf '[ OK ] %s\n' "$*"; }
@@ -65,11 +65,11 @@ TLS_ENABLED="no"
 AUTH_ENABLED="off"
 render off "$WORK/off"
 
-if cmp -s -- "${HYBRID_AI_APP_DIR}/status/Caddyfile" "$WORK/off"; then
+if cmp -s -- "${HAVEN_APP_DIR}/status/Caddyfile" "$WORK/off"; then
   pass "auth-off render is byte-identical to the tracked status/Caddyfile"
 else
   fail "auth-off render differs from the tracked status/Caddyfile"
-  diff -u "${HYBRID_AI_APP_DIR}/status/Caddyfile" "$WORK/off" >&2 || true
+  diff -u "${HAVEN_APP_DIR}/status/Caddyfile" "$WORK/off" >&2 || true
 fi
 
 n_auth_off="$(grep -c 'basic_auth' "$WORK/off" || true)"
@@ -103,8 +103,8 @@ ACME_DNS_PROVIDER="cloudflare"
 ACME_CA="$TLS_CA_STAGING_URL"
 AUTH_ENABLED="on"
 # Dummy placeholders only: no real password, no real bcrypt hash.
-HYBRID_AI_AUTH_USER="DUMMY_AUTH_USER_NOT_A_SECRET"
-HYBRID_AI_AUTH_HASH="\$2a\$14\$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY"
+HAVEN_AUTH_USER="DUMMY_AUTH_USER_NOT_A_SECRET"
+HAVEN_AUTH_HASH="\$2a\$14\$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY"
 
 if [[ "$(tls_variants)" == "on dns auth" ]]; then
   pass "tls_variants appends the auth variant when AUTH_ENABLED=on"
@@ -133,7 +133,7 @@ else
   fail "the (auth) snippet is not the expected three-line forward_auth form"
   awk '/^\(auth\) \{/{f=1} f{print} f&&/^\}$/{exit}' "$WORK/on" >&2
 fi
-if grep -q 'HYBRID_AI_AUTH_USER\|HYBRID_AI_AUTH_HASH' "$WORK/on"; then
+if grep -q 'HAVEN_AUTH_USER\|HAVEN_AUTH_HASH' "$WORK/on"; then
   fail "an auth credential placeholder survived into the Caddyfile render"
 else
   pass "no auth credential placeholder appears in the Caddyfile render"
@@ -211,8 +211,8 @@ TLS_VALIDATION="dns"
 ACME_DNS_PROVIDER="cloudflare"
 ACME_CA="$TLS_CA_STAGING_URL"
 AUTH_ENABLED="off"
-HYBRID_AI_AUTH_USER=""
-HYBRID_AI_AUTH_HASH=""
+HAVEN_AUTH_USER=""
+HAVEN_AUTH_HASH=""
 
 if [[ "$(tls_variants)" == "on dns" ]]; then
   pass "tls_variants is 'on dns' with TLS on and AUTH_ENABLED=off"
@@ -251,8 +251,8 @@ fi
 # "off auth" and emitted the snippet, so this case fails against the base.
 TLS_ENABLED="no"
 AUTH_ENABLED="on"
-HYBRID_AI_AUTH_USER="DUMMY_AUTH_USER_NOT_A_SECRET"
-HYBRID_AI_AUTH_HASH="\$2a\$14\$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY"
+HAVEN_AUTH_USER="DUMMY_AUTH_USER_NOT_A_SECRET"
+HAVEN_AUTH_HASH="\$2a\$14\$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY"
 
 if [[ "$(tls_variants)" == "off" ]]; then
   pass "tls_variants is exactly 'off' with TLS off and AUTH_ENABLED=on (gate suppressed)"
@@ -306,20 +306,20 @@ fi
 # FAILS against the unpatched base, whose allowlist named only USER and HASH.
 ALLOWLIST_FILE="$WORK/allowlist.env"
 cat > "$ALLOWLIST_FILE" <<'ENVEOF'
-HYBRID_AI_AUTH_COOKIE_SECRET=dummy-cookie-secret-not-a-secret
-HYBRID_AI_AUTH_COOKIE_MAX_AGE=12345
+HAVEN_AUTH_COOKIE_SECRET=dummy-cookie-secret-not-a-secret
+HAVEN_AUTH_COOKIE_MAX_AGE=12345
 ENVEOF
-unset HYBRID_AI_AUTH_COOKIE_SECRET HYBRID_AI_AUTH_COOKIE_MAX_AGE
+unset HAVEN_AUTH_COOKIE_SECRET HAVEN_AUTH_COOKIE_MAX_AGE
 tls_load_env_file_values "$ALLOWLIST_FILE"
-if [[ "${HYBRID_AI_AUTH_COOKIE_SECRET:-}" == "dummy-cookie-secret-not-a-secret" ]]; then
-  pass "tls_load_env_file_values reads HYBRID_AI_AUTH_COOKIE_SECRET"
+if [[ "${HAVEN_AUTH_COOKIE_SECRET:-}" == "dummy-cookie-secret-not-a-secret" ]]; then
+  pass "tls_load_env_file_values reads HAVEN_AUTH_COOKIE_SECRET"
 else
-  fail "tls_load_env_file_values dropped HYBRID_AI_AUTH_COOKIE_SECRET (got '${HYBRID_AI_AUTH_COOKIE_SECRET:-}')"
+  fail "tls_load_env_file_values dropped HAVEN_AUTH_COOKIE_SECRET (got '${HAVEN_AUTH_COOKIE_SECRET:-}')"
 fi
-if [[ "${HYBRID_AI_AUTH_COOKIE_MAX_AGE:-}" == "12345" ]]; then
-  pass "tls_load_env_file_values reads HYBRID_AI_AUTH_COOKIE_MAX_AGE"
+if [[ "${HAVEN_AUTH_COOKIE_MAX_AGE:-}" == "12345" ]]; then
+  pass "tls_load_env_file_values reads HAVEN_AUTH_COOKIE_MAX_AGE"
 else
-  fail "tls_load_env_file_values dropped HYBRID_AI_AUTH_COOKIE_MAX_AGE (got '${HYBRID_AI_AUTH_COOKIE_MAX_AGE:-}')"
+  fail "tls_load_env_file_values dropped HAVEN_AUTH_COOKIE_MAX_AGE (got '${HAVEN_AUTH_COOKIE_MAX_AGE:-}')"
 fi
 
 # --- fail-closed: relocated to the installer --------------------------------
@@ -343,42 +343,42 @@ check_fail_closed() {  # NAME MSG_OUT
 }
 
 # Empty hash (user and secret present): must be REJECTED.
-HYBRID_AI_AUTH_USER="DUMMY_AUTH_USER_NOT_A_SECRET"
-HYBRID_AI_AUTH_HASH=""
-HYBRID_AI_AUTH_COOKIE_SECRET="dummy-cookie-secret-not-a-secret"
+HAVEN_AUTH_USER="DUMMY_AUTH_USER_NOT_A_SECRET"
+HAVEN_AUTH_HASH=""
+HAVEN_AUTH_COOKIE_SECRET="dummy-cookie-secret-not-a-secret"
 msg=""
 if ! msg="$(tls_auth_fail_closed 2>&1)"; then
-  check_fail_closed HYBRID_AI_AUTH_HASH "$msg"
+  check_fail_closed HAVEN_AUTH_HASH "$msg"
 else
   fail "fail-closed: AUTH_ENABLED=on with an empty hash was ACCEPTED"
 fi
 
 # Empty user (hash and secret present): must be REJECTED.
-HYBRID_AI_AUTH_USER=""
-HYBRID_AI_AUTH_HASH="\$2a\$14\$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY"
-HYBRID_AI_AUTH_COOKIE_SECRET="dummy-cookie-secret-not-a-secret"
+HAVEN_AUTH_USER=""
+HAVEN_AUTH_HASH="\$2a\$14\$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY"
+HAVEN_AUTH_COOKIE_SECRET="dummy-cookie-secret-not-a-secret"
 msg=""
 if ! msg="$(tls_auth_fail_closed 2>&1)"; then
-  check_fail_closed HYBRID_AI_AUTH_USER "$msg"
+  check_fail_closed HAVEN_AUTH_USER "$msg"
 else
   fail "fail-closed: AUTH_ENABLED=on with an empty user was ACCEPTED"
 fi
 
 # Empty cookie secret (both credentials present): must be REJECTED.
-HYBRID_AI_AUTH_USER="DUMMY_AUTH_USER_NOT_A_SECRET"
-HYBRID_AI_AUTH_HASH="\$2a\$14\$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY"
-HYBRID_AI_AUTH_COOKIE_SECRET=""
+HAVEN_AUTH_USER="DUMMY_AUTH_USER_NOT_A_SECRET"
+HAVEN_AUTH_HASH="\$2a\$14\$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY"
+HAVEN_AUTH_COOKIE_SECRET=""
 msg=""
 if ! msg="$(tls_auth_fail_closed 2>&1)"; then
-  check_fail_closed HYBRID_AI_AUTH_COOKIE_SECRET "$msg"
+  check_fail_closed HAVEN_AUTH_COOKIE_SECRET "$msg"
 else
   fail "fail-closed: AUTH_ENABLED=on with an empty cookie secret was ACCEPTED"
 fi
 
 # All present: must PASS (return 0, no message).
-HYBRID_AI_AUTH_USER="DUMMY_AUTH_USER_NOT_A_SECRET"
-HYBRID_AI_AUTH_HASH="\$2a\$14\$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY"
-HYBRID_AI_AUTH_COOKIE_SECRET="dummy-cookie-secret-not-a-secret"
+HAVEN_AUTH_USER="DUMMY_AUTH_USER_NOT_A_SECRET"
+HAVEN_AUTH_HASH="\$2a\$14\$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY"
+HAVEN_AUTH_COOKIE_SECRET="dummy-cookie-secret-not-a-secret"
 if tls_auth_fail_closed >/dev/null 2>&1; then
   pass "AUTH_ENABLED=on with user, hash and cookie secret set passes the fail-closed check"
 else
@@ -398,7 +398,7 @@ fi
 # health probe rather than override it with a host-dependent target/tool.
 for variants in "on dns auth" "on auth"; do
   tls_prepare_render_values "$variants"
-  tls_render_to_file "${HYBRID_AI_APP_DIR}/docker-compose.yml.tmpl" "$variants" "$WORK/compose"
+  tls_render_to_file "${HAVEN_APP_DIR}/docker-compose.yml.tmpl" "$variants" "$WORK/compose"
   auth_service="$(awk '/^  auth:/{f=1; next} f && /^[^ ]/{exit} f && /^  [^ ]/{exit} f{print}' "$WORK/compose")"
   if [[ -n "$auth_service" ]] && ! grep -q 'healthcheck:' <<<"$auth_service" \
      && grep -q 'context: ./auth' <<<"$auth_service"; then

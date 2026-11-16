@@ -59,7 +59,7 @@ mkdir -p "$APP/scripts/lib" "$APP/deploy" "$BIN" "$BIN_ROOT" "$SYSD" "$WORK/data
          "$WORK/ws" "$WORK/repos" "$WORK/ohstate" "$WORK/conf" "$WORK/restic" \
          "$WORK/etc/hybrid-ai"
 cp "$REPO/install.sh" "$APP/install.sh"
-cp "$REPO/scripts/lib/hybrid-ai-env.sh" "$APP/scripts/lib/"
+cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
 [ -f "$REPO/scripts/lib/build-gate.sh" ] || { echo "FATAL: scripts/lib/build-gate.sh is missing; the build gate does not exist in this tree." >&2; exit 2; }
 cp "$REPO/scripts/lib/build-gate.sh" "$APP/scripts/lib/"
 
@@ -84,22 +84,22 @@ chmod +x "$APP/scripts/"*.sh
 LAYOUT="$WORK/etc/hybrid-ai/hybrid-ai.env"
 STACK="$WORK/etc/hybrid-ai/stack.env"
 {
-  printf 'HYBRID_AI_APP_DIR=%s\n' "$APP"
-  printf 'HYBRID_AI_ENV_FILE=%s\n' "$LAYOUT"
-  printf 'HYBRID_AI_STACK_ENV_FILE=%s\n' "$STACK"
-  printf 'HYBRID_AI_DATA_DIR=%s\n' "$WORK/data"
-  printf 'HYBRID_AI_LOG_DIR=%s\n' "$WORK/log"
-  printf 'HYBRID_AI_WORK_DIR=%s\n' "$WORK/work"
+  printf 'HAVEN_APP_DIR=%s\n' "$APP"
+  printf 'HAVEN_ENV_FILE=%s\n' "$LAYOUT"
+  printf 'HAVEN_STACK_ENV_FILE=%s\n' "$STACK"
+  printf 'HAVEN_DATA_DIR=%s\n' "$WORK/data"
+  printf 'HAVEN_LOG_DIR=%s\n' "$WORK/log"
+  printf 'HAVEN_WORK_DIR=%s\n' "$WORK/work"
   printf 'OPENHANDS_WORKSPACE=%s\n' "$WORK/ws"
   printf 'AGENT_REPOS_DIR=%s\n' "$WORK/repos"
   printf 'OPENHANDS_STATE_DIR=%s\n' "$WORK/ohstate"
   printf 'BACKUP_CONF_DIR=%s\n' "$WORK/conf"
   printf 'RESTIC_CACHE_DIR=%s\n' "$WORK/restic"
-  printf 'HYBRID_AI_HERMES_HOME_DIR=%s\n' "$WORK/hermes"
-  printf 'HYBRID_AI_BACKUP_MODE=system\n'
+  printf 'HAVEN_HERMES_HOME_DIR=%s\n' "$WORK/hermes"
+  printf 'HAVEN_BACKUP_MODE=system\n'
   printf 'BACKUP_CONTAINER_CONTROL=external\n'
-  printf 'HYBRID_AI_UID=1000\n'
-  printf 'HYBRID_AI_GID=1000\n'
+  printf 'HAVEN_UID=1000\n'
+  printf 'HAVEN_GID=1000\n'
 } > "$LAYOUT"
 chmod 644 "$LAYOUT"
 
@@ -280,15 +280,15 @@ run_install() {
   local health="$1" log="$2" rc=0
   local unit_dir="${3:-$SYSD}" argv_log="${4:-$INSTALL_ARGV}"
   local run_path="${5:-$BIN:$PATH}"
-  env -u HYBRID_AI_APP_DIR -u HYBRID_AI_DATA_DIR -u HYBRID_AI_LOG_DIR \
-      -u HYBRID_AI_WORK_DIR -u HYBRID_AI_STACK_ENV_FILE \
+  env -u HAVEN_APP_DIR -u HAVEN_DATA_DIR -u HAVEN_LOG_DIR \
+      -u HAVEN_WORK_DIR -u HAVEN_STACK_ENV_FILE \
       -u OPENHANDS_WORKSPACE -u AGENT_REPOS_DIR -u OPENHANDS_STATE_DIR \
-      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HYBRID_AI_HERMES_HOME_DIR \
-      -u HYBRID_AI_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
-      -u HYBRID_AI_UID -u HYBRID_AI_GID -u HYBRID_AI_LAYOUT_UID -u HYBRID_AI_LAYOUT_GID \
+      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HAVEN_HERMES_HOME_DIR \
+      -u HAVEN_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
+      -u HAVEN_UID -u HAVEN_GID -u HAVEN_LAYOUT_UID -u HAVEN_LAYOUT_GID \
       PATH="$run_path" \
-      HYBRID_AI_ENV_FILE="$LAYOUT" \
-      HYBRID_AI_SYSTEMD_UNIT_DIR="$unit_dir" \
+      HAVEN_ENV_FILE="$LAYOUT" \
+      HAVEN_SYSTEMD_UNIT_DIR="$unit_dir" \
       INSTALL_ARGV_LOG="$argv_log" \
       CHOWN_ARGV_LOG="$CHOWN_ARGV" FIXTURE_DATA_DIR="$WORK/data" \
       SOCKET_CHOWN_ARGV_LOG="$WORK/socket-chown.argv" \
@@ -680,7 +680,7 @@ chmod 600 "$WORK/conf/r2.env" "$WORK/conf/repo-password"
 # scratch directory instead so the credential-exists path (and thus the
 # scheduler repair, where the reconcile lives) is the one exercised.
 cp "$LAYOUT" "$WORK/etc/hybrid-ai/hybrid-ai.env.no-cred-dir"
-printf 'HYBRID_AI_BACKUP_CRED_DIR=%s\n' "$WORK/conf" >> "$LAYOUT"
+printf 'HAVEN_BACKUP_CRED_DIR=%s\n' "$WORK/conf" >> "$LAYOUT"
 
 # (a) every installation: a foreign-owned entry is repaired once.
 rm -f "$UNIT_INSTALLED"; : > "$INSTALL_ARGV"; : > "$SYSTEMCTL_ARGV"
@@ -772,7 +772,7 @@ fi
 : > "$CHOWN_ARGV"; : > "$INSTALL_LOG"
 printf '%s\n' "$CACHE_UNDER_TEST/repoX/snapshots/19" > "$FOREIGN_MARKER"
 LAYOUT_SAVED="$WORK/etc/hybrid-ai/hybrid-ai.env.user-mode"
-sed 's/^HYBRID_AI_BACKUP_MODE=system$/HYBRID_AI_BACKUP_MODE=user/' "$LAYOUT" > "$LAYOUT_SAVED"
+sed 's/^HAVEN_BACKUP_MODE=system$/HAVEN_BACKUP_MODE=user/' "$LAYOUT" > "$LAYOUT_SAVED"
 cp "$LAYOUT" "$WORK/etc/hybrid-ai/hybrid-ai.env.system-mode"
 cp "$STACK" "$WORK/etc/hybrid-ai/stack.env.system-mode"
 cp "$LAYOUT_SAVED" "$LAYOUT"
@@ -805,7 +805,7 @@ fi
 # status name over HTTPS, with an explicit --resolve and no follow.
 #
 # TLS state is expressed the way a real host expresses it: in the stack env file
-# that install.sh itself reads at STEP 2 (HYBRID_AI_STACK_ENV_FILE). Setting
+# that install.sh itself reads at STEP 2 (HAVEN_STACK_ENV_FILE). Setting
 # TLS_ENABLED=yes in the process environment alone is NOT enough, because the
 # stack file load overrides it -- which is exactly what the first version of
 # this fixture got wrong. TLS_DOMAIN must also differ from LOCAL_DOMAIN, and

@@ -6,9 +6,9 @@
 #   network. Every privileged tool -- useradd, groupadd, getent, gpasswd, chown,
 #   runuser, systemctl, docker, git, sshd and pkcheck/pkaction -- is stubbed on
 #   PATH, and the whole run is pointed at a scratch filesystem prefix with
-#   HYBRID_AI_BOOTSTRAP_ROOT, so the REAL /opt, /etc and /var are never touched.
+#   HAVEN_BOOTSTRAP_ROOT, so the REAL /opt, /etc and /var are never touched.
 #
-#   HYBRID_AI_BOOTSTRAP_ROOT is UNSET by default and the script it tests then
+#   HAVEN_BOOTSTRAP_ROOT is UNSET by default and the script it tests then
 #   uses the REAL "/" for the host root. This test proves that default.
 #
 # CASES:
@@ -32,7 +32,7 @@
 set -uo pipefail
 
 # Cases control the selector explicitly; ignore the invoking shell setting.
-unset HYBRID_AI_REPOSITORY_SLUG
+unset HAVEN_REPOSITORY_SLUG
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -245,18 +245,18 @@ mkdir -p "$GIT_FIXTURE_SRC/deploy" "$GIT_FIXTURE_SRC/scripts"
 cat > "$GIT_FIXTURE_SRC/install.sh" <<'EOF'
 #!/usr/bin/env bash
 set -u
-printf 'install.sh HYBRID_AI_ENV_FILE=%s STACK=%s args=%s\n' \
-  "${HYBRID_AI_ENV_FILE:-}" "${HYBRID_AI_STACK_ENV_FILE:-}" "$*" >> "$EVENTS"
+printf 'install.sh HAVEN_ENV_FILE=%s STACK=%s args=%s\n' \
+  "${HAVEN_ENV_FILE:-}" "${HAVEN_STACK_ENV_FILE:-}" "$*" >> "$EVENTS"
 printf 'install.sh invoked\n'
 [[ "${INSTALL_RC:-0}" == "0" ]] || exit "${INSTALL_RC}"
-# Resolve the STACK file the way the real scripts/lib/hybrid-ai-env.sh does:
+# Resolve the STACK file the way the real scripts/lib/haven-env.sh does:
 # the env var first, then the layout file it was handed, else fall back to the
 # layout file itself. That keeps the stub a faithful stand-in.
-stack="${HYBRID_AI_STACK_ENV_FILE:-}"
-if [[ -z "$stack" && -n "${HYBRID_AI_ENV_FILE:-}" && -r "${HYBRID_AI_ENV_FILE}" ]]; then
-  stack="$(grep -E '^HYBRID_AI_STACK_ENV_FILE=' "$HYBRID_AI_ENV_FILE" | tail -1 | cut -d= -f2-)"
+stack="${HAVEN_STACK_ENV_FILE:-}"
+if [[ -z "$stack" && -n "${HAVEN_ENV_FILE:-}" && -r "${HAVEN_ENV_FILE}" ]]; then
+  stack="$(grep -E '^HAVEN_STACK_ENV_FILE=' "$HAVEN_ENV_FILE" | tail -1 | cut -d= -f2-)"
 fi
-stack="${stack:-${HYBRID_AI_ENV_FILE:-}}"
+stack="${stack:-${HAVEN_ENV_FILE:-}}"
 # The real install.sh reads an existing stack file and keeps its values; it only
 # creates it when absent. Model that, so a migrated stack file is not clobbered.
 if [[ -n "$stack" && ! -e "$stack" ]]; then
@@ -273,7 +273,7 @@ exit "${DOCTOR_RC:-0}"
 EOF
 cat > "$GIT_FIXTURE_SRC/scripts/check-hermes-nonroot.sh" <<'EOF'
 #!/usr/bin/env bash
-printf 'check-hermes-nonroot uid=%s dir=%s\n' "${HYBRID_AI_UID:-}" "${HERMES_DATA_DIR:-}" >> "$EVENTS"
+printf 'check-hermes-nonroot uid=%s dir=%s\n' "${HAVEN_UID:-}" "${HERMES_DATA_DIR:-}" >> "$EVENTS"
 exit "${PREFLIGHT_RC:-0}"
 EOF
 printf '# fixture deploy unit\n[Service]\nUser=root\n' > "$GIT_FIXTURE_SRC/deploy/hybrid-ai-deploy@.service"
@@ -318,11 +318,11 @@ run_bootstrap() { # root logfile bootstrap-args...
   local r="$1" log="$2"; shift 2
   : > "$EVENTS"; : > "$GIT_LOG"
   env PATH="$STUBS:$PATH" \
-      HYBRID_AI_BOOTSTRAP_ROOT="$r" \
+      HAVEN_BOOTSTRAP_ROOT="$r" \
       STUB_STATE="$r/stubstate" \
       EVENTS="$EVENTS" GIT_LOG="$GIT_LOG" \
       GIT_FIXTURE_SRC="$GIT_FIXTURE_SRC" \
-      GIT_ORIGIN_URL="${GIT_ORIGIN_URL:-https://github.com/jimbobsyouruncle/hybrid-ai.git}" \
+      GIT_ORIGIN_URL="${GIT_ORIGIN_URL:-https://github.com/jimbobsyouruncle/haven.git}" \
       SSH_ORIGINAL_COMMAND="" \
       "${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}" \
       bash "$BOOTSTRAP" "$@" >"$log" 2>&1
@@ -336,19 +336,19 @@ EVENTS="$WORK/events.log"; GIT_LOG="$WORK/git.log"
 
 # ---------------------------------------------------------------------------
 echo "== the test-only prefix is UNSET by default and the default root is / =="
-out="$(env -u HYBRID_AI_BOOTSTRAP_ROOT bash "$BOOTSTRAP" --print-paths 2>&1)"
+out="$(env -u HAVEN_BOOTSTRAP_ROOT bash "$BOOTSTRAP" --print-paths 2>&1)"
 have "print-paths default root is /" "$out" "root                     = /"
-have "print-paths default app dir" "$out" "HYBRID_AI_APP_DIR        = /opt/haven"
-have "print-paths default stack file" "$out" "HYBRID_AI_STACK_ENV_FILE = /etc/hybrid-ai/stack.env"
-if env -u HYBRID_AI_BOOTSTRAP_ROOT bash "$BOOTSTRAP" --print-paths >/dev/null 2>&1; then
+have "print-paths default app dir" "$out" "HAVEN_APP_DIR        = /opt/haven"
+have "print-paths default stack file" "$out" "HAVEN_STACK_ENV_FILE = /etc/hybrid-ai/stack.env"
+if env -u HAVEN_BOOTSTRAP_ROOT bash "$BOOTSTRAP" --print-paths >/dev/null 2>&1; then
   ok "print-paths needs no root and touches nothing"
 else
   bad "print-paths failed"
 fi
-if env HYBRID_AI_BOOTSTRAP_ROOT=relative bash "$BOOTSTRAP" --print-paths >/dev/null 2>&1; then
-  bad "a relative HYBRID_AI_BOOTSTRAP_ROOT must be refused"
+if env HAVEN_BOOTSTRAP_ROOT=relative bash "$BOOTSTRAP" --print-paths >/dev/null 2>&1; then
+  bad "a relative HAVEN_BOOTSTRAP_ROOT must be refused"
 else
-  ok "a relative HYBRID_AI_BOOTSTRAP_ROOT is refused"
+  ok "a relative HAVEN_BOOTSTRAP_ROOT is refused"
 fi
 
 # ---------------------------------------------------------------------------
@@ -399,27 +399,27 @@ if (( duid < 1000 )); then ok "hybrid-ai-deploy is a system account"; else bad "
 
 # The layout file content.
 for needle in \
-  "HYBRID_AI_APP_DIR=$R1/opt/haven" \
-  "HYBRID_AI_ENV_FILE=$LAYOUT" \
-  "HYBRID_AI_STACK_ENV_FILE=$R1/etc/hybrid-ai/stack.env" \
-  "HYBRID_AI_DATA_DIR=$R1/var/lib/hybrid-ai" \
-  "HYBRID_AI_LOG_DIR=$R1/var/log/hybrid-ai" \
-  "HYBRID_AI_WORK_DIR=$R1/var/lib/hybrid-ai/work" \
+  "HAVEN_APP_DIR=$R1/opt/haven" \
+  "HAVEN_ENV_FILE=$LAYOUT" \
+  "HAVEN_STACK_ENV_FILE=$R1/etc/hybrid-ai/stack.env" \
+  "HAVEN_DATA_DIR=$R1/var/lib/hybrid-ai" \
+  "HAVEN_LOG_DIR=$R1/var/log/hybrid-ai" \
+  "HAVEN_WORK_DIR=$R1/var/lib/hybrid-ai/work" \
   "OPENHANDS_WORKSPACE=$R1/var/lib/hybrid-ai-agent" \
   "AGENT_REPOS_DIR=$R1/var/lib/hybrid-ai-repos" \
   "OPENHANDS_STATE_DIR=$R1/var/lib/hybrid-ai/openhands" \
   "RESTIC_CACHE_DIR=$R1/var/cache/hybrid-ai-backup" \
-  "HYBRID_AI_HERMES_HOME_DIR=$R1/var/lib/hybrid-ai/hermes-home" \
-  "HYBRID_AI_BACKUP_MODE=system" \
+  "HAVEN_HERMES_HOME_DIR=$R1/var/lib/hybrid-ai/hermes-home" \
+  "HAVEN_BACKUP_MODE=system" \
   "BACKUP_CONTAINER_CONTROL=external"; do
   if grep -qxF "$needle" "$LAYOUT"; then ok "layout has: ${needle##*/}"; else bad "layout missing: $needle"; fi
 done
-if grep -qE "^HYBRID_AI_UID=$(grep '^hybrid-ai:' "$R1/stubstate/passwd" | cut -d: -f3)$" "$LAYOUT"; then
-  ok "layout HYBRID_AI_UID is the hybrid-ai account uid"
+if grep -qE "^HAVEN_UID=$(grep '^hybrid-ai:' "$R1/stubstate/passwd" | cut -d: -f3)$" "$LAYOUT"; then
+  ok "layout HAVEN_UID is the hybrid-ai account uid"
 else
-  bad "layout HYBRID_AI_UID is not the hybrid-ai uid"
+  bad "layout HAVEN_UID is not the hybrid-ai uid"
 fi
-if grep -qE "^HYBRID_AI_GID=[0-9]+$" "$LAYOUT"; then ok "layout HYBRID_AI_GID is numeric"; else bad "layout HYBRID_AI_GID"; fi
+if grep -qE "^HAVEN_GID=[0-9]+$" "$LAYOUT"; then ok "layout HAVEN_GID is numeric"; else bad "layout HAVEN_GID"; fi
 check "hermes-home owned by hybrid-ai" "700" "$(stat -c '%a' "$R1/var/lib/hybrid-ai/hermes-home" 2>/dev/null)"
 
 # No SECRET KEY NAME from install.sh STEP 8 may appear in the layout file.
@@ -447,7 +447,7 @@ check "a re-run leaves exactly one authorized_keys line" "1" \
 
 # install.sh gets the LAYOUT file by name.
 have "install.sh was handed the layout file" "$(cat "$EVENTS")" \
-  "install.sh HYBRID_AI_ENV_FILE=$LAYOUT STACK="
+  "install.sh HAVEN_ENV_FILE=$LAYOUT STACK="
 
 # ---------------------------------------------------------------------------
 echo
@@ -472,8 +472,8 @@ LEGACY_ENV="$LEGACY/.env"
   printf 'OPENHANDS_STATE_DIR=%s\n' "$LEGACY/state-key"
   # The BASE install.sh STEP 8 writes these EMPTY. Model that exactly, so the
   # migration-side empty-uid proof below is faithful.
-  printf 'HYBRID_AI_UID=\n'
-  printf 'HYBRID_AI_GID=\n'
+  printf 'HAVEN_UID=\n'
+  printf 'HAVEN_GID=\n'
 } > "$LEGACY_ENV"
 chmod 600 "$LEGACY_ENV"
 # Keep a copy BEFORE the migration: the move renames the original away, so a
@@ -569,18 +569,18 @@ else
   bad "no migration manifest was written"
 fi
 
-# The legacy .env carries EMPTY HYBRID_AI_UID=/HYBRID_AI_GID= (the base
+# The legacy .env carries EMPTY HAVEN_UID=/HAVEN_GID= (the base
 # install.sh STEP 8 writes them blank). The bootstrap must still hand install.sh
 # the layout file, whose ids are authoritative, and the Hermes preflight must be
 # run with the hybrid-ai uid -- never an empty one. This is the migration-side
 # proof for the empty-uid defect (AC1).
-layout_uid="$(grep -E '^HYBRID_AI_UID=' "$R2/etc/hybrid-ai/hybrid-ai.env" | cut -d= -f2-)"
+layout_uid="$(grep -E '^HAVEN_UID=' "$R2/etc/hybrid-ai/hybrid-ai.env" | cut -d= -f2-)"
 have "install.sh was handed the layout file during migration" "$(cat "$EVENTS")" \
-  "install.sh HYBRID_AI_ENV_FILE=$R2/etc/hybrid-ai/hybrid-ai.env"
+  "install.sh HAVEN_ENV_FILE=$R2/etc/hybrid-ai/hybrid-ai.env"
 if [[ -n "$layout_uid" && "$layout_uid" != "0" ]]; then
-  ok "the migrated layout file carries a non-zero HYBRID_AI_UID (${layout_uid})"
+  ok "the migrated layout file carries a non-zero HAVEN_UID (${layout_uid})"
 else
-  bad "the migrated layout file HYBRID_AI_UID is empty or zero (${layout_uid})"
+  bad "the migrated layout file HAVEN_UID is empty or zero (${layout_uid})"
 fi
 have "the Hermes preflight ran with the layout uid (not empty)" "$(cat "$EVENTS")" \
   "check-hermes-nonroot uid=${layout_uid} "
@@ -644,7 +644,7 @@ check "a second --from run exits 0" "0" "$rc"
 if (( rc != 0 )); then sed 's/^/      /' "$WORK/rerun-from-2.log" >&2; fi
 have "the re-run stopped the stack with the stack env file" "$(cat "$EVENTS")" \
   "docker compose -p hybrid-ai --env-file $R6/etc/hybrid-ai/stack.env"
-have "the re-run reached the install.sh hand-off" "$(cat "$EVENTS")" "install.sh HYBRID_AI_ENV_FILE="
+have "the re-run reached the install.sh hand-off" "$(cat "$EVENTS")" "install.sh HAVEN_ENV_FILE="
 if grep -q 'could not stop the stack' "$WORK/rerun-from-2.log"; then
   bad "the second --from run died at the stop step"
 else
@@ -815,7 +815,7 @@ check "Git checkout uses root-owned service-readable creation modes" "yes" \
 # 4 -- a credential-bearing origin.
 R="$(new_root)"
 mkdir -p "$R/opt/haven/.git"
-EXTRA_ENV=(GIT_ORIGIN_URL="https://user:pass@github.com/jimbobsyouruncle/hybrid-ai.git")
+EXTRA_ENV=(GIT_ORIGIN_URL="https://user:pass@github.com/jimbobsyouruncle/haven.git")
 rc=0; run_bootstrap "$R" "$WORK/r_cred.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
 check "a credential-bearing origin is refused with 4" "4" "$rc"
 
@@ -828,19 +828,19 @@ check "a foreign origin is refused with 4" "4" "$rc"
 
 # Explicit Haven clone/fetch and exact-origin validation; host paths stay old.
 R="$(new_root)"
-EXTRA_ENV=(HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven GIT_ORIGIN_URL=https://github.com/jimbobsyouruncle/haven.git)
+EXTRA_ENV=(HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven GIT_ORIGIN_URL=https://github.com/jimbobsyouruncle/haven.git)
 rc=0; run_bootstrap "$R" "$WORK/r_haven.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
 check "Haven-selected fresh bootstrap succeeds" "0" "$rc"
 have "Haven-selected bootstrap clones canonical URL" "$(cat "$GIT_LOG")" "clone --no-tags https://github.com/jimbobsyouruncle/haven.git"
-EXTRA_ENV=(HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven GIT_ORIGIN_URL=https://github.com/jimbobsyouruncle/haven.git)
+EXTRA_ENV=(HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven GIT_ORIGIN_URL=https://github.com/jimbobsyouruncle/haven.git)
 rc=0; run_bootstrap "$R" "$WORK/r_haven_again.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
 check "Haven-selected existing checkout succeeds" "0" "$rc"
 have "Haven-selected bootstrap fetches canonical URL" "$(cat "$GIT_LOG")" "fetch --prune --no-tags https://github.com/jimbobsyouruncle/haven.git"
-EXTRA_ENV=(HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven)
+EXTRA_ENV=(HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven GIT_ORIGIN_URL=https://github.com/jimbobsyouruncle/hybrid-ai.git)
 rc=0; run_bootstrap "$R" "$WORK/r_haven_wrong.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
 check "Haven selection still rejects an origin for the other identity" "4" "$rc"
 for origin in https://user:pass@github.com/jimbobsyouruncle/haven.git https://github.com/someone/other.git; do
-  EXTRA_ENV=(HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven GIT_ORIGIN_URL="$origin")
+  EXTRA_ENV=(HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven GIT_ORIGIN_URL="$origin")
   rc=0; run_bootstrap "$R" "$WORK/r_haven_unsafe.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
   check "Haven selection rejects credential-bearing/foreign origin" "4" "$rc"
 done
@@ -1042,7 +1042,7 @@ mkdir -p "$INST_APP/scripts/lib" "$INST_APP/status" "$INST_BIN" \
          "$INST/etc/hybrid-ai" "$INST/data" "$INST/log" "$INST/work" \
          "$INST/ws" "$INST/repos" "$INST/ohstate" "$INST/conf" "$INST/restic"
 cp "$REPO/install.sh" "$INST_APP/install.sh"
-cp "$REPO/scripts/lib/hybrid-ai-env.sh" "$INST_APP/scripts/lib/"
+cp "$REPO/scripts/lib/haven-env.sh" "$INST_APP/scripts/lib/"
 [ -f "$REPO/scripts/lib/build-gate.sh" ] || { echo "FATAL: scripts/lib/build-gate.sh is missing; the build gate does not exist in this tree." >&2; exit 2; }
 cp "$REPO/scripts/lib/build-gate.sh" "$INST_APP/scripts/lib/"
 # The real install.sh sources scripts/lib/tls.sh at startup and its TLS render
@@ -1081,19 +1081,19 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$INST_BIN/apt-get"
 chmod +x "$INST_BIN"/*
 
 # Run the REAL install.sh with every host dependency stubbed. $1 app dir,
-# $2 layout file, $3 log. HYBRID_AI_ENV_FILE is the layout file; install.sh
-# learns HYBRID_AI_STACK_ENV_FILE from it and writes that stack file.
+# $2 layout file, $3 log. HAVEN_ENV_FILE is the layout file; install.sh
+# learns HAVEN_STACK_ENV_FILE from it and writes that stack file.
 run_real_install() { # app layout log
   local app="$1" layout="$2" log="$3" rc=0
-  env -u HYBRID_AI_APP_DIR -u HYBRID_AI_DATA_DIR -u HYBRID_AI_LOG_DIR \
-      -u HYBRID_AI_WORK_DIR -u HYBRID_AI_STACK_ENV_FILE \
+  env -u HAVEN_APP_DIR -u HAVEN_DATA_DIR -u HAVEN_LOG_DIR \
+      -u HAVEN_WORK_DIR -u HAVEN_STACK_ENV_FILE \
       -u OPENHANDS_WORKSPACE -u AGENT_REPOS_DIR -u OPENHANDS_STATE_DIR \
-      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HYBRID_AI_HERMES_HOME_DIR \
-      -u HYBRID_AI_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
+      -u BACKUP_CONF_DIR -u RESTIC_CACHE_DIR -u HAVEN_HERMES_HOME_DIR \
+      -u HAVEN_BACKUP_MODE -u BACKUP_CONTAINER_CONTROL \
       -u BACKUP_GROUP_GID -u BACKUP_GROUP_GID_DEFAULT \
-      -u HYBRID_AI_UID -u HYBRID_AI_GID -u HYBRID_AI_LAYOUT_UID -u HYBRID_AI_LAYOUT_GID \
+      -u HAVEN_UID -u HAVEN_GID -u HAVEN_LAYOUT_UID -u HAVEN_LAYOUT_GID \
       PATH="$INST_BIN:$PATH" \
-      HYBRID_AI_ENV_FILE="$layout" \
+      HAVEN_ENV_FILE="$layout" \
       LOCAL_DOMAIN=example.test OPENROUTER_API_KEY=stub RUNPOD_API_KEY=stub \
       RUNPOD_POD_ID=stub RUNPOD_HOST=stub PI_HOST=stub \
       OPENHANDS_SANDBOX_HOST=example.test PEER_HOSTNAMES="none" \
@@ -1105,22 +1105,22 @@ run_real_install() { # app layout log
 INST_LAYOUT="$INST/etc/hybrid-ai/hybrid-ai.env"
 INST_STACK="$INST/etc/hybrid-ai/stack.env"
 cat > "$INST_LAYOUT" <<EOF
-HYBRID_AI_APP_DIR=${INST_APP}
-HYBRID_AI_ENV_FILE=${INST_LAYOUT}
-HYBRID_AI_STACK_ENV_FILE=${INST_STACK}
-HYBRID_AI_DATA_DIR=${INST}/data
-HYBRID_AI_LOG_DIR=${INST}/log
-HYBRID_AI_WORK_DIR=${INST}/work
+HAVEN_APP_DIR=${INST_APP}
+HAVEN_ENV_FILE=${INST_LAYOUT}
+HAVEN_STACK_ENV_FILE=${INST_STACK}
+HAVEN_DATA_DIR=${INST}/data
+HAVEN_LOG_DIR=${INST}/log
+HAVEN_WORK_DIR=${INST}/work
 OPENHANDS_WORKSPACE=${INST}/ws
 AGENT_REPOS_DIR=${INST}/repos
 OPENHANDS_STATE_DIR=${INST}/ohstate
 BACKUP_CONF_DIR=${INST}/conf
 RESTIC_CACHE_DIR=${INST}/restic
-HYBRID_AI_HERMES_HOME_DIR=${INST}/hermes
-HYBRID_AI_BACKUP_MODE=system
+HAVEN_HERMES_HOME_DIR=${INST}/hermes
+HAVEN_BACKUP_MODE=system
 BACKUP_CONTAINER_CONTROL=external
-HYBRID_AI_UID=1000
-HYBRID_AI_GID=1000
+HAVEN_UID=1000
+HAVEN_GID=1000
 EOF
 chmod 644 "$INST_LAYOUT"
 LAYOUT_SHA_BEFORE="$(sha256sum "$INST_LAYOUT" | awk '{print $1}')"
@@ -1146,7 +1146,7 @@ else
   ok "no secret key name was written to the layout file"
 fi
 # The layout-only settings must survive the write untouched.
-for k in HYBRID_AI_STACK_ENV_FILE HYBRID_AI_DATA_DIR HYBRID_AI_BACKUP_MODE; do
+for k in HAVEN_STACK_ENV_FILE HAVEN_DATA_DIR HAVEN_BACKUP_MODE; do
   if grep -q "^${k}=" "$INST_LAYOUT"; then
     ok "the layout file still holds ${k}"
   else
@@ -1159,13 +1159,13 @@ echo
 echo "== a legacy stack file with EMPTY ids cannot drop the stack to uid 0 (AC1) =="
 # Reproduces the migration shape: the layout file carries the account ids, but
 # the PRE-EXISTING stack file (the moved legacy .env) carries empty
-# HYBRID_AI_UID=/HYBRID_AI_GID=. The real install.sh MUST keep the layout ids
+# HAVEN_UID=/HAVEN_GID=. The real install.sh MUST keep the layout ids
 # and write them, with a non-zero STATUS_UID. Before the fix it wrote empty ids
 # back and STATUS_UID=0, so the stack ran as root.
 rm -rf "$INST_STACK"
 STACK_SENTINEL_VAL="__SENTINEL_LEGACY_STACK__"
 {
-  printf 'STATUS_UID=0\nHYBRID_AI_UID=\nHYBRID_AI_GID=\nWEBUI_SECRET_KEY=legacy\n'
+  printf 'STATUS_UID=0\nHAVEN_UID=\nHAVEN_GID=\nWEBUI_SECRET_KEY=legacy\n'
   # Legacy paths that point AWAY from the layout, as a real Pi .env would once
   # the migration moved the trees: the layout must win, not these.
   printf 'OPENHANDS_WORKSPACE=/home/pi/hybrid-ai-agent\n'
@@ -1181,9 +1181,9 @@ run_real_install "$INST_APP" "$INST_LAYOUT" "$INST/empty-ids.log" || rc=$?
 check "install.sh exits 0 with a legacy empty-id stack file" "0" "$rc"
 
 check "the stack file carries the layout uid (1000)" "1000" \
-  "$(grep -E '^HYBRID_AI_UID=' "$INST_STACK" | tail -1 | cut -d= -f2-)"
+  "$(grep -E '^HAVEN_UID=' "$INST_STACK" | tail -1 | cut -d= -f2-)"
 check "the stack file carries the layout gid (1000)" "1000" \
-  "$(grep -E '^HYBRID_AI_GID=' "$INST_STACK" | tail -1 | cut -d= -f2-)"
+  "$(grep -E '^HAVEN_GID=' "$INST_STACK" | tail -1 | cut -d= -f2-)"
 status_uid="$(grep -E '^STATUS_UID=' "$INST_STACK" | tail -1 | cut -d= -f2-)"
 if [[ -n "$status_uid" && "$status_uid" != "0" ]]; then
   ok "STATUS_UID is non-zero (${status_uid})"
@@ -1264,20 +1264,10 @@ fi
 
 # Byte-identical files (AC15), when origin/main is available.
 if git -C "$REPO" rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
-  # Keep this list equal to the out-of-scope paths in the job brief. These are
-  # the files a bootstrap card must not touch; a card that legitimately changes
-  # one of them stops listing it here, exactly as done for the compose/log
-  # fail-closed card (docker-compose.yml, hermes/docker-compose.hermes.yml and
-  # doctor.sh) and for the sandbox startup-grace card
-  # (openhands/docker-compose.openhands.yml), and for the sandbox-image
-  # auto-publish / deploy gate card (.github/workflows/deploy.yml), and for the
-  # deploy-wiring re-apply card (deploy/hybrid-ai-deploy@.service, comment-only),
-  # and for the alias-restoration card (status/Caddyfile, which restored the
-  # /openwebui and /chat 302 aliases). The capture unit is frozen and stays
-  # listed. HAVEN-003 explicitly authorizes scripts/deploy-instance.sh, so
-  # only that path is removed for the repository-identity preparation.
+  # Resource schedules and polkit are outside canonical source/configuration.
+  # The approved namespace preparation changes backup-containers.sh callers and
+  # unit environment keys; their existing security/behavior fixtures still apply.
   diff_out="$(git -C "$REPO" diff --stat origin/main -- \
-    backup/backup-containers.sh \
     backup/system/hybrid-ai-backup-capture.timer \
     backup/system/hybrid-ai-backup-check.timer \
     backup/hybrid-ai-backup.service backup/hybrid-ai-backup.timer \
@@ -1290,7 +1280,7 @@ fi
 
 # doctor.sh COMPOSE_CMD (offline, no Docker). Every printed Fix hint inherits
 # ${COMPOSE_CMD}, so on a bootstrapped host -- where the layout file
-# (HYBRID_AI_ENV_FILE) and the stack file (HYBRID_AI_STACK_ENV_FILE) are two
+# (HAVEN_ENV_FILE) and the stack file (HAVEN_STACK_ENV_FILE) are two
 # different paths -- the assignment must pass BOTH env files. A single-env-file
 # form (the pre-fix line) is the regression this asserts against.
 doctor_compose_cmd="$(grep -E '^COMPOSE_CMD=' "${REPO}/doctor.sh")"
@@ -1303,7 +1293,7 @@ env_file_count="$(printf '%s\n' "$doctor_compose_cmd" | grep -o -- '--env-file' 
 check "doctor.sh COMPOSE_CMD passes exactly two --env-file values" "2" "$env_file_count"
 # shellcheck disable=SC2016  # the ${...} names are matched literally, not expanded
 have "doctor.sh COMPOSE_CMD passes the layout env file" "$doctor_compose_cmd" \
-  '--env-file ${HYBRID_AI_ENV_FILE}'
+  '--env-file ${HAVEN_ENV_FILE}'
 # shellcheck disable=SC2016  # the ${...} name is matched literally, not expanded
 have "doctor.sh COMPOSE_CMD passes the stack env file" "$doctor_compose_cmd" \
   '--env-file ${ENV_FILE}'

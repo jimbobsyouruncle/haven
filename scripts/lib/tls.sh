@@ -106,11 +106,11 @@ tls_auth_without_tls_warning() {
 tls_auth_fail_closed() {
   tls_is_on && tls_auth_is_on || return 0
   local missing=()
-  [[ -n "${HYBRID_AI_AUTH_USER:-}" ]] || missing+=(HYBRID_AI_AUTH_USER)
-  [[ -n "${HYBRID_AI_AUTH_HASH:-}" ]] || missing+=(HYBRID_AI_AUTH_HASH)
-  [[ -n "${HYBRID_AI_AUTH_COOKIE_SECRET:-}" ]] || missing+=(HYBRID_AI_AUTH_COOKIE_SECRET)
+  [[ -n "${HAVEN_AUTH_USER:-}" ]] || missing+=(HAVEN_AUTH_USER)
+  [[ -n "${HAVEN_AUTH_HASH:-}" ]] || missing+=(HAVEN_AUTH_HASH)
+  [[ -n "${HAVEN_AUTH_COOKIE_SECRET:-}" ]] || missing+=(HAVEN_AUTH_COOKIE_SECRET)
   if (( ${#missing[@]} > 0 )); then
-    tls__die "AUTH_ENABLED=on with TLS on requires HYBRID_AI_AUTH_USER, HYBRID_AI_AUTH_HASH and HYBRID_AI_AUTH_COOKIE_SECRET; missing: ${missing[*]}"
+    tls__die "AUTH_ENABLED=on with TLS on requires HAVEN_AUTH_USER, HAVEN_AUTH_HASH and HAVEN_AUTH_COOKIE_SECRET; missing: ${missing[*]}"
   fi
 }
 
@@ -219,10 +219,10 @@ tls_validate_ca() {
 # Section 8.5, last row: the token file. PATH ONLY. Never a value.
 tls_validate_token_file() {
   local f="${1:-}" mode uid real
-  [[ -n $f ]] || tls__die "HYBRID_AI_TLS_TOKEN_FILE is empty. Set it in ${ENV_FILE} or pass --tls-token-file <path>."
-  [[ $f == /* ]] || tls__die "HYBRID_AI_TLS_TOKEN_FILE must be an absolute path (got '${f}'). Pass --tls-token-file ${TLS_TOKEN_DIR}/$(basename -- "$f")."
+  [[ -n $f ]] || tls__die "HAVEN_TLS_TOKEN_FILE is empty. Set it in ${ENV_FILE} or pass --tls-token-file <path>."
+  [[ $f == /* ]] || tls__die "HAVEN_TLS_TOKEN_FILE must be an absolute path (got '${f}'). Pass --tls-token-file ${TLS_TOKEN_DIR}/$(basename -- "$f")."
   if [[ -n "${APP_DIR:-}" && ( $f == "$APP_DIR" || $f == "$APP_DIR"/* ) ]]; then
-    tls__die "HYBRID_AI_TLS_TOKEN_FILE must live outside the repo and the app directory (${APP_DIR}). Fix: sudo install -d -m 0700 -o root -g root ${TLS_TOKEN_DIR} && sudo mv ${f} ${TLS_TOKEN_DIR}/ && then set HYBRID_AI_TLS_TOKEN_FILE=${TLS_TOKEN_DIR}/$(basename -- "$f")"
+    tls__die "HAVEN_TLS_TOKEN_FILE must live outside the repo and the app directory (${APP_DIR}). Fix: sudo install -d -m 0700 -o root -g root ${TLS_TOKEN_DIR} && sudo mv ${f} ${TLS_TOKEN_DIR}/ && then set HAVEN_TLS_TOKEN_FILE=${TLS_TOKEN_DIR}/$(basename -- "$f")"
   fi
   if [[ ! -e $f ]]; then
     # Point at the canonical location when the given path is not already under
@@ -232,25 +232,25 @@ tls_validate_token_file() {
       "${TLS_TOKEN_DIR}"/*) ;;
       *) target="${TLS_TOKEN_DIR}/$(basename -- "$target")" ;;
     esac
-    tls__die "HYBRID_AI_TLS_TOKEN_FILE '${f}' does not exist. Fix: sudo install -d -m 0700 -o root -g root $(dirname -- "$target") && sudo install -m 0600 -o root -g root /dev/null ${target} && then write the token into that file with an editor or a pipe (never as a shell argument), and set HYBRID_AI_TLS_TOKEN_FILE=${target}."
+    tls__die "HAVEN_TLS_TOKEN_FILE '${f}' does not exist. Fix: sudo install -d -m 0700 -o root -g root $(dirname -- "$target") && sudo install -m 0600 -o root -g root /dev/null ${target} && then write the token into that file with an editor or a pipe (never as a shell argument), and set HAVEN_TLS_TOKEN_FILE=${target}."
   fi
-  [[ -f $f ]] || tls__die "HYBRID_AI_TLS_TOKEN_FILE '${f}' is not a regular file. Fix: sudo install -m 0600 -o root -g root /dev/null ${f}"
-  [[ -r $f ]] || tls__die "HYBRID_AI_TLS_TOKEN_FILE '${f}' is not readable. Fix: sudo chmod 600 ${f} && sudo chown root:root ${f}"
+  [[ -f $f ]] || tls__die "HAVEN_TLS_TOKEN_FILE '${f}' is not a regular file. Fix: sudo install -m 0600 -o root -g root /dev/null ${f}"
+  [[ -r $f ]] || tls__die "HAVEN_TLS_TOKEN_FILE '${f}' is not readable. Fix: sudo chmod 600 ${f} && sudo chown root:root ${f}"
   # A symlink is allowed only while it still resolves inside the drop-in
   # directory; one that escapes is how a 0600 root file gets laundered into a
   # world-readable path.
   real="$(readlink -f -- "$f" 2>/dev/null || printf '%s' "$f")"
   case "$real" in
     "${TLS_TOKEN_DIR}"/*) ;;
-    *) tls__die "HYBRID_AI_TLS_TOKEN_FILE '${f}' resolves outside ${TLS_TOKEN_DIR} (${real}). Move it: sudo install -d -m 0700 -o root -g root ${TLS_TOKEN_DIR} && sudo install -m 0600 -o root -g root ${f} ${TLS_TOKEN_DIR}/$(basename -- "$f") && then set HYBRID_AI_TLS_TOKEN_FILE=${TLS_TOKEN_DIR}/$(basename -- "$f")" ;;
+    *) tls__die "HAVEN_TLS_TOKEN_FILE '${f}' resolves outside ${TLS_TOKEN_DIR} (${real}). Move it: sudo install -d -m 0700 -o root -g root ${TLS_TOKEN_DIR} && sudo install -m 0600 -o root -g root ${f} ${TLS_TOKEN_DIR}/$(basename -- "$f") && then set HAVEN_TLS_TOKEN_FILE=${TLS_TOKEN_DIR}/$(basename -- "$f")" ;;
   esac
   mode="$(stat -c '%a' -- "$f" 2>/dev/null || true)"
-  [[ -n $mode ]] || tls__die "Could not read the mode of HYBRID_AI_TLS_TOKEN_FILE '${f}'. Fix: sudo chmod 600 ${f} && sudo chown root:root ${f}"
+  [[ -n $mode ]] || tls__die "Could not read the mode of HAVEN_TLS_TOKEN_FILE '${f}'. Fix: sudo chmod 600 ${f} && sudo chown root:root ${f}"
   if (( 8#$mode & 8#077 )); then
-    tls__die "HYBRID_AI_TLS_TOKEN_FILE '${f}' is mode ${mode}; it must be 0600 or stricter. Fix: sudo chmod 600 ${f}"
+    tls__die "HAVEN_TLS_TOKEN_FILE '${f}' is mode ${mode}; it must be 0600 or stricter. Fix: sudo chmod 600 ${f}"
   fi
   uid="$(stat -c '%u' -- "$f" 2>/dev/null || true)"
-  [[ $uid == "0" ]] || tls__die "HYBRID_AI_TLS_TOKEN_FILE '${f}' is not owned by root (uid ${uid:-unknown}). Fix: sudo chown root:root ${f} && sudo chmod 600 ${f}"
+  [[ $uid == "0" ]] || tls__die "HAVEN_TLS_TOKEN_FILE '${f}' is not owned by root (uid ${uid:-unknown}). Fix: sudo chown root:root ${f} && sudo chmod 600 ${f}"
 }
 
 # Flag over env, applied once .env has been loaded and before any prompt.
@@ -262,7 +262,7 @@ tls_apply_flags() {
   if [[ -n "${TLS_ARG_VALIDATION:-}" ]];   then TLS_VALIDATION="$TLS_ARG_VALIDATION"; fi
   if [[ -n "${TLS_ARG_DNS_PROVIDER:-}" ]]; then ACME_DNS_PROVIDER="$TLS_ARG_DNS_PROVIDER"; fi
   if [[ -n "${TLS_ARG_CA:-}" ]];           then ACME_CA="$TLS_ARG_CA"; fi
-  if [[ -n "${TLS_ARG_TOKEN_FILE:-}" ]];   then HYBRID_AI_TLS_TOKEN_FILE="$TLS_ARG_TOKEN_FILE"; fi
+  if [[ -n "${TLS_ARG_TOKEN_FILE:-}" ]];   then HAVEN_TLS_TOKEN_FILE="$TLS_ARG_TOKEN_FILE"; fi
   return 0
 }
 
@@ -288,7 +288,7 @@ tls_validate_settings() {
   # STEP 8 env write and every validation call site.
   ACME_CA="$TLS_CA_URL"
   if [[ "${TLS_VALIDATION}" == dns ]]; then
-    tls_validate_token_file "${HYBRID_AI_TLS_TOKEN_FILE:-}"
+    tls_validate_token_file "${HAVEN_TLS_TOKEN_FILE:-}"
   fi
   if [[ "${TLS_VALIDATION}" == http ]]; then
     tls__warn "HTTP-01 cannot issue a wildcard certificate: this install gets three per-host certificates and no wildcard for *.${TLS_DOMAIN}."
@@ -385,7 +385,7 @@ tls_prompt_flow() {
     if (( ${NON_INTERACTIVE:-0} )); then ACME_DNS_PROVIDER="${ACME_DNS_PROVIDER:-cloudflare}"; fi
     # The operator creates the file; the installer only checks it. Print the
     # exact command so the token never has to touch an argument or the history.
-    if [[ -z "${HYBRID_AI_TLS_TOKEN_FILE:-}" ]] && ! (( ${NON_INTERACTIVE:-0} )); then
+    if [[ -z "${HAVEN_TLS_TOKEN_FILE:-}" ]] && ! (( ${NON_INTERACTIVE:-0} )); then
       cat <<EOF
 
     The installer never asks for the token itself, only for the file that holds it.
@@ -397,7 +397,7 @@ tls_prompt_flow() {
 
 EOF
     fi
-    tls_prompt_value HYBRID_AI_TLS_TOKEN_FILE \
+    tls_prompt_value HAVEN_TLS_TOKEN_FILE \
       "Provider credential FILE path -- the token itself, never pasted here" \
       "$(tls_default_token_path)"
   fi
@@ -605,7 +605,7 @@ tls_validate_compose_file() {  # FILE [ENVFILE]
   # Default to the RESOLVED STACK env file when no explicit file was given:
   # an --env-file consumer must hand compose the 0600 secrets file, never the
   # 0644 layout file.
-  local file="$1" envfile="${2:-${HYBRID_AI_STACK_ENV_FILE:-${ENV_FILE:-}}}"
+  local file="$1" envfile="${2:-${HAVEN_STACK_ENV_FILE:-${ENV_FILE:-}}}"
   if ! command -v docker >/dev/null 2>&1; then
     printf '[skip] compose validation of %s (docker unavailable)\n' "$file"
     return 3
@@ -632,21 +632,21 @@ tls_validate_compose_file() {  # FILE [ENVFILE]
 # container. Existence, type, readability and length only: the credential itself
 # is never read into a message, a log line or an argv.
 tls__validate_token_for_mount() {
-  local f="${HYBRID_AI_TLS_TOKEN_FILE:-}" size
-  [[ -n $f ]] || tls__die "HYBRID_AI_TLS_TOKEN_FILE is empty: the DNS-01 render cannot be validated without its token file. Fix: set HYBRID_AI_TLS_TOKEN_FILE in ${ENV_FILE:-the stack .env} to the token path (for example ${TLS_TOKEN_DIR}/cloudflare_dns_token), or pass --tls-token-file <path>."
+  local f="${HAVEN_TLS_TOKEN_FILE:-}" size
+  [[ -n $f ]] || tls__die "HAVEN_TLS_TOKEN_FILE is empty: the DNS-01 render cannot be validated without its token file. Fix: set HAVEN_TLS_TOKEN_FILE in ${ENV_FILE:-the stack .env} to the token path (for example ${TLS_TOKEN_DIR}/cloudflare_dns_token), or pass --tls-token-file <path>."
   if [[ ! -e $f ]]; then
-    tls__die "HYBRID_AI_TLS_TOKEN_FILE '${f}' does not exist, so the DNS-01 render cannot be validated. Fix: sudo install -d -m 0700 -o root -g root $(dirname -- "$f") && sudo install -m 0600 -o root -g root /dev/null ${f} && then write the token into that file with an editor or a pipe (never as a shell argument)."
+    tls__die "HAVEN_TLS_TOKEN_FILE '${f}' does not exist, so the DNS-01 render cannot be validated. Fix: sudo install -d -m 0700 -o root -g root $(dirname -- "$f") && sudo install -m 0600 -o root -g root /dev/null ${f} && then write the token into that file with an editor or a pipe (never as a shell argument)."
   fi
   if [[ ! -f $f ]]; then
-    tls__die "HYBRID_AI_TLS_TOKEN_FILE '${f}' is not a regular file, so it cannot be mounted for validation. Fix: sudo install -m 0600 -o root -g root /dev/null ${f} && then write the token into it with an editor or a pipe."
+    tls__die "HAVEN_TLS_TOKEN_FILE '${f}' is not a regular file, so it cannot be mounted for validation. Fix: sudo install -m 0600 -o root -g root /dev/null ${f} && then write the token into it with an editor or a pipe."
   fi
   if [[ ! -r $f ]]; then
-    tls__die "HYBRID_AI_TLS_TOKEN_FILE '${f}' is not readable, so it cannot be mounted for validation. Fix: sudo chmod 600 ${f} && sudo chown root:root ${f}"
+    tls__die "HAVEN_TLS_TOKEN_FILE '${f}' is not readable, so it cannot be mounted for validation. Fix: sudo chmod 600 ${f} && sudo chown root:root ${f}"
   fi
   size="$(wc -c < "$f" 2>/dev/null || printf '0')"
   size="${size//[[:space:]]/}"
   if [[ -z $size || $size == 0 ]]; then
-    tls__die "HYBRID_AI_TLS_TOKEN_FILE '${f}' is empty (0 bytes), so the DNS-01 solver would be rejected as an invalid token. Fix: write the token into ${f} with an editor or a pipe (never as a shell argument), then re-run."
+    tls__die "HAVEN_TLS_TOKEN_FILE '${f}' is empty (0 bytes), so the DNS-01 solver would be rejected as an invalid token. Fix: write the token into ${f} with an editor or a pipe (never as a shell argument), then re-run."
   fi
 }
 
@@ -681,7 +681,7 @@ tls_validate_caddyfile() {  # FILE
     fi
     tls__validate_token_for_mount
     token_mount=(
-      -v "${HYBRID_AI_TLS_TOKEN_FILE}:/run/secrets/${TLS_RENDER_SECRET_NAME:-$(tls_secret_name "${ACME_DNS_PROVIDER:-cloudflare}")}:ro"
+      -v "${HAVEN_TLS_TOKEN_FILE}:/run/secrets/${TLS_RENDER_SECRET_NAME:-$(tls_secret_name "${ACME_DNS_PROVIDER:-cloudflare}")}:ro"
     )
   elif command -v caddy >/dev/null 2>&1; then
     # Plain shell variables that were never exported: export them for the
@@ -792,14 +792,14 @@ tls_dry_run() {
   env_tmp="$(mktemp)"
   {
     printf 'LOCAL_DOMAIN=%s\n' "${LOCAL_DOMAIN:-example.invalid}"
-    printf 'HYBRID_AI_DATA_DIR=%s\n' "${HYBRID_AI_DATA_DIR:-${APP_DIR}}"
-    printf 'HYBRID_AI_LOG_DIR=%s\n' "${HYBRID_AI_LOG_DIR:-${APP_DIR}}"
-    printf 'BACKUP_LOG=%s\n' "${BACKUP_LOG:-${HYBRID_AI_LOG_DIR:-${APP_DIR}}/backup.log}"
+    printf 'HAVEN_DATA_DIR=%s\n' "${HAVEN_DATA_DIR:-${APP_DIR}}"
+    printf 'HAVEN_LOG_DIR=%s\n' "${HAVEN_LOG_DIR:-${APP_DIR}}"
+    printf 'BACKUP_LOG=%s\n' "${BACKUP_LOG:-${HAVEN_LOG_DIR:-${APP_DIR}}/backup.log}"
     printf 'BACKUP_GROUP_GID=%s\n' "${BACKUP_GROUP_GID:-$(id -g 2>/dev/null || printf 1000)}"
     printf 'DOCKER_GID=%s\n' "${DOCKER_GID:-$(getent group docker 2>/dev/null | cut -d: -f3 || printf 999)}"
     printf 'STATUS_UID=%s\n' "${STATUS_UID:-$(id -u 2>/dev/null || printf 1000)}"
-    printf 'HYBRID_AI_POST_DEPLOY_VERIFY_LOG=%s\n' "${HYBRID_AI_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}"
-    printf 'HYBRID_AI_TLS_TOKEN_FILE=%s\n' "${HYBRID_AI_TLS_TOKEN_FILE:-/etc/hybrid-ai/acme/cloudflare_dns_token}"
+    printf 'HAVEN_POST_DEPLOY_VERIFY_LOG=%s\n' "${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}"
+    printf 'HAVEN_TLS_TOKEN_FILE=%s\n' "${HAVEN_TLS_TOKEN_FILE:-/etc/hybrid-ai/acme/cloudflare_dns_token}"
   } > "$env_tmp"
 
   local rc=0
@@ -910,12 +910,13 @@ tls_load_env_file_values() {  # FILE
     [[ $line =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
     key="${BASH_REMATCH[1]}"
     val="${BASH_REMATCH[2]}"
+    key="$(haven_key "$key")"
     case "$key" in
       TLS_ENABLED|TLS_DOMAIN|ACME_EMAIL|ACME_CA|TLS_VALIDATION|ACME_DNS_PROVIDER|\
-      HYBRID_AI_TLS_TOKEN_FILE|TLS_HOSTS|ACME_AUTO_HTTPS|CADDY_IMAGE|LOCAL_DOMAIN|\
-      RFC2136_KEY_NAME|RFC2136_SERVER|AUTH_ENABLED|HYBRID_AI_AUTH_USER|\
-      HYBRID_AI_AUTH_HASH|HYBRID_AI_AUTH_COOKIE_SECRET|\
-      HYBRID_AI_AUTH_COOKIE_MAX_AGE) ;;
+      HAVEN_TLS_TOKEN_FILE|TLS_HOSTS|ACME_AUTO_HTTPS|CADDY_IMAGE|LOCAL_DOMAIN|\
+      RFC2136_KEY_NAME|RFC2136_SERVER|AUTH_ENABLED|HAVEN_AUTH_USER|\
+      HAVEN_AUTH_HASH|HAVEN_AUTH_COOKIE_SECRET|\
+      HAVEN_AUTH_COOKIE_MAX_AGE) ;;
       *) continue ;;
     esac
     [[ -n "${!key:-}" ]] && continue

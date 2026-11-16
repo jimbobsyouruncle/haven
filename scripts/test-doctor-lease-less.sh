@@ -13,7 +13,7 @@
 #
 #   The check counts lease-less directories at depth 1 under the conversations
 #   root and warns with the count plus the command that fixes it, naming the
-#   opt-in knob HYBRID_AI_PRUNE_ALLOW_LEASE_LESS and the prune unit. It is
+#   opt-in knob HAVEN_PRUNE_ALLOW_LEASE_LESS and the prune unit. It is
 #   WARNING-ONLY: it must never call fail(), so it can never raise the exit
 #   code to 2.
 #
@@ -155,7 +155,7 @@ for n in docker curl jq getfacl iptables df findmnt nvme lsblk dmesg vcgencmd \
 done
 
 # --- fixture ----------------------------------------------------------------
-cp "$REPO_ROOT/scripts/lib/hybrid-ai-env.sh" "$APPD/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/haven-env.sh" "$APPD/scripts/lib/"
 cp "$DOCTOR" "$APPD/doctor.sh"
 chmod +x "$APPD/doctor.sh"
 
@@ -194,9 +194,9 @@ run_doctor() {
     cd "$APPD" || exit 1
     PATH="$BIN:$PATH" HOME="$WORK/home" SHELL=/bin/bash \
     REAL_JQ="$REAL_JQ" BRIDGE_IP="$BRIDGE_IP" \
-    HYBRID_AI_APP_DIR="$APPD" HYBRID_AI_ENV_FILE="$APPD/.env" \
-    HYBRID_AI_DATA_DIR="$APPD" HYBRID_AI_LOG_DIR="$APPD" HYBRID_AI_WORK_DIR="$APPD" \
-    HYBRID_AI_HERMES_DATA_DIR="$APPD/hermes_data" \
+    HAVEN_APP_DIR="$APPD" HAVEN_ENV_FILE="$APPD/.env" \
+    HAVEN_DATA_DIR="$APPD" HAVEN_LOG_DIR="$APPD" HAVEN_WORK_DIR="$APPD" \
+    HAVEN_HERMES_DATA_DIR="$APPD/hermes_data" \
     OPENHANDS_WORKSPACE="$ws" \
     timeout 120 bash "$APPD/doctor.sh" --no-cloud
   ) > "$OUT" 2>&1
@@ -257,10 +257,10 @@ if grep -q "3 conversation director(ies) have no owner_lease.json" "$LL_OUT"; th
 else
   fail "lease-less: no warn naming the count 3"
 fi
-if grep -q "HYBRID_AI_PRUNE_ALLOW_LEASE_LESS" "$LL_OUT"; then
-  pass "lease-less: the remedy names the opt-in knob HYBRID_AI_PRUNE_ALLOW_LEASE_LESS"
+if grep -q "HAVEN_PRUNE_ALLOW_LEASE_LESS" "$LL_OUT"; then
+  pass "lease-less: the remedy names the opt-in knob HAVEN_PRUNE_ALLOW_LEASE_LESS"
 else
-  fail "lease-less: the remedy does not name HYBRID_AI_PRUNE_ALLOW_LEASE_LESS"
+  fail "lease-less: the remedy does not name HAVEN_PRUNE_ALLOW_LEASE_LESS"
 fi
 if grep -q "systemctl start hybrid-ai-prune" "$LL_OUT"; then
   pass "lease-less: the remedy names the prune unit"

@@ -4,22 +4,22 @@ set -Eeuo pipefail
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# The previously installed dispatcher can enter this new script from the legacy
-# root after its reset. Enter the same journaled handoff as newer dispatchers.
-# Custom developer checkouts retain the existing offline/local behavior.
-if [[ "${HYBRID_AI_INSTALL_ROOT_HANDOFF:-}" != 1 &&
-      ( "$SCRIPT_DIR" == /opt/hybrid-ai/scripts || "$SCRIPT_DIR" == /opt/haven/scripts ) ]]; then
-  exec python3 "${SCRIPT_DIR}/install-root.py" deploy "${1:-}"
-fi
 # Resolve before layout reads or host activity; the transient unit inherits
 # the systemd manager's environment rather than this process's environment.
 # shellcheck source=scripts/lib/repository-identity.sh
 source "${SCRIPT_DIR}/lib/repository-identity.sh"
-REPO_SLUG="$(hybrid_ai_repository_slug)" || exit 2
-# shellcheck source=scripts/lib/hybrid-ai-env.sh
-source "${SCRIPT_DIR}/lib/hybrid-ai-env.sh"
-APP_DIR="$HYBRID_AI_APP_DIR"
-ENV_FILE="$HYBRID_AI_STACK_ENV_FILE"
+REPO_SLUG="$(haven_repository_slug)" || exit 2
+# The previously installed dispatcher can enter this new script from the legacy
+# root after its reset. Enter the same journaled handoff as newer dispatchers.
+# Custom developer checkouts retain the existing offline/local behavior.
+if [[ "${HAVEN_INSTALL_ROOT_HANDOFF:-}" != 1 &&
+      ( "$SCRIPT_DIR" == /opt/hybrid-ai/scripts || "$SCRIPT_DIR" == /opt/haven/scripts ) ]]; then
+  exec python3 "${SCRIPT_DIR}/install-root.py" deploy "${1:-}"
+fi
+# shellcheck source=scripts/lib/haven-env.sh
+source "${SCRIPT_DIR}/lib/haven-env.sh"
+APP_DIR="$HAVEN_APP_DIR"
+ENV_FILE="$HAVEN_STACK_ENV_FILE"
 COMPOSE=(docker compose -p hybrid-ai --env-file "$ENV_FILE" --project-directory "$APP_DIR"
          -f "$APP_DIR/docker-compose.yml"
          -f "$APP_DIR/openhands/docker-compose.openhands.yml"
@@ -146,13 +146,13 @@ fi
 
 # --- Informational steps (always run, even when doctor.sh failed) -----------
 echo "==> Persistent data intact:"
-du -sh "$HYBRID_AI_WEBUI_DATA_DIR" "$HYBRID_AI_OLLAMA_DATA_DIR" 2>/dev/null || true
+du -sh "$HAVEN_WEBUI_DATA_DIR" "$HAVEN_OLLAMA_DATA_DIR" 2>/dev/null || true
 
 # Backups are a data-loss control; a deploy that silently disables them is
 # worth flagging even though it is not a failure. The shared helper resolves
 # which units and which systemctl scope apply for the configured mode.
-BACKUP_TIMER_UNIT="$HYBRID_AI_BACKUP_TIMER_UNIT"
-BACKUP_SYSTEMCTL_SCOPE="$HYBRID_AI_BACKUP_SYSTEMCTL_SCOPE"
+BACKUP_TIMER_UNIT="$HAVEN_BACKUP_TIMER_UNIT"
+BACKUP_SYSTEMCTL_SCOPE="$HAVEN_BACKUP_SYSTEMCTL_SCOPE"
 if systemctl "$BACKUP_SYSTEMCTL_SCOPE" is-active "$BACKUP_TIMER_UNIT" >/dev/null 2>&1; then
   echo "Backup timer active. Next run:"
   systemctl "$BACKUP_SYSTEMCTL_SCOPE" list-timers "$BACKUP_TIMER_UNIT" --no-pager 2>/dev/null | head -3 || true
@@ -162,7 +162,7 @@ fi
 
 # Reclaim SD card space from superseded images.
 # A staged deployment retains the previous immutable images for recovery.
-if [[ "${HYBRID_AI_INSTALL_ROOT_HANDOFF:-0}" != 1 ]]; then
+if [[ "${HAVEN_INSTALL_ROOT_HANDOFF:-0}" != 1 ]]; then
   docker image prune -f >/dev/null 2>&1 || true
 fi
 
@@ -197,20 +197,20 @@ esac
 # Scheduling is mandatory. Final acceptance is asynchronous because the
 # verifier waits for this deployment's workflow to finish; its root-owned
 # transaction state blocks progression until all mandatory gates pass.
-if [ -x "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD" ]; then
+if [ -x "$HAVEN_POST_DEPLOY_VERIFY_CMD" ]; then
   # --setenv carries the resolved APP_DIR and repository into the transient
   # unit rather than relying on the manager's environment or verifier defaults.
   systemd-run --collect \
     --unit="hybrid-ai-post-deploy-verify-${EXPECTED_SHA:0:12}-$$" \
     --service-type=exec \
-    --setenv=HYBRID_AI_APP_DIR="$APP_DIR" \
-    --setenv=HYBRID_AI_REPOSITORY_SLUG="$REPO_SLUG" \
-    --setenv=HYBRID_AI_VERIFY_INSTALL_ROOT="${HYBRID_AI_VERIFY_INSTALL_ROOT:-0}" \
-    --property="StandardOutput=append:${HYBRID_AI_POST_DEPLOY_VERIFY_LOG}" \
-    --property="StandardError=append:${HYBRID_AI_POST_DEPLOY_VERIFY_LOG}" \
-    "$HYBRID_AI_POST_DEPLOY_VERIFY_CMD" --wait-for "$EXPECTED_SHA" \
+    --setenv=HAVEN_APP_DIR="$APP_DIR" \
+    --setenv=HAVEN_REPOSITORY_SLUG="$REPO_SLUG" \
+    --setenv=HAVEN_VERIFY_INSTALL_ROOT="${HAVEN_VERIFY_INSTALL_ROOT:-0}" \
+    --property="StandardOutput=append:${HAVEN_POST_DEPLOY_VERIFY_LOG}" \
+    --property="StandardError=append:${HAVEN_POST_DEPLOY_VERIFY_LOG}" \
+    "$HAVEN_POST_DEPLOY_VERIFY_CMD" --wait-for "$EXPECTED_SHA" \
     || { echo "::error::post-deploy verification could not be scheduled"; exit 5; }
 else
-  echo "::error::post-deploy verification script is absent: ${HYBRID_AI_POST_DEPLOY_VERIFY_CMD}"
+  echo "::error::post-deploy verification script is absent: ${HAVEN_POST_DEPLOY_VERIFY_CMD}"
   exit 5
 fi

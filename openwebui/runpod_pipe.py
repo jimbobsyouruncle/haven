@@ -112,7 +112,7 @@ def scrub(text: str) -> str:
 #   Never log message content. Every value additionally passes through scrub()
 #   as a second line of defence, in case an exception carries a credential.
 # ---------------------------------------------------------------------------
-logger = logging.getLogger("hybrid_ai.runpod_core")
+logger = logging.getLogger("haven.runpod_core")
 if not logger.handlers:
     _handler = logging.StreamHandler()
     _handler.setFormatter(
