@@ -2,6 +2,8 @@
 # canonical cutover acceptance and explicit owner activation of
 # vars.HAVEN_AUTOMATIC_DEPLOYMENT=enabled. This change does not set that variable.
 # Manual recovery requires explicit assent and the current full main SHA.
+# Existing manual identity acceptance uses install-root.py reverify-manual;
+# it does not dispatch this workflow or enable automatic deployment.
 name: Deploy Control Plane
 
 # "on:" decides when this runs.

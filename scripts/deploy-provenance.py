@@ -103,11 +103,90 @@ def runs(sha):
     print(json.dumps(data))
 
 
+def complete_list(data, key):
+    entries = data[key]
+    require(isinstance(entries, list) and 0 < len(entries) < 100)
+    require(data['total_count'] == len(entries))
+    return entries
+
+
+def trusted_run(run, sha):
+    require(run['head_sha'] == sha)
+    require(run['repository']['full_name'] == REPO)
+    require(run['head_repository']['full_name'] == REPO)
+
+
+def manual_runs(sha):
+    """Explicit root manual-identity acceptance; never used by automatic deploys.
+
+    Reuse checks from the PR that produced this exact main merge. Main push
+    workflows do not include PR-only CI. No current-main equality is required:
+    accepting an existing transaction must not deploy a later main revision.
+    """
+    pulls = get('/commits/' + sha + '/pulls?per_page=100')
+    require(isinstance(pulls, list) and len(pulls) < 100)
+    matches = [p for p in pulls if p.get('merged_at') and p.get('merge_commit_sha') == sha
+               and p.get('base', {}).get('ref') == 'main'
+               and p.get('base', {}).get('repo', {}).get('full_name') == REPO]
+    require(len(matches) == 1)
+    head = matches[0]['head']['sha']
+    require(re.fullmatch('[0-9a-f]{40}', head))
+    deployed = get('/git/commits/' + sha)
+    tested = get('/git/commits/' + head)
+    require(deployed['sha'] == sha and tested['sha'] == head)
+    # A merged PR alone does not prove that base changes or conflict
+    # resolutions were checked. This bounded recovery accepts only an
+    # identical checked source tree, while retaining the deployed commit SHA.
+    tree = deployed['tree']['sha']
+    require(re.fullmatch('[0-9a-f]{40}', tree) and tested['tree']['sha'] == tree)
+    required = {'.github/workflows/sast-checks.yml': 'Security & SAST gate',
+                '.github/workflows/agent-context.yml': 'Check agent context maps'}
+    checks = complete_list(get('/actions/runs?head_sha=' + head + '&per_page=100'), 'workflow_runs')
+    evidence = []
+    for path, gate in required.items():
+        candidates = [r for r in checks if r.get('path') == path and r.get('event') == 'pull_request']
+        require(candidates)
+        run = max(candidates, key=lambda r: int(r['id']))
+        trusted_run(run, head)
+        require(run['status'] == 'completed' and run['conclusion'] == 'success')
+        jobs = complete_list(get('/actions/runs/' + str(int(run['id'])) + '/jobs?per_page=100'), 'jobs')
+        gates = [j for j in jobs if j.get('name') == gate]
+        require(len(gates) == 1 and gates[0]['status'] == 'completed'
+                and gates[0]['conclusion'] == 'success')
+        evidence.append(run)
+    data = get('/actions/runs?head_sha=' + sha + '&per_page=100')
+    entries = complete_list(data, 'workflow_runs')
+    retained, excluded = [], []
+    for run in entries:
+        trusted_run(run, sha)
+        require(run['status'] == 'completed')
+        if run.get('path') == '.github/workflows/deploy.yml':
+            # Only the disabled push entrypoint with BOTH jobs skipped is
+            # inapplicable. Failed/manual/active/partially executed runs refuse.
+            require(run['head_branch'] == 'main' and run['event'] == 'push')
+            require(run['conclusion'] == 'skipped')
+            jobs = complete_list(get('/actions/runs/' + str(int(run['id'])) + '/jobs?per_page=100'), 'jobs')
+            require(len(jobs) == 2 and {j['name'] for j in jobs} == {'validate', 'Deploy over Tailscale'})
+            require(all(j['status'] == 'completed' and j['conclusion'] == 'skipped' for j in jobs))
+            excluded.append(run['id'])
+        else:
+            require(run['conclusion'] == 'success')
+            retained.append(run)
+    require(excluded)
+    # Preserve raw skipped observations separately; never rewrite them as PASS.
+    data.update(workflow_runs=retained + evidence, total_count=len(retained) + len(evidence),
+                manual_cutover=dict(merge_sha=sha, pr=matches[0]['number'], head_sha=head,
+                                    intentionally_skipped_deploy_runs=excluded))
+    print(json.dumps(data))
+
+
 def main():
     require(len(sys.argv) == 3 and re.fullmatch('[0-9a-f]{40}', sys.argv[2]))
-    require(sys.argv[1] in ('authorize', 'runs'))
+    require(sys.argv[1] in ('authorize', 'runs', 'manual-runs'))
     if sys.argv[1] == 'authorize':
         authorize(sys.argv[2])
+    elif sys.argv[1] == 'manual-runs':
+        manual_runs(sys.argv[2])
     else:
         runs(sys.argv[2])
 

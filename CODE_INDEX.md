@@ -447,6 +447,9 @@
 - def merged(sha)
 - def authorize(sha)
 - def runs(sha)
+- def complete_list(data, key)
+- def trusted_run(run, sha)
+- def manual_runs(sha)
 - def main()
 
 ## scripts/deploy-remote.sh
@@ -499,7 +502,8 @@
   - def snapshots(self, extra)
   - def restore(self, journal)
   - def wiring(self, sha)
-  - def accept(self, sha, evidence)
+  - def reverify_manual(self, sha)
+  - def accept(self, sha, evidence, allow_accepted)
   - def deploy(self, sha)
 - def main()
 - def cli()
@@ -657,6 +661,7 @@
 - record_gate()
 - verdict_dir()
 - write_verdict()
+- accept_evidence()
 - finish()
 - file_value()
 - resolve_app_dir()

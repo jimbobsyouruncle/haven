@@ -811,6 +811,35 @@ if [[ "$RC" == 1 ]] && grep -q '^FAIL: trusted deployment validation unavailable
   pass "unit verifier refuses missing or unsuccessful trusted validation"
 else fail "unit verifier failed to enforce trusted validation"; fi
 unset HAVEN_VERIFY_DEPLOY_JOB FIXTURE_PROVENANCE_FAIL
+# Manual path uses the reviewed verifier's sibling provenance helper and
+# returns fresh root evidence to its locked parent instead of calling accept.
+SOURCE_VERIFY="$VERIFY_SCRIPT"
+cp "$VERIFY_SCRIPT" "$TREE_A/scripts/run-post-deploy-verify.sh"
+VERIFY_SCRIPT="$TREE_A/scripts/run-post-deploy-verify.sh"
+export HAVEN_VERIFY_MANUAL_CUTOVER=1 HAVEN_VERIFY_EVIDENCE_FD=7 VERIFY_MOCK_ROOT=1
+exec 7>"$WORKDIR/root-evidence.json"
+run_verify "$TREE_A" "__absent__"
+exec 7>&-
+if [[ "$RC" == 0 ]] && "$REAL_JQ" -e '
+    .sha and .gates.workflow_runs.state == "PASS"
+    and .gates.manual_deployment.state == "SKIPPED"
+    and (.gates.manual_deployment.required | not)
+    and .gates.installation_root.state == "PASS"' "$WORKDIR/root-evidence.json" >/dev/null; then
+  pass "manual verifier retains disabled deployment SKIPPED and returns root evidence"
+else fail "manual verifier evidence missing: $OUT"; fi
+export FIXTURE_PROVENANCE_FAIL=1
+exec 7>"$WORKDIR/root-evidence.json"
+run_verify "$TREE_A" "__absent__"
+exec 7>&-
+if [[ "$RC" == 1 && ! -s "$WORKDIR/root-evidence.json" ]]; then
+  pass "manual provenance failure cannot produce acceptance evidence"
+else fail "manual provenance failure returned evidence"; fi
+unset FIXTURE_PROVENANCE_FAIL HAVEN_VERIFY_EVIDENCE_FD
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 2 ]]; then pass "manual verifier requires parent evidence descriptor";
+else fail "manual verifier ran without root parent descriptor"; fi
+unset HAVEN_VERIFY_MANUAL_CUTOVER VERIFY_MOCK_ROOT
+VERIFY_SCRIPT="$SOURCE_VERIFY"
 unset HAVEN_VERIFY_INSTALL_ROOT
 
 echo "== done =="
