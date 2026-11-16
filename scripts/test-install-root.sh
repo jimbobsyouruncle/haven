@@ -665,6 +665,8 @@ class IdentityTests(MigrationTests):
                  'commit', '-qm', 'identity candidate')
         self.sha = self.git(self.remote, 'rev-parse', 'HEAD')
         self.tx.identity_cutover = True
+        self.tx.path('/proc/self').mkdir(parents=True, exist_ok=True)
+        self.tx.path('/proc/self/mountinfo').write_text('')
         with self.tx.layout.open('a') as layout:
             layout.write('HAVEN_BACKUP_MODE=system\n')
         self.layout_before = self.tx.layout.read_bytes()
@@ -945,6 +947,15 @@ class IdentityTests(MigrationTests):
         with self.assertRaisesRegex(MODULE.Refusal, 'controls changed'):
             self.tx.restore(self.tx.load())
         self.assertFalse(self.tx.path('/etc/hybrid-ai/stack.env').exists())
+
+
+    def test_identity_nested_host_mount_refuses(self):
+        self.identity_fixture()
+        target = self.tx.path('/var/lib/hybrid-ai/webui_data')
+        self.tx.path('/proc/self/mountinfo').write_text(f'1 0 1:1 / {target} rw - tmpfs fixture rw\n')
+        with self.assertRaisesRegex(MODULE.Refusal, 'nested host mount'):
+            self.tx.deploy(self.sha)
+        self.assert_preserved()
 
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(MigrationTests)

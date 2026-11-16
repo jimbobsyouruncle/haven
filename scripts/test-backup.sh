@@ -96,6 +96,7 @@ case "$1" in
     fi
     exit 0 ;;
   restore)
+    if [[ -n "${RESTORE_ARGS:-}" ]]; then printf '%s\n' "$@" > "$RESTORE_ARGS"; fi
     if [[ -n "${SNAPSHOT_SRC:-}" && -d "${SNAPSHOT_SRC:-}" ]]; then
       target=""; prev=""
       for a in "$@"; do
@@ -490,6 +491,23 @@ assert "case g: restore test dir made under WORK_DIR" \
   bash -c "compgen -G '$WORK2/.restore-test-*' >/dev/null"
 assert "case g: restore wrote nothing under APP_DIR" \
   bash -c "[[ \"\$(find '$APP2' -mindepth 1 | sort)\" == '$APP_BEFORE' ]]"
+
+# Both identity eras select exact IDs and restore only into scratch. The
+# existing captured SQLite fixture supplies the old/new application-relative
+# format; tags and host paths do not alter that format.
+for era in legacy canonical; do
+  args_file="$TMPROOT/restore-${era}.args"
+  restore_rc=0
+  env -u BACKUP_LOG HOME="$HOME2" HAVEN_APP_DIR="$APP2" \
+      HAVEN_DATA_DIR="$DATA2" HAVEN_LOG_DIR="$LOG2" HAVEN_WORK_DIR="$WORK2" \
+      BACKUP_CONF_DIR="$CONF" SNAPSHOT_SRC="$CAPTURE" RESTORE_ARGS="$args_file" \
+      PATH="$STUB:$PATH" \
+    bash "$APP2/backup/restore.sh" --test --snapshot "${era}-fixture" > "$TMPROOT/out" 2>&1 || restore_rc=$?
+  check "identity restore: ${era} exact-ID scratch integrity" 0 "$restore_rc"
+  assert "identity restore: ${era} ID preserved after --test" grep -Fxq "${era}-fixture" "$args_file"
+  assert "identity restore: ${era} includes canonical tag" grep -Fxq haven "$args_file"
+  assert "identity restore: ${era} includes historical tag" grep -Fxq hybrid-ai "$args_file"
+done
 
 # ---------------------------------------------------------------------------
 # Cases l-p: the stage/upload split (system-mode units call these flags).

@@ -20,7 +20,8 @@ agent/repository/deploy/backup directories, and the platform log/cache paths
 listed explicitly in `Transaction.mapping()`. Local passwd/group entries must
 match NSS, preserve UID/GID and supplementary groups, and have the expected homes.
 Unknown overrides, path conflicts, symlinks, foreign consumers, named/anonymous
-volumes and cross-filesystem moves refuse. A refusal requires a concrete reviewed
+volumes, nested host mounts and cross-filesystem moves refuse. Host mount replay
+needs a separately reviewed fstab/mount-unit mapping; a live rename is insufficient. A refusal requires a concrete reviewed
 mapping; do not bypass it, create replacement data, or copy filesystem trees.
 
 Stop scheduling manual restore/backup/prune/deploy operations during the window.

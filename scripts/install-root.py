@@ -147,6 +147,16 @@ class Transaction:
             raise Refusal('identity cutover requires the supported legacy installation')
         if values.get('HAVEN_BACKUP_MODE', values.get('HYBRID_AI_BACKUP_MODE')) != 'system':
             raise Refusal('identity cutover requires the supported system-mode backup layout')
+        # A nested host mount may follow the live rename but replay at its old
+        # path on reboot. That needs an explicit mount-unit/fstab procedure.
+        for line in self.path('/proc/self/mountinfo').read_text().splitlines():
+            fields = line.split()
+            if len(fields) < 6:
+                raise Refusal('cannot establish host mount topology')
+            target = re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), fields[4])
+            mounted = Path(target)
+            if any(mounted == old or old in mounted.parents for old, _ in self.mapping()):
+                raise Refusal('nested host mount requires a reviewed persistent mount mapping')
         required = {'HYBRID_AI_DATA_DIR': '/var/lib/hybrid-ai',
                     'HYBRID_AI_LOG_DIR': '/var/log/hybrid-ai',
                     'HYBRID_AI_STACK_ENV_FILE': '/etc/hybrid-ai/stack.env',
