@@ -752,6 +752,7 @@ class IdentityTests(MigrationTests):
             self.containers = []
             for original in self.tx.load()['identity']['containers']:
                 self.containers.append(dict(Id=original['id'],
+                    Name='/' + original['name'].replace('hybrid-ai-', 'haven-', 1),
                     Config={'Labels': {'com.docker.compose.project': 'haven',
                                       'com.docker.compose.service': original['service']}},
                     Mounts=[dict(m, Source=self.tx.mapped(m['Source'])) for m in original['mounts']]))

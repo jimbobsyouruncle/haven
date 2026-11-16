@@ -247,6 +247,7 @@ class Transaction:
             if not re.fullmatch(r'sha256:[a-f0-9]{64}', container.get('Image', '')):
                 raise Refusal('missing immutable service image')
             owned.append(dict(id=container['Id'], service=service, image=container['Image'],
+                              name=container['Name'].lstrip('/'),
                               mounts=mounts, running=container['State']['Running'],
                               restart=container['HostConfig']['RestartPolicy']))
         if not {'ollama', 'open-webui', 'hermes', 'proxy', 'status', 'openhands'} <= found:
@@ -437,6 +438,9 @@ class Transaction:
             service = labels.get('com.docker.compose.service')
             if labels.get('com.docker.compose.project') != 'haven' or service not in expected or service in found:
                 raise Refusal('canonical Docker ownership mismatch')
+            name = expected[service]['name'].replace('hybrid-ai-', 'haven-', 1)
+            if container.get('Name', '').lstrip('/') != name:
+                raise Refusal('canonical Docker container identity mismatch')
             found.add(service)
             before = {(self.mapped(m['Source']), m['Destination'], m['RW']) for m in expected[service]['mounts']}
             after = {(m['Source'], m['Destination'], m['RW']) for m in container['Mounts'] if m['Type'] == 'bind'}
@@ -1138,6 +1142,7 @@ def main():
     elif action == 'deploy' and transaction.project != 'haven':
         raise Refusal('legacy identity needs owner-authorized migrate from reviewed driver')
     elif action == 'deploy':
+        transaction.trusted(transaction.layout)
         values = transaction.values(transaction.layout.read_text())
         log_dir = Path(values['HYBRID_AI_LOG_DIR']) / 'deploy'
         transaction.trusted(log_dir)

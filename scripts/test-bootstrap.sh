@@ -812,6 +812,14 @@ check "restrictive caller umask permits fresh bootstrap" "0" "$rc"
 check "Git checkout uses root-owned service-readable creation modes" "yes" \
   "$(grep -q '^clone-umask 0022$' "$GIT_LOG" && echo yes || echo no)"
 
+R="$(new_root)"
+mkdir -p "$R/var/lib/hybrid-ai"
+printf 'preserve\n' > "$R/var/lib/hybrid-ai/sentinel"
+rc=0; run_bootstrap "$R" "$WORK/r_identity.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
+check "legacy data requires the coordinated migration driver" "2" "$rc"
+check "legacy identity refusal preserves data" "preserve" "$(cat "$R/var/lib/hybrid-ai/sentinel")"
+check "legacy identity refusal creates no replacement data" "absent" "$( [[ -e "$R/var/lib/haven" ]] && echo present || echo absent )"
+
 # 4 -- a credential-bearing origin.
 R="$(new_root)"
 mkdir -p "$R/opt/haven/.git"
@@ -1262,20 +1270,32 @@ else
   ok "scripts/bootstrap.sh never writes sshd_config"
 fi
 
-# Byte-identical files (AC15), when origin/main is available.
-if git -C "$REPO" rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
-  # Resource schedules and polkit are outside canonical source/configuration.
-  # The approved namespace preparation changes backup-containers.sh callers and
-  # unit environment keys; their existing security/behavior fixtures still apply.
-  diff_out="$(git -C "$REPO" diff --stat origin/main -- \
-    backup/system/haven-backup-capture.timer \
-    backup/system/haven-backup-check.timer \
-    backup/haven-backup.service backup/haven-backup.timer \
-    backup/haven-check.service backup/haven-check.timer \
-    deploy/50-haven-deploy.rules 2>/dev/null)"
-  check "the out-of-scope files are byte-identical to origin/main" "" "$diff_out"
+# PR 2 renames these controls, so compare all effective directives after the
+# exact identity substitution. Schedule, hardening and polkit scope stay equal.
+if python3 - "$REPO" <<'PYCONTROLS'
+from pathlib import Path
+import subprocess
+import sys
+root = Path(sys.argv[1])
+files = ('backup/system/haven-backup-capture.timer', 'backup/system/haven-backup-check.timer',
+         'backup/haven-backup.service', 'backup/haven-backup.timer',
+         'backup/haven-check.service', 'backup/haven-check.timer', 'deploy/50-haven-deploy.rules')
+def effective(text):
+    return [line.strip() for line in text.splitlines()
+            if line.strip() and not line.lstrip().startswith(('#', '//'))]
+for name in files:
+    previous = subprocess.run(['git', '-C', str(root), 'show', 'origin/main:' + name],
+                              capture_output=True, text=True)
+    if previous.returncode:
+        old_name = name.replace('haven-', 'hybrid-ai-')
+        previous = subprocess.run(['git', '-C', str(root), 'show', 'origin/main:' + old_name],
+                                  capture_output=True, text=True, check=True)
+    assert effective(previous.stdout.replace('hybrid-ai', 'haven')) == effective((root / name).read_text()), name
+PYCONTROLS
+then
+  ok "renamed schedules, hardening and polkit scope match their original controls"
 else
-  printf 'skip: origin/main is not available; the byte-identical check is a no-op here\n'
+  bad "identity migration changed control behavior beyond exact identity substitution"
 fi
 
 # doctor.sh COMPOSE_CMD (offline, no Docker). Every printed Fix hint inherits
