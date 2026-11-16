@@ -247,7 +247,8 @@ receipt is never trusted as acceptance input.
 Workflow policy for this action is narrowly scoped:
 
 * Find the unique merged-main PR whose exact merge SHA is the deployed SHA.
-  Validate the latest PR-triggered `sast-checks.yml` and `agent-context.yml` runs
+  Require the deployed commit and PR head to have exactly the same Git tree;
+  untested base changes or merge resolutions refuse. Validate the latest PR-triggered `sast-checks.yml` and `agent-context.yml` runs
   for its exact head SHA, their repository provenance, successful workflow
   conclusions and successful `Security & SAST gate` / `Check agent context maps`
   jobs. Missing, skipped, neutral, failed or incomplete required gates refuse.

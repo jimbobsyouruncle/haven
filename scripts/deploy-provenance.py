@@ -131,6 +131,14 @@ def manual_runs(sha):
     require(len(matches) == 1)
     head = matches[0]['head']['sha']
     require(re.fullmatch('[0-9a-f]{40}', head))
+    deployed = get('/git/commits/' + sha)
+    tested = get('/git/commits/' + head)
+    require(deployed['sha'] == sha and tested['sha'] == head)
+    # A merged PR alone does not prove that base changes or conflict
+    # resolutions were checked. This bounded recovery accepts only an
+    # identical checked source tree, while retaining the deployed commit SHA.
+    tree = deployed['tree']['sha']
+    require(re.fullmatch('[0-9a-f]{40}', tree) and tested['tree']['sha'] == tree)
     required = {'.github/workflows/sast-checks.yml': 'Security & SAST gate',
                 '.github/workflows/agent-context.yml': 'Check agent context maps'}
     checks = complete_list(get('/actions/runs?head_sha=' + head + '&per_page=100'), 'workflow_runs')

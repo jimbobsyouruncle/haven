@@ -155,6 +155,8 @@ class Provenance(unittest.TestCase):
         passed = lambda name: dict(name=name, status='completed', conclusion='success')
         self.manual_data = {
             '/commits/' + SHA + '/pulls?per_page=100': [pr],
+            '/git/commits/' + SHA: dict(sha=SHA, tree=dict(sha='d'*40)),
+            '/git/commits/' + head: dict(sha=head, tree=dict(sha='d'*40)),
             '/actions/runs?head_sha=' + head + '&per_page=100': dict(total_count=2, workflow_runs=ci),
             '/actions/runs/20/jobs?per_page=100': jobs([passed('Security & SAST gate')]),
             '/actions/runs/21/jobs?per_page=100': jobs([passed('Check agent context maps')]),
@@ -177,6 +179,14 @@ class Provenance(unittest.TestCase):
         self.assertEqual(result['manual_cutover']['intentionally_skipped_deploy_runs'], [12])
         self.assertEqual([r['id'] for r in result['workflow_runs']], [13, 20, 21])
         self.assertEqual(self.manual(), result)  # stable retry
+
+    def test_manual_cutover_different_or_unproven_merged_tree_refused(self):
+        for commit, key, value in [(SHA, 'tree', dict(sha='e'*40)),
+                                   (SHA, 'sha', 'e'*40),
+                                   ('b'*40, 'tree', dict(sha='invalid'))]:
+            self.manual_fixture()
+            self.manual_data['/git/commits/' + commit][key] = value
+            with self.assertRaises(ValueError): self.manual()
 
     def test_manual_cutover_required_workflows_and_jobs_fail_closed(self):
         for index in (0, 1):
