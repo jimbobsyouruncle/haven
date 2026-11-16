@@ -271,6 +271,33 @@ class Transaction:
         return dict(moves=moves, accounts=accounts, containers=owned,
                     boundary='pre_activation', units=[], translated={})
 
+    def operation(self, journal, stage, item=0):
+        # Callers supply literal stage names and ordinal positions, never paths,
+        # commands, configuration values or exception messages.
+        journal['operation'] = dict(stage=stage, item=item)
+        self.save(journal)
+
+    @staticmethod
+    def failure(journal, error):
+        result = dict(journal.get('operation', dict(stage='handoff', item=0)))
+        result['kind'] = ('command' if isinstance(error, subprocess.CalledProcessError)
+                          else 'filesystem' if isinstance(error, OSError)
+                          else 'interrupted' if isinstance(error, KeyboardInterrupt)
+                          else 'refusal' if isinstance(error, Refusal) else 'internal')
+        if isinstance(error, subprocess.CalledProcessError):
+            result['code'] = error.returncode
+        elif isinstance(error, OSError):
+            result['code'] = error.errno
+        return result
+
+    def unit_present(self, name):
+        # is-active/is-enabled alone cannot distinguish absence from a manager
+        # failure. Only an explicit successful LoadState=not-found permits skip.
+        state = self.command(['systemctl', 'show', '--property=LoadState', '--value', name])
+        if state not in ('loaded', 'masked', 'not-found'):
+            raise Refusal('legacy unit load state requires review')
+        return state != 'not-found'
+
     def identity_prepare(self, journal):
         identity = journal['identity']
         # Fence all fixed entrypoints BEFORE draining jobs or touching data.
@@ -282,36 +309,47 @@ class Transaction:
                             {p.name.replace('haven-', 'hybrid-ai-', 1)
                              for rel in ('deploy', 'backup', 'backup/system')
                              for p in (self.app / rel).glob('*.timer')})
-        for name in unit_names:
+        for index, name in enumerate(unit_names, 1):
+            self.operation(journal, 'unit-state', index)
             enabled = self.run(['systemctl', 'is-enabled', name], capture_output=True, text=True)
             active = self.run(['systemctl', 'is-active', name], capture_output=True, text=True)
             identity['units'].append(dict(name=name, enabled=enabled.stdout.strip(),
                                           active=active.stdout.strip()))
         self.save(journal)
+        self.operation(journal, 'fence-polkit')
         rule = self.path('/etc/polkit-1/rules.d/50-hybrid-ai-deploy.rules')
         self.atomic(rule, b'// Legacy deploy grant fenced by Haven identity transaction.\n', 0o644)
+        self.operation(journal, 'fence-logrotate')
         rotate = self.path('/etc/logrotate.d/hybrid-ai-tls')
         if rotate.exists():
             self.atomic(rotate, b'# Legacy log producer fenced by Haven identity transaction.\n', 0o644)
-        for unit in identity['units']:
-            if unit['name'].endswith('.timer'):
+        for index, unit in enumerate(identity['units'], 1):
+            self.operation(journal, 'disable-timer', index)
+            if unit['name'].endswith('.timer') and self.unit_present(unit['name']):
                 self.command(['systemctl', 'disable', '--now', unit['name']])
-        for unit in identity['units']:
+        for index, unit in enumerate(identity['units'], 1):
+            self.operation(journal, 'stop-service', index)
             name = unit['name']
-            if '@' not in name and name.endswith('.service'):
+            if '@' not in name and name.endswith('.service') and self.unit_present(name):
                 self.command(['systemctl', 'stop', name])
+            self.operation(journal, 'fence-service', index)
             if name.endswith('.service'):
                 self.atomic(self.units / name,
                             b'[Unit]\nRefuseManualStart=yes\n[Service]\nType=oneshot\nExecStart=/usr/bin/false\n', 0o644)
+        self.operation(journal, 'reload-fences')
         self.command(['systemctl', 'daemon-reload'])
-        for container in identity['containers']:
+        for index, container in enumerate(identity['containers'], 1):
+            self.operation(journal, 'disable-container-restart', index)
             self.command(['docker', 'update', '--restart=no', container['id']])
+            self.operation(journal, 'stop-container', index)
             self.command(['docker', 'stop', '--time', '60', container['id']])
-        for account in identity['accounts']:
+        for index, account in enumerate(identity['accounts'], 1):
+            self.operation(journal, 'check-account-writers', index)
             result = self.run(['pgrep', '-u', account['uid']], capture_output=True, text=True)
             if result.returncode != 1:
                 raise Refusal('service account still has writers; identity cutover refused')
-        for move in identity['moves']:
+        for index, move in enumerate(identity['moves'], 1):
+            self.operation(journal, 'move-identity-path', index)
             old, new = Path(move['old']), Path(move['new'])
             self.check_move(move, old)
             if new.exists() or new.is_symlink():
@@ -319,18 +357,23 @@ class Transaction:
             old.rename(new)
             self.sync(old.parent)
             self.sync(new.parent)
-        for account in identity['accounts']:
+        for index, account in enumerate(identity['accounts'], 1):
+            self.operation(journal, 'rename-group', index)
             self.command(['groupmod', '--new-name', account['new'], account['old']])
+            self.operation(journal, 'rename-account', index)
             self.command(['usermod', '--login', account['new'], '--home',
                           self.mapped(account['home']), account['old']])
+            self.operation(journal, 'verify-account-groups', index)
             if sorted(self.command(['id', '-G', account['new']]).split()) != account['groups']:
                 raise Refusal('numeric group membership changed during identity handoff')
+        self.operation(journal, 'rename-layout')
         self.layout = self.path('/etc/haven/hybrid-ai.env')
         self.keys = self.path('/var/lib/haven-deploy/.ssh/authorized_keys')
         self.layout.rename(self.path('/etc/haven/haven.env'))
         self.sync(self.layout.parent)
         self.layout = self.path('/etc/haven/haven.env')
-        for path in (self.layout, self.path('/etc/haven/stack.env')):
+        for index, path in enumerate((self.layout, self.path('/etc/haven/stack.env')), 1):
+            self.operation(journal, 'translate-config', index)
             info = path.stat()
             content = self.translate(path.read_text(), layout=path == self.layout)
             identity['translated'][str(path)] = [hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -339,6 +382,7 @@ class Transaction:
             self.atomic(path, content.encode(), stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
         # r2.env is never sourced. Only its exact password-file locator changes;
         # the repository URL, access credentials and password file stay intact.
+        self.operation(journal, 'translate-backup-locator')
         path = self.path('/etc/credstore/haven-backup/r2.env')
         if path.exists():
             info = path.stat()
@@ -871,7 +915,7 @@ class Transaction:
         except OSError:
             raise Refusal('RECOVERY_ARTIFACT: cannot retain durable recovery export') from None
 
-    def snapshots(self):
+    def snapshots(self, extra=()):
         files = [self.layout, self.keys, self.layout.parent / 'stack.env',
                  self.path('/usr/local/sbin/run-post-deploy-verify.sh')]
         files.extend(self.units.glob('hybrid-ai-*.service'))
@@ -887,6 +931,7 @@ class Transaction:
         for rel in ('deploy', 'backup/system'):
             files.extend(self.units / p.name for p in (self.app / rel).glob('*')
                          if p.suffix in ('.service', '.timer'))
+        files.extend(extra)
         result = []
         for path in sorted(set(files)):
             for item in [path, *path.parents]:
@@ -1049,12 +1094,15 @@ class Transaction:
         if self.journal.exists():
             self.atomic(self.state / (token + '.json'), self.journal.read_bytes())
         # Snapshot all candidate unit destinations before its directory is renamed.
-        files = self.snapshots()
-        for rel in ('deploy', 'backup/system'):
-            for unit in (stage / rel).glob('*.service'):
-                target = self.units / unit.name
-                if not any(f['path'] == str(target) for f in files):
-                    files.append({'path': str(target), 'data': None})
+        candidate_controls = set()
+        for rel in ('deploy', 'backup', 'backup/system'):
+            for unit in (stage / rel).glob('*'):
+                if unit.suffix not in ('.service', '.timer'):
+                    continue
+                candidate_controls.add(self.units / unit.name)
+                if identity is not None:
+                    candidate_controls.add(self.units / unit.name.replace('haven-', 'hybrid-ai-', 1))
+        files = self.snapshots(candidate_controls)
         journal = dict(phase='activating', sha=sha, started_ns=time.time_ns(),
                        proxy_recovery=proxy_recovery,
                        source=str(source), previous=str(previous), stage=str(stage),
@@ -1095,6 +1143,7 @@ class Transaction:
                            legacy_failed=str(self.app.parent / ('.haven-legacy-failed-' + token)))
         self.save(journal)
         try:
+            self.operation(journal, 'switch-code-root')
             if source == self.app:
                 self.app.rename(previous)
                 self.sync(self.app.parent)
@@ -1102,10 +1151,12 @@ class Transaction:
             self.sync(self.app.parent)
             if identity is not None:
                 self.identity_prepare(journal)
+            self.operation(journal, 'update-layout')
             layout = self.layout.read_text()
             layout = re.sub(r'^\s*((?:HYBRID_AI|HAVEN)_APP_DIR)=.*$',
                             lambda match: match[1] + '=' + str(self.app), layout, flags=re.M)
             self.atomic(self.layout, layout.encode(), 0o644)
+            self.operation(journal, 'update-ssh-entrypoint')
             key_data = self.keys.read_bytes()
             old = f'command="{source}/scripts/deploy-forced-command.sh"'.encode()
             new = f'command="{self.app}/scripts/deploy-forced-command.sh"'.encode()
@@ -1118,6 +1169,7 @@ class Transaction:
                 self.save(journal)
             self.atomic(self.keys, key_data.replace(old, new),
                         stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
+            self.operation(journal, 'install-canonical-units')
             # Install all code-path-bearing units before the next invocation.
             for rel in ('deploy', 'backup/system'):
                 for unit in (self.app / rel).glob('*.service'):
@@ -1127,11 +1179,13 @@ class Transaction:
                         data = unit.read_bytes()
                     self.atomic(self.units / unit.name, data, 0o644)
             self.command(['systemctl', 'daemon-reload'])
+            self.operation(journal, 'verify-canonical-wiring')
             self.wiring(sha)
             # The waiter must see this state even if it executes immediately.
             journal['phase'] = 'awaiting_verifier'
             self.save(journal)
             if identity is not None:
+                self.operation(journal, 'identity-activation')
                 self.identity_activate(journal)
             env = self.installation_environment()
             env.update(HAVEN_APP_DIR=str(self.app), HAVEN_ENV_FILE=str(self.layout),
@@ -1142,6 +1196,7 @@ class Transaction:
                        HYBRID_AI_APP_DIR=str(self.app), HYBRID_AI_ENV_FILE=str(self.layout),
                        HYBRID_AI_INSTALL_ROOT_HANDOFF='1', HYBRID_AI_VERIFY_INSTALL_ROOT='1',
                        HYBRID_AI_REPOSITORY_SLUG='jimbobsyouruncle/haven')
+            self.operation(journal, 'run-installer')
             self.run(['bash', str(self.app / 'scripts/deploy-remote.sh'), sha],
                      cwd=self.app, env=env, check=True, pass_fds=((9, 8) if self.identity_cutover or self.project == 'haven' else (9,)))
             journal['active_files'] = {
@@ -1149,12 +1204,32 @@ class Transaction:
                                 if Path(entry['path']).exists() else None)
                 for entry in files}
             self.save(journal)
-        except (Exception, KeyboardInterrupt):
+        except (Exception, KeyboardInterrupt) as error:
+            journal['failure'] = self.failure(journal, error)
+            try:
+                self.save(journal)
+            except OSError:
+                print('::error::install-root: failure diagnostic journal write failed', file=sys.stderr)
+            diagnostic = journal['failure']
+            print('::error::install-root: operation={stage} item={item} kind={kind} code={code}'.format(
+                code=diagnostic.get('code', 'none'), **{k: diagnostic[k] for k in ('stage', 'item', 'kind')}),
+                file=sys.stderr)
             if journal.get('writers_possible'):
                 journal['phase'] = 'recovery_required'
                 self.save(journal)
             else:
-                self.restore(journal)
+                try:
+                    journal['operation'] = dict(stage='pre-activation-rollback', item=0)
+                    self.restore(journal)
+                except (Exception, KeyboardInterrupt) as recovery_error:
+                    journal['rollback_failure'] = self.failure(journal, recovery_error)
+                    try:
+                        self.save(journal)
+                    except OSError:
+                        pass
+                    print('::error::install-root: pre-activation rollback incomplete; retain recovery artifacts',
+                          file=sys.stderr)
+                    raise
             raise
 
 
