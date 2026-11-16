@@ -681,3 +681,48 @@ unavailable API, or absent tile leaves that probe SKIPPED and fails system-mode
 verification; it must not be treated as failed backup execution. Any route or
 identity change needs its own operational review. Rollback is a reviewed revert
 and separately approved redeploy; no production verification is claimed by CI.
+
+### Restore rehearsal safety and installed identity
+
+`restore.sh --test --snapshot ID` and `restore.sh --snapshot ID --test`
+select the same non-destructive rehearsal. `--test` and `--latest --test`
+select the latest snapshot. Rehearsals use a new mode-0700 directory under
+`HAVEN_WORK_DIR` for each invocation; they never reuse `.restore-work`, ask
+for live-restore confirmation, stop containers or install recovered files.
+Extraction failure, missing SQLite, empty database sets and failed integrity
+checks return nonzero. Scratch copies remain available for operator inspection
+and explicit cleanup. A successful rehearsal verifies the recovered databases,
+not production recovery time or every file's application-level semantics.
+
+Both backup and restore import only `RESTIC_REPOSITORY`, `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_REGION` and
+`AWS_SESSION_TOKEN` from `r2.env`. Other assignments are ignored; shell code
+is never evaluated. Paths, mode, snapshot selection, password-file selection
+and executable search paths cannot be overridden through this credential file.
+Keep layout configuration in the existing Haven environment files.
+
+The remote deployment gate compares `backup/restore.sh` and its shared
+`scripts/lib/haven-env.sh` with the requested full Git revision and rejects
+symlinked or changed files before reprovisioning. This verifies source identity;
+it does not establish what happened during an earlier operator invocation.
+Rollback uses the existing reviewed deployment/recovery procedure; rolling back
+this fix also restores the earlier credential-import defect, so do not perform
+restore rehearsals with an older entrypoint assumed safe.
+
+For an installed-entrypoint acceptance after a separately authorized deployment,
+the operator must record the resolved entrypoint path, full deployed SHA and
+matching installed/source hashes, then perform an authorized isolated scratch
+rehearsal with the exact installed entrypoint and an existing snapshot. Record
+exit status, unique scratch destination, database integrity outcome, absence of
+confirmation/container stops and unchanged live data. Keep credentials, private
+paths and raw data on their approved route; publish only sanitized evidence.
+Never accept a `RESTORE` prompt during a rehearsal. Any prompt is a failed safety
+check and must be canceled. Offline fixture tests cannot replace this runtime
+evidence or establish whether a previous prompt was canceled.
+
+This evidence belongs to the existing backup/data and cutover acceptance work
+(#193, #197, #200); no additional verifier or worker test is required. For #209,
+installed-script parity has been recorded separately, while the earlier
+operator cancellation/impact confirmation and corrected installed-entrypoint
+rehearsal remain operational requirements. Source validation alone does not
+close those requirements or authorize deployment or issue closure.

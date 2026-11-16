@@ -96,6 +96,7 @@ case "$1" in
     fi
     exit 0 ;;
   restore)
+    [[ "${2:-}" != invalid-id && "${RESTORE_EXTRACT_FAIL:-0}" != 1 ]] || exit 1
     if [[ -n "${RESTORE_ARGS:-}" ]]; then printf '%s\n' "$@" > "$RESTORE_ARGS"; fi
     if [[ -n "${SNAPSHOT_SRC:-}" && -d "${SNAPSHOT_SRC:-}" ]]; then
       target=""; prev=""
@@ -508,6 +509,78 @@ for era in legacy canonical; do
   assert "identity restore: ${era} includes canonical tag" grep -Fxq haven "$args_file"
   assert "identity restore: ${era} includes historical tag" grep -Fxq hybrid-ai "$args_file"
 done
+
+# Credential import must never override parsed mode, selection, paths or tools.
+cp "$CONF/r2.env" "$TMPROOT/credentials.original"
+cat >> "$CONF/r2.env" <<'EOF'
+MODE=direct
+TEST_RESTORE=0
+SNAPSHOT_ID=wrong-snapshot
+RESTORE_WORK=/must-not-be-used
+HAVEN_DATA_DIR=/must-not-be-used
+PATH=/must-not-be-used
+_k=MODE
+_v=direct
+EOF
+LIVE_BEFORE="$(find "$DATA2" -type f -exec sha256sum {} + | sort)"
+mkdir -p "$WORK2/.restore-work"
+printf 'retain\n' > "$WORK2/.restore-work/sentinel"
+: > "$DOCKER_LOG"
+run_safety_restore() {
+  restore_rc=0
+  rm -f "$TMPROOT/safety.args"
+  env -u BACKUP_LOG HOME="$HOME2" HAVEN_APP_DIR="$APP2" \
+      HAVEN_DATA_DIR="$DATA2" HAVEN_LOG_DIR="$LOG2" HAVEN_WORK_DIR="$WORK2" \
+      BACKUP_CONF_DIR="$CONF" SNAPSHOT_SRC="$CAPTURE" RESTORE_ARGS="$TMPROOT/safety.args" \
+      RESTORE_EXTRACT_FAIL="${EXTRACT_FAIL:-0}" PATH="$STUB:$PATH" \
+    bash "$APP2/backup/restore.sh" "$@" > "$TMPROOT/out" 2>&1 || restore_rc=$?
+  assert "restore safety: no confirmation or live restore message" \
+    bash -c "! grep -Eq 'Type RESTORE|replace the live|Stopping all containers' '$TMPROOT/out'"
+  assert "restore safety: no container actions" test ! -s "$DOCKER_LOG"
+  assert "restore safety: live data unchanged" test "$LIVE_BEFORE" = "$(find "$DATA2" -type f -exec sha256sum {} + | sort)"
+  assert "restore safety: normal workspace retained" grep -qx retain "$WORK2/.restore-work/sentinel"
+}
+previous_target=""
+for variant in test-first snapshot-first test-only latest; do
+  case "$variant" in
+    test-first) options=(--test --snapshot chosen-id); expected=chosen-id ;;
+    snapshot-first) options=(--snapshot chosen-id --test); expected=chosen-id ;;
+    test-only) options=(--test); expected=latest ;;
+    latest) options=(--latest --test); expected=latest ;;
+  esac
+  run_safety_restore "${options[@]}"
+  check "restore safety: $variant succeeds despite credential overrides" 0 "$restore_rc"
+  assert "restore safety: requested snapshot preserved" grep -Fxq "$expected" "$TMPROOT/safety.args"
+  target="$(tail -n1 "$TMPROOT/safety.args")"
+  assert "restore safety: scratch destination" test "${target%/*}" = "$WORK2"
+  assert "restore safety: private scratch permissions" test "$(stat -c %a "$target")" = 700
+  assert "restore safety: unique scratch destination" test "$target" != "$previous_target"
+  previous_target="$target"
+done
+for variant in invalid-id unknown missing-id empty-id flag-as-id; do
+  case "$variant" in
+    invalid-id) options=(--test --snapshot invalid-id) ;;
+    unknown) options=(--test --unknown) ;;
+    missing-id) options=(--test --snapshot) ;;
+    empty-id) options=(--snapshot '' --test) ;;
+    flag-as-id) options=(--snapshot --test) ;;
+  esac
+  run_safety_restore "${options[@]}"
+  assert "restore safety: $variant fails" test "$restore_rc" -ne 0
+done
+EXTRACT_FAIL=1 run_safety_restore --test
+assert "restore safety: extraction failure fails" test "$restore_rc" -ne 0
+GOOD_CAPTURE="$CAPTURE"
+CAPTURE="$TMPROOT/corrupt-snapshot"
+mkdir -p "$CAPTURE/databases"
+printf 'not a database\n' > "$CAPTURE/databases/corrupt.db"
+run_safety_restore --test
+assert "restore safety: integrity failure fails" test "$restore_rc" -ne 0
+rm "$CAPTURE/databases/corrupt.db"
+run_safety_restore --test
+assert "restore safety: empty database set fails" test "$restore_rc" -ne 0
+CAPTURE="$GOOD_CAPTURE"
+cp "$TMPROOT/credentials.original" "$CONF/r2.env"
 
 # ---------------------------------------------------------------------------
 # Cases l-p: the stage/upload split (system-mode units call these flags).

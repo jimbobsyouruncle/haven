@@ -92,7 +92,9 @@ SAFETY=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --snapshot) SNAPSHOT_ID="${2:-}"; MODE="direct"; shift 2 ;;
+    --snapshot)
+      [[ $# -ge 2 && -n "$2" && "$2" != -* ]] || { echo "--snapshot needs an id" >&2; exit 2; }
+      SNAPSHOT_ID="$2"; MODE="direct"; shift 2 ;;
     --latest)   SNAPSHOT_ID="latest"; MODE="direct"; shift ;;
     --list)     MODE="list"; shift ;;
     --test)     TEST_RESTORE=1; shift ;;
@@ -102,6 +104,8 @@ while [[ $# -gt 0 ]]; do
 done
 if (( TEST_RESTORE )); then MODE="test"; fi
 [[ "$MODE" != "direct" || -n "$SNAPSHOT_ID" ]] || { echo "--snapshot needs an id" >&2; exit 2; }
+
+readonly MODE TEST_RESTORE SNAPSHOT_ID
 
 if [[ -t 1 ]]; then
   C_RST=$'\033[0m'; C_INF=$'\033[36m'; C_OK=$'\033[32m'
@@ -148,6 +152,11 @@ while IFS= read -r _line || [[ -n "$_line" ]]; do
   if [[ "$_line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
     _k="${BASH_REMATCH[1]}"; _v="${BASH_REMATCH[2]}"
     _v="${_v%\"}"; _v="${_v#\"}"; _v="${_v%\'}"; _v="${_v#\'}"
+    # Credential files configure the R2 client, never shell/restore controls.
+    case "$_k" in
+      RESTIC_REPOSITORY|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_DEFAULT_REGION|AWS_REGION|AWS_SESSION_TOKEN) ;;
+      *) continue ;;
+    esac
     printf -v "$_k" '%s' "$_v"; export "${_k?}"
   fi
 done < "$R2_ENV_FILE"
@@ -194,9 +203,9 @@ fi
 # against the recovered databases. It touches nothing live.
 # ---------------------------------------------------------------------------
 if [[ "$MODE" == "test" ]]; then
-  TEST_DIR="${HAVEN_WORK_DIR}/.restore-test-${STAMP}"
+  mkdir -p "$HAVEN_WORK_DIR"
+  TEST_DIR="$(mktemp -d "${HAVEN_WORK_DIR}/.restore-test-XXXXXXXXXX")"
   log "Test restore into ${TEST_DIR} (nothing live is touched)..."
-  mkdir -p "$TEST_DIR"
   restic restore "${SNAPSHOT_ID:-latest}" --tag haven --tag hybrid-ai --target "$TEST_DIR" || die "Test restore failed."
 
   STAGED="$(find "$TEST_DIR" -type d -name databases | head -n1)"
@@ -208,7 +217,7 @@ if [[ "$MODE" == "test" ]]; then
     printf '      sudo apt-get install -y sqlite3\n\n'
     event "restore_test_unverified" "reason=sqlite3_missing"
     printf '  Downloaded copy is at %s\n\n' "$TEST_DIR"
-    exit 0
+    exit 1
   fi
 
   log "Verifying recovered databases..."

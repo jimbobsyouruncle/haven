@@ -81,6 +81,14 @@ if [[ "$CURRENT_SHA" != "$EXPECTED_SHA" ]]; then
   echo "::error::deploy-remote.sh: HEAD is $CURRENT_SHA but the validated revision is $EXPECTED_SHA. Refusing to deploy an unvalidated revision."
   exit 3
 fi
+# HEAD alone does not detect a stale, locally modified or redirected entrypoint.
+for restore_source in backup/restore.sh scripts/lib/haven-env.sh; do
+  if [[ ! -f "$restore_source" || -L "$restore_source" ]] ||
+     [[ "$(git hash-object -- "$restore_source")" != "$(git rev-parse "${EXPECTED_SHA}:${restore_source}")" ]]; then
+    echo "::error::restore entrypoint identity mismatch: $restore_source"
+    exit 3
+  fi
+done
 echo "==> Deploying validated revision $EXPECTED_SHA"
 
 # --- Reprovision ------------------------------------------------------------
