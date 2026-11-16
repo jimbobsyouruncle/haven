@@ -2,7 +2,7 @@
 
 ## Installation root migration
 
-Fresh bootstrap uses `/opt/haven`. Existing bootstrapped `/opt/hybrid-ai`
+Fresh bootstrap uses `/opt/haven`. Existing bootstrapped `/opt/haven`
 installations migrate during the next **separately authorized normal deployment**.
 Do not move the directory manually or rerun bootstrap over an existing legacy
 installation. See [ADR-0006](../docs/haven/adr/0006-installation-root.md) and
@@ -18,7 +18,7 @@ conflicting directories and legacy-path systemd overrides also cause refusal.
 
 Before activation, automated preflight selects the running immutable proxy image
 or the digest in the optional root-controlled
-`/etc/hybrid-ai/proxy-recovery-image`. It retains a private checksum-verified export,
+`/etc/haven/proxy-recovery-image`. It retains a private checksum-verified export,
 verifies configuration and all filesystem layers, checks host architecture,
 Caddy version and required DNS modules, and validates the installed configuration
 in isolated temporary containers. No pull/build/load or running-proxy replacement
@@ -55,7 +55,7 @@ is missing or incompatible. Preserve existing backups and recovery archives.
    set -e
    read -r -p 'Reviewed merged full main SHA: ' SHA
    [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
-   exec 9>/run/lock/hybrid-ai-deploy.lock
+   exec 9>/run/lock/haven-deploy.lock
    flock -n 9
    PREP="/opt/.haven-driver-$SHA"
    test ! -e "$PREP"
@@ -65,18 +65,18 @@ is missing or incompatible. Preserve existing backups and recovery archives.
    git -C "$PREP" -c core.hooksPath=/dev/null checkout --detach "$SHA"
    test "$(git -C "$PREP" rev-parse HEAD)" = "$SHA"
    mkdir -m 0700 "$PREP/previous-driver"
-   if test -e /etc/hybrid-ai/proxy-recovery-image; then
-     cp -a /etc/hybrid-ai/proxy-recovery-image "$PREP/previous-driver/"
+   if test -e /etc/haven/proxy-recovery-image; then
+     cp -a /etc/haven/proxy-recovery-image "$PREP/previous-driver/"
    fi
-   cp -a /opt/hybrid-ai/scripts/install-root.py "$PREP/previous-driver/"
-   cp -a /opt/hybrid-ai/scripts/deploy-instance.sh "$PREP/previous-driver/"
-   install -o root -g root -m 0644 "$PREP/scripts/install-root.py" /opt/hybrid-ai/scripts/.install-root.py.new
-   mv /opt/hybrid-ai/scripts/.install-root.py.new /opt/hybrid-ai/scripts/install-root.py
-   install -o root -g root -m 0755 "$PREP/scripts/deploy-instance.sh" /opt/hybrid-ai/scripts/.deploy-instance.sh.new
-   mv /opt/hybrid-ai/scripts/.deploy-instance.sh.new /opt/hybrid-ai/scripts/deploy-instance.sh
-   printf '%s\n' 'sha256:ada3a3b23ed20ce8d870404809d22ac4355e6aba58a133f2cece875abad27538'      > /etc/hybrid-ai/.proxy-recovery-image.new
-   chmod 0600 /etc/hybrid-ai/.proxy-recovery-image.new
-   mv /etc/hybrid-ai/.proxy-recovery-image.new /etc/hybrid-ai/proxy-recovery-image
+   cp -a /opt/haven/scripts/install-root.py "$PREP/previous-driver/"
+   cp -a /opt/haven/scripts/deploy-instance.sh "$PREP/previous-driver/"
+   install -o root -g root -m 0644 "$PREP/scripts/install-root.py" /opt/haven/scripts/.install-root.py.new
+   mv /opt/haven/scripts/.install-root.py.new /opt/haven/scripts/install-root.py
+   install -o root -g root -m 0755 "$PREP/scripts/deploy-instance.sh" /opt/haven/scripts/.deploy-instance.sh.new
+   mv /opt/haven/scripts/.deploy-instance.sh.new /opt/haven/scripts/deploy-instance.sh
+   printf '%s\n' 'sha256:ada3a3b23ed20ce8d870404809d22ac4355e6aba58a133f2cece875abad27538'      > /etc/haven/.proxy-recovery-image.new
+   chmod 0600 /etc/haven/.proxy-recovery-image.new
+   mv /etc/haven/.proxy-recovery-image.new /etc/haven/proxy-recovery-image
    printf 'Prepared driver revision %s; undo files: %s/previous-driver\n' "$SHA" "$PREP"
    exec 9>&-
    ```
@@ -95,9 +95,9 @@ is missing or incompatible. Preserve existing backups and recovery archives.
 
 3. Wait for both deployment and its post-deploy verifier. On the host, keep checks
    local: confirm `git -C /opt/haven rev-parse HEAD` equals the requested SHA,
-   `/etc/hybrid-ai/hybrid-ai.env` selects `/opt/haven`, and the protected journal
+   `/etc/haven/haven.env` selects `/opt/haven`, and the protected journal
    has phase `accepted` with that SHA. The mandatory verifier checks canonical
-   SSH/unit wiring and service health; use the existing configured Compose command with `-p hybrid-ai` to inspect services if a specific failure needs it.
+   SSH/unit wiring and service health; use the existing configured Compose command with `-p haven` to inspect services if a specific failure needs it.
    Report only the revision, accepted outcome and health result in the issue.
    Leave the issue open on any missing/failed mandatory check. After success,
    request owner closure; implementation does not authorize automatic closure.
@@ -109,7 +109,7 @@ paperwork is needed. The recovery selection may remain until deliberately change
 ### Rollback
 
 If preparation alone must be undone, hold the same deployment lock and copy the
-two saved `previous-driver` files back to `/opt/hybrid-ai/scripts/`, preserving
+two saved `previous-driver` files back to `/opt/haven/scripts/`, preserving
 ownership/modes. Remove the new selection only if it was newly created; preserve
 any prior selection. Do not undo preparation during a running deployment.
 
@@ -133,7 +133,7 @@ For a necessary runtime recovery, verify the retained archive's SHA256 against
 Use the recorded `configuration_id` from the verified archive (not a mutable tag
 or an assumed index/config equality) in a private Compose override for proxy
 `image`, and use the retained previous root's rendered Compose/Caddyfile with
-`-p hybrid-ai` and the existing protected stack env. Owner-run targeted Compose
+`-p haven` and the existing protected stack env. Owner-run targeted Compose
 `up -d --no-build --pull never proxy` with that override recreates only the proxy;
 do not run a whole-stack rebuild, restore databases or delete volumes. First
 confirm the retained rendered configuration matches the intended runtime; an
@@ -141,7 +141,7 @@ old pre-reset dispatcher cannot reconstruct missing historical configuration.
 Other unhealthy services require their own known-good retained images; the Caddy
 archive is not a whole-stack image backup. Verify health after recovery.
 
-The root-only journal is `/var/lib/hybrid-ai-install-root/current.json`; it may
+The root-only journal is `/var/lib/haven-install-root/current.json`; it may
 contain saved secrets and key material, so **never publish its contents**. Earlier
 journals/checkouts are retained. Previous canonical code roots use unique
 `/opt/.haven-previous-*` names; failed candidates use `/opt/.haven-failed-*`.
@@ -173,9 +173,9 @@ and leaves legacy/previous/failed checkpoints and migration journals for explici
 owner cleanup. No production migration is established by source tests or CI.
 
 This directory holds the in-repo pieces of a **headless deploy**. A dedicated,
-unprivileged `hybrid-ai-deploy` account gets a forced-command SSH entrypoint
+unprivileged `haven-deploy` account gets a forced-command SSH entrypoint
 that can do exactly one thing: start the systemd unit
-`hybrid-ai-deploy@<sha>.service`, which deploys the 40-character commit `<sha>`.
+`haven-deploy@<sha>.service`, which deploys the 40-character commit `<sha>`.
 The account cannot run git, read the journal, use sudo, or touch any other unit.
 
 Nothing here is active on its own. Today's deploy path
@@ -188,7 +188,7 @@ bootstrap below.
 > The host pieces here are inert until an owner migration runs. **Card F**,
 > `scripts/bootstrap.sh`, installs the pieces on the host and adds the
 > `authorized_keys` line, which makes the deploy pass live. `deploy.yml` has
-> already been switched over: it connects as `hybrid-ai-deploy` and sends exactly
+> already been switched over: it connects as `haven-deploy` and sends exactly
 > `deploy <sha>`. Until the bootstrap runs, no account, unit or polkit rule
 > exists on the host, so that connection fails closed at SSH auth with nothing
 > run.
@@ -220,7 +220,7 @@ another host. For a separately approved installation or configuration change,
 review the root service's process environment and existing drop-ins/overrides,
 record prior state, and explicitly set
 `Environment=HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven` under `[Service]`
-in a root-owned drop-in for `hybrid-ai-deploy@.service`. Any daemon reload or
+in a root-owned drop-in for `haven-deploy@.service`. Any daemon reload or
 subsequent deployment requires its own authorization. Bootstrap's invocation
 must independently select the same identity. Editing the layout file or
 exporting a variable in the SSH client does not perform this activation.
@@ -266,7 +266,7 @@ Everything after the bootstrap runs from the forced command and the unit. The
 bootstrap is the manual, one-time step; `install.sh` never runs it and never
 calls `sudo`.
 
-1. **The account** — a system account `hybrid-ai-deploy` (uid below `UID_MIN`).
+1. **The account** — a system account `haven-deploy` (uid below `UID_MIN`).
    It has `/bin/sh` and a locked password, because sshd runs the forced command
    through the account's login shell; a nologin shell would refuse it.
    (`systemd` runs the unit as root, so the account is only the SSH identity.)
@@ -274,8 +274,8 @@ calls `sudo`.
    and its helpers under `/opt/haven/scripts/`, readable and executable by
    the account. `/opt/haven` is a root-owned clone of the public https
    remote at `origin/main`.
-3. **The unit** — `deploy/hybrid-ai-deploy@.service`, copied to
-   `/etc/systemd/system/hybrid-ai-deploy@.service` (root-owned), then
+3. **The unit** — `deploy/haven-deploy@.service`, copied to
+   `/etc/systemd/system/haven-deploy@.service` (root-owned), then
    `systemctl daemon-reload`. It is an instantiated unit started explicitly; it
    is never enabled. `scripts/bootstrap.sh` installs it on a fresh device, and
    **`install.sh` re-applies it on every deploy**, so a change to the tracked
@@ -283,24 +283,24 @@ calls `sudo`.
    deploy re-applies it while running inside the unit: the running instance
    keeps its loaded configuration, so the new content is effective from the
    next instantiation.
-4. **The polkit rule** — `deploy/50-hybrid-ai-deploy.rules`, copied to
-   `/etc/polkit-1/rules.d/50-hybrid-ai-deploy.rules` (or the distro's polkit
+4. **The polkit rule** — `deploy/50-haven-deploy.rules`, copied to
+   `/etc/polkit-1/rules.d/50-haven-deploy.rules` (or the distro's polkit
    rules directory, e.g. `/usr/share/polkit-1/rules.d/`), root-owned, then
    reload polkit. It grants the account `start` of a matching unit and nothing
    else. Like the unit, the bootstrap installs it on a fresh device and
    `install.sh` re-applies it, byte-identical, on every deploy, followed by
    `systemctl reload polkit`. The bootstrap refuses to run when polkitd is
    absent or predates `.rules` (JavaScript) support.
-5. **The env file** — `/etc/hybrid-ai/hybrid-ai.env`, root-owned, mode `0644`.
+5. **The env file** — `/etc/haven/haven.env`, root-owned, mode `0644`.
    It is the LAYOUT file: it holds path and identity settings only, never a
-   secret, so both `hybrid-ai-deploy` and `hybrid-ai-backup` can read it. (The
-   stack's secrets live in `/etc/hybrid-ai/stack.env`, mode `0600`.) The unit
+   secret, so both `haven-deploy` and `haven-backup` can read it. (The
+   stack's secrets live in `/etc/haven/stack.env`, mode `0600`.) The unit
    passes its path by name only:
-   `Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env`. A bare
+   `Environment=HAVEN_ENV_FILE=/etc/haven/haven.env`. A bare
    invocation that does not name the layout file still finds it: when
    `HAVEN_ENV_FILE` is unset and `$HAVEN_APP_DIR/.env` is absent, the
    helper falls back to `HAVEN_ENV_FILE_FALLBACK` (default
-   `/etc/hybrid-ai/hybrid-ai.env`) when that file exists.
+   `/etc/haven/haven.env`) when that file exists.
 6. **The SSH key line** — one line in the account's `~/.ssh/authorized_keys`,
    restricted to the forced command (see below).
 
@@ -323,7 +323,7 @@ unit — nothing more.
 
 ## Least privilege
 
-The `hybrid-ai-deploy` account holds:
+The `haven-deploy` account holds:
 
 - **No login shell beyond the forced command.** sshd runs
   `deploy-forced-command.sh` for every connection, regardless of the requested
@@ -332,23 +332,23 @@ The `hybrid-ai-deploy` account holds:
 - **Not in the `docker` group.** It cannot talk to the Docker socket.
 - **Not in the `systemd-journal` group.** It cannot read journald. Instead the
   unit writes each run's log to `$HAVEN_LOG_DIR/deploy/<sha>.log` with mode
-  `0640` and group `hybrid-ai-deploy`, so the account reads the log for its own
+  `0640` and group `haven-deploy`, so the account reads the log for its own
   run without any journal access.
 - **Read access to the layout env file, and only that file.** The forced command
   resolves the host paths the same way the unit does, by reading
-  `/etc/hybrid-ai/hybrid-ai.env` (parsed, never sourced). That file is mode
-  `0644`, owned by root, so the `hybrid-ai-deploy` account AND the
-  `hybrid-ai-backup` account both read it. It holds paths and names only. (An
-  earlier draft used mode `0640` group `hybrid-ai-deploy`; that would have
+  `/etc/haven/haven.env` (parsed, never sourced). That file is mode
+  `0644`, owned by root, so the `haven-deploy` account AND the
+  `haven-backup` account both read it. It holds paths and names only. (An
+  earlier draft used mode `0640` group `haven-deploy`; that would have
   locked the backup account out, so it is `0644`.) The forced command pins
   `HAVEN_STACK_ENV_FILE` at this layout file unconditionally, so it never
-  reads the `0600` secrets file `/etc/hybrid-ai/stack.env` and an inherited
+  reads the `0600` secrets file `/etc/haven/stack.env` and an inherited
   value cannot point it back at that file. The account is never granted read
   access to `stack.env`, by mode, group or ACL.
 - **One polkit action, one verb, one unit shape.** The polkit rule returns
-  `polkit.Result.YES` only for `subject.user == "hybrid-ai-deploy"`,
+  `polkit.Result.YES` only for `subject.user == "haven-deploy"`,
   `action.id == "org.freedesktop.systemd1.manage-units"`, `verb == "start"`, and
-  a unit matching `^hybrid-ai-deploy@[0-9a-f]{40}\.service$`. Everything else is
+  a unit matching `^haven-deploy@[0-9a-f]{40}\.service$`. Everything else is
   the default deny.
 - **A public fetch with no credentials.** `scripts/deploy-instance.sh` fetches
   main only from the public https remote, with git hooks disabled and credential
@@ -366,10 +366,10 @@ after the reset.
 1. The GitHub deploy job runs `scripts/deploy-trigger.sh "$GITHUB_SHA"`. That
    client validates the sha, fetches the Pi's host key with `ssh-keyscan`,
    compares its SHA256 fingerprint with `PI_SSH_HOST_KEY`, then connects as
-   `hybrid-ai-deploy` and sends exactly `deploy <40-hex>`.
+   `haven-deploy` and sends exactly `deploy <40-hex>`.
 2. sshd runs `deploy-forced-command.sh` with `SSH_ORIGINAL_COMMAND="deploy <40-hex>"`.
 3. The script refuses anything but that exact form (exit 2), then asks the
-   **system** manager to start `hybrid-ai-deploy@<sha>.service`.
+   **system** manager to start `haven-deploy@<sha>.service`.
 4. The unit runs `scripts/deploy-instance.sh <sha>` as root. The script
    re-validates the sha, takes an exclusive lock, refuses a credential-bearing
    origin, fetches main from the public https remote, refuses unless `<sha>` is
@@ -401,7 +401,7 @@ result line -- `PASS`, `FAIL: ...` or `TIMEOUT: ...`.
 
 It also writes that verdict as one JSON file per deploy sha at
 `${HAVEN_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json` (default
-`/var/lib/hybrid-ai/hermes_data/deploy-verdicts/`), which the container sees at
+`/var/lib/haven/hermes_data/deploy-verdicts/`), which the container sees at
 `/root/.hermes/deploy-verdicts/`. The host log is not mounted in the container,
 so this file is how container-side checks read the verdict. A failure to write
 it is a warning on stderr only: it never changes the result line or the exit
@@ -425,7 +425,7 @@ The deployment directory resolves in this order:
    because a transient unit inherits the systemd manager's environment, not the
    deploy script's.
 2. else `HAVEN_APP_DIR` parsed line by line from the layout file named by
-   `${HAVEN_ENV_FILE_FALLBACK:-/etc/hybrid-ai/hybrid-ai.env}`, when that file
+   `${HAVEN_ENV_FILE_FALLBACK:-/etc/haven/haven.env}`, when that file
    exists and is readable. The file is read as data (`KEY=VALUE`), never sourced,
    and no value from it is printed. An unreadable existing file fails closed. The
    value must be an absolute path with no whitespace, `:` or `,`.
@@ -434,10 +434,10 @@ The deployment directory resolves in this order:
 **It runs in its own transient unit**, not as a child of the deploy:
 
 ```
-systemd-run --collect --unit=hybrid-ai-post-deploy-verify-<sha12>-<pid> ...
+systemd-run --collect --unit=haven-post-deploy-verify-<sha12>-<pid> ...
 ```
 
-`deploy/hybrid-ai-deploy@.service` is `Type=oneshot` with the default
+`deploy/haven-deploy@.service` is `Type=oneshot` with the default
 `KillMode=control-group`, so systemd kills everything left in the unit's cgroup
 when it exits. An in-cgroup waiter is therefore killed at unit exit --
 `setsid` escapes the session, not the cgroup. That was the original defect: a
@@ -450,7 +450,7 @@ Paths (both resolved in `scripts/lib/haven-env.sh`):
 | Path | Default |
 |---|---|
 | Verifier | `/usr/local/sbin/run-post-deploy-verify.sh`, installed root:root 0755 by `install.sh` |
-| Log | `/var/log/hybrid-ai-post-deploy-verify.log`, appended by the transient unit |
+| Log | `/var/log/haven-post-deploy-verify.log`, appended by the transient unit |
 | Verdict JSON | `${HAVEN_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json`, owned by configured numeric `HAVEN_UID:HAVEN_GID` (legacy default `0:0`), 0644 in a 0755 dir; the container reads it at `/root/.hermes/deploy-verdicts/`. Publication failure produces WARN unless already FAIL/TIMEOUT; no host `hermes` account is required. |
 
 After the tree check the verifier also runs the **Backups tile gate**. It reads
@@ -547,13 +547,13 @@ These are also listed in [`docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md)
 ## Conversation prune units
 
 Two units run the conversation quarantine sweep. They are ordinary system units,
-not part of the headless deploy, and `hybrid-ai-prune.service` names
+not part of the headless deploy, and `haven-prune.service` names
 `/opt/haven/deploy/README.md` as its `Documentation=` target — this section.
 
 | Unit | What it does |
 |---|---|
-| `hybrid-ai-prune.service` | `Type=oneshot`, `User=root`, `ExecStart=/opt/haven/scripts/prune-conversations.sh` |
-| `hybrid-ai-prune.timer` | `OnCalendar=*-*-* 04:20:00`, `Persistent=true`, `Unit=hybrid-ai-prune.service` |
+| `haven-prune.service` | `Type=oneshot`, `User=root`, `ExecStart=/opt/haven/scripts/prune-conversations.sh` |
+| `haven-prune.timer` | `OnCalendar=*-*-* 04:20:00`, `Persistent=true`, `Unit=haven-prune.service` |
 
 It runs as root because the conversations tree under the OpenHands workspace is
 owned by root and by the stack's own users; a non-root run could not move those
@@ -567,9 +567,9 @@ can never fail a deploy. It also runs the service once at deploy time as
 **catch-up only**, for a host that was off or had not re-deployed for a while; a
 missing script there is a warning too. The timer is the primary mechanism.
 
-`hybrid-ai-prune.service` carries no `Restart=` line at all, deliberately. A
+`haven-prune.service` carries no `Restart=` line at all, deliberately. A
 failing prune must not loop; the failure stays visible in
-`systemctl status hybrid-ai-prune`. For the same reason neither unit sets
+`systemctl status haven-prune`. For the same reason neither unit sets
 filesystem sandboxing directives (`ProtectSystem=`, `PrivateTmp=`,
 `ReadOnlyPaths=`, `InaccessiblePaths=`): the service has to move directories
 under the workspace, and those flags would break the move.
@@ -598,8 +598,8 @@ through the service's `Documentation=` target.
 
 | Unit | What it does |
 |---|---|
-| `hybrid-ai-docker-prune.service` | `Type=oneshot`, `User=root`, `EnvironmentFile=-/opt/haven/.env`, `After=docker.service`, `ExecStart=/opt/haven/scripts/prune-docker-cache.sh` |
-| `hybrid-ai-docker-prune.timer` | `OnCalendar=*-*-* 04:35:00`, `Persistent=true`, `Unit=hybrid-ai-docker-prune.service` |
+| `haven-docker-prune.service` | `Type=oneshot`, `User=root`, `EnvironmentFile=-/opt/haven/.env`, `After=docker.service`, `ExecStart=/opt/haven/scripts/prune-docker-cache.sh` |
+| `haven-docker-prune.timer` | `OnCalendar=*-*-* 04:35:00`, `Persistent=true`, `Unit=haven-docker-prune.service` |
 
 The timer caps the Docker build cache at 15 GB (override
 `HAVEN_BUILD_CACHE_CAP`) daily at 04:35; it removes build cache only and
@@ -614,7 +614,7 @@ never turns the timer into a hard failure.
 
 ## No retry policy
 
-`hybrid-ai-deploy@.service` has **no `Restart=` policy at all**. An earlier
+`haven-deploy@.service` has **no `Restart=` policy at all**. An earlier
 backup upload unit used `Restart=on-failure`, and its retry loop stopped
 `hermes-agent` every 15 minutes (incident B1). A failed deploy must never be
 retried automatically: a retry could reset the tree again and disturb the

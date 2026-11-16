@@ -69,7 +69,7 @@ APP="$WORK/app"
 BIN="$WORK/bin"
 mkdir -p "$APP/scripts/lib" "$BIN" "$WORK/data" "$WORK/log" "$WORK/work" \
          "$WORK/ws" "$WORK/repos" "$WORK/ohstate" "$WORK/conf" "$WORK/restic" \
-         "$WORK/etc/hybrid-ai" "$WORK/ws/.git/info"
+         "$WORK/etc/haven" "$WORK/ws/.git/info"
 cp "$INSTALL_UNDER_TEST" "$APP/install.sh"
 cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
 cp "$REPO/scripts/lib/tailscale-resolve.sh" "$APP/scripts/lib/"
@@ -88,8 +88,8 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$APP/scripts/sync-agent-repos.sh"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$APP/scripts/check-hermes-nonroot.sh"
 chmod +x "$APP/scripts/"*.sh
 
-LAYOUT="$WORK/etc/hybrid-ai/hybrid-ai.env"
-STACK="$WORK/etc/hybrid-ai/stack.env"
+LAYOUT="$WORK/etc/haven/haven.env"
+STACK="$WORK/etc/haven/stack.env"
 {
   printf 'HAVEN_APP_DIR=%s\n' "$APP"
   printf 'HAVEN_ENV_FILE=%s\n' "$LAYOUT"

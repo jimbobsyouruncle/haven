@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: backup/system/hybrid-ai-backup-check.timer
+# FILE: backup/system/haven-backup-check.timer
 # PURPOSE (plain English):
 #   Schedules the monthly repository integrity check in system mode. Same
 #   cadence as the per-user check timer: first Sunday of the month at 04:30.
@@ -7,7 +7,7 @@
 # INSTALLED BY (card F later): install.sh in system mode enables this timer.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=Monthly hybrid-ai backup integrity verification (system mode)
+Description=Monthly haven backup integrity verification (system mode)
 
 [Timer]
 # First Sunday of each month at 04:30 -- well clear of the nightly capture.

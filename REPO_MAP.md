@@ -46,36 +46,37 @@
 - backup/README.md - backup/ — Encrypted Offsite Backups
 - backup/backup-containers.sh - FILE: backup/backup-containers.sh
 - backup/backup.sh - FILE: backup/backup.sh
-- backup/hybrid-ai-backup.service
-- backup/hybrid-ai-backup.timer
-- backup/hybrid-ai-check.service
-- backup/hybrid-ai-check.timer
+- backup/haven-backup.service
+- backup/haven-backup.timer
+- backup/haven-check.service
+- backup/haven-check.timer
 - backup/restore.sh - FILE: backup/restore.sh
 ## backup/system
 
-- backup/system/hybrid-ai-backup-capture.service
-- backup/system/hybrid-ai-backup-capture.timer
-- backup/system/hybrid-ai-backup-check.service
-- backup/system/hybrid-ai-backup-check.timer
-- backup/system/hybrid-ai-backup-upload.service
+- backup/system/haven-backup-capture.service
+- backup/system/haven-backup-capture.timer
+- backup/system/haven-backup-check.service
+- backup/system/haven-backup-check.timer
+- backup/system/haven-backup-upload.service
 ## caddy
 
 - caddy/Dockerfile
 ## deploy
 
-- deploy/50-hybrid-ai-deploy.rules
+- deploy/50-haven-deploy.rules
+- deploy/IDENTITY-MIGRATION.md - Coordinated Haven identity cutover
 - deploy/README.md - deploy/ — headless deploy (one commit, one unit)
-- deploy/hybrid-ai-deploy@.service
-- deploy/hybrid-ai-docker-prune.service
-- deploy/hybrid-ai-docker-prune.timer
-- deploy/hybrid-ai-firewall.service
-- deploy/hybrid-ai-prune.service
-- deploy/hybrid-ai-prune.timer
-- deploy/hybrid-ai-tls-check.service
-- deploy/hybrid-ai-tls-check.timer
+- deploy/haven-deploy@.service
+- deploy/haven-docker-prune.service
+- deploy/haven-docker-prune.timer
+- deploy/haven-firewall.service
+- deploy/haven-prune.service
+- deploy/haven-prune.timer
+- deploy/haven-tls-check.service
+- deploy/haven-tls-check.timer
 ## deploy/logrotate
 
-- deploy/logrotate/hybrid-ai-tls
+- deploy/logrotate/haven-tls
 ## docs
 
 - docs/BUILDER_PUBLISH_SMOKE_TEST.md
@@ -178,7 +179,7 @@
 - scripts/deploy-instance.sh
 - scripts/deploy-remote.sh
 - scripts/deploy-trigger.sh
-- scripts/install-root.py - Recoverable code-root handoff. Host-only; never moves persistent data.
+- scripts/install-root.py - Recoverable installation/identity handoff using the ADR-0006 checkpoint.
 - scripts/no-masked-literals-baseline.txt
 - scripts/prune-conversations.sh - FILE: scripts/prune-conversations.sh
 - scripts/prune-docker-cache.sh - FILE: scripts/prune-docker-cache.sh
@@ -224,8 +225,7 @@
 - scripts/test-hermes-nonroot-preflight.sh - FILE: scripts/test-hermes-nonroot-preflight.sh
 - scripts/test-install-auth-env-leak.sh - FILE: scripts/test-install-auth-env-leak.sh
 - scripts/test-install-health.sh - FILE: scripts/test-install-health.sh
-- scripts/test-install-root.py - Offline real-Git migration tests; no network, Docker, systemd or root.
-- scripts/test-install-root.sh - Offline transaction and installation wiring regression tests.
+- scripts/test-install-root.sh - ADR-0006 and coordinated identity fixtures; no network, Docker, systemd or root.
 - scripts/test-install-tailscale-migration.sh - FILE: scripts/test-install-tailscale-migration.sh
 - scripts/test-post-deploy-verify-log-env.sh - FILE: scripts/test-post-deploy-verify-log-env.sh
 - scripts/test-prune-conversations.sh - FILE: scripts/test-prune-conversations.sh

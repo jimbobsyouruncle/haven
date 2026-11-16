@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: deploy/hybrid-ai-firewall.service
+# FILE: deploy/haven-firewall.service
 # PURPOSE (plain English):
 #   Re-applies the sandbox firewall rules on every boot. Docker creates the
 #   DOCKER-USER chain when it starts, so the rules cannot simply be baked in at
@@ -27,10 +27,10 @@
 #
 #   NO Restart= AT ALL, for the same reason as the deploy unit: a retry loop on
 #   a firewall unit can flap the host's filter table. A failure stays visible in
-#   `systemctl status hybrid-ai-firewall`.
+#   `systemctl status haven-firewall`.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=hybrid-ai sandbox firewall (DOCKER-USER drops)
+Description=haven sandbox firewall (DOCKER-USER drops)
 Documentation=file:///opt/haven/deploy/README.md
 After=docker.service
 Wants=docker.service

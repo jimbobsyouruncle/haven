@@ -106,9 +106,9 @@ def render(tls_enabled, tls_domain):
         check(f"{tls_enabled}/{tls_domain}: {label} footer",
               bool(re.search(r"<footer>Haven(?: ·|</footer>)", page)), True)
     check("diagnostic download retains its legacy filename",
-          "a.download = 'hybrid-ai-diagnostic-' + stamp + '.txt';" in status, True)
+          "a.download = 'haven-diagnostic-' + stamp + '.txt';" in status, True)
     check("HTTP server identity stays compatible", mod.Handler.server_version,
-          "hybrid-ai-status")
+          "haven-status")
     return hub, status
 
 

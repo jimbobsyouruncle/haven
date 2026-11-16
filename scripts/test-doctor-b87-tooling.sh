@@ -126,7 +126,7 @@ case "$me" in
     fi
     case "$tmpl" in
       '{{.Id}}')
-        [[ "$last" == "hybrid-ai-openhands" ]] || exit 1
+        [[ "$last" == "haven-openhands" ]] || exit 1
         echo 'sha256:0000000000000000000000000000000000000000000000000000000000000000'
         exit 0 ;;
       '{{.Config.Image}}') echo 'docker.openhands.dev/openhands/agent-server:1.33.0-python'; exit 0 ;;
@@ -138,7 +138,7 @@ case "$me" in
       *"RestartCount"*)  echo 0; exit 0 ;;
       *"PortBindings"*)  printf '%s:3001 %s:3001 ' "$BRIDGE_IP" "$BRIDGE_IP"; exit 0 ;;
       *"println ."*)
-        if [[ "$last" == "hybrid-ai-openhands" ]]; then
+        if [[ "$last" == "haven-openhands" ]]; then
           printf '%s\n' \
             'SANDBOX_HOST_PORT=3001' \
             'SANDBOX_CONTAINER_URL_PATTERN=http://example.test:{port}' \

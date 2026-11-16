@@ -594,7 +594,7 @@ assert "case r: docker version came from the helper file" bash -c "grep -qx 'doc
 
 # ---------------------------------------------------------------------------
 # Cases s1-s3: the capture guard regression. On a bootstrapped host the
-# hybrid-ai-backup account's HOME is its work directory, so with
+# haven-backup account's HOME is its work directory, so with
 # CREDENTIALS_DIRECTORY and both credential-dir settings unset the default
 # HAVEN_BACKUP_CRED_DIR lands INSIDE HAVEN_WORK_DIR. The capture
 # (--stage-only) reads no credential, so it must run clean; every phase that
@@ -604,7 +604,7 @@ assert "case r: docker version came from the helper file" bash -c "grep -qx 'doc
 # status=complete, and never prints the guard message. This is the exact shape
 # of the live failure; it FAILS on unpatched main with "BACKUP_CONF_DIR is
 # inside". BACKUP_CONF_DIR and HAVEN_BACKUP_CRED_DIR are unset, so the
-# credential dir defaults to $HOME/.config/hybrid-ai-backup, inside WORK_DIR.
+# credential dir defaults to $HOME/.config/haven-backup, inside WORK_DIR.
 rm -rf "$REPO/hermes_data" "$STAGE"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1);'
 run_backup_env -u BACKUP_CONF_DIR -u HAVEN_BACKUP_CRED_DIR HOME="$STAGE_WORK" HAVEN_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only

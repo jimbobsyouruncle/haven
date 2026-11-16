@@ -262,10 +262,10 @@ if grep -q "HAVEN_PRUNE_ALLOW_LEASE_LESS" "$LL_OUT"; then
 else
   fail "lease-less: the remedy does not name HAVEN_PRUNE_ALLOW_LEASE_LESS"
 fi
-if grep -q "systemctl start hybrid-ai-prune" "$LL_OUT"; then
+if grep -q "systemctl start haven-prune" "$LL_OUT"; then
   pass "lease-less: the remedy names the prune unit"
 else
-  fail "lease-less: the remedy does not name 'systemctl start hybrid-ai-prune'"
+  fail "lease-less: the remedy does not name 'systemctl start haven-prune'"
 fi
 if grep -q "prune-conversations.sh" "$LL_OUT"; then
   pass "lease-less: the remedy names the prune script"

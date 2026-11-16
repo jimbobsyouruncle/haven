@@ -67,7 +67,11 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       # Format is  <folder on the Pi>:<folder inside the container>
-      - ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/ollama_data:/root/.ollama
+      - type: bind
+        source: ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/ollama_data
+        target: /root/.ollama
+        bind:
+          create_host_path: false
     # A REAL, kernel-enforced memory cap. This is what actually stops a model
     # from taking the whole machine down -- unlike OLLAMA_MAX_VRAM, which was
     # never honoured by Ollama and has been removed upstream.
@@ -152,13 +156,22 @@ services:
       # Reachable from your whole network (and tailnet) on port 3000.
       - "3000:8080"
     volumes:
-      - ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/webui_data:/app/backend/data
+      - type: bind
+        source: ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/webui_data
+        target: /app/backend/data
+        bind:
+          create_host_path: false
       # Mounted read-only (":ro"). This just makes the pipe source visible
       # inside the container for reference; you still import it through the UI.
       #
       # NOTE: because the pasted function lives in webui_data/webui.db, editing
       # the file here does NOT change what Open WebUI executes. Re-paste it.
-      - ./openwebui:/app/backend/data/functions_src:ro
+      - type: bind
+        source: ./openwebui
+        target: /app/backend/data/functions_src
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       # --- Where to find the local model engine ----------------------------
       # "ollama" resolves to the other container by name on the Docker network.
@@ -251,7 +264,7 @@ services:
   # -------------------------------------------------------------------------
   status:
     image: python:3.12-slim
-    container_name: hybrid-ai-status
+    container_name: haven-status
     restart: unless-stopped
     depends_on:
       - ollama
@@ -264,7 +277,12 @@ services:
     cpus: "0.5"
     command: ["python", "-u", "/app/app.py"]
     volumes:
-      - ./status/app.py:/app/app.py:ro
+      - type: bind
+        source: ./status/app.py
+        target: /app/app.py
+        read_only: true
+        bind:
+          create_host_path: false
       # Only the Backups tile state, via a private Unix socket. No TCP port.
       - type: bind
         source: ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/status-verifier
@@ -272,20 +290,45 @@ services:
         bind:
           create_host_path: false
       # Read-only Docker socket: needed for container state and log tails.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+        bind:
+          create_host_path: false
       # Measured, never read for content.
-      - ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/webui_data:/data/webui_data:ro
+      - type: bind
+        source: ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/webui_data
+        target: /data/webui_data
+        read_only: true
+        bind:
+          create_host_path: false
       # Writer and reader must name ONE path. The units (system mode) and
       # backup.sh (user mode) write whatever scripts/lib/haven-env.sh
       # resolves BACKUP_LOG to; install.sh writes that resolved value into the
       # stack env file, so this bind source is the file that is actually being
       # written. Fail-closed: an unset value refuses the parse instead of
       # mounting a path nothing writes.
-      - ${BACKUP_LOG:?BACKUP_LOG must be set - run ./install.sh}:/data/backup.log:ro
-      - ${HAVEN_LOG_DIR:?HAVEN_LOG_DIR must be set - run ./install.sh}/install.log:/data/install.log:ro
+      - type: bind
+        source: ${BACKUP_LOG:?BACKUP_LOG must be set - run ./install.sh}
+        target: /data/backup.log
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HAVEN_LOG_DIR:?HAVEN_LOG_DIR must be set - run ./install.sh}/install.log
+        target: /data/install.log
+        read_only: true
+        bind:
+          create_host_path: false
       # The post-deploy verifier's log: read-only display data for the Deploy
       # verification tile. Same single-file pattern as the two logs above.
-      - ${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}:/data/post-deploy-verify.log:ro
+      - type: bind
+        source: ${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/haven-post-deploy-verify.log}
+        target: /data/post-deploy-verify.log
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       STATUS_PORT: "8088"
       STATUS_BACKUP_SOCKET: /run/status-verifier/backup.sock
@@ -319,7 +362,7 @@ services:
       - 100.100.100.100
     user: "${HAVEN_UID:-${STATUS_UID:-1000}}:${DOCKER_GID:-999}"
     # Exactly ONE supplementary group: the backup account's gid, so the
-    # read-only backup log (0640, group hybrid-ai-backup) is readable without
+    # read-only backup log (0640, group haven-backup) is readable without
     # widening the file to the world and without running this service as root.
     # In user mode install.sh writes the same value as the primary gid, so the
     # container gains no access it did not already have. Fail-closed for the
@@ -360,7 +403,7 @@ services:
   # -------------------------------------------------------------------------
   proxy:
     image: caddy:2.11-alpine
-    container_name: hybrid-ai-proxy
+    container_name: haven-proxy
     restart: unless-stopped
     depends_on:
       - open-webui
@@ -370,10 +413,19 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./status/Caddyfile:/etc/caddy/Caddyfile:ro
+      - type: bind
+        source: ./status/Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
       # Caddy validates its config at boot; a syntax error here stops the
       # proxy only, leaving Open WebUI reachable on :3000.
-      - ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/caddy:/data
+      - type: bind
+        source: ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/caddy
+        target: /data
+        bind:
+          create_host_path: false
     environment:
       LOCAL_DOMAIN: ${LOCAL_DOMAIN:?LOCAL_DOMAIN must be set}
       DO_NOT_TRACK: "true"
@@ -399,7 +451,7 @@ networks:
   # overlay) joins it implicitly, so containers can reach each other by service
   # name. It is NOT isolated from the host.
   default:
-    name: hybrid-ai
+    name: haven
 
   # coder-net :: the private path between the two code-aware services.
   #
@@ -412,5 +464,5 @@ networks:
   # This adds no host port binds. The existing OpenHands binds on 127.0.0.1 and
   # 172.17.0.1 are unchanged and unrelated to this network.
   coder-net:
-    name: coder-net
+    name: haven-coder
     internal: true

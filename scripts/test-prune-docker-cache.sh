@@ -38,8 +38,8 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 PRUNE="${SCRIPT_DIR}/prune-docker-cache.sh"
-SERVICE="${REPO}/deploy/hybrid-ai-docker-prune.service"
-TIMER="${REPO}/deploy/hybrid-ai-docker-prune.timer"
+SERVICE="${REPO}/deploy/haven-docker-prune.service"
+TIMER="${REPO}/deploy/haven-docker-prune.timer"
 
 if [[ ! -f "$PRUNE" ]]; then
   printf 'FAIL: the script under test is missing: %s\n' "$PRUNE" >&2
@@ -259,7 +259,7 @@ else
 fi
 check "(i) timer OnCalendar 04:35:00" "$(timer_line 'OnCalendar=*-*-* 04:35:00')" "yes"
 check "(i) timer Persistent=true" "$(timer_line 'Persistent=true')" "yes"
-check "(i) timer Unit" "$(timer_line 'Unit=hybrid-ai-docker-prune.service')" "yes"
+check "(i) timer Unit" "$(timer_line 'Unit=haven-docker-prune.service')" "yes"
 check "(i) timer WantedBy=timers.target" "$(timer_line 'WantedBy=timers.target')" "yes"
 
 # --- (j) cache-only: no rmi / system prune / other prune / path deletion ----
@@ -298,7 +298,7 @@ check "(j2) the unmodified script yields no offenders" \
 for form_ere in \
   "docker rmi --force some-image:tag|$RMI_ERE" \
   "docker system prune -af|$WIDE_PRUNE_ERE" \
-  "rm -rf /var/lib/hybrid-ai/x|$RM_ERE"
+  "rm -rf /var/lib/haven/x|$RM_ERE"
 do
   form="${form_ere%%|*}"
   ere="${form_ere#*|}"
@@ -341,7 +341,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$I_APP/scripts/sync-agent-repos.sh"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$I_APP/scripts/check-hermes-nonroot.sh"
 chmod +x "$I_APP/scripts/"*.sh
 
-I_LAYOUT="$WORK/i-etc/hybrid-ai.env"
+I_LAYOUT="$WORK/i-etc/haven.env"
 I_STACK="$WORK/i-etc/stack.env"
 {
   printf 'HAVEN_APP_DIR=%s\n' "$I_APP"

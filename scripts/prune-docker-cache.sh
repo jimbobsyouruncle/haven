@@ -4,7 +4,7 @@
 # PURPOSE (plain English):
 #   Cap the Docker BUILD CACHE so repeated rebuilds of the multi-GB stack
 #   images cannot fill the deploy host's disk. Runs from
-#   hybrid-ai-docker-prune.timer daily at 04:35.
+#   haven-docker-prune.timer daily at 04:35.
 #
 #   CACHE ONLY, by design. The ONLY prune this script ever runs is
 #   `docker builder prune`. It never calls `docker rmi`, never runs a container,
@@ -13,7 +13,7 @@
 #   scope: a wider prune would be a defect, not an enhancement.
 #
 #   It runs as root because it talks to the Docker socket, exactly like the
-#   sibling hybrid-ai-prune.service.
+#   sibling haven-prune.service.
 #
 # CAPABILITY PROBE (the reason this script exists rather than a one-line unit):
 #   There is no single cap flag across Docker versions. Recent buildx documents
@@ -42,7 +42,7 @@
 #                                   exit status.
 #
 # A genuine `docker builder prune` failure exits 1, so it is visible in
-# `systemctl status hybrid-ai-docker-prune`. The unit deliberately has NO
+# `systemctl status haven-docker-prune`. The unit deliberately has NO
 # Restart=: a failing prune must not loop.
 #
 # USAGE:

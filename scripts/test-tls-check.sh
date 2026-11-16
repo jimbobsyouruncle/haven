@@ -36,7 +36,7 @@ for tool in openssl date; do
 done
 if [[ ! -f "$CHECK" ]]; then printf 'FAIL missing %s\n' "$CHECK"; exit 1; fi
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/hybrid-ai-tls-test.XXXXXX")" || exit 1
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/haven-tls-test.XXXXXX")" || exit 1
 SRV_PID=""
 # Idempotent: called on the normal exit path AND from the trap.
 cleanup() {
@@ -517,7 +517,7 @@ else
 fi
 
 # --- case 11: the daily unit runs the audit as well as the check -------
-SERVICE="${REPO_ROOT}/deploy/hybrid-ai-tls-check.service"
+SERVICE="${REPO_ROOT}/deploy/haven-tls-check.service"
 if [[ -f "$SERVICE" ]]; then
   # The '-' prefix matters: without it a failing audit (exit 3 before first
   # issuance, 1 on unreadable storage) aborts the unit and the health check
@@ -527,17 +527,17 @@ if [[ -f "$SERVICE" ]]; then
   else
     bad "tls-check service audit ExecStart must start with '-/usr/bin/env bash .../tls-audit.sh'"
   fi
-  if grep -qE '^ReadWritePaths=-?/var/log/hybrid-ai$' "$SERVICE"; then
-    ok "tls-check service permits writes to /var/log/hybrid-ai"
+  if grep -qE '^ReadWritePaths=-?/var/log/haven$' "$SERVICE"; then
+    ok "tls-check service permits writes to /var/log/haven"
   else
-    bad "tls-check service has no ReadWritePaths= for /var/log/hybrid-ai"
+    bad "tls-check service has no ReadWritePaths= for /var/log/haven"
   fi
 else
   skipped "tls-check service audit ExecStart (unit absent)"
 fi
 
 # --- case 12: the logrotate file carries a substitutable placeholder ---
-LOGROTATE="${REPO_ROOT}/deploy/logrotate/hybrid-ai-tls"
+LOGROTATE="${REPO_ROOT}/deploy/logrotate/haven-tls"
 if [[ -f "$LOGROTATE" ]]; then
   # logrotate does not expand shell variables, so a "${VAR}" path silently
   # rotates nothing. The shipped file must use the plain placeholder instead.

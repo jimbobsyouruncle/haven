@@ -41,10 +41,10 @@
 #   2. git clone the repository.
 #   3. Recreate the credential directory with your R2 credentials and the
 #      repository password you stored in your password manager. In user mode
-#      that is ~/.config/hybrid-ai-backup/; in system mode the units read them
-#      from the root-owned credstore, /etc/credstore/hybrid-ai-backup/ (see
+#      that is ~/.config/haven-backup/; in system mode the units read them
+#      from the root-owned credstore, /etc/credstore/haven-backup/ (see
 #      backup/README.md). Both resolve to HAVEN_BACKUP_CRED_DIR.
-#   4. Run this script. It restores .env too, so you do not need to re-enter
+#   4. Run this script. It retains historical .env for review; revalidate canonical paths before using
 #      your RunPod details.
 #   5. Run ./install.sh
 #   6. Re-pull your Ollama models -- weights are not backed up by design.
@@ -82,10 +82,11 @@ unset _tree
 # Every container that can touch webui_data or hermes_data, stopped by NAME so
 # overlay services (OpenHands, Hermes) are included and a stale .env cannot
 # block the stop. Order: front-ends first, Ollama last.
-STACK_CONTAINERS=(hybrid-ai-proxy hybrid-ai-status hybrid-ai-openhands hermes-agent open-webui ollama)
+STACK_CONTAINERS=(haven-proxy haven-status haven-openhands hermes-agent open-webui ollama)
 
 SNAPSHOT_ID=""
 MODE="interactive"
+TEST_RESTORE=0
 STAMP="$(date +%Y%m%d-%H%M%S)"
 SAFETY=""
 
@@ -94,11 +95,12 @@ while [[ $# -gt 0 ]]; do
     --snapshot) SNAPSHOT_ID="${2:-}"; MODE="direct"; shift 2 ;;
     --latest)   SNAPSHOT_ID="latest"; MODE="direct"; shift ;;
     --list)     MODE="list"; shift ;;
-    --test)     MODE="test"; shift ;;
+    --test)     TEST_RESTORE=1; shift ;;
     -h|--help)  sed -n '2,51p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+if (( TEST_RESTORE )); then MODE="test"; fi
 [[ "$MODE" != "direct" || -n "$SNAPSHOT_ID" ]] || { echo "--snapshot needs an id" >&2; exit 2; }
 
 if [[ -t 1 ]]; then
@@ -180,7 +182,7 @@ verify_databases() {
 # ---------------------------------------------------------------------------
 if [[ "$MODE" == "list" ]]; then
   hr; printf '  Available snapshots\n'; hr
-  restic snapshots --tag hybrid-ai
+  restic snapshots --tag haven --tag hybrid-ai
   exit 0
 fi
 
@@ -195,7 +197,7 @@ if [[ "$MODE" == "test" ]]; then
   TEST_DIR="${HAVEN_WORK_DIR}/.restore-test-${STAMP}"
   log "Test restore into ${TEST_DIR} (nothing live is touched)..."
   mkdir -p "$TEST_DIR"
-  restic restore latest --tag hybrid-ai --target "$TEST_DIR" || die "Test restore failed."
+  restic restore "${SNAPSHOT_ID:-latest}" --tag haven --tag hybrid-ai --target "$TEST_DIR" || die "Test restore failed."
 
   STAGED="$(find "$TEST_DIR" -type d -name databases | head -n1)"
   [[ -n "$STAGED" ]] || die "Restored data contains no databases/ directory."
@@ -234,7 +236,7 @@ fi
 # ---------------------------------------------------------------------------
 if [[ "$MODE" == "interactive" ]]; then
   hr; printf '  Available snapshots\n'; hr
-  restic snapshots --tag hybrid-ai --compact
+  restic snapshots --tag haven --tag hybrid-ai --compact
   hr
   read -r -p "  Snapshot ID to restore (or 'latest'): " SNAPSHOT_ID < /dev/tty
   [[ -n "$SNAPSHOT_ID" ]] || die "No snapshot selected."
@@ -245,7 +247,7 @@ fi
 # ---------------------------------------------------------------------------
 log "Downloading snapshot ${SNAPSHOT_ID}..."
 rm -rf "$RESTORE_WORK"; mkdir -p "$RESTORE_WORK"; chmod 700 "$RESTORE_WORK"
-restic restore "$SNAPSHOT_ID" --tag hybrid-ai --target "$RESTORE_WORK" || die "Download failed."
+restic restore "$SNAPSHOT_ID" --tag haven --tag hybrid-ai --target "$RESTORE_WORK" || die "Download failed."
 
 STAGED="$(find "$RESTORE_WORK" -type d -name databases | head -n1)"
 [[ -n "$STAGED" ]] || die "Snapshot has no databases/ directory. Wrong snapshot?"
@@ -485,9 +487,9 @@ if [[ -f "${STAGED_ROOT}/env/.env" ]]; then
     chmod 600 "${HAVEN_ENV_FILE}.restored-${STAMP}"
     ok "Kept the existing .env. Backup copy saved as .env.restored-${STAMP} (0600)."
   else
-    cp -a "${STAGED_ROOT}/env/.env" "${HAVEN_ENV_FILE}"
-    chmod 600 "${HAVEN_ENV_FILE}"
-    ok "Restored .env (0600). Your RunPod settings are back."
+    cp -a "${STAGED_ROOT}/env/.env" "${HAVEN_ENV_FILE}.restored-${STAMP}"
+    chmod 600 "${HAVEN_ENV_FILE}.restored-${STAMP}"
+    warn "Saved historical configuration for review; it must not activate legacy paths or units."
   fi
 fi
 
@@ -501,8 +503,8 @@ if [[ -d "$HOST_SRC" ]]; then
 
   if [[ -f "${HOST_SRC}/docker-compose.override.yml" ]]; then
     if [[ ! -f "${HAVEN_APP_DIR}/docker-compose.override.yml" ]]; then
-      cp -a "${HOST_SRC}/docker-compose.override.yml" "${HAVEN_APP_DIR}/"
-      ok "Restored docker-compose.override.yml"
+      cp -a "${HOST_SRC}/docker-compose.override.yml" "${HAVEN_APP_DIR}/docker-compose.override.yml.restored-${STAMP}"
+      warn "Saved historical Compose override for review; it is not active."
     else
       warn "Existing docker-compose.override.yml kept; backup copy is in ${HOST_SRC}"
     fi
@@ -552,7 +554,7 @@ if [[ -d "$HOST_SRC" ]]; then
         # Existing container first; compose fallback covers a brand-new Pi.
         # Ollama is defined in the main file, so that file alone is enough.
         docker start ollama >/dev/null 2>&1 || \
-          docker compose -p hybrid-ai --env-file "${HAVEN_STACK_ENV_FILE}" \
+          docker compose -p haven --env-file "${HAVEN_STACK_ENV_FILE}" \
             --project-directory "${HAVEN_APP_DIR}" \
             -f "${HAVEN_APP_DIR}/docker-compose.yml" up -d ollama >/dev/null 2>&1 || true
         sleep 10

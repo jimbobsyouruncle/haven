@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: backup/system/hybrid-ai-backup-capture.timer
+# FILE: backup/system/haven-backup-capture.timer
 # PURPOSE (plain English):
 #   Decides WHEN the system-mode capture runs. Same schedule as the per-user
 #   timer it replaces: nightly at 03:15, run-on-boot if the Pi was off, and a
@@ -11,7 +11,7 @@
 # INSTALLED BY (card F later): install.sh in system mode enables this timer.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=Nightly hybrid-ai backup capture (system mode)
+Description=Nightly haven backup capture (system mode)
 
 [Timer]
 # 03:15 local time every day -- the same schedule as the user timer.

@@ -84,8 +84,8 @@
 #   BACKUP_CONTAINER_CONTROL=external means a root helper owns container
 #   control, so this script must call NO docker command at all -- no pause,
 #   inspect, exec, compose, version or stop. It reads which containers the
-#   helper paused from /run/hybrid-ai-backup/paused and the host facts the
-#   helper collected under /run/hybrid-ai-backup/host-info/, and the cold copy
+#   helper paused from /run/haven-backup/paused and the host facts the
+#   helper collected under /run/haven-backup/host-info/, and the cold copy
 #   is declined. That is the "system" half of the privilege split: the capture
 #   unit has read privilege (a capability) but no docker socket, and the upload
 #   unit has the credentials but no read privilege.
@@ -164,16 +164,16 @@ KEEP_WEEKLY="${KEEP_WEEKLY:-4}"
 KEEP_MONTHLY="${KEEP_MONTHLY:-6}"
 
 # When container control is external, this process must not call docker at all.
-# It learns what the root helper paused from /run/hybrid-ai-backup/paused and
-# copies the host facts the helper collected from /run/hybrid-ai-backup/host-info.
+# It learns what the root helper paused from /run/haven-backup/paused and
+# copies the host facts the helper collected from /run/haven-backup/host-info.
 EXTERNAL_CONTROL=0
 [[ "${BACKUP_CONTAINER_CONTROL:-self}" == "external" ]] && EXTERNAL_CONTROL=1
-CONTROL_RUN_DIR="${BACKUP_CONTROL_RUN_DIR:-/run/hybrid-ai-backup}"
+CONTROL_RUN_DIR="${BACKUP_CONTROL_RUN_DIR:-/run/haven-backup}"
 
 # Every compose file, so 'config --images' reports the full stack. The
 # resolved env file and the app directory are passed explicitly, so the stack
 # is the same one doctor.sh and install.sh operate on.
-COMPOSE=(docker compose -p hybrid-ai --env-file "$HAVEN_STACK_ENV_FILE"
+COMPOSE=(docker compose -p haven --env-file "$HAVEN_STACK_ENV_FILE"
          --project-directory "$HAVEN_APP_DIR"
          -f "$HAVEN_APP_DIR/docker-compose.yml"
          -f "$HAVEN_APP_DIR/openhands/docker-compose.openhands.yml"
@@ -677,7 +677,7 @@ fi
 CACHE_PROBE_MAXDEPTH=3
 
 _haven_cache_dir_writable() { # <dir>
-  local probe="${1}/.hybrid-ai-write-probe.$$"
+  local probe="${1}/.haven-write-probe.$$"
   ( : > "$probe" ) 2>/dev/null || return 1
   rm -f "$probe" 2>/dev/null || true
 }
@@ -726,7 +726,7 @@ prepare_restic_cache() {
   for fallback in \
       "${RUNTIME_DIRECTORY%%:*}/restic-cache" \
       "${HAVEN_WORK_DIR:-}/.restic-cache" \
-      "${TMPDIR:-/tmp}/hybrid-ai-restic-cache-$(id -u)"; do
+      "${TMPDIR:-/tmp}/haven-restic-cache-$(id -u)"; do
     [[ -n "$fallback" && "$fallback" != "/restic-cache" && "$fallback" != "/.restic-cache" ]] || continue
     if mkdir -p "$fallback" 2>/dev/null && _haven_cache_writable "$fallback"; then
       RESTIC_CACHE_DIR="$fallback"
@@ -743,7 +743,7 @@ prepare_restic_cache() {
     local owner mode fix
     owner="$(stat -c '%u:%g' "$offender" 2>/dev/null || echo unknown)"
     mode="$(stat -c '%a' "$offender" 2>/dev/null || echo unknown)"
-    fix="chown -R hybrid-ai-backup:hybrid-ai-backup ${offender}"
+    fix="chown -R haven-backup:haven-backup ${offender}"
     event "restic_cache_unusable" "severity=high" "path=${offender}" \
           "owner=${owner}" "mode=${mode}" "fix=${fix}"
     die "restic cache ${offender} is not writable by uid $(id -u) and no fallback cache is writable (owner=${owner} mode=${mode}). Fix: sudo ${fix}"
@@ -1377,7 +1377,7 @@ chmod -R go-rwx "$HOST_DIR" 2>/dev/null || true
 # STEP 5. Write a manifest
 # ---------------------------------------------------------------------------
 cat > "${STAGING_DIR}/MANIFEST.txt" <<MANIFEST
-hybrid-ai backup manifest
+haven backup manifest
 =========================
 created_utc        : $(date -u +%Y-%m-%dT%H:%M:%SZ)
 source_host        : ${BACKUP_HOST}
@@ -1399,7 +1399,7 @@ openhands/   ~/.openhands state; cache, temp, and logs excluded.
 host/        Compose files, scripts, Caddyfile, model list, host metadata.
 env/         Active .env configuration.
 
-To restore, see backup/restore.sh in the hybrid-ai repository.
+To restore, see backup/restore.sh in the haven repository.
 MANIFEST
 
 # ---------------------------------------------------------------------------
@@ -1504,7 +1504,7 @@ BACKUP_START=$SECONDS
 # after a pipeline resets it), then [0] is restic's own status and [1] tee's.
 if restic backup "$STAGING_DIR" \
       --host "$BACKUP_HOST" \
-      --tag hybrid-ai \
+      --tag haven \
       --tag "consistency:${CONSISTENCY}" \
       --tag "$COMPLETE_TAG" \
       --exclude-caches \
@@ -1541,7 +1541,8 @@ fi
 log "Applying retention policy (${KEEP_DAILY}d / ${KEEP_WEEKLY}w / ${KEEP_MONTHLY}m)..."
 if restic forget \
       --host "$BACKUP_HOST" \
-      --tag hybrid-ai \
+      --tag haven --tag hybrid-ai \
+      --group-by host,tags \
       --keep-daily "$KEEP_DAILY" \
       --keep-weekly "$KEEP_WEEKLY" \
       --keep-monthly "$KEEP_MONTHLY" \
@@ -1566,7 +1567,7 @@ fi
 # ---------------------------------------------------------------------------
 # STEP 9. Report
 # ---------------------------------------------------------------------------
-SNAP_COUNT="$(restic snapshots --host "$BACKUP_HOST" --tag hybrid-ai --json 2>/dev/null | jq 'length' 2>/dev/null || echo '?')"
+SNAP_COUNT="$(restic snapshots --host "$BACKUP_HOST" --tag haven --tag hybrid-ai --json 2>/dev/null | jq 'length' 2>/dev/null || echo '?')"
 event "backup_run_complete" "snapshots_retained=${SNAP_COUNT}"
 
 printf '\n'

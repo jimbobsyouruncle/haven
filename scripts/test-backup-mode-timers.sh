@@ -153,23 +153,23 @@ mkdir -p "$WORK/home"
 echo "== user mode =="
 run_doctor user
 assert "doctor (user) checks the user backup timer" \
-  bash -c "grep -q -- '--user is-active hybrid-ai-backup.timer' '$SYSCTL_LOG'"
+  bash -c "grep -q -- '--user is-active haven-backup.timer' '$SYSCTL_LOG'"
 assert "doctor (user) never uses --system for the backup timer" \
-  bash -c "! grep -q -- '--system is-active hybrid-ai-backup' '$SYSCTL_LOG'"
+  bash -c "! grep -q -- '--system is-active haven-backup' '$SYSCTL_LOG'"
 
 run_deploy user
 assert "deploy-remote (user) checks the user backup timer" \
-  bash -c "grep -q -- '--user is-active hybrid-ai-backup.timer' '$SYSCTL_LOG'"
+  bash -c "grep -q -- '--user is-active haven-backup.timer' '$SYSCTL_LOG'"
 
 run_collect user
 assert "collect-diagnostics (user) lists user timers" \
-  bash -c "grep -q -- '--user list-timers hybrid-ai-' '$SYSCTL_LOG'"
+  bash -c "grep -q -- '--user list-timers haven-' '$SYSCTL_LOG'"
 
 run_backup user
 assert "backup.sh (user) platform.txt reports the user timer" \
   bash -c "grep -qx 'backup_timer=enabled' '$APPD/.backup-staging/host/platform.txt'"
 assert "backup.sh (user) asked systemctl for the user backup timer" \
-  bash -c "grep -q -- '--user is-enabled hybrid-ai-backup.timer' '$SYSCTL_LOG'"
+  bash -c "grep -q -- '--user is-enabled haven-backup.timer' '$SYSCTL_LOG'"
 
 # ---------------------------------------------------------------------------
 # System mode: the capture timer through --system; no user-unit checks.
@@ -177,27 +177,27 @@ assert "backup.sh (user) asked systemctl for the user backup timer" \
 echo "== system mode =="
 run_doctor system
 assert "doctor (system) checks the system capture timer" \
-  bash -c "grep -q -- '--system is-active hybrid-ai-backup-capture.timer' '$SYSCTL_LOG'"
+  bash -c "grep -q -- '--system is-active haven-backup-capture.timer' '$SYSCTL_LOG'"
 assert "doctor (system) never checks the user backup timer" \
-  bash -c "! grep -q -- '--user is-active hybrid-ai-backup' '$SYSCTL_LOG'"
+  bash -c "! grep -q -- '--user is-active haven-backup' '$SYSCTL_LOG'"
 assert "doctor (system) skips the user-only linger check" \
   bash -c "! grep -qi 'Linger' '$WORK/doctor.system.out'"
 
 run_deploy system
 assert "deploy-remote (system) checks the system capture timer" \
-  bash -c "grep -q -- '--system is-active hybrid-ai-backup-capture.timer' '$SYSCTL_LOG'"
+  bash -c "grep -q -- '--system is-active haven-backup-capture.timer' '$SYSCTL_LOG'"
 
 run_collect system
 assert "collect-diagnostics (system) lists system timers" \
-  bash -c "grep -q -- '--system list-timers hybrid-ai-' '$SYSCTL_LOG'"
+  bash -c "grep -q -- '--system list-timers haven-' '$SYSCTL_LOG'"
 assert "collect-diagnostics (system) uses the capture-unit journal" \
-  bash -c "grep -q -- '--system -u hybrid-ai-backup-capture.service' '$JOURNALCTL_LOG'"
+  bash -c "grep -q -- '--system -u haven-backup-capture.service' '$JOURNALCTL_LOG'"
 
 run_backup system
 assert "backup.sh (system) platform.txt reports the system timer" \
   bash -c "grep -qx 'backup_timer=enabled' '$APPD/.backup-staging/host/platform.txt'"
 assert "backup.sh (system) asked systemctl for the capture timer" \
-  bash -c "grep -q -- '--system is-enabled hybrid-ai-backup-capture.timer' '$SYSCTL_LOG'"
+  bash -c "grep -q -- '--system is-enabled haven-backup-capture.timer' '$SYSCTL_LOG'"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

@@ -52,7 +52,7 @@
 #   To refresh on a schedule the owner installs a timer BY HAND, e.g. a daily
 #   systemd timer (see hermes/README.md) or this crontab line:
 #
-#     17 4 * * * cd /home/youruser/hybrid-ai && ./scripts/sync-agent-repos.sh >> install.log 2>&1
+#     17 4 * * * cd /home/youruser/haven && ./scripts/sync-agent-repos.sh >> install.log 2>&1
 #
 # FLAGS:
 #   --dry-run            List the API and manifest inventories and the planned
@@ -185,7 +185,7 @@ MAX_AGE_HOURS="${MAX_AGE_HOURS:-48}"
 # --- Resolve the reference-tree directory ----------------------------------
 # Resolved by the shared helper: environment, then the env file, then a sibling
 # default. Never the deployment directory: a separate tree is the whole point.
-DEFAULT_AGENT_REPOS_DIR="${HOME}/hybrid-ai-repos"
+DEFAULT_AGENT_REPOS_DIR="${HOME}/haven-repos"
 [[ -n "$AGENT_REPOS_DIR" ]] || die "AGENT_REPOS_DIR resolved to an empty path."
 
 # --- Resolve the OpenHands workspace (only for the refusal check) ----------

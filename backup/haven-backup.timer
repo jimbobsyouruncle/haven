@@ -1,16 +1,16 @@
 # ---------------------------------------------------------------------------
-# FILE: backup/hybrid-ai-backup.timer
+# FILE: backup/haven-backup.timer
 # PURPOSE (plain English):
 #   Decides WHEN the nightly backup runs. The .service file decides how.
 #
 #   Enable it with:
-#     systemctl --user enable --now hybrid-ai-backup.timer
+#     systemctl --user enable --now haven-backup.timer
 #   Check the next run:
-#     systemctl --user list-timers hybrid-ai-backup.timer
+#     systemctl --user list-timers haven-backup.timer
 # ---------------------------------------------------------------------------
 [Unit]
-Description=Nightly hybrid-ai backup to Cloudflare R2
-Documentation=file://%h/hybrid-ai/backup/README.md
+Description=Nightly haven backup to Cloudflare R2
+Documentation=file://%h/haven/backup/README.md
 
 [Timer]
 # 03:15 local time every day -- late enough to be quiet, not on the hour where

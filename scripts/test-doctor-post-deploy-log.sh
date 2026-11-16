@@ -326,10 +326,10 @@ if grep -q "post-deploy verification reported 'FAIL: run 123 conclusion failure'
 else
   fail "fail verdict: no warn quoting the FAIL verdict for ${SHA12_FAIL}"
 fi
-if grep -q "journalctl -u 'hybrid-ai-post-deploy-verify-\*'" "$OUT"; then
+if grep -q "journalctl -u 'haven-post-deploy-verify-\*'" "$OUT"; then
   pass "fail verdict: the remedy names journalctl for the verifier units"
 else
-  fail "fail verdict: the remedy does not name journalctl -u 'hybrid-ai-post-deploy-verify-*'"
+  fail "fail verdict: the remedy does not name journalctl -u 'haven-post-deploy-verify-*'"
 fi
 if [[ "$RC_FAIL" == "1" ]]; then
   pass "fail verdict: exit code is 1"
@@ -379,10 +379,10 @@ if grep -q "post-deploy verification for ${SHA12_ABANDONED} has no verdict and i
 else
   fail "abandoned wait: no warn about the abandoned verification for ${SHA12_ABANDONED}"
 fi
-if grep -q "journalctl -u 'hybrid-ai-post-deploy-verify-\*'" "$OUT"; then
+if grep -q "journalctl -u 'haven-post-deploy-verify-\*'" "$OUT"; then
   pass "abandoned wait: the remedy names journalctl for the verifier units"
 else
-  fail "abandoned wait: the remedy does not name journalctl -u 'hybrid-ai-post-deploy-verify-*'"
+  fail "abandoned wait: the remedy does not name journalctl -u 'haven-post-deploy-verify-*'"
 fi
 if [[ "$RC_ABANDONED" == "1" ]]; then
   pass "abandoned wait: exit code is 1, never 2"
@@ -427,10 +427,10 @@ if grep -q "has no parseable 'waiting for <sha> at <ts>' line" "$OUT"; then
 else
   fail "no waiting line: no warn about the missing waiting line (silent pass?)"
 fi
-if grep -q "journalctl -u 'hybrid-ai-post-deploy-verify-\*'" "$OUT"; then
+if grep -q "journalctl -u 'haven-post-deploy-verify-\*'" "$OUT"; then
   pass "no waiting line: the remedy names journalctl for the verifier units"
 else
-  fail "no waiting line: the remedy does not name journalctl -u 'hybrid-ai-post-deploy-verify-*'"
+  fail "no waiting line: the remedy does not name journalctl -u 'haven-post-deploy-verify-*'"
 fi
 if [[ "$RC_GARBAGE" == "1" ]]; then
   pass "no waiting line: exit code is 1"
@@ -470,10 +470,10 @@ if grep -q "is empty: the post-deploy verifier never wrote anything" "$OUT"; the
 else
   fail "0-byte log: no warn about the empty log"
 fi
-if grep -q "journalctl -u 'hybrid-ai-post-deploy-verify-\*'" "$OUT"; then
+if grep -q "journalctl -u 'haven-post-deploy-verify-\*'" "$OUT"; then
   pass "0-byte log: the remedy names journalctl for the verifier units"
 else
-  fail "0-byte log: the remedy does not name journalctl -u 'hybrid-ai-post-deploy-verify-*'"
+  fail "0-byte log: the remedy does not name journalctl -u 'haven-post-deploy-verify-*'"
 fi
 if [[ "$RC_EMPTY" == "1" ]]; then
   pass "0-byte log: exit code is 1"

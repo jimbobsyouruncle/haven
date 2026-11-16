@@ -141,7 +141,7 @@ try:
         ok("FAIL -> detail quotes the verdict and the short sha")
     else:
         bad(f"FAIL -> detail does not quote the verdict/sha: {tile['detail']!r}")
-    if "hybrid-ai-post-deploy-verify" in tile["hint"]:
+    if "haven-post-deploy-verify" in tile["hint"]:
         ok("FAIL -> hint names the verifier units")
     else:
         bad(f"FAIL -> hint does not name the verifier units: {tile['hint']!r}")

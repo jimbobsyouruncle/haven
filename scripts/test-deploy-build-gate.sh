@@ -60,7 +60,7 @@ BASE_DIGEST="sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab
 cat > "$FIX/hermes/Dockerfile" <<EOF
 FROM python:3.11-slim@${BASE_DIGEST}
 ARG BUILD_INPUTS_SHA=unknown
-LABEL org.hybrid-ai.build-inputs-sha="\$BUILD_INPUTS_SHA"
+LABEL org.haven.build-inputs-sha="\$BUILD_INPUTS_SHA"
 ARG HERMES_COMMIT=3d0a61ac94e1181985177fdd975c4efeb478e9b7
 ARG HERMES_INSTALL_SHA256=25d3c95550e5ed7c0eec180a7d78dde765721c4e33639ab257c154c0a6e7554f
 ARG HERMES_WEBUI_COMMIT=1e2e4dde6520e5d96bb5b20dfb2f65aa890eeb5e
@@ -90,7 +90,7 @@ decide() {
   bash -c '
     set -uo pipefail
     source "$1" || exit 9
-    build_gate_decide "$2" "${3:-}" hybrid-ai-hermes:latest
+    build_gate_decide "$2" "${3:-}" haven-hermes:latest
     printf "%s:%s\n" "$BUILD_GATE_DECISION" "$BUILD_GATE_REASON"
   ' _ "$LIB" "$FIX" "${1:-}" 2>/dev/null
 }

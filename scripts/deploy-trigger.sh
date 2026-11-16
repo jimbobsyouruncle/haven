@@ -5,14 +5,14 @@ set -Eeuo pipefail
 # PURPOSE (plain English):
 #   The CLIENT half of the headless deploy. The GitHub deploy job runs this
 #   script with the validated commit as its single argument. It connects to the
-#   Pi over SSH as the dedicated `hybrid-ai-deploy` account and sends EXACTLY
+#   Pi over SSH as the dedicated `haven-deploy` account and sends EXACTLY
 #   one command string:
 #
 #       deploy <40-lowercase-hex>
 #
 #   The account's authorized_keys line pins the forced command
 #   (scripts/deploy-forced-command.sh), so that is the one and only thing this
-#   connection can do: start the system unit hybrid-ai-deploy@<sha>.service.
+#   connection can do: start the system unit haven-deploy@<sha>.service.
 #   The unit runs scripts/deploy-instance.sh, which does the ancestor check,
 #   the reset to the SHA and the HEAD assert. This script never runs git and
 #   never sends a shell script, a heredoc, or an extra argument.
@@ -72,12 +72,12 @@ fi
 
 # The account is fixed: the forced command is wired into its authorized_keys
 # line. The client never chooses a different login name.
-DEPLOY_USER="hybrid-ai-deploy"
+DEPLOY_USER="haven-deploy"
 
 # --- 3. Temporary key material, mode 0600, under $RUNNER_TEMP ---------------
 RUNNER_TMP="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
-KEY_FILE="${RUNNER_TMP}/hybrid-ai-deploy-key"
-KNOWN_HOSTS_FILE="${RUNNER_TMP}/hybrid-ai-deploy-known_hosts"
+KEY_FILE="${RUNNER_TMP}/haven-deploy-key"
+KNOWN_HOSTS_FILE="${RUNNER_TMP}/haven-deploy-known_hosts"
 
 # Remove the private key and the scanned host key on EVERY exit path.
 trap 'rm -f -- "$KEY_FILE" "$KNOWN_HOSTS_FILE"' EXIT

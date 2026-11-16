@@ -102,7 +102,7 @@ read-only as a single file at `/data/backup.log` (`BACKUP_LOG_PATH`). The host
 side of that mount is `${BACKUP_LOG:?BACKUP_LOG must be set - run ./install.sh}`:
 `scripts/lib/haven-env.sh` resolves it once from the mode, and `install.sh`
 writes that resolved value into the stack env file. In system mode it is the
-units' `LogsDirectory=` file (`/var/log/hybrid-ai-backup/backup.log`); in user
+units' `LogsDirectory=` file (`/var/log/haven-backup/backup.log`); in user
 mode it is `$HAVEN_LOG_DIR/backup.log`, exactly as before. Writer and reader
 therefore name one path, which is why `Backup: ok` appears after a real success.
 
@@ -121,9 +121,9 @@ When the last success is stale enough to warn or fail, the tile's hint names the
 journal command for the mode this host installed, read from the **last**
 `backup_schedule_installed` event in the install log (already mounted read-only
 at `INSTALL_LOG_PATH`): `mode=system` names
-`sudo journalctl -u hybrid-ai-backup-upload.service -n 50`, anything else (user
+`sudo journalctl -u haven-backup-upload.service -n 50`, anything else (user
 mode, no such event, or an unreadable or missing log) keeps the user-mode
-string `journalctl --user -u hybrid-ai-backup.service -n 50`. The Jobs tile's
+string `journalctl --user -u haven-backup.service -n 50`. The Jobs tile's
 Backup-overdue hint uses the same command.
 
 A failed run writes **two** `event=backup_failed` lines (`backup.sh`'s `die()`
@@ -138,7 +138,7 @@ identical: a host whose backups worked but whose log the container could not
 read reported the same quiet message as a host with no log at all.
 
 The reader reaches the log through exactly one supplementary group. In system
-mode the writer keeps the log at mode **0640** owned by `hybrid-ai-backup`, and
+mode the writer keeps the log at mode **0640** owned by `haven-backup`, and
 `docker-compose.yml` gives this service that group's gid through
 `BACKUP_GROUP_GID` (`group_add`). The service still runs as uid 1000, keeps its
 primary gid for the Docker socket, drops every capability, and stays read-only
@@ -150,10 +150,10 @@ primary gid, so it gains nothing.
 A deploy runs `scripts/run-post-deploy-verify.sh` in a transient unit after every deploy. That unit appends one block per run to its log: a header `waiting for <40-hex-sha> at <UTC-timestamp>`, then exactly one verdict — `PASS`, `FAIL: <detail>` or `TIMEOUT: <detail>`. The **Deploy verification** tile reads the **last** block:
 
 - **`ok`** — the revision verified: the tile names the short sha and the timestamp.
-- **`fail`** — the verifier reported `FAIL` or `TIMEOUT`; the tile quotes the verdict and points at `journalctl -u 'hybrid-ai-post-deploy-verify-*'` for the full run.
+- **`fail`** — the verifier reported `FAIL` or `TIMEOUT`; the tile quotes the verdict and points at `journalctl -u 'haven-post-deploy-verify-*'` for the full run.
 - **`warn`** — no verdict is readable: the log is absent, empty, a directory (Docker creates one when the bind source does not exist yet), unreadable by the status container, or has no parseable `waiting for` line. The detail says which.
 
-The log is mounted **read-only, single file** into the container at `/data/post-deploy-verify.log` from `${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}`, the same pattern as `backup.log` and `install.log`. It holds only shas, timestamps and verdict lines — no credential, no environment value — and every emitted string still passes `redact()`.
+The log is mounted **read-only, single file** into the container at `/data/post-deploy-verify.log` from `${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/haven-post-deploy-verify.log}`, the same pattern as `backup.log` and `install.log`. It holds only shas, timestamps and verdict lines — no credential, no environment value — and every emitted string still passes `redact()`.
 
 This complements the check `doctor.sh` added in PR #94, which surfaces the verdict at the **next** deploy; this tile is visible within about a minute of the verdict being written.
 
@@ -307,7 +307,7 @@ It also means no build step: `app.py` is mounted read-only into the stock `pytho
 | `backup.log` mounted as a directory | Docker created it before the file existed | `./install.sh` now detects and repairs this automatically. The host side is the resolved `BACKUP_LOG` (`${BACKUP_LOG:?BACKUP_LOG must be set - run ./install.sh}`) |
 | Backups says "no successful backup recorded" though backups succeed | The container is reading a different file than the units write | `BACKUP_LOG` must resolve to the units' log in system mode. Re-run `./install.sh` so the stack env file carries the resolved value; see `docs/TROUBLESHOOTING.md` |
 | Download button fails | The service errored while building | Check `docker compose --env-file .env logs status` |
-| Page loads but every check fails | The status container cannot reach the others | Confirm all are on the `hybrid-ai` network: `docker network inspect hybrid-ai` |
+| Page loads but every check fails | The status container cannot reach the others | Confirm all are on the `haven` network: `docker network inspect haven` |
 
 ### Backed up
 

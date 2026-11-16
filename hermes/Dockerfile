@@ -4,7 +4,7 @@ FROM python:3.11-slim@sha256:cce12316475d7d56d605f76e1d811d0dc4e7227f2d4afd29951
 # image was built (install.sh passes it; see scripts/lib/build-gate.sh). The
 # default keeps a hand-run `docker build` working.
 ARG BUILD_INPUTS_SHA=unknown
-LABEL org.hybrid-ai.build-inputs-sha="$BUILD_INPUTS_SHA"
+LABEL org.haven.build-inputs-sha="$BUILD_INPUTS_SHA"
 
 # Install system dependencies
 # Add retry flags and quiet output to prevent mirror timeouts

@@ -37,8 +37,8 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 SCRIPT="${SCRIPT_DIR}/deploy-forced-command.sh"
-UNIT_FILE="${REPO}/deploy/hybrid-ai-deploy@.service"
-POLKIT_FILE="${REPO}/deploy/50-hybrid-ai-deploy.rules"
+UNIT_FILE="${REPO}/deploy/haven-deploy@.service"
+POLKIT_FILE="${REPO}/deploy/50-haven-deploy.rules"
 
 for f in "$SCRIPT" "$UNIT_FILE" "$POLKIT_FILE"; do
   [[ -f "$f" ]] || { echo "FATAL: cannot find $f" >&2; exit 1; }
@@ -99,8 +99,8 @@ else
   bad "accepted command exited $rc (want 0)"
   sed 's/^/      /' "$WORKDIR/out" >&2 || true
 fi
-if has_line "$SYSCTL_LOG" "start hybrid-ai-deploy@${SHA}.service"; then
-  ok "started the exact system unit hybrid-ai-deploy@<sha>.service"
+if has_line "$SYSCTL_LOG" "start haven-deploy@${SHA}.service"; then
+  ok "started the exact system unit haven-deploy@<sha>.service"
 else
   bad "did not start the expected unit"
 fi
@@ -109,7 +109,7 @@ if hasnt_regex "$SYSCTL_LOG" '--user'; then
 else
   bad "invoked a user manager (--user present)"
 fi
-if has_line "$SYSCTL_LOG" "show -p Result --value hybrid-ai-deploy@${SHA}.service"; then
+if has_line "$SYSCTL_LOG" "show -p Result --value haven-deploy@${SHA}.service"; then
   ok "read back the unit's Result"
 else
   bad "did not read back the unit Result"
@@ -236,8 +236,8 @@ EOF
       bad "layout-only split: exited $split_rc (want 0)"
       sed 's/^/      /' "$WORKDIR/out" >&2 || true
     fi
-    if has_line "$SYSCTL_LOG" "start hybrid-ai-deploy@${SHA}.service"; then
-      ok "layout-only split: started the exact system unit hybrid-ai-deploy@<sha>.service"
+    if has_line "$SYSCTL_LOG" "start haven-deploy@${SHA}.service"; then
+      ok "layout-only split: started the exact system unit haven-deploy@<sha>.service"
     else
       bad "layout-only split: did not start the expected unit"
     fi
@@ -253,10 +253,10 @@ fi
 echo "== static checks =="
 # The polkit rule must contain the exact user, action id, verb and unit regex.
 for needle in \
-  'subject.user == "hybrid-ai-deploy"' \
+  'subject.user == "haven-deploy"' \
   'org.freedesktop.systemd1.manage-units' \
   '"start"' \
-  '/^hybrid-ai-deploy@[0-9a-f]{40}\.service$/'; do
+  '/^haven-deploy@[0-9a-f]{40}\.service$/'; do
   if has_line "$POLKIT_FILE" "$needle"; then
     ok "polkit rule contains: ${needle}"
   else

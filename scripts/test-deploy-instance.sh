@@ -30,7 +30,7 @@ unset HAVEN_REPOSITORY_SLUG
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 SCRIPT="${SCRIPT_DIR}/deploy-instance.sh"
-UNIT_FILE="${REPO}/deploy/hybrid-ai-deploy@.service"
+UNIT_FILE="${REPO}/deploy/haven-deploy@.service"
 
 for f in "$SCRIPT" "$UNIT_FILE"; do
   [[ -f "$f" ]] || { echo "FATAL: cannot find $f" >&2; exit 1; }
@@ -222,6 +222,18 @@ else
   bad "a failed fetch exited $rc (want 6)"
 fi
 
+echo "== canonical lock excludes a legacy dispatcher =="
+exec 7>"${LOCK}.haven"
+flock -n 7
+: > "$GIT_LOG"
+rc="$(run_instance "$WORK/canonical-lock.out")"
+if [[ "$rc" == 3 && ! -s "$GIT_LOG" ]]; then
+  ok "canonical lock blocks before Git or log mutation"
+else
+  bad "canonical lock did not exclude the dispatcher"
+fi
+exec 7>&-
+
 echo "== lock held: a second run is refused (exit 3) =="
 : > "$DEPLOY_MARKER"
 DEPLOY_REMOTE_SLEEP=3 run_instance "$WORK/lock1.out" >"$WORK/lock1.rc" 2>&1 &
@@ -253,7 +265,7 @@ check_line "$UNIT_FILE" 'Type=oneshot' "unit is Type=oneshot"
 check_line "$UNIT_FILE" 'User=root' "unit runs as root"
 check_line "$UNIT_FILE" 'ExecStart=/opt/haven/scripts/deploy-instance.sh %i' "unit execs deploy-instance.sh %i"
 check_line "$UNIT_FILE" 'WorkingDirectory=/opt/haven' "unit WorkingDirectory is /opt/haven"
-check_line "$UNIT_FILE" 'Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env' "unit sets the env file path"
+check_line "$UNIT_FILE" 'Environment=HAVEN_ENV_FILE=/etc/haven/haven.env' "unit sets the env file path"
 check_line "$UNIT_FILE" 'TimeoutStartSec=45min' "unit TimeoutStartSec is 45min"
 
 # The workflow step must outlive the unit, so the step sees the real Result=
@@ -305,7 +317,7 @@ echo "== systemd-analyze verify, with both stub directions =="
 # Same tolerance as scripts/test-backup-system-units.sh: skip only when EVERY
 # diagnostic is the missing-host-path form for /opt/haven; any other
 # diagnostic is a failure. A template unit is reported under its INSTANTIATED
-# name (e.g. hybrid-ai-deploy@test_instance.service), so the check matches the
+# name (e.g. haven-deploy@test_instance.service), so the check matches the
 # `... is not executable: No such file or directory` tail for a /opt/haven
 # command rather than the literal file base.
 run_verify() {

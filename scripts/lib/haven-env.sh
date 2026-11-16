@@ -19,7 +19,7 @@
 #   but a fallback layout file DOES exist, the fallback is used. The fallback
 #   location is a NAMED environment variable:
 #
-#     HAVEN_ENV_FILE_FALLBACK   (default: /etc/hybrid-ai/hybrid-ai.env)
+#     HAVEN_ENV_FILE_FALLBACK   (default: /etc/haven/haven.env)
 #
 #   The default is the LAYOUT file scripts/bootstrap.sh writes on a bootstrapped
 #   host (mode 0644, paths and names only). The fallback is the LAYOUT file and
@@ -33,8 +33,8 @@
 #   hands to `docker compose`; it holds the stack's secrets. On a host with no
 #   bootstrap, the two are the same file, so every resolved path and command
 #   line is unchanged. After scripts/bootstrap.sh they differ:
-#   HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env (0644) and
-#   HAVEN_STACK_ENV_FILE=/etc/hybrid-ai/stack.env (0600). install.sh writes
+#   HAVEN_ENV_FILE=/etc/haven/haven.env (0644) and
+#   HAVEN_STACK_ENV_FILE=/etc/haven/stack.env (0600). install.sh writes
 #   ONLY the stack file, so a deploy can never erase the layout.
 #
 #   It also resolves the settings that already existed, with the SAME names and
@@ -48,7 +48,7 @@
 #   deploy hook, install.sh and doctor.sh cannot disagree about either path:
 #
 #     HAVEN_POST_DEPLOY_VERIFY_CMD  default /usr/local/sbin/run-post-deploy-verify.sh
-#     HAVEN_POST_DEPLOY_VERIFY_LOG  default /var/log/hybrid-ai-post-deploy-verify.log
+#     HAVEN_POST_DEPLOY_VERIFY_LOG  default /var/log/haven-post-deploy-verify.log
 #
 #   They are TEST SEAMS, not documented settings: no .env.example entry and no
 #   install.sh template entry. With nothing set they resolve byte-identically to
@@ -333,7 +333,7 @@ haven_env_dirs() {
 
 # The LAYOUT file a bootstrapped host uses when $HAVEN_APP_DIR/.env is
 # absent. Overridable so tests (and unusual hosts) can relocate the probe.
-HAVEN_ENV_FILE_FALLBACK_DEFAULT="/etc/hybrid-ai/hybrid-ai.env"
+HAVEN_ENV_FILE_FALLBACK_DEFAULT="/etc/haven/haven.env"
 
 # --- Resolve everything -----------------------------------------------------
 haven_env_load() {
@@ -350,7 +350,7 @@ haven_env_load() {
   fi
 
   # Bootstrap FALLBACK (D10): on a bootstrapped host the layout moved to
-  # /etc/hybrid-ai/hybrid-ai.env, so $APP_DIR/.env legitimately does not exist.
+  # /etc/haven/haven.env, so $APP_DIR/.env legitimately does not exist.
   # When HAVEN_ENV_FILE is UNSET and the primary candidate is absent, but a
   # fallback LAYOUT file exists, probe it. An explicit HAVEN_ENV_FILE always
   # wins and is never overridden; an existing $APP_DIR/.env is never replaced.
@@ -411,7 +411,7 @@ haven_env_load() {
   # DEFAULTS to the resolved layout file, so with nothing set the stack file and
   # the layout file are the same path and every command line is byte-identical
   # to before this setting existed. scripts/bootstrap.sh points it elsewhere
-  # (/etc/hybrid-ai/stack.env) so the secrets and the layout can move apart.
+  # (/etc/haven/stack.env) so the secrets and the layout can move apart.
   #
   # STACK_ENV_FILE may itself be named by the layout file, so it is read with
   # the stack setting's name as the fail-closed label.
@@ -432,10 +432,10 @@ haven_env_load() {
   # Kept settings -- same names, same defaults as before this helper existed.
   _haven_resolve_scalar HAVEN_UID "" "$ef" || return 1
   _haven_resolve_scalar HAVEN_GID "" "$ef" || return 1
-  _haven_resolve_path OPENHANDS_WORKSPACE "${HOME:-}/hybrid-ai-agent" "$ef" || return 1
-  _haven_resolve_path AGENT_REPOS_DIR     "${HOME:-}/hybrid-ai-repos" "$ef" || return 1
+  _haven_resolve_path OPENHANDS_WORKSPACE "${HOME:-}/haven-agent" "$ef" || return 1
+  _haven_resolve_path AGENT_REPOS_DIR     "${HOME:-}/haven-repos" "$ef" || return 1
   _haven_resolve_path OPENHANDS_STATE_DIR "${HOME:-}/.openhands"      "$ef" || return 1
-  _haven_resolve_path BACKUP_CONF_DIR     "${HOME:-}/.config/hybrid-ai-backup" "$ef" || return 1
+  _haven_resolve_path BACKUP_CONF_DIR     "${HOME:-}/.config/haven-backup" "$ef" || return 1
   _haven_resolve_path RESTIC_CACHE_DIR    "${HOME:-}/.cache/restic"   "$ef" || return 1
   # Durable per-user Hermes state captured by the backup. Derived from HOME by
   # default (exactly where backup.sh and restore.sh already looked), but now a
@@ -449,7 +449,7 @@ haven_env_load() {
   _haven_resolve_path HAVEN_POST_DEPLOY_VERIFY_CMD \
     "/usr/local/sbin/run-post-deploy-verify.sh" "$ef" || return 1
   _haven_resolve_path HAVEN_POST_DEPLOY_VERIFY_LOG \
-    "/var/log/hybrid-ai-post-deploy-verify.log" "$ef" || return 1
+    "/var/log/haven-post-deploy-verify.log" "$ef" || return 1
 
   # --- Mode selectors -------------------------------------------------------
   # HAVEN_BACKUP_MODE picks WHICH system units run the backup. "user" keeps
@@ -482,7 +482,7 @@ haven_env_load() {
 
   # BACKUP_LOG keeps its name. In user mode its default is unchanged:
   # $LOG_DIR/backup.log. In SYSTEM mode the backup runs as a systemd unit and
-  # its log lives in the unit's LogsDirectory= (/var/log/hybrid-ai-backup), the
+  # its log lives in the unit's LogsDirectory= (/var/log/haven-backup), the
   # one directory systemd grants write access to under ProtectSystem= strict.
   # Resolving the SAME path here means the units, doctor.sh and install.sh all
   # watch ONE file; the defect was two paths, so doctor.sh watched a file the
@@ -490,7 +490,7 @@ haven_env_load() {
   # A SET value (environment or env file) still wins in both modes.
   local backup_log_default="${HAVEN_LOG_DIR}/backup.log"
   if [[ "$HAVEN_BACKUP_MODE" == "system" ]]; then
-    backup_log_default="/var/log/hybrid-ai-backup/backup.log"
+    backup_log_default="/var/log/haven-backup/backup.log"
   fi
   _haven_resolve_path BACKUP_LOG "$backup_log_default" "$ef" || return 1
   unset backup_log_default
@@ -502,16 +502,16 @@ haven_env_load() {
   # in user mode they live in BACKUP_CONF_DIR, exactly as today. Names and paths
   # only -- never a value.
   if [[ "$HAVEN_BACKUP_MODE" == "system" ]]; then
-    HAVEN_BACKUP_TIMER_UNIT="hybrid-ai-backup-capture.timer"
-    HAVEN_BACKUP_SERVICE_UNIT="hybrid-ai-backup-capture.service"
-    HAVEN_BACKUP_CHECK_TIMER_UNIT="hybrid-ai-backup-check.timer"
+    HAVEN_BACKUP_TIMER_UNIT="haven-backup-capture.timer"
+    HAVEN_BACKUP_SERVICE_UNIT="haven-backup-capture.service"
+    HAVEN_BACKUP_CHECK_TIMER_UNIT="haven-backup-check.timer"
     HAVEN_BACKUP_SYSTEMCTL_SCOPE="--system"
     HAVEN_BACKUP_JOURNAL_SCOPE="--system"
-    _haven_backup_cred_default="/etc/credstore/hybrid-ai-backup"
+    _haven_backup_cred_default="/etc/credstore/haven-backup"
   else
-    HAVEN_BACKUP_TIMER_UNIT="hybrid-ai-backup.timer"
-    HAVEN_BACKUP_SERVICE_UNIT="hybrid-ai-backup.service"
-    HAVEN_BACKUP_CHECK_TIMER_UNIT="hybrid-ai-check.timer"
+    HAVEN_BACKUP_TIMER_UNIT="haven-backup.timer"
+    HAVEN_BACKUP_SERVICE_UNIT="haven-backup.service"
+    HAVEN_BACKUP_CHECK_TIMER_UNIT="haven-check.timer"
     HAVEN_BACKUP_SYSTEMCTL_SCOPE="--user"
     HAVEN_BACKUP_JOURNAL_SCOPE="--user"
     _haven_backup_cred_default="$BACKUP_CONF_DIR"

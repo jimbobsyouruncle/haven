@@ -67,12 +67,12 @@ APP_DIR="$HAVEN_APP_DIR"
 # file may be 0644 and is never written here. No path is hardcoded.
 ENV_FILE="$HAVEN_STACK_ENV_FILE"
 HERMES_CONFIG="${HAVEN_HERMES_DATA_DIR}/config.yaml"
-COMPOSE=(docker compose -p hybrid-ai --env-file "$ENV_FILE" --project-directory "$APP_DIR"
+COMPOSE=(docker compose -p haven --env-file "$ENV_FILE" --project-directory "$APP_DIR"
          -f "$APP_DIR/docker-compose.yml"
          -f "$APP_DIR/openhands/docker-compose.openhands.yml"
          -f "$APP_DIR/hermes/docker-compose.hermes.yml")
 
-AUTH_CONTAINER="hybrid-ai-auth"
+AUTH_CONTAINER="haven-auth"
 WEBUI_CONTAINER="open-webui"
 HERMES_CONTAINER="hermes-agent"
 AUTH_HASH_KEY="HAVEN_AUTH_HASH"
@@ -289,7 +289,7 @@ _preserve_owner_mode() {
 # ---------------------------------------------------------------------------
 auth_hash_program() {
   cat <<'PY'
-# hybrid-ai-reset-passwords: auth-hash
+# haven-reset-passwords: auth-hash
 import sys
 
 import bcrypt
@@ -304,7 +304,7 @@ PY
 
 auth_length_program() {
   cat <<'PY'
-# hybrid-ai-reset-passwords: auth-hash-length
+# haven-reset-passwords: auth-hash-length
 import os
 import sys
 
@@ -314,7 +314,7 @@ PY
 
 webui_admin_list_program() {
   cat <<'PY'
-# hybrid-ai-reset-passwords: webui-admins
+# haven-reset-passwords: webui-admins
 import asyncio
 import json
 
@@ -337,7 +337,7 @@ PY
 
 webui_set_password_program() {
   cat <<'PY'
-# hybrid-ai-reset-passwords: webui-set-password
+# haven-reset-passwords: webui-set-password
 import asyncio
 import os
 import sys
@@ -365,7 +365,7 @@ PY
 
 hermes_probe_program() {
   cat <<'PY'
-# hybrid-ai-reset-passwords: hermes-probe
+# haven-reset-passwords: hermes-probe
 import sys
 
 import yaml
@@ -402,7 +402,7 @@ PY
 
 hermes_hash_program() {
   cat <<'PY'
-# hybrid-ai-reset-passwords: hermes-hash
+# haven-reset-passwords: hermes-hash
 import inspect
 import sys
 
@@ -442,7 +442,7 @@ PY
 
 hermes_verify_program() {
   cat <<'PY'
-# hybrid-ai-reset-passwords: hermes-verify
+# haven-reset-passwords: hermes-verify
 import json
 import sys
 
@@ -492,7 +492,7 @@ PY
 
 hermes_roundtrip_program() {
   cat <<'PY'
-# hybrid-ai-reset-passwords: hermes-roundtrip
+# haven-reset-passwords: hermes-roundtrip
 import json
 import sys
 

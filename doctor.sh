@@ -126,7 +126,7 @@ runpod_skip() { (( QUIET )) || printf '  %s-%s RunPod API-key check skipped (%s)
 runpod_key_check() {
   local key="$1" pod="$2"
   local dir cfg payload body code rc query desired errlow
-  dir="$(mktemp -d "${TMPDIR:-/tmp}/hybrid-ai-doctor-runpod.XXXXXX" 2>/dev/null)"
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/haven-doctor-runpod.XXXXXX" 2>/dev/null)"
   if [[ -z "$dir" ]]; then
     runpod_skip "no writable temp directory"
     return 0
@@ -210,11 +210,11 @@ container_env() {
 # BOTH resolved env files are passed: the layout file holds the host paths and
 # identity settings, the stack file holds the runtime config and secrets. When
 # the two resolve to the same path, passing it twice is accepted.
-COMPOSE_CMD="docker compose -p hybrid-ai --env-file ${HAVEN_ENV_FILE} --env-file ${ENV_FILE} --project-directory ${APP_DIR} -f ${APP_DIR}/docker-compose.yml -f ${APP_DIR}/openhands/docker-compose.openhands.yml -f ${APP_DIR}/hermes/docker-compose.hermes.yml"
+COMPOSE_CMD="docker compose -p haven --env-file ${HAVEN_ENV_FILE} --env-file ${ENV_FILE} --project-directory ${APP_DIR} -f ${APP_DIR}/docker-compose.yml -f ${APP_DIR}/openhands/docker-compose.openhands.yml -f ${APP_DIR}/hermes/docker-compose.hermes.yml"
 
 (( QUIET )) || {
   printf '%s\n' "============================================================"
-  printf '  hybrid-ai health check  ::  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+  printf '  haven health check  ::  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
   printf '%s\n' "============================================================"
 }
 
@@ -578,7 +578,7 @@ fi
 # ---------------------------------------------------------------------------
 section "Containers"
 
-for svc in ollama open-webui hybrid-ai-status hybrid-ai-proxy hybrid-ai-openhands; do
+for svc in ollama open-webui haven-status haven-proxy haven-openhands; do
   STATE="$(docker inspect -f '{{.State.Status}}' "$svc" 2>/dev/null)"
   case "$STATE" in
     running)
@@ -603,7 +603,7 @@ for svc in ollama open-webui hybrid-ai-status hybrid-ai-proxy hybrid-ai-openhand
       ;;
     "")
       # A failed 'compose up' can leave the container renamed with its old ID
-      # as a prefix (e.g. 5d0e433e7877_hybrid-ai-openhands). It still runs, but
+      # as a prefix (e.g. 5d0e433e7877_haven-openhands). It still runs, but
       # nothing that looks for the real name will find it.
       RENAMED="$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E "^[0-9a-f]{12}_${svc}$" | head -1)"
       if [[ -n "$RENAMED" ]]; then
@@ -611,7 +611,7 @@ for svc in ollama open-webui hybrid-ai-status hybrid-ai-proxy hybrid-ai-openhand
              "A Compose run failed part-way. Fix: docker rm -f ${RENAMED} && ${COMPOSE_CMD} up -d"
       # The status page, proxy and OpenHands are optional conveniences; chat
       # works perfectly without them, so their absence is not a failure.
-      elif [[ "$svc" == hybrid-ai-* ]]; then
+      elif [[ "$svc" == haven-* ]]; then
         warn "${svc} does not exist" "Optional. Run ./install.sh to add it."
       else
         fail "${svc} does not exist" "Run ./install.sh to create it."
@@ -641,11 +641,11 @@ else
   fi
 fi
 
-# --- Hermes :: read-only agent-repo mount and the internal coder-net ---------
+# --- Hermes :: read-only agent-repo mount and the internal haven-coder ---------
 # Two things this change introduced, both load-bearing:
 #   1. /agent-repo is the OpenHands clone mounted READ-ONLY. If it ever became
 #      writable, Hermes could edit the repository the sandbox is reviewing.
-#   2. coder-net is the internal network shared only by hermes and openhands.
+#   2. haven-coder is the internal network shared only by hermes and openhands.
 #      Any other member is a misconfiguration worth surfacing.
 if docker info >/dev/null 2>&1; then
   if docker inspect hermes-agent >/dev/null 2>&1; then
@@ -791,34 +791,34 @@ if docker info >/dev/null 2>&1; then
     fi
   fi
 
-  # coder-net must be internal and carry exactly hermes-agent + hybrid-ai-openhands.
-  CNET_INTERNAL="$(docker network inspect coder-net -f '{{.Internal}}' 2>/dev/null)"
+  # haven-coder must be internal and carry exactly hermes-agent + haven-openhands.
+  CNET_INTERNAL="$(docker network inspect haven-coder -f '{{.Internal}}' 2>/dev/null)"
   if [[ -z "$CNET_INTERNAL" ]]; then
-    warn "coder-net network not found" \
+    warn "haven-coder network not found" \
          "Hermes cannot reach the OpenHands API by service name. Recreate: ${COMPOSE_CMD} up -d"
   else
     if [[ "$CNET_INTERNAL" == "true" ]]; then
-      pass "coder-net is internal (no route off the host)"
+      pass "haven-coder is internal (no route off the host)"
     else
-      fail "coder-net is NOT internal" \
-           "Set 'internal: true' for coder-net in docker-compose.yml, then: ${COMPOSE_CMD} up -d"
+      fail "haven-coder is NOT internal" \
+           "Set 'internal: true' for haven-coder in docker-compose.yml, then: ${COMPOSE_CMD} up -d"
     fi
 
-    CNET_MEMBERS="$(docker network inspect coder-net -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' ' | sed 's/ *$//')"
+    CNET_MEMBERS="$(docker network inspect haven-coder -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' ' | sed 's/ *$//')"
     CNET_UNEXPECTED=""
     for m in $CNET_MEMBERS; do
       case "$m" in
-        hermes-agent|hybrid-ai-openhands) ;;
+        hermes-agent|haven-openhands) ;;
         *) CNET_UNEXPECTED="${CNET_UNEXPECTED}${m} " ;;
       esac
     done
     if [[ -n "$CNET_UNEXPECTED" ]]; then
-      fail "coder-net has unexpected member(s): ${CNET_UNEXPECTED% }" \
+      fail "haven-coder has unexpected member(s): ${CNET_UNEXPECTED% }" \
            "Only hermes and openhands may attach. Recreate: ${COMPOSE_CMD} up -d"
-    elif [[ "$CNET_MEMBERS" == "hermes-agent hybrid-ai-openhands" ]]; then
-      pass "coder-net has exactly hermes and openhands attached"
+    elif [[ "$CNET_MEMBERS" == "hermes-agent haven-openhands" ]]; then
+      pass "haven-coder has exactly hermes and openhands attached"
     else
-      warn "coder-net members: ${CNET_MEMBERS:-none} (expected hermes-agent + hybrid-ai-openhands)" \
+      warn "haven-coder members: ${CNET_MEMBERS:-none} (expected hermes-agent + haven-openhands)" \
            "A container is stopped or not yet attached. Recreate: ${COMPOSE_CMD} up -d"
     fi
   fi
@@ -855,13 +855,13 @@ OH_PORT="$(env_get OPENHANDS_PORT)"
 OH_PORT="${OH_PORT:-3001}"
 OH_RUNNING=0
 declare -a SANDBOXES=()
-[[ "$(docker inspect -f '{{.State.Status}}' hybrid-ai-openhands 2>/dev/null)" == "running" ]] && OH_RUNNING=1
+[[ "$(docker inspect -f '{{.State.Status}}' haven-openhands 2>/dev/null)" == "running" ]] && OH_RUNNING=1
 if (( OH_RUNNING )); then
   if curl -fsS --max-time 5 "http://127.0.0.1:${OH_PORT}" >/dev/null 2>&1; then
     pass "OpenHands responding on 127.0.0.1:${OH_PORT} (tunnel to reach it remotely)"
   else
     warn "OpenHands container exists but is not answering on ${OH_PORT}" \
-         "Optional feature. Check: docker logs --tail 50 hybrid-ai-openhands"
+         "Optional feature. Check: docker logs --tail 50 haven-openhands"
   fi
 fi
 
@@ -948,16 +948,16 @@ if (( PROXY_TLS_ON )); then
       if (( accepted )); then
         case "$code" in
           401|403) warn "Proxy: ${path} over HTTPS returned HTTP ${code}" \
-                        "Check the Caddyfile and: docker logs --tail 30 hybrid-ai-proxy" ;;
+                        "Check the Caddyfile and: docker logs --tail 30 haven-proxy" ;;
           302)     pass "Proxy: ${path} -> ${label} over HTTPS (HTTP 302 to /auth/login)" ;;
           *)       pass "Proxy: ${path} -> ${label} over HTTPS (HTTP ${code})" ;;
         esac
       else
         case "$code" in
           3??) fail "Proxy: ${path} over HTTPS returned a redirect (HTTP ${code}): https://${host}${path}" \
-                     "Port 80 redirects, port 443 serves. This request was answered by a redirect-only site, so content is not reachable. Check: docker logs --tail 30 hybrid-ai-proxy" ;;
+                     "Port 80 redirects, port 443 serves. This request was answered by a redirect-only site, so content is not reachable. Check: docker logs --tail 30 haven-proxy" ;;
           *)   warn "Proxy: ${path} over HTTPS returned HTTP ${code}" \
-                     "Check the Caddyfile and: docker logs --tail 30 hybrid-ai-proxy" ;;
+                     "Check the Caddyfile and: docker logs --tail 30 haven-proxy" ;;
         esac
       fi
     }
@@ -975,13 +975,13 @@ if (( PROXY_TLS_ON )); then
       proxy_https_verdict /             "hermes site" "hermes.${PROXY_TLS_DOMAIN}"
     else
       warn "Proxy: https://${PROXY_TLS_DOMAIN}/status/healthz is not answering over HTTPS" \
-           "With TLS on, port 80 redirects only. Check: docker logs --tail 30 hybrid-ai-proxy; docker logs --tail 30 hybrid-ai-status"
+           "With TLS on, port 80 redirects only. Check: docker logs --tail 30 haven-proxy; docker logs --tail 30 haven-status"
     fi
     if (( PROXY_HTTPS_RUN > 0 )); then
       pass "Proxy: HTTPS route checks run: ${PROXY_HTTPS_RUN}/6"
     else
       warn "Proxy: HTTPS route checks run: 0/6" \
-           "No HTTPS route was checked, so the proxy is not verified. Check: docker logs --tail 30 hybrid-ai-proxy"
+           "No HTTPS route was checked, so the proxy is not verified. Check: docker logs --tail 30 haven-proxy"
     fi
 
     # The bypass guard (B77): an application path on port 80 must answer 3xx,
@@ -995,7 +995,7 @@ if (( PROXY_TLS_ON )); then
       case "$code" in
         3??) pass "Proxy: port 80 answers ${code} for ${host}${path} (redirect-only)" ;;
         *)   fail "Proxy: port 80 returned HTTP ${code:-none} for ${host}${path}, expected a 3xx redirect" \
-                   "Plain HTTP must not serve content when TLS is on. Check status/Caddyfile and: docker logs --tail 30 hybrid-ai-proxy" ;;
+                   "Plain HTTP must not serve content when TLS is on. Check status/Caddyfile and: docker logs --tail 30 haven-proxy" ;;
       esac
     }
     proxy_http_redirect_only "${PROXY_TLS_DOMAIN}" /hub
@@ -1017,7 +1017,7 @@ elif curl -fsS --max-time 5 http://127.0.0.1:80/status/healthz >/dev/null 2>&1; 
       pass "Proxy: ${path} -> ${label} (HTTP ${code})"
     else
       warn "Proxy: ${path} returned HTTP ${code}" \
-           "Check the Caddyfile and: docker logs --tail 30 hybrid-ai-proxy"
+           "Check the Caddyfile and: docker logs --tail 30 haven-proxy"
     fi
   done
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 "http://127.0.0.1:80/openwebui" 2>/dev/null)"
@@ -1029,7 +1029,7 @@ elif curl -fsS --max-time 5 http://127.0.0.1:80/status/healthz >/dev/null 2>&1; 
   fi
 else
   warn "Status page not reachable on port 80" \
-       "Optional feature. Chat still works on :3000. Check: docker logs --tail 30 hybrid-ai-proxy; docker logs --tail 30 hybrid-ai-status"
+       "Optional feature. Chat still works on :3000. Check: docker logs --tail 30 haven-proxy; docker logs --tail 30 haven-status"
 fi
 
 # --- Pinned sandbox image reaches the app-server, and the sandboxes --------
@@ -1051,16 +1051,16 @@ sandbox_image_probe() {  # uses the SANDBOXES array already collected above
   skip=""
   if ! command -v docker >/dev/null 2>&1; then
     skip="docker is not installed"
-  elif ! docker inspect -f '{{.Id}}' hybrid-ai-openhands >/dev/null 2>&1; then
-    skip="cannot read the app-server container hybrid-ai-openhands"
+  elif ! docker inspect -f '{{.Id}}' haven-openhands >/dev/null 2>&1; then
+    skip="cannot read the app-server container haven-openhands"
   fi
   if [[ -n "$skip" ]]; then
     (( QUIET )) || printf '  %s-%s sandbox image check skipped (%s)\n' "$C_DIM" "$C_RST" "$skip"
     return 0
   fi
 
-  seen_repo="$(container_env hybrid-ai-openhands AGENT_SERVER_IMAGE_REPOSITORY)"
-  seen_tag="$(container_env hybrid-ai-openhands AGENT_SERVER_IMAGE_TAG)"
+  seen_repo="$(container_env haven-openhands AGENT_SERVER_IMAGE_REPOSITORY)"
+  seen_tag="$(container_env haven-openhands AGENT_SERVER_IMAGE_TAG)"
   if [[ "${seen_repo}:${seen_tag}" == "$want" ]]; then
     pass "App-server carries the pinned sandbox image env (${want})"
   else
@@ -1110,11 +1110,11 @@ if (( OH_RUNNING )); then
   # --- (a) Webhook path -----------------------------------------------------
   # This build only reads the legacy name SANDBOX_HOST_PORT. Without it,
   # webhooks go to port 3000 -- which is Open WebUI -- and fail with 405.
-  SHP="$(container_env hybrid-ai-openhands SANDBOX_HOST_PORT)"
+  SHP="$(container_env haven-openhands SANDBOX_HOST_PORT)"
   if [[ "$SHP" == "$OH_PORT" ]]; then
     pass "SANDBOX_HOST_PORT=${SHP} (webhooks target OpenHands, not Open WebUI)"
   elif [[ -z "$SHP" ]]; then
-    if [[ -n "$(container_env hybrid-ai-openhands OH_SANDBOX_HOST_PORT)" ]]; then
+    if [[ -n "$(container_env haven-openhands OH_SANDBOX_HOST_PORT)" ]]; then
       fail "Only OH_SANDBOX_HOST_PORT is set; this build ignores it" \
            "Rename it to SANDBOX_HOST_PORT in openhands/docker-compose.openhands.yml, then: ${COMPOSE_CMD} up -d openhands"
     else
@@ -1129,7 +1129,7 @@ if (( OH_RUNNING )); then
   # The UI port must be on loopback (for the tunnel) and on the Docker bridge
   # (for webhooks) -- and NEVER on all interfaces, which would publish root
   # code execution to the LAN.
-  BINDINGS="$(docker inspect -f '{{range $p, $b := .HostConfig.PortBindings}}{{range $b}}{{.HostIp}}:{{.HostPort}} {{end}}{{end}}' hybrid-ai-openhands 2>/dev/null)"
+  BINDINGS="$(docker inspect -f '{{range $p, $b := .HostConfig.PortBindings}}{{range $b}}{{.HostIp}}:{{.HostPort}} {{end}}{{end}}' haven-openhands 2>/dev/null)"
   if [[ " $BINDINGS" =~ (^|[[:space:]])(:|0\.0\.0\.0:|::?:)${OH_PORT}([[:space:]]|$) ]]; then
     fail "OpenHands UI port ${OH_PORT} is published on ALL interfaces" \
          "This exposes root-level code execution to your LAN. Bind it to 127.0.0.1 and 172.17.0.1 only in openhands/docker-compose.openhands.yml."
@@ -1141,7 +1141,7 @@ if (( OH_RUNNING )); then
       pass "OpenHands reachable from sandboxes on the Docker bridge (172.17.0.1:${OH_PORT})"
     else
       fail "OpenHands bridge binding exists but does not answer" \
-           "Check: docker logs --tail 50 hybrid-ai-openhands"
+           "Check: docker logs --tail 50 haven-openhands"
     fi
   else
     fail "OpenHands is not bound on the Docker bridge (172.17.0.1:${OH_PORT})" \
@@ -1152,7 +1152,7 @@ if (( OH_RUNNING )); then
   # The browser is handed http://<this host>:<random port>. It has to be a
   # name or IP your PC can reach, and it has to actually be THIS Pi.
   SB_HOST="$(env_get OPENHANDS_SANDBOX_HOST)"
-  PATTERN="$(container_env hybrid-ai-openhands SANDBOX_CONTAINER_URL_PATTERN)"
+  PATTERN="$(container_env haven-openhands SANDBOX_CONTAINER_URL_PATTERN)"
   if [[ -z "$PATTERN" || "$PATTERN" == *"//localhost"* || "$PATTERN" == *"//127."* ]]; then
     fail "Sandbox URL pattern is '${PATTERN:-unset (defaults to localhost)}'" \
          "Remote browsers will show 'Network Error'. Set OPENHANDS_SANDBOX_HOST in .env (e.g. jarvis.lan), then: ${COMPOSE_CMD} up -d openhands"
@@ -1180,7 +1180,7 @@ if (( OH_RUNNING )); then
 
   # CORS: the sandbox only accepts browser calls from origins it was told
   # about. localhost and 127.0.0.1 are different origins to a browser.
-  CORS="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' hybrid-ai-openhands 2>/dev/null | grep -E '^OH_PERMITTED_CORS_ORIGINS_[0-9]+=' | cut -d= -f2- | tr '\n' ' ')"
+  CORS="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' haven-openhands 2>/dev/null | grep -E '^OH_PERMITTED_CORS_ORIGINS_[0-9]+=' | cut -d= -f2- | tr '\n' ' ')"
   if [[ "$CORS" == *"http://localhost:${OH_PORT}"* && "$CORS" == *"http://127.0.0.1:${OH_PORT}"* ]]; then
     pass "CORS allows both tunnel origins (localhost and 127.0.0.1 :${OH_PORT})"
   elif [[ -n "$CORS" ]]; then
@@ -1409,7 +1409,7 @@ else
     0) pass "Sandbox firewall: $SBX_RESULT" ;;
     6) SBX_SKIP="$SBX_RESULT" ;;
     *) warn "Sandbox firewall: current policy not verified: $SBX_RESULT" \
-         "Inspect the reported missing, out-of-policy or ordering issue; scripts/sandbox-firewall.sh check is read-only. Applying or changing firewall rules requires operator authorization. The boot service remains hybrid-ai-firewall.service." ;;
+         "Inspect the reported missing, out-of-policy or ordering issue; scripts/sandbox-firewall.sh check is read-only. Applying or changing firewall rules requires operator authorization. The boot service remains haven-firewall.service." ;;
   esac
 fi
 if [[ -n "$SBX_SKIP" ]]; then
@@ -1873,7 +1873,7 @@ else
   unset _ll_entry
   if (( LEASELESS > 0 )); then
     warn "${LEASELESS} conversation director(ies) have no owner_lease.json (${CONV_ROOT}): the prune sweep refuses them forever, so it moves nothing" \
-         "These are invisible to the app. Sweep the ones past the age limit with: sudo systemctl start hybrid-ai-prune (or sudo ${HAVEN_APP_DIR:-/opt/hybrid-ai}/scripts/prune-conversations.sh) after setting HAVEN_PRUNE_ALLOW_LEASE_LESS=1 in .env and re-running ./install.sh. Leave it unset to keep the fail-safe."
+         "These are invisible to the app. Sweep the ones past the age limit with: sudo systemctl start haven-prune (or sudo ${HAVEN_APP_DIR:-/opt/hybrid-ai}/scripts/prune-conversations.sh) after setting HAVEN_PRUNE_ALLOW_LEASE_LESS=1 in .env and re-running ./install.sh. Leave it unset to keep the fail-safe."
   else
     pass "every conversation directory carries an owner lease"
   fi
@@ -1992,10 +1992,10 @@ if [[ -n "$PDV_SKIP" ]]; then
   (( QUIET )) || printf '  %s-%s post-deploy verification log skipped (%s)\n' "$C_DIM" "$C_RST" "$PDV_SKIP"
 elif [[ ! -s "$PDV_LOG" ]]; then
   warn "post-deploy verification log ${PDV_LOG} is empty: the post-deploy verifier never wrote anything" \
-       "Either the verifier is not installed (check ${HAVEN_POST_DEPLOY_VERIFY_CMD}) or it was killed before it wrote. Inspect it with: journalctl -u 'hybrid-ai-post-deploy-verify-*'"
+       "Either the verifier is not installed (check ${HAVEN_POST_DEPLOY_VERIFY_CMD}) or it was killed before it wrote. Inspect it with: journalctl -u 'haven-post-deploy-verify-*'"
 elif (( ! PDV_SEEN_WAITING )); then
   warn "post-deploy verification log ${PDV_LOG} has no parseable 'waiting for <sha> at <ts>' line" \
-       "Inspect the run with: journalctl -u 'hybrid-ai-post-deploy-verify-*'"
+       "Inspect the run with: journalctl -u 'haven-post-deploy-verify-*'"
 else
   PDV_SHA12="${PDV_WAITING_SHA:0:12}"
   if [[ -n "$PDV_VERDICT" ]]; then
@@ -2003,7 +2003,7 @@ else
       pass "post-deploy verification passed for ${PDV_SHA12} (verdict written ${PDV_WAITING_TS})"
     else
       warn "post-deploy verification reported '${PDV_VERDICT}' for ${PDV_SHA12}" \
-           "Inspect the run with: journalctl -u 'hybrid-ai-post-deploy-verify-*'"
+           "Inspect the run with: journalctl -u 'haven-post-deploy-verify-*'"
     fi
   else
     PDV_WAIT_EPOCH="$(date -u -d "$PDV_WAITING_TS" +%s 2>/dev/null)"
@@ -2013,7 +2013,7 @@ else
         "$C_DIM" "$C_RST" "${PDV_WAITING_TS//[[:cntrl:]]/}"
     elif (( PDV_WAIT_EPOCH + 3900 < PDV_NOW )); then
       warn "post-deploy verification for ${PDV_SHA12} has no verdict and its wait started at ${PDV_WAITING_TS}, more than 65 minutes ago" \
-           "Inspect the run with: journalctl -u 'hybrid-ai-post-deploy-verify-*'"
+           "Inspect the run with: journalctl -u 'haven-post-deploy-verify-*'"
     else
       (( QUIET )) || printf '  %s-%s post-deploy verification log skipped (verification for %s still running since %s)\n' \
         "$C_DIM" "$C_RST" "$PDV_SHA12" "${PDV_WAITING_TS//[[:cntrl:]]/}"

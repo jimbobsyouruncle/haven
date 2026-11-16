@@ -10,7 +10,7 @@ set -Eeuo pipefail
 #
 #   The test proves:
 #     (a) the exact command string sent is `deploy <sha>` and the login name is
-#         `hybrid-ai-deploy`;
+#         `haven-deploy`;
 #     (b) a malformed sha (short, uppercase, a trailing extra argument, a
 #         semicolon) sends NOTHING and exits non-zero;
 #     (c) a host-key fingerprint mismatch exits non-zero and never invokes ssh;
@@ -112,7 +112,7 @@ run() {
 }
 
 ssh_called() { [[ -s "$SSH_LOG" ]]; }
-key_left()   { [[ -e "$RT/hybrid-ai-deploy-key" ]]; }
+key_left()   { [[ -e "$RT/haven-deploy-key" ]]; }
 
 echo "== (a) exact command string and login name =="
 rc="$(run "$SHA")"
@@ -126,9 +126,9 @@ fi
 # LAST argv word) and the full argv. Assert the login name, the exact
 # two-token command string, and that the key was passed with -i.
 if has_line "$SSH_LOG" "CMD=deploy ${SHA}" \
-   && has_line "$SSH_LOG" "USER=hybrid-ai-deploy@${HOST}" \
-   && has_line "$SSH_LOG" "ARGV=-i $RT/hybrid-ai-deploy-key "; then
-  ok "sent exactly 'deploy <sha>' to hybrid-ai-deploy@<host> with -i <key>"
+   && has_line "$SSH_LOG" "USER=haven-deploy@${HOST}" \
+   && has_line "$SSH_LOG" "ARGV=-i $RT/haven-deploy-key "; then
+  ok "sent exactly 'deploy <sha>' to haven-deploy@<host> with -i <key>"
 else
   bad "did not send the exact command string / login name"
   sed 's/^/      /' "$SSH_LOG" >&2 || true
@@ -230,11 +230,11 @@ else
 fi
 
 echo "== (e2) remote output reaches the log =="
-rc="$(SSH_EMIT="unit: hybrid-ai-deploy@${SHA}.service
+rc="$(SSH_EMIT="unit: haven-deploy@${SHA}.service
 result: success
 hello-from-the-run-log" run "$SHA")"
 if [[ "$rc" == "0" ]] \
-   && has_line "$WORK/out" "unit: hybrid-ai-deploy@${SHA}.service" \
+   && has_line "$WORK/out" "unit: haven-deploy@${SHA}.service" \
    && has_line "$WORK/out" "result: success" \
    && has_line "$WORK/out" "hello-from-the-run-log"; then
   ok "remote unit:/result:/run log output appears in the job log"

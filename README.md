@@ -88,13 +88,13 @@ Cold starts are the honest cost of this design. Subsequent messages in the same 
 
 ### Networks and ports
 
-All containers join one shared Docker network, `hybrid-ai`, and reach each other by service name (for example, Open WebUI talks to Ollama at `http://ollama:11434`).
+All containers join one shared Docker network, `haven`, and reach each other by service name (for example, Open WebUI talks to Ollama at `http://ollama:11434`).
 
 This project adds a second, private network for the two code-aware services:
 
 | Network | Defined in | Members | Reachable from | Purpose |
 |---|---|---|---|---|
-| `hybrid-ai` | `docker-compose.yml` (the compose default) | every service | the host and each other | normal service-to-service traffic |
+| `haven` | `docker-compose.yml` (the compose default) | every service | the host and each other | normal service-to-service traffic |
 | `coder-net` | `docker-compose.yml`, `internal: true` | `openhands` and `hermes` only | each other only — no host, LAN, or internet route | Hermes reaches the OpenHands API at `http://openhands:3000` by service name |
 
 `coder-net` is `internal: true`, so Docker gives it no route off the host. It publishes no ports, and adding it does not create any host port binding. The OpenHands UI keeps its existing binds on `127.0.0.1` and `172.17.0.1` — see [openhands/README.md](openhands/README.md) and [SECURITY.md](SECURITY.md).
@@ -117,7 +117,7 @@ The Hermes binds on all interfaces are a pre-existing gap, recorded in [SECURITY
 
 **Sandbox port containment.** OpenHands gives each sandbox agent server a random host port. Those ports used to answer on every interface. `scripts/sandbox-firewall.sh` closes them with a tagged rule set in Docker's `DOCKER-USER` chain: external traffic into `docker0` is dropped, traffic from `docker0` to the three RFC1918 supernets and the Tailscale/CGNAT range is dropped, and traffic from `docker0` to the other Docker networks is dropped, so a sandbox can pivot nowhere. Two paths are deliberately excepted: the app control path (each bridge's control ports into the sandbox, and sandbox to app on TCP 3000 for webhooks and secret fetches), and DNS — a sandbox to resolver ACCEPT on UDP/53 and TCP/53 that sits above the CIDR DROPs, because the resolver answer arrives from inside the dropped RFC1918 space. The DNS exception is port-scoped, not destination-scoped: a sandbox can still reach any resolver on port 53, which is the accepted residual. Nothing else is excepted. Loopback is untouched: the external-to-`docker0` DROP carries `! -i lo`, and the `docker0`-to-networks DROPs match `-i docker0`, so neither can match the loopback path. The SSH tunnel and Tailscale route to the OpenHands UI on `[IP_ADDRESS]:${OPENHANDS_PORT:-3001}` keep working.
 
-The rules are re-applied on every boot by `hybrid-ai-firewall.service` and on every deploy by `install.sh` and `scripts/deploy-remote.sh`. `install.sh` also installs and enables that unit on every deploy, so boot persistence does not depend on an earlier `scripts/bootstrap.sh` run. The script is idempotent: it adds the missing rules when none are present, changes nothing when the full set is already there in order, and repairs a chain that holds only some of the owned rules — it deletes those owned rules and applies the whole set again, so the written order is restored instead of the missing rules landing at the head of the chain. It never deletes a rule outside its own `RULES` set, never flushes the chain and never removes a chain. `./doctor.sh` warns, never fails, when a rule is missing. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#sandbox-ports-reachable-from-the-lan).
+The rules are re-applied on every boot by `haven-firewall.service` and on every deploy by `install.sh` and `scripts/deploy-remote.sh`. `install.sh` also installs and enables that unit on every deploy, so boot persistence does not depend on an earlier `scripts/bootstrap.sh` run. The script is idempotent: it adds the missing rules when none are present, changes nothing when the full set is already there in order, and repairs a chain that holds only some of the owned rules — it deletes those owned rules and applies the whole set again, so the written order is restored instead of the missing rules landing at the head of the chain. It never deletes a rule outside its own `RULES` set, never flushes the chain and never removes a chain. `./doctor.sh` warns, never fails, when a rule is missing. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#sandbox-ports-reachable-from-the-lan).
 
 ---
 
@@ -189,7 +189,7 @@ Hermes reads the OpenHands working clone at `/agent-repo` (mounted read-only) an
 
 ## OpenHands code-maintenance agent
 
-The project includes a separate OpenHands service for natural-language code maintenance. It works in a separate clone at `~/hybrid-ai-agent` (on a bootstrapped host, `/var/lib/hybrid-ai-agent`); the deployment directory is not visible to the agent, creates isolated agent-server containers, and supports an inspect, branch, edit, test, and commit workflow.
+The project includes a separate OpenHands service for natural-language code maintenance. It works in a separate clone at `~/haven-agent` (on a bootstrapped host, `/var/lib/haven-agent`); the deployment directory is not visible to the agent, creates isolated agent-server containers, and supports an inspect, branch, edit, test, and commit workflow.
 
 The OpenHands controller uses the Docker socket to create sandboxes. Docker-socket access is effectively host-level control. Keep human review and branch protection enabled. See [openhands/README.md](openhands/README.md).
 
@@ -206,7 +206,7 @@ filesystem instead of the API.
 
 `scripts/prune-conversations.sh` **moves, and does not shred**. It moves stale
 conversation directories into a date-stamped quarantine root beside the data
-directory (default `<dirname of HAVEN_DATA_DIR>/hybrid-ai-conversation-quarantine/<YYYYMMDD>/`,
+directory (default `<dirname of HAVEN_DATA_DIR>/haven-conversation-quarantine/<YYYYMMDD>/`,
 on the same filesystem, mode 0750 and root-owned). The root is asserted to be
 outside every tree the backup captures; if it is not, the sweep moves nothing.
 Moving a directory back into `conversations/` restores it. The one deletion is
@@ -221,7 +221,7 @@ is the default-OFF opt-in that sweeps such a directory once its mtime is past th
 age limit. The summary line always prints `moved-lease-less=` and
 `retention-deleted=`.
 
-`hybrid-ai-prune.timer` is the primary mechanism and runs it daily at 04:20;
+`haven-prune.timer` is the primary mechanism and runs it daily at 04:20;
 `install.sh` installs and enables the units unconditionally and also runs the
 service once at deploy time as catch-up only. The sweep is configurable with
 `HAVEN_PRUNE_AGE_SECONDS`, `HAVEN_PRUNE_GRACE_SECONDS`,
@@ -229,14 +229,14 @@ service once at deploy time as catch-up only. The sweep is configurable with
 `HAVEN_PRUNE_ALLOW_LEASE_LESS` and
 `HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS`.
 
-`hybrid-ai-docker-prune.timer` is a sibling that caps the Docker build cache
+`haven-docker-prune.timer` is a sibling that caps the Docker build cache
 daily at 04:35 so repeated rebuilds of the multi-GB stack images cannot fill the
 disk. It removes build cache only — never images, containers, volumes or
 bind-mounted data — and is configurable with `HAVEN_BUILD_CACHE_CAP`
 (default `15GB`).
 
-To inspect it: `systemctl list-timers hybrid-ai-prune.timer` and
-`journalctl -u hybrid-ai-prune`. Full procedure and tuning in
+To inspect it: `systemctl list-timers haven-prune.timer` and
+`journalctl -u haven-prune`. Full procedure and tuning in
 [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md#the-disk-keeps-filling-with-conversation-directories).
 
 ## Prerequisites
@@ -402,7 +402,7 @@ Stores your encrypted backups. Data is encrypted on the Pi before upload.
 | **Cost** | ~$0.015/GB/month stored, and **nothing for egress** |
 | **Credentials needed** | Account ID, bucket name, R2 Access Key ID, Secret Access Key |
 
-**Create the bucket:** R2 object storage → **Create bucket** → name it `hybrid-ai-backup`.
+**Create the bucket:** R2 object storage → **Create bucket** → name it `haven-backup`.
 **Create a scoped token:** R2 → Overview → Manage API Tokens → Create Account API token with **Object Read & Write** strictly for that bucket.
 
 #### GitHub — code hosting and automated deploys (free)
@@ -425,15 +425,15 @@ Optional. Everything works if you deploy by hand. CI just means `git push` updat
 | `WEBUI_SECRET_KEY` | *self-generated* | — | Pi `.env` | Auto-generated by `install.sh` |
 | `RUNPOD_HOST` | *auto-discovered* | — | Pi `.env` | `install.sh` queries the tailnet for the peer and records its MagicDNS name. Every consumer resolves it at use time and validates the resolved address against `100.64.0.0/10`. A stopped pod leaves the tailnet so the name stops resolving: `./doctor.sh` treats that as a warning (asleep is normal), and only a name that is not shaped like `<pod>.<tailnet>.ts.net` fails |
 | `RUNPOD_AUTO_WAKE` | *your choice* | — | Pi `.env` | Default `0`. Set `1` or `true` to let `install.sh` start an offline pod |
-| `AWS_ACCESS_KEY_ID` | Cloudflare R2 | R2 → Manage API Tokens | `~/.config/hybrid-ai-backup/r2.env` | `install.sh` prompts you |
-| `AWS_SECRET_ACCESS_KEY` | Cloudflare R2 | R2 → Manage API Tokens | `~/.config/hybrid-ai-backup/r2.env` | `install.sh` prompts you |
-| `RESTIC_REPOSITORY` | *derived* | Account ID + bucket name | `~/.config/hybrid-ai-backup/r2.env` | Built by `install.sh` |
-| **Repository password** | *self-generated* | — | `~/.config/hybrid-ai-backup/repo-password` | Generated by `install.sh`. **Store off-device.** |
+| `AWS_ACCESS_KEY_ID` | Cloudflare R2 | R2 → Manage API Tokens | `~/.config/haven-backup/r2.env` | `install.sh` prompts you |
+| `AWS_SECRET_ACCESS_KEY` | Cloudflare R2 | R2 → Manage API Tokens | `~/.config/haven-backup/r2.env` | `install.sh` prompts you |
+| `RESTIC_REPOSITORY` | *derived* | Account ID + bucket name | `~/.config/haven-backup/r2.env` | Built by `install.sh` |
+| **Repository password** | *self-generated* | — | `~/.config/haven-backup/repo-password` | Generated by `install.sh`. **Store off-device.** |
 
 In **system mode** (`HAVEN_BACKUP_MODE=system`) the two backup units read the
 R2 credentials from a root-owned store instead:
-`/etc/credstore/hybrid-ai-backup/r2.env` and
-`/etc/credstore/hybrid-ai-backup/repo-password` (both mode 0600), delivered to
+`/etc/credstore/haven-backup/r2.env` and
+`/etc/credstore/haven-backup/repo-password` (both mode 0600), delivered to
 the upload unit by `LoadCredential=`. The capture unit holds no credentials at
 all. See [`backup/README.md`](backup/README.md#system-mode-fresh-install-and-migration).
 
@@ -441,8 +441,8 @@ all. See [`backup/README.md`](backup/README.md#system-mode-fresh-install-and-mig
 
 ```
 1. Pi: ./.env                          created by install.sh, mode 0600, gitignored
-2. Pi: ~/.config/hybrid-ai-backup/     backup credentials, mode 0600, OUTSIDE the repo
-   Pi: /etc/credstore/hybrid-ai-backup/  system-mode backup credentials, root 0600
+2. Pi: ~/.config/haven-backup/     backup credentials, mode 0600, OUTSIDE the repo
+   Pi: /etc/credstore/haven-backup/  system-mode backup credentials, root 0600
 3. RunPod pod template                 entered in the RunPod web console
 4. GitHub repository secrets           Settings → Secrets and variables → Actions
 
@@ -469,13 +469,13 @@ Keep the existing checkout directory and host paths until an approved host hando
 **Fresh install** (a brand-new device with no existing data):
 
 ```bash
-sudo env HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/hybrid-ai-deploy.pub
+sudo env HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/haven-deploy.pub
 ```
 
 **Migration** (the current Pi, moving the existing data into the new layout):
 
 ```bash
-sudo env HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/hybrid-ai-deploy.pub --from /home/pi/hybrid-ai
+sudo env HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/haven-deploy.pub --from /home/pi/haven
 ```
 
 `--from` moves the existing data — it never copies or merges. `--login-user`
@@ -488,8 +488,8 @@ options is refused. See [`deploy/README.md`](deploy/README.md) and
 ### Step 1 — Pi setup
 
 ```bash
-git clone https://github.com/jimbobsyouruncle/haven.git hybrid-ai
-cd hybrid-ai
+git clone https://github.com/jimbobsyouruncle/haven.git haven
+cd haven
 chmod +x install.sh doctor.sh collect-diagnostics.sh \
          backup/backup.sh backup/restore.sh \
          scripts/setup-agent-workspace.sh \
@@ -577,7 +577,7 @@ join the tailnet. `./doctor.sh` itself never starts, stops or resumes a pod.
 If you skipped the backup prompt during `./install.sh`, re-run it and answer yes. Then do the one thing that cannot be automated:
 
 ```bash
-cat ~/.config/hybrid-ai-backup/repo-password
+cat ~/.config/haven-backup/repo-password
 ```
 
 Put that in a password manager. Rehearse a restore before you need one:
@@ -617,13 +617,13 @@ Put that in a password manager. Rehearse a restore before you need one:
 ## Headless deploy (active after bootstrap)
 
 The `deploy/` directory and `scripts/deploy-*.sh` hold the pieces of a
-**headless deploy**: a dedicated, unprivileged `hybrid-ai-deploy` account that
+**headless deploy**: a dedicated, unprivileged `haven-deploy` account that
 can do exactly one thing over SSH — start the system unit
-`hybrid-ai-deploy@<sha>.service` for a 40-character commit, which runs
+`haven-deploy@<sha>.service` for a 40-character commit, which runs
 `scripts/deploy-instance.sh` and then the existing `scripts/deploy-remote.sh`.
 
 **This is now the deploy.** `.github/workflows/deploy.yml` connects as the
-dedicated `hybrid-ai-deploy` account and sends exactly one command string,
+dedicated `haven-deploy` account and sends exactly one command string,
 `deploy <sha>`, through the tracked client `scripts/deploy-trigger.sh`. It no
 longer logs in as the admin account and no longer runs a shell script on the Pi.
 The ancestor check, the reset to that exact commit and the `HEAD` assert run
@@ -663,7 +663,7 @@ every path is exactly the default above.
 | Setting | Meaning | Default |
 |---|---|---|
 | `HAVEN_APP_DIR` | Program/repository directory | the repo directory |
-| `HAVEN_ENV_FILE` | The layout env file (host paths) | `$HAVEN_APP_DIR/.env`; if absent, the fallback `HAVEN_ENV_FILE_FALLBACK` (default `/etc/hybrid-ai/hybrid-ai.env`) when it exists |
+| `HAVEN_ENV_FILE` | The layout env file (host paths) | `$HAVEN_APP_DIR/.env`; if absent, the fallback `HAVEN_ENV_FILE_FALLBACK` (default `/etc/haven/haven.env`) when it exists |
 | `HAVEN_STACK_ENV_FILE` | The stack env file handed to `docker compose --env-file` | the resolved `HAVEN_ENV_FILE` |
 | `HAVEN_DATA_DIR` | Durable data (`hermes_data/`, `webui_data/`, `ollama_data/`) | the repo directory |
 | `HAVEN_LOG_DIR` | Logs (`install.log`, `backup.log`) | the repo directory |
@@ -685,7 +685,7 @@ The layout file (`HAVEN_ENV_FILE`) holds host paths and control settings and
 never a secret; the stack file holds the runtime config and secrets and is what
 `install.sh` writes. With `HAVEN_STACK_ENV_FILE` unset the two are the same
 path, so nothing changes. On a bootstrapped host `scripts/bootstrap.sh` points
-the stack file at `/etc/hybrid-ai/stack.env`, and the layout file is the single
+the stack file at `/etc/haven/stack.env`, and the layout file is the single
 source of truth for the paths and the `HAVEN_UID`/`HAVEN_GID` identity:
 `install.sh` restores those from the layout file after it reads the stack file,
 so a legacy stack file that still carries empty `HAVEN_UID=` lines cannot
@@ -693,11 +693,11 @@ drop the stack to root. If the layout file exists but cannot be read, the helper
 exits non-zero and names the setting instead of quietly using a default.
 
 On a bootstrapped host `$HAVEN_APP_DIR/.env` does not exist, because the
-layout moved to `/etc/hybrid-ai/hybrid-ai.env`. When `HAVEN_ENV_FILE` is
+layout moved to `/etc/haven/haven.env`. When `HAVEN_ENV_FILE` is
 unset and `$HAVEN_APP_DIR/.env` is absent, the helper falls back to that
 layout file if it exists, so a bare `doctor.sh` reports the paths the units
 actually use. The fallback location is the named variable
-`HAVEN_ENV_FILE_FALLBACK` (default `/etc/hybrid-ai/hybrid-ai.env`). An
+`HAVEN_ENV_FILE_FALLBACK` (default `/etc/haven/haven.env`). An
 explicit `HAVEN_ENV_FILE` always wins and the fallback is then never
 consulted; only the `0644` layout file is probed, never the `0600` secrets file.
 Bare invocations on a bootstrapped host therefore need root or an explicit
@@ -712,12 +712,12 @@ on every run; see [backup/README.md](backup/README.md). One exception is
 mode-derived: `BACKUP_LOG` keeps its
 user-mode default (`$HAVEN_LOG_DIR/backup.log`), but in system mode it
 resolves to the units' `LogsDirectory=` path,
-`/var/log/hybrid-ai-backup/backup.log`, the same file `doctor.sh` reads and the
+`/var/log/haven-backup/backup.log`, the same file `doctor.sh` reads and the
 same file the status page mounts (`docker-compose.yml` binds `${BACKUP_LOG:?...}`
 read-only, and `install.sh` writes the resolved value into the stack env file).
 The status container reads that file through exactly one supplementary group,
 `BACKUP_GROUP_GID`; in system mode the log is mode `0640` owned by
-`hybrid-ai-backup`, and `install.sh` resolves that group's gid by name. See
+`haven-backup`, and `install.sh` resolves that group's gid by name. See
 [`backup/README.md`](backup/README.md#the-backup-logs-mode-and-group-contract).
 
 A split layout for a dedicated system account looks like this (commented example
@@ -725,10 +725,10 @@ in `.env.example`):
 
 ```
 HAVEN_APP_DIR=/opt/haven
-HAVEN_DATA_DIR=/var/lib/hybrid-ai
-HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
-HAVEN_LOG_DIR=/var/log/hybrid-ai
-HAVEN_WORK_DIR=/var/lib/hybrid-ai/work
+HAVEN_DATA_DIR=/var/lib/haven
+HAVEN_ENV_FILE=/etc/haven/haven.env
+HAVEN_LOG_DIR=/var/log/haven
+HAVEN_WORK_DIR=/var/lib/haven/work
 ```
 
 `./doctor.sh` prints every resolved path (never an env-file value) and warns when
@@ -763,34 +763,34 @@ The script detects the state first and reports it before it acts:
 
 It then removes:
 
-* the containers `ollama`, `open-webui`, `hybrid-ai-status`, `hybrid-ai-proxy`,
-  `hermes-agent` and `hybrid-ai-openhands`; on a remnants-only re-run it also
+* the containers `ollama`, `open-webui`, `haven-status`, `haven-proxy`,
+  `hermes-agent` and `haven-openhands`; on a remnants-only re-run it also
   sweeps the OpenHands sandboxes named `oh-agent-server*`,
-* the Docker networks `hybrid-ai` and `coder-net`,
-* the `hybrid-ai-*` systemd units, and the login user's backup and check units,
-* the polkit rule `50-hybrid-ai-deploy.rules`,
-* only the `DOCKER-USER` firewall rules tagged `hybrid-ai-sandbox-egress`,
+* the Docker networks `haven` and `coder-net`,
+* the `haven-*` systemd units, and the login user's backup and check units,
+* the polkit rule `50-haven-deploy.rules`,
+* only the `DOCKER-USER` firewall rules tagged `haven-sandbox-egress`,
 * `/opt/haven`.
 
 With `--remove-data` it also removes the data, work, log and restic-cache
 directories, the backup credential directory, the agent workspace
-(`/var/lib/hybrid-ai-agent`), the repo reference tree
-(`/var/lib/hybrid-ai-repos`), the deploy and backup account homes
-(`/var/lib/hybrid-ai-deploy` and `/var/lib/hybrid-ai-backup`), the backup log
-directory (`/var/log/hybrid-ai-backup`), and the layout and stack files under
-`/etc/hybrid-ai`. Names and paths only: no file content is ever read or printed.
+(`/var/lib/haven-agent`), the repo reference tree
+(`/var/lib/haven-repos`), the deploy and backup account homes
+(`/var/lib/haven-deploy` and `/var/lib/haven-backup`), the backup log
+directory (`/var/log/haven-backup`), and the layout and stack files under
+`/etc/haven`. Names and paths only: no file content is ever read or printed.
 
 ### What it keeps
 
 * every Docker image, and the Docker build cache,
-* the `hybrid-ai` and `hybrid-ai-backup` system accounts,
+* the `haven` and `haven-backup` system accounts,
 * the data directories, unless you pass `--remove-data`,
 * anything outside the allowlist below. A layout value that resolves outside the
   allowlist is refused and left untouched, with a message naming the setting.
 
-The allowlist is exact: `/opt/haven`, the legacy `/opt/hybrid-ai`, `/var/lib/hybrid-ai*`,
-`/var/log/hybrid-ai*`, `/var/cache/hybrid-ai-backup`, `/etc/hybrid-ai`,
-`/etc/credstore/hybrid-ai-backup`, the `hybrid-ai-*` unit files, and the polkit
+The allowlist is exact: `/opt/haven`, the legacy `/opt/haven`, `/var/lib/haven*`,
+`/var/log/haven*`, `/var/cache/haven-backup`, `/etc/haven`,
+`/etc/credstore/haven-backup`, the `haven-*` unit files, and the polkit
 rule file.
 
 ### Keep or remove the data

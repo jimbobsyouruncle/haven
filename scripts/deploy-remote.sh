@@ -4,6 +4,13 @@ set -Eeuo pipefail
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# An older parent transaction cannot honor the post-write recovery boundary.
+# Refuse before install/identity mutation; its code-root rollback remains safe.
+if [[ "$SCRIPT_DIR" == /opt/haven/scripts &&
+      "${HAVEN_INSTALL_ROOT_HANDOFF:-}" == 1 && "${HAVEN_IDENTITY_DRIVER:-}" != 1 ]]; then
+  echo '::error::reviewed identity-aware root driver required before installation'
+  exit 6
+fi
 # Resolve before layout reads or host activity; the transient unit inherits
 # the systemd manager's environment rather than this process's environment.
 # shellcheck source=scripts/lib/repository-identity.sh
@@ -20,7 +27,7 @@ fi
 source "${SCRIPT_DIR}/lib/haven-env.sh"
 APP_DIR="$HAVEN_APP_DIR"
 ENV_FILE="$HAVEN_STACK_ENV_FILE"
-COMPOSE=(docker compose -p hybrid-ai --env-file "$ENV_FILE" --project-directory "$APP_DIR"
+COMPOSE=(docker compose -p haven --env-file "$ENV_FILE" --project-directory "$APP_DIR"
          -f "$APP_DIR/docker-compose.yml"
          -f "$APP_DIR/openhands/docker-compose.openhands.yml"
          -f "$APP_DIR/hermes/docker-compose.hermes.yml")
@@ -106,7 +113,7 @@ case "$firewall_rc" in
   0)
     ;;
   4)
-    echo "::warning::DOCKER-USER does not exist yet; hybrid-ai-firewall.service applies the sandbox drops at boot."
+    echo "::warning::DOCKER-USER does not exist yet; haven-firewall.service applies the sandbox drops at boot."
     ;;
   *)
     echo "::warning::sandbox-firewall.sh exited ${firewall_rc}; sandbox ports may still be reachable on the LAN."
@@ -182,13 +189,13 @@ esac
 
 # POST-DEPLOY VERIFICATION, in its OWN transient unit.
 # A waiter started as a child of this deploy would be killed when the deploy
-# unit exits: deploy/hybrid-ai-deploy@.service is Type=oneshot with the default
+# unit exits: deploy/haven-deploy@.service is Type=oneshot with the default
 # KillMode=control-group, so systemd kills everything left in the unit's cgroup
 # at exit -- setsid escapes the session, NOT the cgroup. That is exactly the
 # defect the host showed as a 0-byte log whose mtime matched unit exit.
 #
 # So the verifier runs in a transient systemd-run unit named
-#   hybrid-ai-post-deploy-verify-<sha12>-<pid>
+#   haven-post-deploy-verify-<sha12>-<pid>
 # which outlives this unit and appends to the resolved log. --service-type=exec
 # is deliberate: it waits for exec() to succeed, so a launch failure is loud
 # instead of silently lost (--no-block would suppress exactly that). --collect
@@ -201,7 +208,7 @@ if [ -x "$HAVEN_POST_DEPLOY_VERIFY_CMD" ]; then
   # --setenv carries the resolved APP_DIR and repository into the transient
   # unit rather than relying on the manager's environment or verifier defaults.
   systemd-run --collect \
-    --unit="hybrid-ai-post-deploy-verify-${EXPECTED_SHA:0:12}-$$" \
+    --unit="haven-post-deploy-verify-${EXPECTED_SHA:0:12}-$$" \
     --service-type=exec \
     --setenv=HAVEN_APP_DIR="$APP_DIR" \
     --setenv=HAVEN_REPOSITORY_SLUG="$REPO_SLUG" \

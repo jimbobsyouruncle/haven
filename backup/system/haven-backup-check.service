@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: backup/system/hybrid-ai-backup-check.service
+# FILE: backup/system/haven-backup-check.service
 # PURPOSE (plain English):
 #   Runs the monthly repository integrity check (backup.sh --check) in system
 #   mode. The check reads ~5% of the stored data and confirms it decrypts and
@@ -12,18 +12,18 @@
 #   hypothesis, not a backup -- so it runs on its own monthly schedule.
 #
 # INSTALLED BY (card F later): install.sh in system mode copies this file to
-#   /etc/systemd/system/ and enables hybrid-ai-backup-check.timer.
+#   /etc/systemd/system/ and enables haven-backup-check.timer.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=hybrid-ai backup integrity verification (system mode)
+Description=haven backup integrity verification (system mode)
 Documentation=file:///opt/haven/backup/README.md
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=hybrid-ai-backup
-Group=hybrid-ai-backup
+User=haven-backup
+Group=haven-backup
 
 ExecStart=/opt/haven/backup/backup.sh --check
 
@@ -33,22 +33,22 @@ RestartPreventExitStatus=3
 SuccessExitStatus=3
 
 # The same credentials the upload unit uses, from the same root-owned store.
-LoadCredential=r2.env:/etc/credstore/hybrid-ai-backup/r2.env
-LoadCredential=repo-password:/etc/credstore/hybrid-ai-backup/repo-password
+LoadCredential=r2.env:/etc/credstore/haven-backup/r2.env
+LoadCredential=repo-password:/etc/credstore/haven-backup/repo-password
 
-StateDirectory=hybrid-ai-backup
-RuntimeDirectory=hybrid-ai-backup
-CacheDirectory=hybrid-ai-backup
+StateDirectory=haven-backup
+RuntimeDirectory=haven-backup
+CacheDirectory=haven-backup
 # LogsDirectory= grants this unit write access to the backup log under
 # ProtectSystem=strict; the shared helper resolves BACKUP_LOG to the SAME path
-# (/var/log/hybrid-ai-backup/backup.log) in system mode, so doctor.sh watches
+# (/var/log/haven-backup/backup.log) in system mode, so doctor.sh watches
 # the file this unit writes.
-LogsDirectory=hybrid-ai-backup
-Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
-Environment=HAVEN_STACK_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
+LogsDirectory=haven-backup
+Environment=HAVEN_ENV_FILE=/etc/haven/haven.env
+Environment=HAVEN_STACK_ENV_FILE=/etc/haven/haven.env
 Environment=HAVEN_BACKUP_MODE=system
-Environment=HAVEN_WORK_DIR=/var/lib/hybrid-ai-backup
-Environment=RESTIC_CACHE_DIR=/var/cache/hybrid-ai-backup
+Environment=HAVEN_WORK_DIR=/var/lib/haven-backup
+Environment=RESTIC_CACHE_DIR=/var/cache/haven-backup
 
 TimeoutStartSec=6h
 

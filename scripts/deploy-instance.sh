@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # PURPOSE (plain English):
 #   The root-side half of the headless deploy. The forced-command SSH
 #   entrypoint (scripts/deploy-forced-command.sh) can do exactly one thing:
-#   start the system unit hybrid-ai-deploy@<sha>.service. That unit runs THIS
+#   start the system unit haven-deploy@<sha>.service. That unit runs THIS
 #   script as root with the 40-hex commit as its single `%i` argument.
 #
 #   This script is the trust boundary. It:
@@ -24,7 +24,7 @@ set -Eeuo pipefail
 #   runs exactly that commit". They must never be skipped.
 #
 #   Each run writes its output to $HAVEN_LOG_DIR/deploy/<sha>.log with
-#   mode 0640 (owner read/write, group read only) and group hybrid-ai-deploy,
+#   mode 0640 (owner read/write, group read only) and group haven-deploy,
 #   so the unprivileged deploy account can read the log without any
 #   systemd-journal access. The deploy/ subdirectory is created mode 0750.
 #
@@ -93,6 +93,11 @@ if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 # --- 2. Exclusive lock, FIRST: two deploys never overlap --------------------
+# FHS execution uses the transaction's O_NOFOLLOW lock opens and protected log.
+# No shell redirection may follow a planted symlink in the shared lock directory.
+if [[ "$APP_DIR" == /opt/haven || "$APP_DIR" == /opt/hybrid-ai ]]; then
+  exec python3 "${SCRIPT_DIR}/install-root.py" deploy "$SHA"
+fi
 # Taken before the run log is created or truncated, and held (fd 9) through the
 # exec of deploy-remote.sh, so the lock covers the whole pipeline. A second
 # deploy is refused here and never touches the first run's log.
@@ -100,16 +105,24 @@ exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   die 3 "another deploy holds ${LOCK_FILE}"
 fi
+CANONICAL_LOCK_FILE=/run/lock/haven-deploy.lock
+if [[ "$APP_DIR" != /opt/haven && "$APP_DIR" != /opt/hybrid-ai ]]; then
+  CANONICAL_LOCK_FILE="${LOCK_FILE}.haven"
+fi
+exec 8>"$CANONICAL_LOCK_FILE"
+if ! flock -n 8; then
+  die 3 "another deploy holds the canonical deployment lock"
+fi
 
 # --- 3. Set up the run log (mode 0640), now that this run owns the lock -----
 mkdir -p -- "$DEPLOY_LOG_DIR"
 chmod 0750 -- "$DEPLOY_LOG_DIR" 2>/dev/null || true
-chgrp hybrid-ai-deploy -- "$DEPLOY_LOG_DIR" 2>/dev/null || true
+chgrp haven-deploy -- "$DEPLOY_LOG_DIR" 2>/dev/null || true
 LOG_FILE="${DEPLOY_LOG_DIR}/${SHA}.log"
 install -m 0640 /dev/null -- "$LOG_FILE"
 # Group read for the deploy account, so it can read this log via the forced
 # command without any systemd-journal access.
-chgrp hybrid-ai-deploy -- "$LOG_FILE" 2>/dev/null || true
+chgrp haven-deploy -- "$LOG_FILE" 2>/dev/null || true
 exec >>"$LOG_FILE" 2>&1
 
 echo "==> deploy-instance: commit ${SHA}"

@@ -3,11 +3,11 @@ set -Eeuo pipefail
 # ---------------------------------------------------------------------------
 # FILE: scripts/deploy-forced-command.sh
 # PURPOSE (plain English):
-#   The forced-command SSH entrypoint for the dedicated `hybrid-ai-deploy`
+#   The forced-command SSH entrypoint for the dedicated `haven-deploy`
 #   account. The account's authorized_keys line pins this script as its
 #   command, so the key can do exactly ONE thing and nothing else: ask the
 #   SYSTEM systemd manager to start the instantiated unit
-#   hybrid-ai-deploy@<sha>.service, where <sha> is a full 40-character
+#   haven-deploy@<sha>.service, where <sha> is a full 40-character
 #   lowercase hex commit.
 #
 #   It reads the command the client sent from SSH_ORIGINAL_COMMAND. It accepts
@@ -27,7 +27,7 @@ set -Eeuo pipefail
 #     The deploy account is deliberately NOT in the systemd-journal group, so
 #     it cannot read journald. The unit writes its output to
 #     $HAVEN_LOG_DIR/deploy/<sha>.log with mode 0640 and group
-#     hybrid-ai-deploy (see scripts/deploy-instance.sh), so this account can
+#     haven-deploy (see scripts/deploy-instance.sh), so this account can
 #     read the log without any journal access.
 #
 #   THIS IS THE LIVE CONTROL PLANE DEPLOY ENTRYPOINT:
@@ -58,7 +58,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # file the unit names, unless the account's environment already sets one. This
 # is what makes this script and the unit agree on $HAVEN_LOG_DIR (and so on
 # the run-log path). The helper only ever PARSES the file, never sources it.
-export HAVEN_ENV_FILE="${HAVEN_ENV_FILE:-/etc/hybrid-ai/hybrid-ai.env}"
+export HAVEN_ENV_FILE="${HAVEN_ENV_FILE:-/etc/haven/haven.env}"
 # This account reads only the 0644 layout file. It needs only layout paths
 # ($HAVEN_LOG_DIR), never a secret. Pin STACK_ENV_FILE at the layout file
 # UNCONDITIONALLY (no :- fallback) so an inherited value cannot point it back
@@ -86,7 +86,7 @@ if [[ ! "$COMMAND" =~ ^deploy\ ([0-9a-f]{40})$ ]]; then
 fi
 
 SHA="${BASH_REMATCH[1]}"
-UNIT="hybrid-ai-deploy@${SHA}.service"
+UNIT="haven-deploy@${SHA}.service"
 
 # Start the SYSTEM manager's unit. No --user flag: this unit is a system unit,
 # and the polkit rule grants this account `start` of exactly this unit shape.

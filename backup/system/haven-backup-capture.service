@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------------------
-# FILE: backup/system/hybrid-ai-backup-capture.service
+# FILE: backup/system/haven-backup-capture.service
 # PURPOSE (plain English):
 #   The CAPTURE half of a system-mode backup. It runs as the unprivileged
-#   hybrid-ai-backup account and does exactly one thing: read the durable state
+#   haven-backup account and does exactly one thing: read the durable state
 #   and stage a consistent copy under StateDirectory. It then tells systemd to
 #   start the upload unit (OnSuccess=) and stops.
 #
@@ -24,11 +24,11 @@
 #   runs -- partial data is worth keeping.
 #
 # INSTALLED BY (card F later): install.sh in system mode copies this file to
-#   /etc/systemd/system/ and enables hybrid-ai-backup-capture.timer. See
+#   /etc/systemd/system/ and enables haven-backup-capture.timer. See
 #   backup/README.md, "System mode (fresh install and migration)".
 # ---------------------------------------------------------------------------
 [Unit]
-Description=hybrid-ai backup capture (stage, no network, no credentials)
+Description=haven backup capture (stage, no network, no credentials)
 Documentation=file:///opt/haven/backup/README.md
 After=network-online.target
 Wants=network-online.target
@@ -36,12 +36,12 @@ Wants=network-online.target
 # When the capture finishes successfully (including an INCOMPLETE capture, which
 # is a success exit status -- see SuccessExitStatus= below), systemd starts the
 # upload unit. OnSuccess lives in the [Unit] section.
-OnSuccess=hybrid-ai-backup-upload.service
+OnSuccess=haven-backup-upload.service
 
 [Service]
 Type=oneshot
-User=hybrid-ai-backup
-Group=hybrid-ai-backup
+User=haven-backup
+Group=haven-backup
 
 # Fixed, root-owned commands run with privilege: the leading "+" drops every
 # sandbox restriction for that single command so it can talk to Docker. It only
@@ -60,14 +60,14 @@ SuccessExitStatus=3
 # Where the staged capture lives (StateDirectory=), the runtime records the root
 # helper writes (RuntimeDirectory=), the backup log (LogsDirectory=), and the
 # fixed paths everything is told to use. Only names and paths, no values.
-StateDirectory=hybrid-ai-backup
-RuntimeDirectory=hybrid-ai-backup
-LogsDirectory=hybrid-ai-backup
-Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
+StateDirectory=haven-backup
+RuntimeDirectory=haven-backup
+LogsDirectory=haven-backup
+Environment=HAVEN_ENV_FILE=/etc/haven/haven.env
 Environment=HAVEN_BACKUP_MODE=system
 Environment=BACKUP_CONTAINER_CONTROL=external
-Environment=HAVEN_WORK_DIR=/var/lib/hybrid-ai-backup
-Environment=BACKUP_LOG=/var/log/hybrid-ai-backup/backup.log
+Environment=HAVEN_WORK_DIR=/var/lib/haven-backup
+Environment=BACKUP_LOG=/var/log/haven-backup/backup.log
 
 # Give up rather than run forever.
 TimeoutStartSec=4h

@@ -168,7 +168,7 @@ if [[ "$SHA_A" == "$SHA_B" ]]; then
   exit 1
 fi
 
-LAYOUT="$WORKDIR/hybrid-ai.env"
+LAYOUT="$WORKDIR/haven.env"
 write_layout() { # <app-dir>
   printf 'HAVEN_APP_DIR=%s\n' "$1" > "$LAYOUT"
 }
@@ -491,7 +491,7 @@ echo "== repository identity, standalone installation and fail-closed HTTP =="
 export CURL_STUB_CODE=200 JQ_STUB_ROWS=$'1\tcompleted\tsuccess\n'
 run_verify "$TREE_A" "__absent__"
 if grep -Fq "https://api.github.com/repos/jimbobsyouruncle/haven/actions/runs?head_sha=$SHA_A" "$CURL_CALL_LOG"; then
-  pass "default verifier API identity remains hybrid-ai"
+  pass "default verifier API identity remains haven"
 else fail "default API identity changed"; fi
 # Simulate install.sh copying only this executable into /usr/local/sbin.
 SOURCE_VERIFY="$VERIFY_SCRIPT"
@@ -556,7 +556,7 @@ export VERIFY_MOCK_ROOT=1 CURL_TILE_CODE=200 JQ_STUB_TILE=ok
 write_layout "$TREE_A"
 printf 'HAVEN_BACKUP_MODE=system\nBACKUP_GROUP_GID=982\nLOCAL_DOMAIN=example.test\nHAVEN_UID=%s\n' "$HAVEN_UID" >> "$LAYOUT"
 run_verify "__unset__" "$LAYOUT"
-if [[ "$(cat "$VERIFY_RESOLVED_LOG")" == /var/log/hybrid-ai-backup/backup.log ]] \
+if [[ "$(cat "$VERIFY_RESOLVED_LOG")" == /var/log/haven-backup/backup.log ]] \
    && [[ "$RC" == 0 ]] && grep -qx PASS <<<"$OUT_STDOUT" \
    && "$REAL_JQ" -e 'all(.gates[]; .state == "PASS") and .gates.backup_log.required' "$VDIR_FILE" >/dev/null; then
   pass "system layout resolves units log and all executed gates produce PASS"
