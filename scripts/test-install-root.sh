@@ -760,6 +760,141 @@ class IdentityTests(MigrationTests):
             return result()
         return self.runner(args, **kwargs)
 
+    def socket_fixture(self):
+        import socket
+        self.identity_fixture()
+        self.tx.path('/run').mkdir()
+        self.tx.path('/var/run').symlink_to('../run')
+        sock = socket.socket(socket.AF_UNIX)
+        self.addCleanup(sock.close)
+        sock.bind(str(self.tx.path('/run/docker.sock')))
+        self.tx.path('/run/docker.sock').chmod(0o660)
+        for container in self.containers:
+            service = container['Config']['Labels']['com.docker.compose.service']
+            if service in ('status', 'openhands'):
+                container['Mounts'].append(dict(Type='bind', Source=str(self.tx.path('/var/run/docker.sock')),
+                    Destination='/var/run/docker.sock', RW=service == 'openhands'))
+
+    def test_identity_socket_alias_migration_and_canonical_inspect_acceptance(self):
+        self.socket_fixture()
+        self.tx.deploy(self.sha)
+        # Docker may report either spelling; only this socket is normalized.
+        for container in self.containers:
+            for mount in container['Mounts']:
+                if mount['Destination'] == '/var/run/docker.sock':
+                    mount['Source'] = str(self.tx.path('/run/docker.sock'))
+        self.tx.accept(self.sha, self.receipt())
+        self.assertEqual(self.tx.load()['phase'], 'accepted')
+
+    def test_identity_socket_invalid_mapping_refuses_before_mutation(self):
+        self.socket_fixture()
+        _, values = self.tx.source()
+        mount = self.containers[-1]['Mounts'][0]
+        original = dict(mount)
+        for field, value in [('Source', str(self.root / 'other.sock')),
+                             ('Destination', '/other.sock'), ('Type', 'volume')]:
+            with self.subTest(field=field):
+                mount[field] = value
+                with self.assertRaises(MODULE.Refusal):
+                    self.tx.identity_preflight(values)
+                mount.clear()
+                mount.update(original)
+        self.containers[0]['Mounts'].append(dict(original))
+        with self.assertRaisesRegex(MODULE.Refusal, 'socket bind mapping'):
+            self.tx.identity_preflight(values)
+        self.assertFalse(self.tx.journal.exists())
+        self.assert_preserved()
+
+    def test_identity_socket_owner_parent_and_inode_drift_refuse(self):
+        import socket
+        self.socket_fixture()
+        mount = self.containers[-1]['Mounts'][0]
+        canonical = self.tx.path('/run/docker.sock')
+        original_stat = Path.stat
+        def wrong_owner(path, *args, **kwargs):
+            info = original_stat(path, *args, **kwargs)
+            if path == canonical:
+                fields = list(info)
+                fields[4] = self.tx.owner + 1
+                return os.stat_result(fields)
+            return info
+        with patch.object(Path, 'stat', wrong_owner):
+            with self.assertRaisesRegex(MODULE.Refusal, 'socket identity'):
+                self.tx.docker_socket_bind('openhands', mount)
+        canonical.parent.chmod(0o777)
+        with self.assertRaisesRegex(MODULE.Refusal, 'not trusted'):
+            self.tx.docker_socket_bind('openhands', mount)
+        canonical.parent.chmod(0o755)
+        self.tx.deploy(self.sha)
+        canonical.rename(canonical.with_name('retained.sock'))
+        replacement = socket.socket(socket.AF_UNIX)
+        self.addCleanup(replacement.close)
+        replacement.bind(str(canonical))
+        canonical.chmod(0o660)
+        with self.assertRaisesRegex(MODULE.Refusal, 'socket identity changed'):
+            self.tx.accept(self.sha, self.receipt())
+
+    def test_identity_socket_duplicate_destination_refuses(self):
+        self.socket_fixture()
+        self.containers[-1]['Mounts'].append(dict(self.containers[-1]['Mounts'][0]))
+        with self.assertRaisesRegex(MODULE.Refusal, 'ambiguous'):
+            self.tx.deploy(self.sha)
+        self.assertFalse(self.tx.journal.exists())
+
+    def test_identity_socket_unsafe_paths_and_types_refuse(self):
+        self.socket_fixture()
+        _, values = self.tx.source()
+        alias = self.tx.path('/var/run')
+        alias.unlink()
+        alias.symlink_to(self.root)
+        with self.assertRaisesRegex(MODULE.Refusal, 'parent alias'):
+            self.tx.identity_preflight(values)
+        alias.unlink()
+        alias.symlink_to('../run')
+        source = self.tx.path('/run/docker.sock')
+        source.chmod(0o666)
+        with self.assertRaisesRegex(MODULE.Refusal, 'socket identity'):
+            self.tx.identity_preflight(values)
+        source.unlink()
+        with self.assertRaisesRegex(MODULE.Refusal, 'missing'):
+            self.tx.identity_preflight(values)
+        source.write_text('not a socket')
+        with self.assertRaisesRegex(MODULE.Refusal, 'socket identity'):
+            self.tx.identity_preflight(values)
+        source.unlink()
+        source.symlink_to(self.data)
+        with self.assertRaisesRegex(MODULE.Refusal, 'symlink Docker socket'):
+            self.tx.identity_preflight(values)
+
+    def test_identity_socket_exception_does_not_allow_persistent_symlinks(self):
+        self.socket_fixture()
+        data = self.tx.path('/var/lib/hybrid-ai/ollama_data')
+        data.rename(data.with_name('real-data'))
+        data.symlink_to('real-data')
+        with self.assertRaisesRegex(MODULE.Refusal, 'symlink Docker bind'):
+            self.tx.deploy(self.sha)
+        self.assertFalse(self.tx.journal.exists())
+
+    def test_identity_socket_forward_recovery_and_changed_identity_refusal(self):
+        self.socket_fixture()
+        self.fail_install = True
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.tx.deploy(self.sha)
+        current = self.tx.path('/var/lib/haven/database')
+        current.write_bytes(b'current writes')
+        source = self.tx.path('/run/docker.sock')
+        source.chmod(0o600)
+        self.fail_install = False
+        with self.assertRaisesRegex(MODULE.Refusal, 'socket identity changed'):
+            self.tx.recover(self.sha)
+        self.assertEqual(current.read_bytes(), b'current writes')
+        source.chmod(0o660)
+        self.tx.recover(self.sha)
+        self.assertEqual(current.read_bytes(), b'current writes')
+        self.containers[-1]['Mounts'][0]['RW'] = False
+        with self.assertRaisesRegex(MODULE.Refusal, 'data mounts'):
+            self.tx.accept(self.sha, self.receipt())
+
     def test_identity_migration_preserves_data_and_numeric_ids(self):
         self.identity_fixture()
         inode = self.data.stat().st_ino

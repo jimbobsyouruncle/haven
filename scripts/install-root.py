@@ -237,7 +237,13 @@ class Transaction:
             found.add(service)
             if any(m.get('Type') != 'bind' for m in mounts):
                 raise Refusal('unknown persistent Docker volume requires reviewed mapping')
+            if len({m['Destination'] for m in mounts}) != len(mounts):
+                raise Refusal('ambiguous Docker bind destinations')
             for mount in mounts:
+                socket = self.docker_socket_bind(service, mount)
+                if socket is not None:
+                    mount['socket_identity'] = socket
+                    continue
                 source = Path(mount['Source'])
                 if not source.exists() or any(p.is_symlink() for p in (source, *source.parents)):
                     raise Refusal('missing or symlink Docker bind source')
@@ -444,9 +450,14 @@ class Transaction:
             if container.get('Name', '').lstrip('/') != name:
                 raise Refusal('canonical Docker container identity mismatch')
             found.add(service)
-            before = {(self.mapped(m['Source']), m['Destination'], m['RW']) for m in expected[service]['mounts']}
-            after = {(m['Source'], m['Destination'], m['RW']) for m in container['Mounts'] if m['Type'] == 'bind'}
-            if before != after or len(after) != len(container['Mounts']):
+            def bind_key(mount, original=False):
+                socket = self.docker_socket_bind(service, mount)
+                source = str(self.path('/run/docker.sock')) if socket is not None else mount['Source']
+                return (self.mapped(source) if original else source, mount['Destination'], mount['RW'])
+            before = {bind_key(m, True) for m in expected[service]['mounts']}
+            after = {bind_key(m) for m in container['Mounts'] if m['Type'] == 'bind'}
+            if (before != after or len(after) != len(container['Mounts'])
+                    or len({m['Destination'] for m in container['Mounts']}) != len(container['Mounts'])):
                 raise Refusal('canonical Docker data mounts do not match original binds')
         if found != set(expected):
             raise Refusal('canonical Docker service inventory incomplete')
@@ -466,9 +477,38 @@ class Transaction:
             raise Refusal('canonical deployment privilege rule mismatch')
         self.command(['bash', str(self.app / 'scripts/sandbox-firewall.sh'), 'check'])
 
+    def docker_socket_bind(self, service, mount):
+        """Only the existing Docker API binds may traverse verified /var/run."""
+        sources = {str(self.path('/var/run/docker.sock')), str(self.path('/run/docker.sock'))}
+        if mount['Source'] not in sources and mount['Destination'] != '/var/run/docker.sock':
+            return None
+        if (service not in ('status', 'openhands') or mount['Type'] != 'bind'
+                or mount['Source'] not in sources or mount['Destination'] != '/var/run/docker.sock'):
+            raise Refusal('unexpected Docker socket bind mapping')
+        source = Path(mount['Source'])
+        canonical = self.path('/run/docker.sock')
+        self.trusted(canonical.parent)
+        if source == self.path('/var/run/docker.sock'):
+            alias = source.parent
+            self.trusted(alias.parent)
+            if (not alias.is_symlink() or alias.lstat().st_uid != self.owner
+                    or os.readlink(alias) not in ('../run', str(canonical.parent))
+                    or alias.resolve() != canonical.parent):
+                raise Refusal('unexpected Docker socket parent alias')
+        if source.is_symlink() or canonical.is_symlink() or not canonical.exists():
+            raise Refusal('missing or symlink Docker socket')
+        info = canonical.stat()
+        if not stat.S_ISSOCK(info.st_mode) or info.st_uid != self.owner or info.st_mode & 0o007:
+            raise Refusal('unexpected Docker socket identity')
+        return dict(device=info.st_dev, inode=info.st_ino, uid=info.st_uid,
+                    gid=info.st_gid, mode=info.st_mode)
+
     def check_identity_binds(self, identity):
         for container in identity['containers']:
             for mount in container['mounts']:
+                socket = self.docker_socket_bind(container['service'], mount)
+                if socket is not None and socket != mount.get('socket_identity'):
+                    raise Refusal('Docker socket identity changed; recovery requires review')
                 if 'identity' in mount:
                     self.check_move(mount['identity'], Path(self.mapped(mount['Source'])))
 
