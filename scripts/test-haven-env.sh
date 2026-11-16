@@ -786,6 +786,24 @@ class ConfigIdentityTests(unittest.TestCase):
         self.assertEqual(result.stdout, value)
         self.assertFalse(marker.exists())
 
+    def test_original_layout_conflicts_cannot_hide_behind_redirection(self):
+        code = Path(self.work.name) / "original"
+        helper = code / "scripts/lib/haven-env.sh"
+        helper.parent.mkdir(parents=True)
+        helper.write_text((ROOT / "scripts/lib/haven-env.sh").read_text())
+        other = Path(self.work.name) / "new-root"
+        other.mkdir()
+        (code / ".env").write_text(
+            "HAVEN_APP_DIR=" + str(other) + "\n" +
+            "HAVEN_ENV_FILE=" + str(other / "one") + "\n" +
+            "HYBRID_AI_ENV_FILE=" + str(other / "two") + "\n")
+        result = subprocess.run(["bash", "-eu", "-c", 'source "$1"; printf caller-ran',
+                                 "identity-test", str(helper)],
+                                env={"PATH": os.environ["PATH"], "HOME": self.work.name},
+                                text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+
     def test_unknown_keys_are_not_platform_aliases(self):
         result = self.resolve(expression='haven_key HYBRID_AI_VENDOR_EXTENSION')
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -18,8 +18,10 @@ Values are literal data, including quotes, dollar signs and backticks. No reader
 sources configuration as shell code or logs conflicting values. Vendor variables
 and unknown keys are not renamed by prefix matching.
 
-The helper checks both layout and separate stack files for conflicting known
-aliases, even when process overrides exist. The installer translates only known
+The helper checks the original bootstrap file before following path redirects,
+and checks the resolved layout and separate stack file for conflicting known
+aliases, even when process overrides exist. Process and file readers share one
+explicit alias list. The installer translates only known
 keys when it next rewrites an explicitly selected stack file; it retains unowned
 settings verbatim, including duplicate-key order, and retains mode 0600.
 Known retired settings keep their existing explicit migration rules. Existing
