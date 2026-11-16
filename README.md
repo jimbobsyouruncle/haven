@@ -339,7 +339,7 @@ python3 <path-to-generate.py> --root . --output-dir . --max-bytes 24576
 | `1` | A map is stale or missing, or a retired `CONSOLIDATED_*.md` is still tracked |
 | `2` | Usage error, or the generator failed (including a size overflow) |
 
-The **Agent context** pull request workflow (`.github/workflows/agent-context.yml`) runs that check on every pull request so a stale map cannot merge. The maps land only through reviewed pull requests — nothing regenerates and commits them automatically.
+The **Agent context** pull request workflow (`.github/workflows/agent-context.yml`) runs that check on every pull request so a stale map cannot merge. The maps land only through human-reviewed pull requests. The separate agent-context committer can generate a bot branch and draft refresh PR after a push to `main`; it validates the refresh and stops for Human Owner review and merge.
 
 ---
 
