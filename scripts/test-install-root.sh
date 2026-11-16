@@ -458,21 +458,20 @@ class MigrationTests(unittest.TestCase):
         self.tx.deploy(self.sha)
         self.assertEqual(self.tx.load()['proxy_recovery']['configuration_id'], self.config_id)
 
-    def test_production_workflow_requires_manual_exact_sha_authorization(self):
+    def test_production_workflow_is_inert_until_explicit_activation(self):
         workflow = (Path(__file__).resolve().parent.parent /
                     '.github/workflows/deploy.yml').read_text()
-        triggers = workflow.split('\non:\n', 1)[1].split('\nconcurrency:', 1)[0]
-        self.assertEqual([line.strip() for line in triggers.splitlines()
-                          if line.startswith('  ') and not line.startswith('   ')
-                          and not line.lstrip().startswith('#')], ['workflow_dispatch:'])
-        self.assertIn('default: false', triggers)
-        job = workflow.split('\n  deploy:\n', 1)[1]
-        conditions = next(line.strip()[4:] for line in job.splitlines()
-                          if line.startswith('    if: '))
-        self.assertEqual(conditions.split(' && '), [
-            "github.event_name == 'workflow_dispatch'", "github.ref == 'refs/heads/main'",
-            'inputs.authorize_production == true', 'inputs.deployment_sha == github.sha'])
-        self.assertIn('    environment: production', job)
+        self.assertIn('default: false', workflow)
+        for name in ('validate', 'deploy'):
+            job = workflow.split('\n  ' + name + ':\n', 1)[1]
+            condition = next(line for line in job.splitlines() if line.startswith('    if:'))
+            for guard in ("github.repository == 'jimbobsyouruncle/haven'",
+                          "github.ref == 'refs/heads/main'",
+                          "vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled'",
+                          "inputs.authorize_production == true", 'inputs.deployment_sha == github.sha'):
+                self.assertIn(guard, condition)
+        self.assertIn('    environment: production', workflow)
+        self.assertIn('          ref: ${{ github.sha }}', workflow)
 
     def test_cli_gate_annotation_never_contains_subprocess_output(self):
         with self.assertRaises(MODULE.Refusal) as caught:

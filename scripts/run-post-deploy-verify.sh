@@ -4,7 +4,8 @@ set -Eeuo pipefail
 # ---------------------------------------------------------------------------
 # FILE: scripts/run-post-deploy-verify.sh
 # PURPOSE (plain English):
-#   Checks the deploy AFTER the deploy workflow has finished. scripts/
+#   Canonical units check trusted validation while their deploy job waits.
+#   Direct operator/custom paths check AFTER the deploy workflow has finished. scripts/
 #   deploy-remote.sh starts it in a transient systemd unit when it is present,
 #   so the check outlives the deploy unit's cgroup (a child of the deploy unit
 #   would be killed the moment that unit exits).
@@ -95,6 +96,7 @@ haven_repository_slug() {
 REPO_SLUG="$(haven_repository_slug)" || exit 2
 POLL_SECONDS=30
 DEADLINE_SECONDS=3600
+[[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]] && DEADLINE_SECONDS=540
 USER_AGENT="haven-post-deploy-verify"
 
 usage_refuse() {
@@ -487,7 +489,14 @@ probe_runs() {
   PROBE_ERROR=""
   RUN_IDS=(); RUN_STATUS=(); RUN_CONCLUSION=()
 
-  if ! http_code="$(curl -sS --max-time 20 -A "$USER_AGENT" \
+  if [[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]]; then
+    if ! python3 "$APP_DIR/scripts/deploy-provenance.py" runs "$SHA" > "$BODY_FILE"; then
+      PROBE_STATE="error"
+      PROBE_ERROR="trusted deployment validation unavailable or unsuccessful"
+      return 0
+    fi
+    http_code=200
+  elif ! http_code="$(curl -sS --max-time 20 -A "$USER_AGENT" \
         -o "$BODY_FILE" -w '%{http_code}' "$API_URL" 2>"$ERR_FILE")"; then
     PROBE_STATE="error"
     PROBE_ERROR="curl could not reach the github api"
@@ -572,7 +581,11 @@ while :; do
         finish FAIL 1 "run conclusions: $(conclusion_list)"
       fi
 
-      record_gate workflow_runs true PASS "all returned workflow runs succeeded"
+      if [[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]]; then
+        record_gate workflow_runs true PASS "current deployment validation passed; other deployment attempts excluded; other workflows succeeded; own deploy job awaits host gates"
+      else
+        record_gate workflow_runs true PASS "all returned workflow runs succeeded"
+      fi
       # The workflow is green. Now prove the host is actually on that commit.
       record_gate deployed_head true FAIL "deployed HEAD unreadable or mismatched"
       deployed_head=""

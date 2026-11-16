@@ -177,8 +177,10 @@
 - scripts/deploy-forced-command.sh
 - scripts/deploy-image-gate.sh - FILE: scripts/deploy-image-gate.sh
 - scripts/deploy-instance.sh
+- scripts/deploy-provenance.py - Fail-closed main deployment provenance; API reads only, no host mutation.
 - scripts/deploy-remote.sh
 - scripts/deploy-trigger.sh
+- scripts/deploy-verify.sh - Root ExecStartPost: resolve the existing log override and bound verification.
 - scripts/install-root.py - Recoverable installation/identity handoff using the ADR-0006 checkpoint.
 - scripts/no-masked-literals-baseline.txt
 - scripts/prune-conversations.sh - FILE: scripts/prune-conversations.sh
@@ -206,6 +208,7 @@
 - scripts/test-deploy-forced-command.sh
 - scripts/test-deploy-image-gate.sh
 - scripts/test-deploy-instance.sh
+- scripts/test-deploy-provenance.sh - Offline API/event fixtures for the existing deployment workflow.
 - scripts/test-deploy-remote.sh
 - scripts/test-deploy-trigger.sh
 - scripts/test-deploy-wiring-install.sh - FILE: scripts/test-deploy-wiring-install.sh

@@ -404,7 +404,9 @@ class Transaction:
         env = self.installation_environment()
         env.update(HAVEN_APP_DIR=str(self.app), HAVEN_ENV_FILE=str(self.layout),
                    HAVEN_INSTALL_ROOT_HANDOFF='1', HAVEN_VERIFY_INSTALL_ROOT='1',
-                   HAVEN_IDENTITY_DRIVER='1', HAVEN_REPOSITORY_SLUG='jimbobsyouruncle/haven')
+                   HAVEN_IDENTITY_DRIVER='1',
+                   HAVEN_DEPLOY_SYNCHRONOUS_VERIFY=os.environ.get('HAVEN_DEPLOY_SYNCHRONOUS_VERIFY', '0'),
+                   HAVEN_REPOSITORY_SLUG='jimbobsyouruncle/haven')
         try:
             self.run(['bash', str(self.app / 'scripts/deploy-remote.sh'), sha],
                      cwd=self.app, env=env, check=True, pass_fds=(9, 8))
@@ -1095,6 +1097,7 @@ class Transaction:
             env.update(HAVEN_APP_DIR=str(self.app), HAVEN_ENV_FILE=str(self.layout),
                        HAVEN_INSTALL_ROOT_HANDOFF='1', HAVEN_VERIFY_INSTALL_ROOT='1',
                        HAVEN_IDENTITY_DRIVER='1',
+                       HAVEN_DEPLOY_SYNCHRONOUS_VERIFY=os.environ.get('HAVEN_DEPLOY_SYNCHRONOUS_VERIFY', '0'),
                        HAVEN_REPOSITORY_SLUG='jimbobsyouruncle/haven',
                        HYBRID_AI_APP_DIR=str(self.app), HYBRID_AI_ENV_FILE=str(self.layout),
                        HYBRID_AI_INSTALL_ROOT_HANDOFF='1', HYBRID_AI_VERIFY_INSTALL_ROOT='1',

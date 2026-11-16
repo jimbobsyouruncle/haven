@@ -791,6 +791,26 @@ run_verify "$TREE_A" "__absent__" "$BLOCKER/deploy-verdicts"
 if [[ "$RC" == 1 ]] && grep -q '^FAIL: mandatory installation receipt' <<< "$OUT_STDOUT"; then
   pass "missing mandatory installation receipt fails closed"
 else fail "missing mandatory installation receipt did not block"; fi
+# Exercise the production job-aware probe through the real verifier. Its
+# helper is fixture-only here; provenance/API rules have their own suite.
+cat > "$TREE_A/scripts/deploy-provenance.py" <<'PYFIXTURE'
+import os
+import sys
+if os.environ.get('FIXTURE_PROVENANCE_FAIL') == '1':
+    sys.exit(1)
+print('{"workflow_runs":[{"id":1,"status":"completed","conclusion":"success"}]}')
+PYFIXTURE
+export HAVEN_VERIFY_DEPLOY_JOB=1
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 0 ]] && "$REAL_JQ" -e '.gates.workflow_runs.state == "PASS"' "$VDIR_FILE" >/dev/null; then
+  pass "unit verifier accepts successful validation without waiting for its own deploy job"
+else fail "unit verifier did not accept validated own-job projection"; fi
+export FIXTURE_PROVENANCE_FAIL=1
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 1 ]] && grep -q '^FAIL: trusted deployment validation unavailable or unsuccessful' <<< "$OUT_STDOUT"; then
+  pass "unit verifier refuses missing or unsuccessful trusted validation"
+else fail "unit verifier failed to enforce trusted validation"; fi
+unset HAVEN_VERIFY_DEPLOY_JOB FIXTURE_PROVENANCE_FAIL
 unset HAVEN_VERIFY_INSTALL_ROOT
 
 echo "== done =="
