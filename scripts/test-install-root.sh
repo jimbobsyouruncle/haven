@@ -898,6 +898,38 @@ class IdentityTests(MigrationTests):
         self.assertEqual(self.tx.load()['phase'], 'awaiting_verifier')
 
 
+    def test_identity_native_lock_exclusion_and_symlink_refusal(self):
+        import fcntl
+        directory = self.tx.path('/run/lock')
+        directory.mkdir(parents=True)
+        locks = self.tx.lock_pair()
+        try:
+            with self.assertRaises(BlockingIOError):
+                self.tx.lock_pair()
+        finally:
+            for fd in locks:
+                os.close(fd)
+        canonical = os.open(directory / 'haven-deploy.lock', os.O_WRONLY)
+        try:
+            fcntl.flock(canonical, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):
+                self.tx.lock_pair()
+        finally:
+            os.close(canonical)
+        # Failed canonical acquisition released the legacy lock as well.
+        locks = self.tx.lock_pair()
+        for fd in locks:
+            os.close(fd)
+        legacy = directory / 'hybrid-ai-deploy.lock'
+        legacy.unlink()
+        sentinel = self.root / 'sentinel'
+        sentinel.write_bytes(b'never truncate')
+        legacy.symlink_to(sentinel)
+        with self.assertRaises(OSError):
+            self.tx.lock_pair()
+        self.assertEqual(sentinel.read_bytes(), b'never truncate')
+
+
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(MigrationTests)
 suite.addTests(IdentityTests(name) for name in dir(IdentityTests)
                if name.startswith('test_identity_'))

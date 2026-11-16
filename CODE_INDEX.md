@@ -455,6 +455,7 @@
   - def mapped(self, value)
   - def mapped_literal(self, raw)
   - def installation_environment()
+  - def lock_pair(self)
   - def translate(self, content, layout)
   - def identity_preflight(self, values)
   - def identity_prepare(self, journal)

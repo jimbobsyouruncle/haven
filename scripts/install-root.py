@@ -87,6 +87,25 @@ class Transaction:
         return {k: v for k, v in os.environ.items()
                 if k not in derived and not k.startswith(('HAVEN_', 'HYBRID_AI_'))}
 
+    def lock_pair(self):
+        locks = []
+        try:
+            for name in ('hybrid-ai-deploy.lock', 'haven-deploy.lock'):
+                fd = os.open(self.path('/run/lock/' + name),
+                             os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+                locks.append(fd)
+                info = os.fstat(fd)
+                if (info.st_uid != self.owner or not stat.S_ISREG(info.st_mode)
+                        or info.st_nlink != 1 or info.st_mode & 0o022):
+                    raise Refusal('deployment lock is not a root-controlled regular file')
+                os.fchmod(fd, 0o600)
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return locks
+        except BaseException:
+            for fd in locks:
+                os.close(fd)
+            raise
+
     def translate(self, content, layout=False):
         # Known keys only; retain raw quoting, dollars and credential bytes.
         helper = (self.app / 'scripts/lib/haven-env.sh').read_text()
@@ -1078,17 +1097,16 @@ def main():
     action, sha = sys.argv[1:]
     # Fixed order, unchanged old lock inode. Open without truncation or symlink
     # following; /run/lock can be shared. Never trust inherited fd numbers.
-    for fd, name in ((9, '/run/lock/hybrid-ai-deploy.lock'), (8, '/run/lock/haven-deploy.lock')):
-        opened = os.open(name, os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
-        info = os.fstat(opened)
-        if info.st_uid != 0 or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o022:
-            raise Refusal('deployment lock is not a root-controlled regular file')
-        os.fchmod(opened, 0o600)
-        if opened != fd:
-            os.dup2(opened, fd)
-            os.close(opened)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     transaction = Transaction()
+    acquired = transaction.lock_pair()
+    # Preserve both descriptions even if inherited descriptors made open()
+    # return 8 or 9. Never overwrite the other lock while arranging pass_fds.
+    preserved = [fcntl.fcntl(fd, fcntl.F_DUPFD_CLOEXEC, 10) for fd in acquired]
+    for fd in acquired:
+        os.close(fd)
+    for opened, fd in zip(preserved, (9, 8)):
+        os.dup2(opened, fd)
+        os.close(opened)
     if action == 'migrate':
         transaction.identity_cutover = True
         transaction.deploy(sha)
