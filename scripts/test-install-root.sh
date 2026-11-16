@@ -920,6 +920,8 @@ class IdentityTests(MigrationTests):
         self.tx.accept(self.sha, self.receipt())
 
     def manual_verifier(self, args, **kw):
+        if args[0] != '/usr/bin/timeout':
+            return self.identity_runner(args, **kw)
         self.assertIn('run-post-deploy-verify.sh', ' '.join(args))
         self.assertEqual(args[-1], self.sha)
         env = kw['env']
@@ -932,7 +934,7 @@ class IdentityTests(MigrationTests):
         os.write(int(env['HAVEN_VERIFY_EVIDENCE_FD']), json.dumps(result).encode())
         return subprocess.CompletedProcess(args, 0)
 
-    def test_manual_reverification_accepts_original_sha_and_is_idempotent(self):
+    def test_identity_manual_reverification_accepts_original_sha_and_is_idempotent(self):
         self.identity_fixture()
         self.tx.deploy(self.sha)
         data = self.tx.path('/var/lib/haven/database')
@@ -952,12 +954,14 @@ class IdentityTests(MigrationTests):
         self.assertEqual(data.stat().st_ino, inode)
         self.assertEqual(self.git(self.tx.app, 'rev-parse', 'HEAD'), self.sha)
 
-    def test_manual_reverification_missing_private_evidence_or_backup_never_accepts(self):
+    def test_identity_manual_reverification_missing_private_evidence_or_backup_never_accepts(self):
         self.identity_fixture()
         self.tx.deploy(self.sha)
         before = self.tx.load()
         for missing in ('private', 'backup'):
             def verifier(args, **kw):
+                if args[0] != '/usr/bin/timeout':
+                    return self.identity_runner(args, **kw)
                 self.manual_verifier(args, **kw)
                 fd = int(kw['env']['HAVEN_VERIFY_EVIDENCE_FD'])
                 os.ftruncate(fd, 0)
@@ -970,7 +974,7 @@ class IdentityTests(MigrationTests):
                     self.tx.reverify_manual(self.sha)
             self.assertEqual(self.tx.load(), before)
 
-    def test_manual_reverification_refuses_wrong_sha_phase_or_boundary(self):
+    def test_identity_manual_reverification_refuses_wrong_sha_phase_or_boundary(self):
         self.identity_fixture()
         self.tx.deploy(self.sha)
         original = self.tx.load()
