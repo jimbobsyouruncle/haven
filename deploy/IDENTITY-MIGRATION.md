@@ -24,6 +24,37 @@ volumes, nested host mounts and cross-filesystem moves refuse. Host mount replay
 needs a separately reviewed fstab/mount-unit mapping; a live rename is insufficient. A refusal requires a concrete reviewed
 mapping; do not bypass it, create replacement data, or copy filesystem trees.
 
+The sole bind-path alias exception is the existing status/OpenHands Docker API
+mount at destination `/var/run/docker.sock`. Its source must be exactly
+`/var/run/docker.sock` (with root-owned `/var/run` pointing directly to `/run`)
+or `/run/docker.sock`. Trusted parents and a root-owned Unix socket with no
+other-user permissions are required. Device/inode, owner/group and mode are
+checkpointed and rechecked before activation, forward recovery and acceptance.
+Only these two source spellings are equivalent during Docker inspection;
+destinations and read/write flags must still match, with no duplicate destinations.
+Socket replacement or metadata drift refuses and needs operator review; do not
+restart Docker or edit the journal to bypass this check. Other symlinks remain
+unsupported, including persistent-data binds and a symlinked socket itself.
+
+For a refusal during identity preflight, before any new transaction is published,
+retain the existing journals and recovery artifacts. Confirm privately that no
+unaccepted transaction or partially migrated layout requires recovery. After the
+correction is reviewed and merged, prepare a separate root-controlled checkout
+of the **new approved full main SHA**, verify its HEAD and clean tracked contents,
+and invoke that checkout's driver with the same SHA:
+
+```sh
+sudo python3 "$reviewed_checkout/scripts/install-root.py" migrate "$approved_sha"
+```
+
+Do not retry the old failing SHA or use an old driver with a new target. The driver
+repeats all preflight, locking, immutable recovery and mandatory verification gates.
+If a protected journal instead shows activation/writers possible, follow the
+matching-SHA recovery procedure below; a fresh migration is not a recovery bypass.
+Record sanitized requested/installed SHA, protected journal phase and mandatory
+gate results. A preflight correction or successful command exit alone establishes
+no runtime acceptance. Execution still requires owner production authorization.
+
 Stop scheduling manual restore/backup/prune/deploy operations during the window.
 Run the cutover from a root operator session, outside the deploy account and its
 unit. The service accounts must have no remaining processes after their writers

@@ -473,6 +473,7 @@
   - def identity_activate(self, journal)
   - def recover(self, sha)
   - def verify_identity(self, journal)
+  - def docker_socket_bind(self, service, mount)
   - def check_identity_binds(self, identity)
   - def check_move(move, path)
   - def identity_restore(self, journal)
