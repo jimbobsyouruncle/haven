@@ -105,7 +105,9 @@ done
 if (( TEST_RESTORE )); then MODE="test"; fi
 [[ "$MODE" != "direct" || -n "$SNAPSHOT_ID" ]] || { echo "--snapshot needs an id" >&2; exit 2; }
 
-readonly MODE TEST_RESTORE SNAPSHOT_ID
+readonly MODE TEST_RESTORE
+# Interactive selection assigns SNAPSHOT_ID after listing available snapshots.
+if [[ "$MODE" != "interactive" ]]; then readonly SNAPSHOT_ID; fi
 
 if [[ -t 1 ]]; then
   C_RST=$'\033[0m'; C_INF=$'\033[36m'; C_OK=$'\033[32m'

@@ -60,7 +60,7 @@ if [[ -z "$REAL_SQLITE3" ]]; then
   echo "error: sqlite3 is required to run these tests" >&2
   exit 2
 fi
-for t in mktemp find rsync head cp; do
+for t in mktemp find rsync head cp script; do
   command -v "$t" >/dev/null 2>&1 || { echo "error: $t is required" >&2; exit 2; }
 done
 [[ -f "$BACKUP_SRC" ]] || { echo "error: backup.sh not found at $BACKUP_SRC" >&2; exit 2; }
@@ -581,6 +581,23 @@ run_safety_restore --test
 assert "restore safety: empty database set fails" test "$restore_rc" -ne 0
 CAPTURE="$GOOD_CAPTURE"
 cp "$TMPROOT/credentials.original" "$CONF/r2.env"
+
+# A real pseudo-terminal exercises normal snapshot selection and cancellation.
+# It must accept the chosen ID before the destructive confirmation is declined.
+interactive_rc=0
+printf 'chosen-id\nCANCEL\n' | \
+  env -u BACKUP_LOG HOME="$HOME2" HAVEN_APP_DIR="$APP2" \
+      HAVEN_DATA_DIR="$DATA2" HAVEN_LOG_DIR="$LOG2" HAVEN_WORK_DIR="$WORK2" \
+      BACKUP_CONF_DIR="$CONF" SNAPSHOT_SRC="$CAPTURE" RESTORE_ARGS="$TMPROOT/interactive.args" \
+      PATH="$STUB:$PATH" \
+  script -q -e -c "bash '$APP2/backup/restore.sh'" /dev/null \
+    > "$TMPROOT/interactive.out" 2>&1 || interactive_rc=$?
+assert "interactive restore: selected snapshot downloaded" grep -Fxq chosen-id "$TMPROOT/interactive.args"
+assert "interactive restore: confirmation reached" grep -Fq 'Type RESTORE to proceed' "$TMPROOT/interactive.out"
+assert "interactive restore: cancellation fails" test "$interactive_rc" -ne 0
+assert "interactive restore: cancellation reported" grep -Fq 'Aborted by user' "$TMPROOT/interactive.out"
+assert "interactive restore: cancellation stops no containers" test ! -s "$DOCKER_LOG"
+assert "interactive restore: cancellation preserves live files" test "$LIVE_BEFORE" = "$(find "$DATA2" -type f -exec sha256sum {} + | sort)"
 
 # ---------------------------------------------------------------------------
 # Cases l-p: the stage/upload split (system-mode units call these flags).
