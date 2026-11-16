@@ -740,6 +740,8 @@ class IdentityTests(MigrationTests):
             return result()
         if args[:2] in (['docker', 'update'], ['docker', 'stop']) or args[:3] == ['docker', 'network', 'create']:
             return result()
+        if args[:2] == ['systemctl', 'show']:
+            return result('loaded')
         if args[0] == 'systemctl' and args[1] in ('is-enabled', 'is-active'):
             return result('disabled' if args[1] == 'is-enabled' else 'inactive', 1)
         if args[0] == 'bash' and args[1].endswith('/sandbox-firewall.sh'):
@@ -1066,6 +1068,156 @@ class IdentityTests(MigrationTests):
             self.tx.lock_pair()
         self.assertEqual(sentinel.read_bytes(), b'never truncate')
 
+
+    def test_identity_absent_system_units_are_fenced_without_stop(self):
+        self.identity_fixture()
+        for name in ('haven-check.service', 'haven-check.timer'):
+            (self.remote / 'backup' / name).write_text('[Unit]\nDescription=Synthetic optional user unit\n')
+        self.git(self.remote, 'add', '.')
+        self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-qm', 'absent system unit candidates')
+        self.sha = self.git(self.remote, 'rev-parse', 'HEAD')
+        original = self.tx.run
+        calls = []
+        def runner(args, **kwargs):
+            calls.append(args)
+            if args[:2] == ['systemctl', 'show']:
+                return subprocess.CompletedProcess(args, 0, 'not-found', '')
+            if args[:2] in (['systemctl', 'stop'], ['systemctl', 'disable']):
+                raise subprocess.CalledProcessError(5, args, stderr='synthetic absent unit')
+            return original(args, **kwargs)
+        self.tx.run = runner
+        operation = self.tx.operation
+        def inspect_fence(journal, stage, item=0):
+            operation(journal, stage, item)
+            if stage == 'reload-fences':
+                self.assertIn(b'RefuseManualStart=yes',
+                    (self.tx.units / 'hybrid-ai-backup-capture.service').read_bytes())
+        with patch.object(self.tx, 'operation', inspect_fence):
+            self.tx.deploy(self.sha)
+        self.assertTrue(self.tx.load()['writers_possible'])
+        self.assertFalse(any(c[:2] in (['systemctl', 'stop'], ['systemctl', 'disable']) for c in calls))
+
+    def test_identity_operation_failures_restore_without_starting_writers(self):
+        # Late failures exercise real rename/account/control recovery; earlier
+        # failures prove manager errors are not mistaken for absent units.
+        for stage in ('unit-state', 'disable-timer', 'stop-service',
+                      'fence-service', 'reload-fences', 'disable-container-restart',
+                      'stop-container', 'check-account-writers', 'move-identity-path',
+                      'rename-group', 'rename-account', 'verify-account-groups',
+                      'rename-layout', 'translate-config', 'translate-backup-locator'):
+            with self.subTest(stage=stage):
+                if stage != 'unit-state':
+                    self.tearDown()
+                    self.doCleanups()
+                    self.setUp()
+                self.identity_fixture()
+                accounts = dict(self.accounts)
+                groups = dict(self.groups)
+                runner = self.tx.run
+                calls = []
+                def recording(args, **kwargs):
+                    calls.append(args)
+                    return runner(args, **kwargs)
+                self.tx.run = recording
+                operation = self.tx.operation
+                def failing(journal, name, item=0):
+                    operation(journal, name, item)
+                    if name == stage:
+                        raise subprocess.CalledProcessError(5, ['synthetic-secret-command'],
+                            output='SYNTHETIC_SECRET_OUTPUT', stderr='SYNTHETIC_SECRET_STDERR')
+                log = io.StringIO()
+                with patch.object(self.tx, 'operation', failing), redirect_stderr(log):
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        self.tx.deploy(self.sha)
+                journal = self.tx.load()
+                self.assertEqual(journal['failure']['stage'], stage)
+                self.assertEqual(journal['failure']['code'], 5)
+                self.assertEqual(journal['phase'], 'rolled_back')
+                self.assertEqual(journal['identity']['boundary'], 'pre_activation')
+                self.assertFalse(journal.get('writers_possible'))
+                self.assertEqual(self.accounts, accounts)
+                self.assertEqual(self.groups, groups)
+                self.assertEqual(self.tx.layout.read_bytes(), self.layout_before)
+                self.assertTrue(Path(journal['failed']).is_dir())
+                self.assertEqual(self.git(self.tx.legacy, 'rev-parse', 'HEAD'), journal['previous_sha'])
+                self.assertFalse(any(c[:2] in (['docker', 'rm'], ['docker', 'start']) or
+                                     (c[0] == 'bash' and c[1].endswith('deploy-remote.sh')) or
+                                     c[:2] == ['systemctl', 'start'] for c in calls))
+                self.assertIn('operation=' + stage, log.getvalue())
+                self.assertNotIn('SYNTHETIC_SECRET', log.getvalue())
+                self.assertNotIn('synthetic-secret-command', json.dumps(journal))
+                for relative in ('ollama_data', 'webui_data', 'hermes_data', 'caddy'):
+                    self.assertEqual((self.tx.path('/var/lib/hybrid-ai') / relative / 'original').read_bytes(),
+                                     b'original data\x00')
+
+    def test_identity_translation_exception_is_redacted_and_restored(self):
+        self.identity_fixture()
+        log = io.StringIO()
+        with patch.object(self.tx, 'translate', side_effect=ValueError('SYNTHETIC_SECRET')), redirect_stderr(log):
+            with self.assertRaises(ValueError):
+                self.tx.deploy(self.sha)
+        journal = self.tx.load()
+        self.assertEqual(journal['failure'], dict(stage='translate-config', item=1, kind='internal'))
+        self.assertEqual(journal['phase'], 'rolled_back')
+        self.assertEqual(self.tx.layout.read_bytes(), self.layout_before)
+        self.assertFalse(journal['identity']['translated'])
+        self.assertNotIn('SYNTHETIC_SECRET', log.getvalue())
+        self.assertNotIn('SYNTHETIC_SECRET', json.dumps(journal))
+
+    def test_identity_rollback_failure_preserves_original_diagnostic(self):
+        self.identity_fixture()
+        log = io.StringIO()
+        with patch.object(self.tx, 'translate', side_effect=ValueError('SYNTHETIC_SECRET')), \
+                patch.object(self.tx, 'identity_restore', side_effect=OSError(5, 'PRIVATE_RECOVERY')), \
+                redirect_stderr(log):
+            with self.assertRaises(OSError):
+                self.tx.deploy(self.sha)
+        journal = self.tx.load()
+        self.assertEqual(journal['failure']['stage'], 'translate-config')
+        self.assertEqual(journal['rollback_failure'],
+                         dict(stage='pre-activation-rollback', item=0, kind='filesystem', code=5))
+        self.assertNotEqual(journal['phase'], 'rolled_back')
+        self.assertFalse(journal.get('writers_possible'))
+        self.assertNotIn('SYNTHETIC_SECRET', log.getvalue())
+        self.assertNotIn('PRIVATE_RECOVERY', log.getvalue())
+        self.assertIn('rollback incomplete', log.getvalue())
+
+    def test_identity_absent_fence_removed_on_rollback(self):
+        self.identity_fixture()
+        candidate = self.remote / 'backup/haven-check.service'
+        candidate.write_text('[Unit]\nDescription=Synthetic user unit\n')
+        self.git(self.remote, 'add', '.')
+        self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-qm', 'absent fence fixture')
+        self.sha = self.git(self.remote, 'rev-parse', 'HEAD')
+        target = self.tx.units / 'hybrid-ai-check.service'
+        self.assertFalse(target.exists())
+        operation = self.tx.operation
+        def failing(journal, stage, item=0):
+            operation(journal, stage, item)
+            if stage == 'rename-layout':
+                self.assertIn(b'RefuseManualStart=yes', target.read_bytes())
+                raise OSError(5, 'SYNTHETIC_SECRET')
+        with patch.object(self.tx, 'operation', failing), redirect_stderr(io.StringIO()):
+            with self.assertRaises(OSError):
+                self.tx.deploy(self.sha)
+        self.assertEqual(self.tx.load()['phase'], 'rolled_back')
+        self.assertFalse(target.exists())
+        self.assertFalse(self.tx.load().get('writers_possible'))
+
+    def test_identity_load_state_error_is_not_absence(self):
+        self.identity_fixture()
+        runner = self.tx.run
+        def failing(args, **kwargs):
+            if args[:2] == ['systemctl', 'show']:
+                raise subprocess.CalledProcessError(1, args, stderr='SYNTHETIC_SECRET')
+            return runner(args, **kwargs)
+        self.tx.run = failing
+        with redirect_stderr(io.StringIO()), self.assertRaises(subprocess.CalledProcessError):
+            self.tx.deploy(self.sha)
+        self.assertEqual(self.tx.load()['failure']['stage'], 'stop-service')
+        self.assertEqual(self.tx.load()['phase'], 'rolled_back')
 
     def test_identity_rotated_secret_blocks_pre_activation_rollback(self):
         self.identity_fixture()

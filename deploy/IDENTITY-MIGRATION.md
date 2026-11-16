@@ -128,6 +128,71 @@ problem requires another revision, stop and review a specific current-data recov
 procedure with the retained immutable artifacts; do not force old root rollback.
 Database restore remains a separately authorized owner operation.
 
+## Retry after a completed pre-activation rollback
+
+The reported failure at `e875522822f11b777fe6444fbaffb3885984d07a`
+ended `rolled_back`, `pre_activation`, without writers possible. The owner
+reports the original `f67c5f0ee4c08afaa7ab7559083b8acec26bdc1d`
+installation restored and seven core containers running. These are supplied
+observations, not independent production verification. Twelve journal moves are
+preflight intentions; seventeen units are sampled states. Neither count proves
+an operation completed. Zero translated controls places the likely failure
+between fencing and the first configuration translation, including timer/service
+commands, Docker drain, path moves, account changes and layout rename/read.
+
+A demonstrated defect was attempting system-manager stop/disable for absent
+units, including user-mode backup templates on a system-mode installation.
+The corrected driver skips only a successful `LoadState=not-found` lookup;
+manager failures, unexpected states and failures stopping present units still
+abort. All service names remain fenced. Absent fence destinations are included
+in the original control checkpoint so rollback removes newly created fences.
+The old journal cannot establish whether this defect caused that production
+failure; no stderr or operation checkpoint survived in its supplied summary.
+
+The driver now checkpoints `operation.stage` and `operation.item` before each
+preparation operation. Items are one-based positions in the corresponding unit,
+container, move or account list; configuration items 1 and 2 mean layout and stack.
+`failure` preserves the failing stage/item, fixed error kind and numeric command
+return code or filesystem errno. `rollback_failure`, when present, separately
+records failed recovery. Safe terminal diagnostics omit command arguments,
+exception messages, paths, stdout/stderr and control contents. An operation is
+an intention, not proof of success, and never changes the activation boundary.
+Older journals remain readable. Keep full journals private: existing checkpoint
+controls can contain credentials.
+
+After this fix merges, the **owner**, with separate exact-SHA production approval:
+
+1. Retain both journal locations, failed candidate, previous checkout, independent
+   backup and immutable recovery exports. Privately confirm the latest transaction
+   is still `rolled_back` / `pre_activation` with `writers_possible` absent/false,
+   original layout/accounts/binds restored and the original core stack running.
+   If state differs, stop and use the matching-SHA recovery section above.
+2. Pause scheduled/manual deployment, backup, prune and restore work for the outage
+   window. Use a root operator session outside the service accounts. Prepare a
+   separate clean root-controlled checkout of the new approved full main SHA
+   containing this fix, with trusted parents. Set `reviewed_checkout` and
+   `approved_sha` to that checkout and its authorized 40-character SHA.
+3. Verify and invoke the matching driver (do not use the retained failed driver):
+
+   ```sh
+   test "$(sudo git -C "$reviewed_checkout" rev-parse HEAD)" = "$approved_sha" &&
+     test -z "$(sudo git -C "$reviewed_checkout" status --porcelain)" &&
+     sudo python3 "$reviewed_checkout/scripts/install-root.py" migrate "$approved_sha"
+   ```
+
+   Leave the recovery-image selection and every preflight gate enforced. A stale
+   selection needs the existing reviewed immutable-image procedure, never a bypass.
+4. On failure, retain artifacts and record only the fixed operation/item/kind/code
+   diagnostic and sanitized phase/boundary/writers state. A completed pre-activation
+   rollback leaves stopped writers for explicit owner inspection/resumption;
+   do not assume the old stack was restarted. A rollback failure requires recovery
+   review. Any writers-possible state requires current-data forward recovery.
+5. On success, wait for matching requested/installed full SHA, protected journal
+   `accepted`, and all required schema-v2 receipt gates `PASS`. Record sanitized
+   evidence in #200. Do not infer acceptance from exit status. Keep backup/restore
+   runtime checks at their existing operator stage; cleanup and automatic
+   deployment activation still require their separate approvals.
+
 ## Acceptance and later cleanup
 
 Wait for the existing root verifier's receipt, matching requested/installed SHA,
