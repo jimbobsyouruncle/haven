@@ -231,6 +231,9 @@ class Transaction:
                 source = Path(mount['Source'])
                 if not source.exists() or any(p.is_symlink() for p in (source, *source.parents)):
                     raise Refusal('missing or symlink Docker bind source')
+                if source.is_dir() and self.mapped(str(source)) != str(source):
+                    info = source.stat()
+                    mount['identity'] = dict(device=info.st_dev, inode=info.st_ino)
             if not re.fullmatch(r'sha256:[a-f0-9]{64}', container.get('Image', '')):
                 raise Refusal('missing immutable service image')
             owned.append(dict(id=container['Id'], service=service, image=container['Image'],
@@ -270,6 +273,9 @@ class Transaction:
         self.save(journal)
         rule = self.path('/etc/polkit-1/rules.d/50-hybrid-ai-deploy.rules')
         self.atomic(rule, b'// Legacy deploy grant fenced by Haven identity transaction.\n', 0o644)
+        rotate = self.path('/etc/logrotate.d/hybrid-ai-tls')
+        if rotate.exists():
+            self.atomic(rotate, b'# Legacy log producer fenced by Haven identity transaction.\n', 0o644)
         for unit in identity['units']:
             if unit['name'].endswith('.timer'):
                 self.command(['systemctl', 'disable', '--now', unit['name']])
@@ -352,6 +358,7 @@ class Transaction:
         self.command(['bash', firewall, 'check'])
         for move in identity['moves']:
             self.check_move(move, Path(move['new']))
+        self.check_identity_binds(identity)
         # Write-ahead boundary. Even a crash BEFORE docker rm/up is treated as
         # possibly written: rollback must never infer the absence of new writes.
         identity['boundary'] = 'post_activation'
@@ -370,6 +377,7 @@ class Transaction:
         identity = journal['identity']
         for move in identity['moves']:
             self.check_move(move, Path(move['new']))
+        self.check_identity_binds(identity)
         # An interrupted removal is resolved by exact ID and ownership. Do not
         # recreate a legacy container or restore any checkpoint configuration.
         legacy_ids = self.command(['docker', 'ps', '-aq', '--filter',
@@ -402,6 +410,7 @@ class Transaction:
             raise Refusal('identity activation has not reached verification')
         for move in identity['moves']:
             self.check_move(move, Path(move['new']))
+        self.check_identity_binds(identity)
         legacy = self.command(['docker', 'ps', '-aq', '--filter',
                                'label=com.docker.compose.project=hybrid-ai'])
         if legacy:
@@ -440,6 +449,12 @@ class Transaction:
         if rule.read_bytes() != (self.app / 'deploy/50-haven-deploy.rules').read_bytes():
             raise Refusal('canonical deployment privilege rule mismatch')
         self.command(['bash', str(self.app / 'scripts/sandbox-firewall.sh'), 'check'])
+
+    def check_identity_binds(self, identity):
+        for container in identity['containers']:
+            for mount in container['mounts']:
+                if 'identity' in mount:
+                    self.check_move(mount['identity'], Path(self.mapped(mount['Source'])))
 
     @staticmethod
     def check_move(move, path):

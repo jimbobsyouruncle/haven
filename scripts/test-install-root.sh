@@ -930,6 +930,23 @@ class IdentityTests(MigrationTests):
         self.assertEqual(sentinel.read_bytes(), b'never truncate')
 
 
+    def test_identity_rotated_secret_blocks_pre_activation_rollback(self):
+        self.identity_fixture()
+        secret = self.tx.path('/etc/haven/stack.env')
+        def changed_before_activation(journal):
+            secret.write_bytes(b'SYNTHETIC_SECRET=rotated\n')
+            raise RuntimeError('synthetic failure before activation')
+        with patch.object(self.tx, 'identity_activate', changed_before_activation):
+            with self.assertRaisesRegex(MODULE.Refusal, 'controls changed'):
+                self.tx.deploy(self.sha)
+        self.assertEqual(secret.read_bytes(), b'SYNTHETIC_SECRET=rotated\n')
+        self.assertEqual(self.tx.load()['phase'], 'awaiting_verifier')
+        self.assertNotIn('writers_possible', self.tx.load())
+        with self.assertRaisesRegex(MODULE.Refusal, 'controls changed'):
+            self.tx.restore(self.tx.load())
+        self.assertFalse(self.tx.path('/etc/hybrid-ai/stack.env').exists())
+
+
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(MigrationTests)
 suite.addTests(IdentityTests(name) for name in dir(IdentityTests)
                if name.startswith('test_identity_'))
