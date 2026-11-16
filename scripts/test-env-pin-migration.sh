@@ -20,7 +20,7 @@
 #   (d) a second run over the migrated .env -> no change, no migration logged
 #
 #   The Caddy image pin gets the same four cases, (e) through (h):
-#   (e) legacy CADDY_IMAGE=hybrid-ai-caddy:2.8.4-dns -> migrated to 2.11.7-dns
+#   (e) legacy CADDY_IMAGE=haven-caddy:2.8.4-dns -> migrated to 2.11.7-dns
 #   (f) custom CADDY_IMAGE             -> preserved byte-for-byte
 #   (g) no .env                        -> the new CADDY_IMAGE default is written
 #   (h) a second run                   -> no change, no CADDY_IMAGE migration
@@ -65,7 +65,7 @@ APP="$WORK/app"
 BIN="$WORK/bin"
 mkdir -p "$APP/scripts/lib" "$BIN" "$WORK/data" "$WORK/log" "$WORK/work" \
          "$WORK/ws" "$WORK/repos" "$WORK/ohstate" "$WORK/conf" "$WORK/restic" \
-         "$WORK/etc/hybrid-ai" "$WORK/ws/.git/info"
+         "$WORK/etc/haven" "$WORK/ws/.git/info"
 cp "$REPO/install.sh" "$APP/install.sh"
 cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
 [ -f "$REPO/scripts/lib/build-gate.sh" ] || { echo "FATAL: scripts/lib/build-gate.sh is missing; the build gate does not exist in this tree." >&2; exit 2; }
@@ -83,8 +83,8 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$APP/scripts/sync-agent-repos.sh"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$APP/scripts/check-hermes-nonroot.sh"
 chmod +x "$APP/scripts/"*.sh
 
-LAYOUT="$WORK/etc/hybrid-ai/hybrid-ai.env"
-STACK="$WORK/etc/hybrid-ai/stack.env"
+LAYOUT="$WORK/etc/haven/haven.env"
+STACK="$WORK/etc/haven/stack.env"
 {
   printf 'HAVEN_APP_DIR=%s\n' "$APP"
   printf 'HAVEN_ENV_FILE=%s\n' "$LAYOUT"
@@ -261,8 +261,8 @@ fi
 # that already deployed the 2.8.4 image would stay on it forever without an
 # exact-match migration. The migration unsets CADDY_IMAGE ONLY when it equals
 # the old default verbatim; any other value is an owner-chosen pin.
-STALE_CADDY="hybrid-ai-caddy:2.8.4-dns"
-NEW_CADDY="hybrid-ai-caddy:2.11.7-dns"
+STALE_CADDY="haven-caddy:2.8.4-dns"
+NEW_CADDY="haven-caddy:2.11.7-dns"
 
 echo
 echo "== (e) legacy CADDY_IMAGE is migrated to the new pin =="

@@ -442,7 +442,7 @@ if (( DO_ALERT )) && (( overall_exit != 0 )); then
   alert_bin="${SCRIPT_DIR}/tls-alert.sh"
   if [[ -x "$alert_bin" || -f "$alert_bin" ]]; then
     alert_args=(--severity "$overall" --env-file "$ENV_FILE"
-                --subject "hybrid-ai TLS ${overall} on ${HOSTS[0]}"
+                --subject "haven TLS ${overall} on ${HOSTS[0]}"
                 --body "tls-check overall=${overall} exit=${overall_exit} hosts=${HOSTS[*]}")
     [[ -n "$SINK_DIR" ]] && alert_args+=(--sink-dir "$SINK_DIR")
     bash "$alert_bin" "${alert_args[@]}" >/dev/null 2>&1 || true

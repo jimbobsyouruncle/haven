@@ -10,7 +10,7 @@
 #
 # WHAT THE GATE DOES:
 #   The image records the hash of its build inputs in a LABEL
-#   (org.hybrid-ai.build-inputs-sha). This library computes the hash of the
+#   (org.haven.build-inputs-sha). This library computes the hash of the
 #   inputs as they are NOW. The deploy rebuilds when the two differ, and also
 #   when it cannot prove they match: no image, no label, an empty label, a
 #   label that is not a 64-hex sha, or any error along the way.
@@ -35,7 +35,7 @@
 # ---------------------------------------------------------------------------
 
 # Build-input tracking is only meaningful when the pin is readable.
-BUILD_GATE_LABEL="org.hybrid-ai.build-inputs-sha"
+BUILD_GATE_LABEL="org.haven.build-inputs-sha"
 
 build_gate_file_sha() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -156,7 +156,7 @@ build_gate_inputs_sha() {
 # function they look unused.
 # shellcheck disable=SC2034
 build_gate_decide() {
-  local root="$1" envfile="${2:-}" image="${3:-hybrid-ai-hermes:latest}"
+  local root="$1" envfile="${2:-}" image="${3:-haven-hermes:latest}"
   local sha="" label="" rc=0
 
   BUILD_GATE_DECISION="rebuild"

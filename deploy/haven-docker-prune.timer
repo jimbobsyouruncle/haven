@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: deploy/hybrid-ai-docker-prune.timer
+# FILE: deploy/haven-docker-prune.timer
 # PURPOSE (plain English):
 #   Runs the Docker build-cache prune daily at 04:35, shortly after the
 #   conversation prune at 04:20. This timer is the PRIMARY mechanism: it caps
@@ -14,12 +14,12 @@
 #   removed, and it invokes `docker builder prune` and nothing else.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=Run the hybrid-ai Docker build-cache prune daily
+Description=Run the haven Docker build-cache prune daily
 
 [Timer]
 OnCalendar=*-*-* 04:35:00
 Persistent=true
-Unit=hybrid-ai-docker-prune.service
+Unit=haven-docker-prune.service
 
 [Install]
 WantedBy=timers.target

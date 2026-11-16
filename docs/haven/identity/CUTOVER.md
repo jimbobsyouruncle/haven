@@ -1,7 +1,9 @@
 # Production cutover, existing verification and operator cleanup
 
-Planning runbook only. No migration code, host access, deployment, configuration
-change, activation or deletion is authorized by this documentation revision.
+The bounded PR 2 implementation and root-operator procedure are documented in
+[the identity migration runbook](../../../deploy/IDENTITY-MIGRATION.md). Source
+and CI do not establish production migration. Host access, production execution,
+automatic deployment activation and cleanup require separate owner authorization.
 Use ADR-0006's existing transaction/recovery tools, extended only for reviewed
 identity mappings. Do not implement a second comprehensive Jarvis verifier.
 

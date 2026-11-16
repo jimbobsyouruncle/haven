@@ -16,7 +16,7 @@
 #     ts=<ISO8601> host=<h> event=issue|renew|renew-overdue|missing outcome=... serial=<S> not_after=<ISO> issuer="<CN>" acme_ca=<ca-dir>
 #
 #   The log is append-only: this script never truncates and never rewrites
-#   history. Rotation is a config decision (deploy/logrotate/hybrid-ai-tls).
+#   history. Rotation is a config decision (deploy/logrotate/haven-tls).
 #
 # EXIT: 0 nothing wrong / nothing changed, 1 missing or unreadable certificate
 #       storage, 3 the certificate root does not exist (nothing to audit yet).

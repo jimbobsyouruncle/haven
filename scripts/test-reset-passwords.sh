@@ -304,7 +304,7 @@ container="${1:-}"
 shift
 
 case "$container" in
-  hybrid-ai-auth)
+  haven-auth)
     value=""
     if [[ -f "${STUB_STACK_FILE:-}" ]]; then
       value="$(grep -E '^[[:space:]]*HAVEN_AUTH_HASH=' "$STUB_STACK_FILE" | tail -n 1 || true)"

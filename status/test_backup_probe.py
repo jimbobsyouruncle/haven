@@ -340,8 +340,8 @@ try:
                       % ts_hours_ago(50))
     user_install = ("EVENT ts=%s event=backup_schedule_installed units=3\n"
                     % ts_hours_ago(50))
-    expected_system = "sudo journalctl -u hybrid-ai-backup-upload.service -n 50"
-    expected_user = "journalctl --user -u hybrid-ai-backup.service -n 50"
+    expected_system = "sudo journalctl -u haven-backup-upload.service -n 50"
+    expected_user = "journalctl --user -u haven-backup.service -n 50"
 
     install_log_event(system_install)
     tile_hint, job_hint = hint_pair()

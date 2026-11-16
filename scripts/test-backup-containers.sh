@@ -115,7 +115,7 @@ BASE_ENV=(
   "BACKUP_CONTROL_RUN_DIR=$RUN_DIR"
   "RUNNING_NAMES=open-webui hermes-agent ollama"
   "ID_UID_OVERRIDE=0"
-  "ID_USERS=hybrid-ai-backup"
+  "ID_USERS=haven-backup"
 )
 
 echo "== backup-containers.sh tests =="
@@ -149,7 +149,7 @@ assert "pause never starts a container" bash -c "! grep -q '^start ' '$DOCKER_LO
 # c2) a container that is not running is skipped, never started.
 rm -rf "$RUN_DIR"
 run_helper "PATH=$BIN:$PATH" "BACKUP_CONTROL_RUN_DIR=$RUN_DIR" \
-  "RUNNING_NAMES=open-webui" "ID_UID_OVERRIDE=0" "ID_USERS=hybrid-ai-backup" -- pause
+  "RUNNING_NAMES=open-webui" "ID_UID_OVERRIDE=0" "ID_USERS=haven-backup" -- pause
 assert "pause skips a container that is not running" \
   bash -c "! grep -qx 'pause hermes-agent' '$DOCKER_LOG'"
 assert "pause records only the running container" \

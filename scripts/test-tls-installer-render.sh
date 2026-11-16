@@ -77,19 +77,24 @@ fi
 # (${HAVEN_DATA_DIR}/caddy), so once TLS is enabled ACME private keys land
 # OUTSIDE the tree the status container mounts read-only.
 off_compose="$WORK/off1/docker-compose.yml"
-mount_prefix="      - \${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}"
-proxy_data_line="${mount_prefix}/caddy:/data"
-status_ro_line="${mount_prefix}/webui_data:/data/webui_data:ro"
-if grep -Fxq -- "$proxy_data_line" "$off_compose" \
-   && ! grep -Fq -- 'webui_data/caddy' "$off_compose"; then
-  pass "Caddy /data is isolated: proxy bind source is …/caddy, outside webui_data"
+if python3 - "$off_compose" <<'PYBINDS'
+import re
+import sys
+from pathlib import Path
+text = Path(sys.argv[1]).read_text()
+proxy = text.split('  proxy:', 1)[1]
+status = text.split('  status:', 1)[1].split('  proxy:', 1)[0]
+prefix = '${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}'
+assert re.search(re.escape('source: ' + prefix + '/caddy') +
+                 r'\n        target: /data\n        bind:\n          create_host_path: false', proxy)
+assert re.search(re.escape('source: ' + prefix + '/webui_data') +
+                 r'\n        target: /data/webui_data\n        read_only: true\n        bind:\n          create_host_path: false', status)
+assert 'webui_data/caddy' not in text
+PYBINDS
+then
+  pass "Caddy state stays outside read-only status data; both binds refuse missing sources"
 else
-  fail "Caddy /data is NOT isolated: proxy bind source is missing …/caddy or still under webui_data"
-fi
-if grep -Fxq -- "$status_ro_line" "$off_compose"; then
-  pass "status read-only webui_data mount line is present and byte-unchanged"
-else
-  fail "status read-only webui_data mount line changed or is missing"
+  fail "Caddy/status persistence boundary or bind-source creation control changed"
 fi
 
 # --- TLS on ----------------------------------------------------------------

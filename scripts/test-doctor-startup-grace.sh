@@ -49,6 +49,8 @@ for t in mktemp python3 timeout date git jq; do
   command -v "$t" >/dev/null 2>&1 || { echo "FAIL: ${t} is required" >&2; exit 2; }
 done
 
+REAL_JQ="$(command -v jq)"
+export REAL_JQ
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -161,7 +163,7 @@ for a in "$@"; do
     -I) echo '10.0.0.5 '; exit 0 ;;
   esac
 done
-echo 'hybrid-ai-test-host'
+echo 'haven-test-host'
 EOF
 
 cat > "$BIN/getent" <<'EOF'
@@ -309,7 +311,7 @@ pid = json.load(sys.stdin).get("next_page_id") or ""
 if pid:
     print(pid)' ;;
   *)
-    exec /usr/bin/jq "$@" ;;
+    exec "$REAL_JQ" "$@" ;;
 esac
 EOF
 

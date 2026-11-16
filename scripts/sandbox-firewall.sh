@@ -7,8 +7,8 @@ set -Eeuo pipefail
 #   Keeps the agent sandbox ports closed to the LAN and the tailnet while
 #   leaving every control path the stack actually uses open.
 #
-#   THE TOPOLOGY. The OpenHands app is a container (hybrid-ai-openhands) joined
-#   to two Docker networks, `hybrid-ai` and `coder-net` (see
+#   THE TOPOLOGY. The OpenHands app is a container (haven-openhands) joined
+#   to two Docker networks, `haven` and `coder-net` (see
 #   openhands/docker-compose.openhands.yml). Each network shows up on the host
 #   as a bridge interface `br-<first 12 hex of the network id>`. Agent sandboxes
 #   run on `docker0`. DOCKER-USER sees forwarded packets AFTER DNAT, so a
@@ -74,7 +74,7 @@ set -Eeuo pipefail
 #   PERSISTENCE. This script is not persistent on its own. It is applied by the
 #   privileged deploy path (install.sh and scripts/deploy-remote.sh) after the
 #   compose stack is up, and re-applied on every boot by the enabled unit
-#   deploy/hybrid-ai-firewall.service.
+#   deploy/haven-firewall.service.
 #
 # USAGE:
 #   ./scripts/sandbox-firewall.sh {apply|check}
@@ -93,13 +93,21 @@ set -Eeuo pipefail
 #   6  check only: chain or complete bridge topology unavailable
 # ---------------------------------------------------------------------------
 
-readonly TAG="hybrid-ai-sandbox-egress"
+readonly TAG="haven-sandbox-egress"
 readonly CHAIN="DOCKER-USER"
 readonly IPT_LOCK_WAIT="5"
 
 # The Docker networks the app container is attached to. Each resolves to a host
 # bridge interface: `br-` + the first 12 hex characters of its network id.
-readonly APP_NETWORKS=(hybrid-ai coder-net)
+APP_NETWORKS=(haven haven-coder)
+# Protect both generations during handoff. Legacy bridge accepts must precede
+# canonical global drops too; retain old policy and foreign rules unchanged.
+for legacy_net in hybrid-ai coder-net; do
+  if docker network inspect -f '{{.Id}}' "$legacy_net" >/dev/null 2>&1; then
+    APP_NETWORKS+=("$legacy_net")
+  fi
+done
+readonly APP_NETWORKS
 
 # Sandbox ports the app must reach: 8000 is the agent-server (doctor.sh:854),
 # 8001 is VSCode, and 8011 / 8012 are the workers (live observation on the host).

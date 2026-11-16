@@ -89,7 +89,7 @@ done
 
 if (( SELF_TEST )); then
   SEVERITY="test"
-  [[ -n "$SUBJECT" ]] || SUBJECT="hybrid-ai TLS alert self-test"
+  [[ -n "$SUBJECT" ]] || SUBJECT="haven TLS alert self-test"
 fi
 
 [[ -n "$SEVERITY" ]] || die_usage "--severity is required"
@@ -180,7 +180,7 @@ else
         failed=1
       else
         payload="$(json_body "$SEVERITY" "$SUBJECT" "$BODY" "$TS")"
-        tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/hybrid-ai-tls-alert.XXXXXX" 2>/dev/null)"
+        tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/haven-tls-alert.XXXXXX" 2>/dev/null)"
         if [[ -z "$tmpdir" ]]; then
           results+=("webhook=failed (no writable temp directory)")
           failed=1

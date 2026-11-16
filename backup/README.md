@@ -4,8 +4,8 @@
 |---|---|
 | `backup.sh` | Snapshots your data consistently and uploads it, encrypted, to Cloudflare R2 |
 | `restore.sh` | Brings it all back — including a rehearsal mode that touches nothing live |
-| `hybrid-ai-backup.{service,timer}` | Nightly schedule at 03:15 (**user mode**, the default) |
-| `hybrid-ai-check.{service,timer}` | Monthly integrity verification (**user mode**) |
+| `haven-backup.{service,timer}` | Nightly schedule at 03:15 (**user mode**, the default) |
+| `haven-check.{service,timer}` | Monthly integrity verification (**user mode**) |
 | `system/` | The **system mode** units: a two-unit nightly privilege split (capture and upload), plus the monthly integrity-check unit (see below) |
 | `backup-containers.sh` | Root-only helper the system-mode capture unit calls; the only part of a system-mode backup that touches Docker |
 
@@ -113,7 +113,7 @@ Some runs cannot capture everything. A discovered path fails the allow-list, an 
 
 `backup_failed` (exit 1) stays reserved for a run that aborted. An incomplete run is a distinct, non-retryable outcome. `doctor.sh` counts both `backup_failed` and `backup_incomplete` **since the last `backup_success`**, so a clean run resets the counters, and it counts **distinct runs** (distinct `ts=` values), not lines: a failed run writes two `backup_failed` lines, so the count is per run.
 
-The backup unit also **bounds its own retries**. `hybrid-ai-backup.service` sets `StartLimitIntervalSec=1h` and `StartLimitBurst=2`, so even a hard failure (exit 1) can be retried at most twice in an hour before systemd gives up. This is what stops a run that fails the same way every time from trying again every 15 minutes.
+The backup unit also **bounds its own retries**. `haven-backup.service` sets `StartLimitIntervalSec=1h` and `StartLimitBurst=2`, so even a hard failure (exit 1) can be retried at most twice in an hour before systemd gives up. This is what stops a run that fails the same way every time from trying again every 15 minutes.
 
 ### When the backup cannot read the data
 
@@ -162,7 +162,7 @@ A typical setup — a few thousand chats, a few hundred documents — lands well
 
 ### 1. Create an R2 bucket
 
-Cloudflare dashboard → **R2 object storage** → **Create bucket**. Name it `hybrid-ai-backup`. Any location works; pick one near you.
+Cloudflare dashboard → **R2 object storage** → **Create bucket**. Name it `haven-backup`. Any location works; pick one near you.
 
 ### 2. Create a scoped API token
 
@@ -183,12 +183,12 @@ You also need your **account ID**, visible on the R2 Overview page. The endpoint
 ./install.sh
 ```
 
-It prompts for those four values, generates a strong repository password, writes everything to `~/.config/hybrid-ai-backup/` with mode 0600, initialises the encrypted repository, installs the systemd timers, and offers to run the first backup.
+It prompts for those four values, generates a strong repository password, writes everything to `~/.config/haven-backup/` with mode 0600, initialises the encrypted repository, installs the systemd timers, and offers to run the first backup.
 
 ### 4. Store the repository password off the Pi
 
 ```bash
-cat ~/.config/hybrid-ai-backup/repo-password
+cat ~/.config/haven-backup/repo-password
 ```
 
 Put it in a password manager. **Now, not later.**
@@ -200,7 +200,7 @@ restic has no recovery mechanism. If the drive dies and the password dies with i
 ## Where credentials live
 
 ```
-~/.config/hybrid-ai-backup/          (0700)
+~/.config/haven-backup/          (0700)
 ├── r2.env           (0600)  R2 keys + repository URL
 └── repo-password    (0600)  the encryption key
 ```
@@ -228,7 +228,7 @@ credential and uses no network, so it is exempt; every other phase, including
 reads a credential file, so its check always applies.
 
 In system mode the units read the credentials from the root-owned credstore
-`/etc/credstore/hybrid-ai-backup/` via `LoadCredential=`; when that is set, the
+`/etc/credstore/haven-backup/` via `LoadCredential=`; when that is set, the
 systemd-provided `$CREDENTIALS_DIRECTORY` takes precedence and the location
 check does not apply (systemd chose a private tmpfs it owns). A manual
 system-mode `backup.sh` or `restore.sh` run reads them from
@@ -249,13 +249,13 @@ relocation restores into the split layout.
 |---|---|---|
 | `HAVEN_DATA_DIR` | the data being backed up (`webui_data/`, `hermes_data/`, `ollama_data/`) | the repo directory |
 | `HAVEN_LOG_DIR` | the default location of `backup.log` in user mode | the repo directory |
-| `BACKUP_LOG` | the backup log file; in system mode it defaults to the units' `LogsDirectory=` (`/var/log/hybrid-ai-backup/backup.log`), in user mode to `$HAVEN_LOG_DIR/backup.log` | mode-dependent |
+| `BACKUP_LOG` | the backup log file; in system mode it defaults to the units' `LogsDirectory=` (`/var/log/haven-backup/backup.log`), in user mode to `$HAVEN_LOG_DIR/backup.log` | mode-dependent |
 | `HAVEN_WORK_DIR` | `.backup-staging`, `.restore-work`, `.restore-test-*` | the repo directory |
-| `HAVEN_ENV_FILE` | the env file, staged as `env/.env` | `$HAVEN_APP_DIR/.env`; if absent, `HAVEN_ENV_FILE_FALLBACK` (default `/etc/hybrid-ai/hybrid-ai.env`) when it exists |
-| `BACKUP_GROUP_GID` | the ONE supplementary group the status container is given so it can read `BACKUP_LOG`; `install.sh` resolves the `hybrid-ai-backup` group's gid by name in system mode, and uses the container's own primary gid in user mode | mode-dependent |
-| `BACKUP_CONF_DIR` | the user-mode credential directory | `~/.config/hybrid-ai-backup` |
-| `HAVEN_BACKUP_CRED_DIR` | the directory the scripts read credentials from (default follows the mode: `BACKUP_CONF_DIR` in user mode, `/etc/credstore/hybrid-ai-backup` in system mode) | mode-dependent |
-| `RESTIC_CACHE_DIR` | the restic cache (`<repo>/snapshots/<prefix>/` and `<repo>/index/` live under it) | `~/.cache/restic`; `/var/cache/hybrid-ai-backup` in system mode |
+| `HAVEN_ENV_FILE` | the env file, staged as `env/.env` | `$HAVEN_APP_DIR/.env`; if absent, `HAVEN_ENV_FILE_FALLBACK` (default `/etc/haven/haven.env`) when it exists |
+| `BACKUP_GROUP_GID` | the ONE supplementary group the status container is given so it can read `BACKUP_LOG`; `install.sh` resolves the `haven-backup` group's gid by name in system mode, and uses the container's own primary gid in user mode | mode-dependent |
+| `BACKUP_CONF_DIR` | the user-mode credential directory | `~/.config/haven-backup` |
+| `HAVEN_BACKUP_CRED_DIR` | the directory the scripts read credentials from (default follows the mode: `BACKUP_CONF_DIR` in user mode, `/etc/credstore/haven-backup` in system mode) | mode-dependent |
+| `RESTIC_CACHE_DIR` | the restic cache (`<repo>/snapshots/<prefix>/` and `<repo>/index/` live under it) | `~/.cache/restic`; `/var/cache/haven-backup` in system mode |
 
 Pre-restore safety copies (`webui_data.pre-restore-*`,
 `hermes_data.pre-restore-*`) still stay beside the data, on the same filesystem.
@@ -268,18 +268,18 @@ container, which is a DIFFERENT identity. Its mode therefore follows the mode:
 | Backup mode | Log mode | Owner | Who can read it |
 |---|---|---|---|
 | `user` (default) | `0600` | the invoking account | that account only — unchanged |
-| `system` | `0640` | `hybrid-ai-backup:hybrid-ai-backup` | the backup account and its group |
+| `system` | `0640` | `haven-backup:haven-backup` | the backup account and its group |
 
 The log is **never** mode `0644`. In system mode the status container reads it
-with exactly one supplementary group, the `hybrid-ai-backup` gid
+with exactly one supplementary group, the `haven-backup` gid
 (`BACKUP_GROUP_GID` in `docker-compose.yml`); it keeps uid 1000 and its primary
 gid for the Docker socket, and stays read-only with every capability dropped.
 
 `install.sh` STEP 7 repairs an EXISTING log as root: `chown
-hybrid-ai-backup:hybrid-ai-backup` and `chmod 640`, so a host deployed before
+haven-backup:haven-backup` and `chmod 640`, so a host deployed before
 this contract converges on the next deploy with no by-hand step. STEP 8 writes
 `BACKUP_GROUP_GID` as `${BACKUP_GROUP_GID:-<resolved>}`, so an owner override
-survives reinstalls, and it fails closed when the `hybrid-ai-backup` group
+survives reinstalls, and it fails closed when the `haven-backup` group
 cannot be resolved by name.
 
 Why this exists: with mode 0600 the status container could not open the file, so
@@ -302,8 +302,8 @@ success. The reader was blind, not the backup.
 Schedule status:
 
 ```bash
-systemctl --user list-timers 'hybrid-ai-*'
-journalctl --user -u hybrid-ai-backup.service -n 50
+systemctl --user list-timers 'haven-*'
+journalctl --user -u haven-backup.service -n 50
 grep '^EVENT' backup.log | tail -20
 ```
 
@@ -311,29 +311,29 @@ grep '^EVENT' backup.log | tail -20
 
 The commands above assume **user mode** (the default): they run as your login
 account and resolve the user-mode paths. On a host migrated to system mode
-(`HAVEN_BACKUP_MODE=system`, layout at `/etc/hybrid-ai/hybrid-ai.env`), a
+(`HAVEN_BACKUP_MODE=system`, layout at `/etc/haven/haven.env`), a
 bare `sudo ./backup/backup.sh` (or `restore.sh`) runs as root and resolves
-**user-mode** paths, so it looks for credentials in `/root/.config/hybrid-ai-backup`
-and dies with `No credentials at /root/.config/hybrid-ai-backup/r2.env`.
+**user-mode** paths, so it looks for credentials in `/root/.config/haven-backup`
+and dies with `No credentials at /root/.config/haven-backup/r2.env`.
 
 Run the script with the layout file named explicitly instead. That is what the
 units do, and it resolves the system-mode credential directory and log path:
 
 ```bash
-sudo env HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env ./backup/backup.sh --check
-sudo env HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env ./backup/restore.sh --test
+sudo env HAVEN_ENV_FILE=/etc/haven/haven.env ./backup/backup.sh --check
+sudo env HAVEN_ENV_FILE=/etc/haven/haven.env ./backup/restore.sh --test
 ```
 
 Prefer the units for a normal run — they carry the sandbox and the credentials
 themselves:
 
 ```bash
-sudo systemctl start hybrid-ai-backup-capture.service    # capture, then upload
-sudo systemctl start hybrid-ai-backup-check.service      # monthly integrity check
+sudo systemctl start haven-backup-capture.service    # capture, then upload
+sudo systemctl start haven-backup-check.service      # monthly integrity check
 ```
 
-In system mode the log is `/var/log/hybrid-ai-backup/backup.log` (the same file
-`doctor.sh` reads), so watch it with `sudo grep '^EVENT' /var/log/hybrid-ai-backup/backup.log`.
+In system mode the log is `/var/log/haven-backup/backup.log` (the same file
+`doctor.sh` reads), so watch it with `sudo grep '^EVENT' /var/log/haven-backup/backup.log`.
 
 The status page reads that same file. `scripts/lib/haven-env.sh` resolves
 `BACKUP_LOG` once from the mode, `install.sh` writes the resolved value into the
@@ -361,18 +361,18 @@ Pick a snapshot. The script verifies the recovered databases **before** touching
 
 1. Work through **Prerequisites** in the [main README](../README.md)
 2. `git clone` the repository
-3. Recreate `~/.config/hybrid-ai-backup/` with your R2 credentials and the password from your password manager:
+3. Recreate `~/.config/haven-backup/` with your R2 credentials and the password from your password manager:
 
    ```bash
-   mkdir -p ~/.config/hybrid-ai-backup && chmod 700 ~/.config/hybrid-ai-backup
-   cat > ~/.config/hybrid-ai-backup/r2.env <<'EOF'
+   mkdir -p ~/.config/haven-backup && chmod 700 ~/.config/haven-backup
+   cat > ~/.config/haven-backup/r2.env <<'EOF'
    RESTIC_REPOSITORY=s3:https://<ACCOUNT_ID>.r2.cloudflarestorage.com/<BUCKET>
-   RESTIC_PASSWORD_FILE=/home/pi/.config/hybrid-ai-backup/repo-password
+   RESTIC_PASSWORD_FILE=/home/pi/.config/haven-backup/repo-password
    AWS_ACCESS_KEY_ID=<KEY_ID>
    AWS_SECRET_ACCESS_KEY=<SECRET>
    AWS_DEFAULT_REGION=auto
    EOF
-   chmod 600 ~/.config/hybrid-ai-backup/r2.env
+   chmod 600 ~/.config/haven-backup/r2.env
    # then write the password into repo-password and chmod 600 it
    ```
 
@@ -386,7 +386,7 @@ At that point the UI should show your chats, documents, knowledge bases, connect
 ### Recovering a single file
 
 ```bash
-set -a; source ~/.config/hybrid-ai-backup/r2.env; set +a
+set -a; source ~/.config/haven-backup/r2.env; set +a
 restic restore latest --target /tmp/recover --include '*/files/docs/thatfile.pdf'
 ```
 
@@ -421,7 +421,7 @@ Worth doing if this data matters to you. Not necessary on day one.
 R2 is one provider. For genuinely important data, run a second repository to a local USB disk:
 
 ```bash
-RESTIC_REPOSITORY=/mnt/usb-backup RESTIC_PASSWORD_FILE=~/.config/hybrid-ai-backup/repo-password ./backup/backup.sh
+RESTIC_REPOSITORY=/mnt/usb-backup RESTIC_PASSWORD_FILE=~/.config/haven-backup/repo-password ./backup/backup.sh
 ```
 
 Two providers, two failure modes, one password to remember.
@@ -437,8 +437,8 @@ account in the `docker` group. The two units split the job:
 
 | Unit | Reads durable state | Docker | Network | Credentials |
 |---|---|---|---|---|
-| `hybrid-ai-backup-capture.service` | yes, with `CAP_DAC_READ_SEARCH` | no | no (`PrivateNetwork=yes`) | no |
-| `hybrid-ai-backup-upload.service` | no | no | yes | yes (`LoadCredential=`) |
+| `haven-backup-capture.service` | yes, with `CAP_DAC_READ_SEARCH` | no | no (`PrivateNetwork=yes`) | no |
+| `haven-backup-upload.service` | no | no | yes | yes (`LoadCredential=`) |
 
 The capture writes a consistent copy to its `StateDirectory`; the upload sends
 that copy to R2 and holds the only copy of the credentials. Neither unit can do
@@ -452,66 +452,66 @@ container.
 Installing the account and the credentials on a host is card F's job. It is the
 ONLY manual step; everything after it runs from the units. Card F must create:
 
-1. **The account** — a no-login system account `hybrid-ai-backup`
+1. **The account** — a no-login system account `haven-backup`
    (`User=`/`Group=` in the units). It is NOT added to the `docker` group.
-2. **The runtime directory** — `/run/hybrid-ai-backup`, owned by that account
-   (`RuntimeDirectory=hybrid-ai-backup` recreates it per run).
-3. **The credential store** — `/etc/credstore/hybrid-ai-backup/` (root, mode
+2. **The runtime directory** — `/run/haven-backup`, owned by that account
+   (`RuntimeDirectory=haven-backup` recreates it per run).
+3. **The credential store** — `/etc/credstore/haven-backup/` (root, mode
    `0700`), holding:
-   - `/etc/credstore/hybrid-ai-backup/r2.env` (root, mode `0600`)
-   - `/etc/credstore/hybrid-ai-backup/repo-password` (root, mode `0600`)
+   - `/etc/credstore/haven-backup/r2.env` (root, mode `0600`)
+   - `/etc/credstore/haven-backup/repo-password` (root, mode `0600`)
 
    Every phase that reads a credential file looks here, because
    `HAVEN_BACKUP_CRED_DIR` resolves to this directory in system mode: the
    upload unit via `LoadCredential=` (which sets `$CREDENTIALS_DIRECTORY`), and
    any manual `backup.sh` / `restore.sh` run directly from here.
-4. **The layout env file** — `/etc/hybrid-ai/hybrid-ai.env`, root-owned, mode
+4. **The layout env file** — `/etc/haven/haven.env`, root-owned, mode
    `0644`, with these settings (names and paths only, never a secret):
    - `HAVEN_APP_DIR=/opt/haven`
-   - `HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env`
-   - `HAVEN_STACK_ENV_FILE=/etc/hybrid-ai/stack.env`
-   - `HAVEN_DATA_DIR=/var/lib/hybrid-ai`
-   - `HAVEN_WORK_DIR=/var/lib/hybrid-ai/work`
-   - `HAVEN_LOG_DIR=/var/log/hybrid-ai`
-   - `OPENHANDS_WORKSPACE` (`/var/lib/hybrid-ai/agent-workspace`)
-   - `AGENT_REPOS_DIR` (`/var/lib/hybrid-ai/agent-repos`)
-   - `OPENHANDS_STATE_DIR` (`/var/lib/hybrid-ai/openhands`)
-   - `RESTIC_CACHE_DIR=/var/cache/hybrid-ai-backup`
-   - `HAVEN_HERMES_HOME_DIR=/var/lib/hybrid-ai/hermes-home`
+   - `HAVEN_ENV_FILE=/etc/haven/haven.env`
+   - `HAVEN_STACK_ENV_FILE=/etc/haven/stack.env`
+   - `HAVEN_DATA_DIR=/var/lib/haven`
+   - `HAVEN_WORK_DIR=/var/lib/haven/work`
+   - `HAVEN_LOG_DIR=/var/log/haven`
+   - `OPENHANDS_WORKSPACE` (`/var/lib/haven/agent-workspace`)
+   - `AGENT_REPOS_DIR` (`/var/lib/haven/agent-repos`)
+   - `OPENHANDS_STATE_DIR` (`/var/lib/haven/openhands`)
+   - `RESTIC_CACHE_DIR=/var/cache/haven-backup`
+   - `HAVEN_HERMES_HOME_DIR=/var/lib/haven/hermes-home`
    - `HAVEN_BACKUP_MODE=system`
    - `BACKUP_CONTAINER_CONTROL=external`
-   - `HAVEN_UID` / `HAVEN_GID` (the `hybrid-ai` account's ids)
+   - `HAVEN_UID` / `HAVEN_GID` (the `haven` account's ids)
 
    The units carry their OWN `Environment=` values
-   (`HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env` **and**
-   `HAVEN_STACK_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env`,
+   (`HAVEN_ENV_FILE=/etc/haven/haven.env` **and**
+   `HAVEN_STACK_ENV_FILE=/etc/haven/haven.env`,
    `HAVEN_BACKUP_MODE=system`, `BACKUP_CONTAINER_CONTROL=external`,
-   `HAVEN_WORK_DIR=/var/lib/hybrid-ai-backup`,
-   `RESTIC_CACHE_DIR=/var/cache/hybrid-ai-backup`). A systemd `Environment=`
+   `HAVEN_WORK_DIR=/var/lib/haven-backup`,
+   `RESTIC_CACHE_DIR=/var/cache/haven-backup`). A systemd `Environment=`
    value takes precedence over the env file, so a drifted layout file cannot
    change what a unit does. Only the paths a unit does NOT pin come from
-   `/etc/hybrid-ai/hybrid-ai.env`.
+   `/etc/haven/haven.env`.
 
    **Cache ownership is converged by the installer, not by hand.** The units'
-   `CacheDirectory=hybrid-ai-backup` chowns only the top directory, so a nested
+   `CacheDirectory=haven-backup` chowns only the top directory, so a nested
    directory left behind by an earlier root run stays root-owned and restic fails
    three levels down (`<repo>/snapshots/<prefix>/`). Two things prevent that:
 
    - `install.sh` runs `reconcile_backup_cache_ownership` on **every**
      installation, because it rides the scheduler-repair path. It walks the
-     resolved cache with `find "$cache" ! -user hybrid-ai-backup -print -quit`
+     resolved cache with `find "$cache" ! -user haven-backup -print -quit`
      and, only when a foreign-owned entry exists, runs
-     `chown -R hybrid-ai-backup:hybrid-ai-backup "$cache"` and logs
+     `chown -R haven-backup:haven-backup "$cache"` and logs
      `backup_cache_ownership_repaired`. A second run repairs nothing and logs no
      repair event. It only ever touches that one path: never
-     `/var/lib/hybrid-ai-backup` (staging, `StateDirectory=`) and never
-     `/etc/credstore/hybrid-ai-backup`. Symlinks inside the cache are warned
-     about, never followed. A missing `hybrid-ai-backup` account warns and logs
+     `/var/lib/haven-backup` (staging, `StateDirectory=`) and never
+     `/etc/credstore/haven-backup`. Symlinks inside the cache are warned
+     about, never followed. A missing `haven-backup` account warns and logs
      `backup_cache_reconcile_skipped reason=no_account`; it is never fatal.
    - A root-invoked `backup.sh` -- `--init` and the first-backup prompt -- gets
-     its **own** cache, `RESTIC_CACHE_DIR=/var/cache/hybrid-ai-backup-root`,
+     its **own** cache, `RESTIC_CACHE_DIR=/var/cache/haven-backup-root`,
      through the `RESTIC_CACHE_DIR` override rather than `systemd-run`. So no
-     entry under `/var/cache/hybrid-ai-backup` is root-owned after setup, while
+     entry under `/var/cache/haven-backup` is root-owned after setup, while
      `--init` on a host with no repository yet still works.
 
    In system mode an unusable cache with no writable fallback is **fatal**: the
@@ -520,25 +520,25 @@ ONLY manual step; everything after it runs from the units. Card F must create:
    mode keeps the older behaviour: it unsets `RESTIC_CACHE_DIR` and continues.
 
    `BACKUP_LOG` is **not** pinned by the units. The shared helper resolves it
-   from the mode: in system mode it is `/var/log/hybrid-ai-backup/backup.log`,
+   from the mode: in system mode it is `/var/log/haven-backup/backup.log`,
    the units' `LogsDirectory=` (the one directory systemd grants write access to
    under `ProtectSystem=strict`); in user mode it stays
    `$HAVEN_LOG_DIR/backup.log`. `doctor.sh` and the status page read the SAME
    resolved path, so they watch the file the units actually write. The status
    service's bind source is `${BACKUP_LOG:?...}`, written into the stack env file
    by `install.sh`; an unset value refuses the compose parse. The upload and check units each
-   carry `LogsDirectory=hybrid-ai-backup`; the capture unit already did.
+   carry `LogsDirectory=haven-backup`; the capture unit already did.
 
    `HAVEN_STACK_ENV_FILE` is pinned at the **0644 layout file**, not the
    0600 root-only `stack.env`, in every system-mode unit. The units run as
-   `hybrid-ai-backup` with no `CAP_DAC_READ_SEARCH`, and the shared env helper
+   `haven-backup` with no `CAP_DAC_READ_SEARCH`, and the shared env helper
    fails closed when a file it is told to read exists but cannot be read; without
    the pin the unit would exit 1 before restic ran. The layout file holds only
    names and paths, never a secret, so the backup account needs no access to
    `stack.env`. This mirrors the forced-command deploy fix.
 5. **The units** — `install.sh`, run as root, installs `backup/system/*` into
    `/etc/systemd/system/`, daemon-reloads, and enables
-   `hybrid-ai-backup-capture.timer` and `hybrid-ai-backup-check.timer`.
+   `haven-backup-capture.timer` and `haven-backup-check.timer`.
 
 When `HAVEN_BACKUP_MODE` is unset (or `user`), none of this applies and the
 per-user units behave exactly as before.
@@ -546,12 +546,12 @@ per-user units behave exactly as before.
 ### Verify a run
 
 ```bash
-systemctl list-timers 'hybrid-ai-*'                  # see the next capture
-systemctl start hybrid-ai-backup-capture.service     # run one now
-journalctl --system -u hybrid-ai-backup-capture.service -n 50
-journalctl --system -u hybrid-ai-backup-upload.service  -n 50
-systemctl show -p Result hybrid-ai-backup-capture.service
-cat /var/lib/hybrid-ai-backup/.backup-staging/STATUS                 # complete | incomplete
+systemctl list-timers 'haven-*'                  # see the next capture
+systemctl start haven-backup-capture.service     # run one now
+journalctl --system -u haven-backup-capture.service -n 50
+journalctl --system -u haven-backup-upload.service  -n 50
+systemctl show -p Result haven-backup-capture.service
+cat /var/lib/haven-backup/.backup-staging/STATUS                 # complete | incomplete
 ```
 
 A capture that finishes with `STATUS` `complete` starts the upload immediately
@@ -567,10 +567,10 @@ was captured.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `No credentials at ~/.config/...` | Backups never configured | Run `./install.sh` |
-| `No credentials at /root/.config/hybrid-ai-backup/r2.env` on a system-mode host | The run resolved USER-mode paths because the layout file was not found; the credentials live in `/etc/credstore/hybrid-ai-backup` | Run it as `sudo env HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env ./backup/backup.sh ...`, or start the unit: `sudo systemctl start hybrid-ai-backup-capture.service`. A bare `sudo ./backup/...` picks up the layout fallback (`/etc/hybrid-ai/hybrid-ai.env`) when `$HAVEN_APP_DIR/.env` is absent, so it resolves system-mode paths too |
-| `tee: /var/log/hybrid-ai-backup/backup.log: Read-only file system` | A system-mode unit writing its log outside its `LogsDirectory=` (an old unit file without `LogsDirectory=hybrid-ai-backup`) | Update the units: re-run `./install.sh` as root, then `sudo systemctl daemon-reload` |
-| `unable to open cache: ... permission denied` | A directory under the restic cache (`<repo>`, `<repo>/snapshots/<prefix>/`, `<repo>/index/`) is owned by another uid, usually after an earlier root run. `backup.sh` probes to that depth, so it sees this | Self-healing in both modes: `backup.sh` logs `restic_cache_unwritable` and falls back to a writable cache (`restic_cache_fallback`). In SYSTEM mode the fallback is the last resort: with no writable fallback the run aborts in seconds with `restic_cache_unusable` naming the path, owner and mode. `./install.sh` as root reconciles the ownership on its next run (`backup_cache_ownership_repaired`); by hand it is `sudo chown -R hybrid-ai-backup:hybrid-ai-backup /var/cache/hybrid-ai-backup` |
-| `has permissions 644; expected 600` | Permissions drifted on a `HAVEN_BACKUP_CRED_DIR` file | `chmod 600 ~/.config/hybrid-ai-backup/*` |
+| `No credentials at /root/.config/haven-backup/r2.env` on a system-mode host | The run resolved USER-mode paths because the layout file was not found; the credentials live in `/etc/credstore/haven-backup` | Run it as `sudo env HAVEN_ENV_FILE=/etc/haven/haven.env ./backup/backup.sh ...`, or start the unit: `sudo systemctl start haven-backup-capture.service`. A bare `sudo ./backup/...` picks up the layout fallback (`/etc/haven/haven.env`) when `$HAVEN_APP_DIR/.env` is absent, so it resolves system-mode paths too |
+| `tee: /var/log/haven-backup/backup.log: Read-only file system` | A system-mode unit writing its log outside its `LogsDirectory=` (an old unit file without `LogsDirectory=haven-backup`) | Update the units: re-run `./install.sh` as root, then `sudo systemctl daemon-reload` |
+| `unable to open cache: ... permission denied` | A directory under the restic cache (`<repo>`, `<repo>/snapshots/<prefix>/`, `<repo>/index/`) is owned by another uid, usually after an earlier root run. `backup.sh` probes to that depth, so it sees this | Self-healing in both modes: `backup.sh` logs `restic_cache_unwritable` and falls back to a writable cache (`restic_cache_fallback`). In SYSTEM mode the fallback is the last resort: with no writable fallback the run aborts in seconds with `restic_cache_unusable` naming the path, owner and mode. `./install.sh` as root reconciles the ownership on its next run (`backup_cache_ownership_repaired`); by hand it is `sudo chown -R haven-backup:haven-backup /var/cache/haven-backup` |
+| `has permissions 644; expected 600` | Permissions drifted on a `HAVEN_BACKUP_CRED_DIR` file | `chmod 600 ~/.config/haven-backup/*` |
 | `has permissions ...; a systemd LoadCredential copy must be 0400 or 0440` | A `$CREDENTIALS_DIRECTORY` copy has an unexpected mode | None: systemd materialises that tmpfs copy (0400/0440) on every start. If it reports another mode, check the `LoadCredential=` source file's mode |
 | `restic init failed` | Wrong account ID, bucket, or token | Verify the endpoint URL and that the token has Object Read & Write on that bucket |
 | `Could not capture ... via SQLite` | The database could not be captured online (e.g. `sqlite3` missing, or a WAL database in a directory the user cannot write) | `sudo apt-get install -y sqlite3`. The script falls back to a verified cold copy; if that also cannot capture it, the run is marked INCOMPLETE (exit 3), not failed |
@@ -594,9 +594,9 @@ valid independently of a skipped verifier probe.
 
 The standalone installed executable reads process settings and the non-secret
 layout file (`HAVEN_ENV_FILE_FALLBACK`, normally
-`/etc/hybrid-ai/hybrid-ai.env`) as literal data. It no longer needs the runtime
+`/etc/haven/haven.env`) as literal data. It no longer needs the runtime
 stack file or domain settings to retrieve the tile. Explicit `BACKUP_LOG` takes
-precedence; system mode otherwise uses `/var/log/hybrid-ai-backup/backup.log`,
+precedence; system mode otherwise uses `/var/log/haven-backup/backup.log`,
 matching the units' `LogsDirectory`. User mode uses
 `HAVEN_LOG_DIR/backup.log` when configured; without either setting its
 backup-log probe is explicitly skipped.
@@ -665,7 +665,7 @@ log before interpreting retry evidence.
 The status readability probe drops capabilities and uses the configured
 `HAVEN_UID` (or `STATUS_UID`, legacy 1000), primary `DOCKER_GID` (otherwise
 host docker group's GID, legacy 999), and `BACKUP_GROUP_GID` (otherwise the
-system-mode `hybrid-ai-backup` group's GID). It proves host DAC readability for
+system-mode `haven-backup` group's GID). It proves host DAC readability for
 that identity; it does not prove the running container has those settings or
 that its mount is correct. The live tile is separate evidence. No socket access
 is used by the verifier. Missing privilege-dropping support or identity evidence

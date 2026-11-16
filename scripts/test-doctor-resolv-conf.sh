@@ -174,7 +174,7 @@ for a in "$@"; do
     -I) echo '10.0.0.5 '; exit 0 ;;
   esac
 done
-echo 'hybrid-ai-test-host'
+echo 'haven-test-host'
 EOF
 
 # The pod's MagicDNS name resolves through the shared resolver's fallback.

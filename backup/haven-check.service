@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: backup/hybrid-ai-check.service
+# FILE: backup/haven-check.service
 # PURPOSE (plain English):
 #   Runs a monthly integrity check against the backup repository, reading a
 #   random 5% of the stored data and confirming it decrypts and matches its
@@ -11,7 +11,7 @@
 #   own monthly schedule.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=hybrid-ai backup integrity verification
+Description=haven backup integrity verification
 After=network-online.target
 Wants=network-online.target
 

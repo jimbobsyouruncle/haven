@@ -276,10 +276,10 @@ cat > "$GIT_FIXTURE_SRC/scripts/check-hermes-nonroot.sh" <<'EOF'
 printf 'check-hermes-nonroot uid=%s dir=%s\n' "${HAVEN_UID:-}" "${HERMES_DATA_DIR:-}" >> "$EVENTS"
 exit "${PREFLIGHT_RC:-0}"
 EOF
-printf '# fixture deploy unit\n[Service]\nUser=root\n' > "$GIT_FIXTURE_SRC/deploy/hybrid-ai-deploy@.service"
-printf '// fixture polkit rule\n' > "$GIT_FIXTURE_SRC/deploy/50-hybrid-ai-deploy.rules"
+printf '# fixture deploy unit\n[Service]\nUser=root\n' > "$GIT_FIXTURE_SRC/deploy/haven-deploy@.service"
+printf '// fixture polkit rule\n' > "$GIT_FIXTURE_SRC/deploy/50-haven-deploy.rules"
 printf '# fixture firewall unit\n[Service]\nExecStart=/opt/haven/scripts/sandbox-firewall.sh apply\n' \
-  > "$GIT_FIXTURE_SRC/deploy/hybrid-ai-firewall.service"
+  > "$GIT_FIXTURE_SRC/deploy/haven-firewall.service"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$GIT_FIXTURE_SRC/scripts/deploy-forced-command.sh"
 chmod +x "$GIT_FIXTURE_SRC/install.sh" "$GIT_FIXTURE_SRC/doctor.sh" \
          "$GIT_FIXTURE_SRC/scripts/check-hermes-nonroot.sh" \
@@ -339,7 +339,7 @@ echo "== the test-only prefix is UNSET by default and the default root is / =="
 out="$(env -u HAVEN_BOOTSTRAP_ROOT bash "$BOOTSTRAP" --print-paths 2>&1)"
 have "print-paths default root is /" "$out" "root                     = /"
 have "print-paths default app dir" "$out" "HAVEN_APP_DIR        = /opt/haven"
-have "print-paths default stack file" "$out" "HAVEN_STACK_ENV_FILE = /etc/hybrid-ai/stack.env"
+have "print-paths default stack file" "$out" "HAVEN_STACK_ENV_FILE = /etc/haven/stack.env"
 if env -u HAVEN_BOOTSTRAP_ROOT bash "$BOOTSTRAP" --print-paths >/dev/null 2>&1; then
   ok "print-paths needs no root and touches nothing"
 else
@@ -361,30 +361,30 @@ run_bootstrap "$R1" "$WORK/fresh.log" --deploy-pubkey "$PUBKEY" --login-user pi 
 check "fresh install exits 0" "0" "$rc"
 if (( rc != 0 )); then sed 's/^/      /' "$WORK/fresh.log" >&2; fi
 
-LAYOUT="$R1/etc/hybrid-ai/hybrid-ai.env"
+LAYOUT="$R1/etc/haven/haven.env"
 check "layout file mode is 0644" "644" "$(stat -c '%a' "$LAYOUT" 2>/dev/null)"
 check "app dir cloned" "yes" "$([[ -d "$R1/opt/haven/.git" ]] && echo yes || echo no)"
 check "staged code root is traversable by service accounts" "755" "$(stat -c '%a' "$R1/opt/haven")"
-check "data dir" "yes" "$([[ -d "$R1/var/lib/hybrid-ai" ]] && echo yes || echo no)"
-check "agent workspace is a SIBLING of the data dir" "yes" "$([[ -d "$R1/var/lib/hybrid-ai-agent" ]] && echo yes)"
-check "agent repos is a SIBLING of the data dir" "yes" "$([[ -d "$R1/var/lib/hybrid-ai-repos" ]] && echo yes)"
-check "no agent-workspace child under the data dir" "no" "$([[ -e "$R1/var/lib/hybrid-ai/agent-workspace" ]] && echo yes || echo no)"
-check "no agent-repos child under the data dir" "no" "$([[ -e "$R1/var/lib/hybrid-ai/agent-repos" ]] && echo yes || echo no)"
-check "data subdir openhands" "yes" "$([[ -d "$R1/var/lib/hybrid-ai/openhands" ]] && echo yes)"
-check "log dir" "yes" "$([[ -d "$R1/var/log/hybrid-ai" ]] && echo yes)"
-check "etc dir mode" "755" "$(stat -c '%a' "$R1/etc/hybrid-ai" 2>/dev/null)"
-check "credstore mode" "700" "$(stat -c '%a' "$R1/etc/credstore/hybrid-ai-backup" 2>/dev/null)"
-check "deploy unit installed" "yes" "$([[ -f "$R1/etc/systemd/system/hybrid-ai-deploy@.service" ]] && echo yes)"
-check "polkit rule installed" "yes" "$([[ -f "$R1/etc/polkit-1/rules.d/50-hybrid-ai-deploy.rules" ]] && echo yes)"
-check "firewall unit installed" "yes" "$([[ -f "$R1/etc/systemd/system/hybrid-ai-firewall.service" ]] && echo yes)"
+check "data dir" "yes" "$([[ -d "$R1/var/lib/haven" ]] && echo yes || echo no)"
+check "agent workspace is a SIBLING of the data dir" "yes" "$([[ -d "$R1/var/lib/haven-agent" ]] && echo yes)"
+check "agent repos is a SIBLING of the data dir" "yes" "$([[ -d "$R1/var/lib/haven-repos" ]] && echo yes)"
+check "no agent-workspace child under the data dir" "no" "$([[ -e "$R1/var/lib/haven/agent-workspace" ]] && echo yes || echo no)"
+check "no agent-repos child under the data dir" "no" "$([[ -e "$R1/var/lib/haven/agent-repos" ]] && echo yes || echo no)"
+check "data subdir openhands" "yes" "$([[ -d "$R1/var/lib/haven/openhands" ]] && echo yes)"
+check "log dir" "yes" "$([[ -d "$R1/var/log/haven" ]] && echo yes)"
+check "etc dir mode" "755" "$(stat -c '%a' "$R1/etc/haven" 2>/dev/null)"
+check "credstore mode" "700" "$(stat -c '%a' "$R1/etc/credstore/haven-backup" 2>/dev/null)"
+check "deploy unit installed" "yes" "$([[ -f "$R1/etc/systemd/system/haven-deploy@.service" ]] && echo yes)"
+check "polkit rule installed" "yes" "$([[ -f "$R1/etc/polkit-1/rules.d/50-haven-deploy.rules" ]] && echo yes)"
+check "firewall unit installed" "yes" "$([[ -f "$R1/etc/systemd/system/haven-firewall.service" ]] && echo yes)"
 have "bootstrap enabled the firewall unit" "$(cat "$EVENTS")" \
-  "systemctl enable hybrid-ai-firewall.service"
-check "authorized_keys mode" "600" "$(stat -c '%a' "$R1/var/lib/hybrid-ai-deploy/.ssh/authorized_keys" 2>/dev/null)"
+  "systemctl enable haven-firewall.service"
+check "authorized_keys mode" "600" "$(stat -c '%a' "$R1/var/lib/haven-deploy/.ssh/authorized_keys" 2>/dev/null)"
 check "authorized_keys line is the forced command" "1" \
-  "$(grep -c "restrict,command=\"$R1/opt/haven/scripts/deploy-forced-command.sh\"" "$R1/var/lib/hybrid-ai-deploy/.ssh/authorized_keys" 2>/dev/null)"
+  "$(grep -c "restrict,command=\"$R1/opt/haven/scripts/deploy-forced-command.sh\"" "$R1/var/lib/haven-deploy/.ssh/authorized_keys" 2>/dev/null)"
 
 # Each account: system uid, its own group, nologin (or /bin/sh for deploy).
-for a in hybrid-ai hybrid-ai-backup; do
+for a in haven haven-backup; do
   line="$(grep "^${a}:" "$R1/stubstate/passwd")"
   uid="$(printf '%s' "$line" | cut -d: -f3)"
   grp="$(printf '%s' "$line" | cut -d: -f4)"
@@ -392,35 +392,35 @@ for a in hybrid-ai hybrid-ai-backup; do
   if (( uid < 1000 && uid == grp )); then ok "${a} is a system account with its own group"; else bad "${a} uid/gid ${uid}/${grp}"; fi
   check "${a} has a nologin shell" "$R1/usr/sbin/nologin" "$sh"
 done
-dline="$(grep '^hybrid-ai-deploy:' "$R1/stubstate/passwd")"
-check "hybrid-ai-deploy shell is /bin/sh" "$R1/bin/sh" "$(printf '%s' "$dline" | cut -d: -f7)"
+dline="$(grep '^haven-deploy:' "$R1/stubstate/passwd")"
+check "haven-deploy shell is /bin/sh" "$R1/bin/sh" "$(printf '%s' "$dline" | cut -d: -f7)"
 duid="$(printf '%s' "$dline" | cut -d: -f3)"
-if (( duid < 1000 )); then ok "hybrid-ai-deploy is a system account"; else bad "hybrid-ai-deploy uid ${duid}"; fi
+if (( duid < 1000 )); then ok "haven-deploy is a system account"; else bad "haven-deploy uid ${duid}"; fi
 
 # The layout file content.
 for needle in \
   "HAVEN_APP_DIR=$R1/opt/haven" \
   "HAVEN_ENV_FILE=$LAYOUT" \
-  "HAVEN_STACK_ENV_FILE=$R1/etc/hybrid-ai/stack.env" \
-  "HAVEN_DATA_DIR=$R1/var/lib/hybrid-ai" \
-  "HAVEN_LOG_DIR=$R1/var/log/hybrid-ai" \
-  "HAVEN_WORK_DIR=$R1/var/lib/hybrid-ai/work" \
-  "OPENHANDS_WORKSPACE=$R1/var/lib/hybrid-ai-agent" \
-  "AGENT_REPOS_DIR=$R1/var/lib/hybrid-ai-repos" \
-  "OPENHANDS_STATE_DIR=$R1/var/lib/hybrid-ai/openhands" \
-  "RESTIC_CACHE_DIR=$R1/var/cache/hybrid-ai-backup" \
-  "HAVEN_HERMES_HOME_DIR=$R1/var/lib/hybrid-ai/hermes-home" \
+  "HAVEN_STACK_ENV_FILE=$R1/etc/haven/stack.env" \
+  "HAVEN_DATA_DIR=$R1/var/lib/haven" \
+  "HAVEN_LOG_DIR=$R1/var/log/haven" \
+  "HAVEN_WORK_DIR=$R1/var/lib/haven/work" \
+  "OPENHANDS_WORKSPACE=$R1/var/lib/haven-agent" \
+  "AGENT_REPOS_DIR=$R1/var/lib/haven-repos" \
+  "OPENHANDS_STATE_DIR=$R1/var/lib/haven/openhands" \
+  "RESTIC_CACHE_DIR=$R1/var/cache/haven-backup" \
+  "HAVEN_HERMES_HOME_DIR=$R1/var/lib/haven/hermes-home" \
   "HAVEN_BACKUP_MODE=system" \
   "BACKUP_CONTAINER_CONTROL=external"; do
   if grep -qxF "$needle" "$LAYOUT"; then ok "layout has: ${needle##*/}"; else bad "layout missing: $needle"; fi
 done
-if grep -qE "^HAVEN_UID=$(grep '^hybrid-ai:' "$R1/stubstate/passwd" | cut -d: -f3)$" "$LAYOUT"; then
-  ok "layout HAVEN_UID is the hybrid-ai account uid"
+if grep -qE "^HAVEN_UID=$(grep '^haven:' "$R1/stubstate/passwd" | cut -d: -f3)$" "$LAYOUT"; then
+  ok "layout HAVEN_UID is the haven account uid"
 else
-  bad "layout HAVEN_UID is not the hybrid-ai uid"
+  bad "layout HAVEN_UID is not the haven uid"
 fi
 if grep -qE "^HAVEN_GID=[0-9]+$" "$LAYOUT"; then ok "layout HAVEN_GID is numeric"; else bad "layout HAVEN_GID"; fi
-check "hermes-home owned by hybrid-ai" "700" "$(stat -c '%a' "$R1/var/lib/hybrid-ai/hermes-home" 2>/dev/null)"
+check "hermes-home owned by haven" "700" "$(stat -c '%a' "$R1/var/lib/haven/hermes-home" 2>/dev/null)"
 
 # No SECRET KEY NAME from install.sh STEP 8 may appear in the layout file.
 SECRET_NAMES="ENV_VERSION LOCAL_DOMAIN OLLAMA_MEM_LIMIT WEBUI_MEM_LIMIT OLLAMA_CPUS WEBUI_CPUS OLLAMA_CONTEXT_LENGTH OLLAMA_NUM_PARALLEL OLLAMA_MAX_LOADED_MODELS OLLAMA_KEEP_ALIVE OLLAMA_FLASH_ATTENTION OLLAMA_KV_CACHE_TYPE OLLAMA_IMAGE WEBUI_IMAGE STATUS_UID DOCKER_GID WEBUI_SECRET_KEY WEBUI_AUTH RAG_EMBEDDING_MODEL ENABLE_OPENAI_API OPENROUTER_API_KEY OPENROUTER_MODEL RUNPOD_HOST PI_HOST PEER_HOSTNAME PEER_HOSTNAMES RUNPOD_API_KEY RUNPOD_POD_ID RUNPOD_AUTO_WAKE VLLM_PORT VLLM_MODEL_NAME POD_WARMUP_TIMEOUT"
@@ -435,15 +435,15 @@ after="$(sha256sum < "$LAYOUT")"
 check "install.sh did not change the layout file" "$before" "$after"
 
 # Idempotent re-run: nothing changes.
-snap_before="$(find "$R1/var/lib/hybrid-ai" "$R1/etc" -type f -printf '%P %s\n' 2>/dev/null | sort | sha256sum)"
+snap_before="$(find "$R1/var/lib/haven" "$R1/etc" -type f -printf '%P %s\n' 2>/dev/null | sort | sha256sum)"
 rc=0
 run_bootstrap "$R1" "$WORK/rerun.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
-snap_after="$(find "$R1/var/lib/hybrid-ai" "$R1/etc" -type f -printf '%P %s\n' 2>/dev/null | sort | sha256sum)"
+snap_after="$(find "$R1/var/lib/haven" "$R1/etc" -type f -printf '%P %s\n' 2>/dev/null | sort | sha256sum)"
 check "a re-run exits 0" "0" "$rc"
 check "a re-run changes nothing" "$snap_before" "$snap_after"
 check "a re-run creates no account" "$(grep -c useradd "$EVENTS")" "0"
 check "a re-run leaves exactly one authorized_keys line" "1" \
-  "$(wc -l < "$R1/var/lib/hybrid-ai-deploy/.ssh/authorized_keys" | tr -d ' ')"
+  "$(wc -l < "$R1/var/lib/haven-deploy/.ssh/authorized_keys" | tr -d ' ')"
 
 # install.sh gets the LAYOUT file by name.
 have "install.sh was handed the layout file" "$(cat "$EVENTS")" \
@@ -455,7 +455,7 @@ echo "== migration from a legacy fixture =="
 R2="$(new_root)"
 LEGACY="$R2/legacy"; mkdir -p "$LEGACY/openhands" "$LEGACY/hermes"
 
-mkdir -p "$R2/home/pi/.ssh" "$R2/home/pi/.config/hybrid-ai-backup"
+mkdir -p "$R2/home/pi/.ssh" "$R2/home/pi/.config/haven-backup"
 # Two unrelated keys plus the deploy key. Only the deploy line may be removed.
 {
   printf '%s\n' "ssh-ed25519 ${OTHER_BLOB} other@fixture"
@@ -489,10 +489,10 @@ printf 'webui\n' > "$LEGACY/webui_data/WFILE"
 printf 'ollama\n' > "$LEGACY/ollama_data/OFILE"
 printf 'install log\n' > "$LEGACY/install.log"
 printf 'backup log\n' > "$LEGACY/backup.log"
-printf 'RESTIC_REPOSITORY=__SENTINEL_R2__\n' > "$R2/home/pi/.config/hybrid-ai-backup/r2.env"
-chmod 600 "$R2/home/pi/.config/hybrid-ai-backup/r2.env"
-printf '__SENTINEL_PW__\n' > "$R2/home/pi/.config/hybrid-ai-backup/repo-password"
-chmod 600 "$R2/home/pi/.config/hybrid-ai-backup/repo-password"
+printf 'RESTIC_REPOSITORY=__SENTINEL_R2__\n' > "$R2/home/pi/.config/haven-backup/r2.env"
+chmod 600 "$R2/home/pi/.config/haven-backup/r2.env"
+printf '__SENTINEL_PW__\n' > "$R2/home/pi/.config/haven-backup/repo-password"
+chmod 600 "$R2/home/pi/.config/haven-backup/repo-password"
 : > "$LEGACY/docker-compose.yml"
 : > "$LEGACY/openhands/docker-compose.openhands.yml"
 : > "$LEGACY/hermes/docker-compose.hermes.yml"
@@ -506,33 +506,33 @@ check "migration exits 0" "0" "$rc"
 if (( rc != 0 )); then sed 's/^/      /' "$WORK/migrate.log" >&2; fi
 
 # hermes_data landed on its real target; inode preserved.
-check "hermes_data file preserved" "yes" "$([[ -f "$R2/var/lib/hybrid-ai/hermes_data/HFILE" ]] && echo yes)"
-check "hermes_data inode preserved" "$inode_hermes" "$(stat -c '%i' "$R2/var/lib/hybrid-ai/hermes_data/HFILE" 2>/dev/null)"
+check "hermes_data file preserved" "yes" "$([[ -f "$R2/var/lib/haven/hermes_data/HFILE" ]] && echo yes)"
+check "hermes_data inode preserved" "$inode_hermes" "$(stat -c '%i' "$R2/var/lib/haven/hermes_data/HFILE" 2>/dev/null)"
 check "the legacy hermes_data is gone (moved, not copied)" "no" "$([[ -e "$LEGACY/hermes_data" ]] && echo yes || echo no)"
 
 # The relocated trees landed where the redirect points.
-check "agent workspace file moved to the sibling" "yes" "$([[ -f "$R2/var/lib/hybrid-ai-agent/KEY" ]] && echo yes || echo no)"
-check "agent workspace inode preserved" "$inode_ws" "$(stat -c '%i' "$R2/var/lib/hybrid-ai-agent/KEY" 2>/dev/null)"
+check "agent workspace file moved to the sibling" "yes" "$([[ -f "$R2/var/lib/haven-agent/KEY" ]] && echo yes || echo no)"
+check "agent workspace inode preserved" "$inode_ws" "$(stat -c '%i' "$R2/var/lib/haven-agent/KEY" 2>/dev/null)"
 
 # The legacy .env became the stack env file, byte-identical, 0600.
-check "stack env mode 0600" "600" "$(stat -c '%a' "$R2/etc/hybrid-ai/stack.env" 2>/dev/null)"
+check "stack env mode 0600" "600" "$(stat -c '%a' "$R2/etc/haven/stack.env" 2>/dev/null)"
 check "stack env is byte-identical to the legacy .env" "yes" \
-  "$(cmp -s "$R2/etc/hybrid-ai/stack.env" "$LEGACY_ENV_COPY" && printf '%s' 'yes' || printf '%s' 'no')"
-if grep -qxF "WEBUI_SECRET_KEY=__SENTINEL_ENVDOT__" "$R2/etc/hybrid-ai/stack.env"; then
+  "$(cmp -s "$R2/etc/haven/stack.env" "$LEGACY_ENV_COPY" && printf '%s' 'yes' || printf '%s' 'no')"
+if grep -qxF "WEBUI_SECRET_KEY=__SENTINEL_ENVDOT__" "$R2/etc/haven/stack.env"; then
   ok "the sentinel survived the move"
 else
   bad "the sentinel did not survive the move"
 fi
 
 # Credentials moved into the credstore, byte-identical, 0600.
-check "r2.env mode 0600" "600" "$(stat -c '%a' "$R2/etc/credstore/hybrid-ai-backup/r2.env" 2>/dev/null)"
-check "repo-password mode 0600" "600" "$(stat -c '%a' "$R2/etc/credstore/hybrid-ai-backup/repo-password" 2>/dev/null)"
+check "r2.env mode 0600" "600" "$(stat -c '%a' "$R2/etc/credstore/haven-backup/r2.env" 2>/dev/null)"
+check "repo-password mode 0600" "600" "$(stat -c '%a' "$R2/etc/credstore/haven-backup/repo-password" 2>/dev/null)"
 check "r2.env byte-identical" "yes" \
-  "$(grep -qxF 'RESTIC_REPOSITORY=__SENTINEL_R2__' "$R2/etc/credstore/hybrid-ai-backup/r2.env" && echo yes || echo no)"
+  "$(grep -qxF 'RESTIC_REPOSITORY=__SENTINEL_R2__' "$R2/etc/credstore/haven-backup/r2.env" && echo yes || echo no)"
 
 # Logs moved.
-check "install.log moved" "yes" "$([[ -f "$R2/var/log/hybrid-ai/install.log" ]] && echo yes || echo no)"
-check "backup.log moved" "yes" "$([[ -f "$R2/var/log/hybrid-ai/backup.log" ]] && echo yes || echo no)"
+check "install.log moved" "yes" "$([[ -f "$R2/var/log/haven/install.log" ]] && echo yes || echo no)"
+check "backup.log moved" "yes" "$([[ -f "$R2/var/log/haven/backup.log" ]] && echo yes || echo no)"
 
 # Only the matching authorized_keys line was removed.
 ak="$R2/home/pi/.ssh/authorized_keys"
@@ -541,7 +541,7 @@ if grep -qF "$KEY_BLOB" "$ak"; then bad "the deploy key line was not removed"; e
 check "the other two keys remain" "2" "$(grep -cF "$OTHER_BLOB" "$ak")"
 
 # The docker group removal came LAST.
-disable_line="$(grep -n 'systemctl --user disable --now hybrid-ai-check.timer' "$EVENTS" | tail -1 | cut -d: -f1)"
+disable_line="$(grep -n 'systemctl --user disable --now haven-check.timer' "$EVENTS" | tail -1 | cut -d: -f1)"
 docker_line="$(grep -n 'gpasswd-docker' "$EVENTS" | tail -1 | cut -d: -f1)"
 if [[ -n "$disable_line" && -n "$docker_line" && "$docker_line" -gt "$disable_line" ]]; then
   ok "the docker group removal comes after the user-unit disable"
@@ -556,7 +556,7 @@ fi
 
 # The manifest records PATHS ONLY and holds no sentinel.
 # shellcheck disable=SC2012  # the manifest name has no spaces; ls glob is fine
-manifest="$(ls "$R2/var/log/hybrid-ai/"bootstrap-*.manifest 2>/dev/null | head -1)"
+manifest="$(ls "$R2/var/log/haven/"bootstrap-*.manifest 2>/dev/null | head -1)"
 if [[ -n "$manifest" ]]; then
   ok "a migration manifest was written"
   check "manifest mode is 0600" "600" "$(stat -c '%a' "$manifest")"
@@ -572,11 +572,11 @@ fi
 # The legacy .env carries EMPTY HAVEN_UID=/HAVEN_GID= (the base
 # install.sh STEP 8 writes them blank). The bootstrap must still hand install.sh
 # the layout file, whose ids are authoritative, and the Hermes preflight must be
-# run with the hybrid-ai uid -- never an empty one. This is the migration-side
+# run with the haven uid -- never an empty one. This is the migration-side
 # proof for the empty-uid defect (AC1).
-layout_uid="$(grep -E '^HAVEN_UID=' "$R2/etc/hybrid-ai/hybrid-ai.env" | cut -d= -f2-)"
+layout_uid="$(grep -E '^HAVEN_UID=' "$R2/etc/haven/haven.env" | cut -d= -f2-)"
 have "install.sh was handed the layout file during migration" "$(cat "$EVENTS")" \
-  "install.sh HAVEN_ENV_FILE=$R2/etc/hybrid-ai/hybrid-ai.env"
+  "install.sh HAVEN_ENV_FILE=$R2/etc/haven/haven.env"
 if [[ -n "$layout_uid" && "$layout_uid" != "0" ]]; then
   ok "the migrated layout file carries a non-zero HAVEN_UID (${layout_uid})"
 else
@@ -593,7 +593,7 @@ fi
 # and still carrying its own (empty) ids. install.sh rewrites it on the hand-off;
 # this only proves the move itself was faithful.
 check "the moved stack file is still byte-identical to the legacy .env" "yes" \
-  "$(cmp -s "$R2/etc/hybrid-ai/stack.env" "$LEGACY_ENV_COPY" && echo yes || echo no)"
+  "$(cmp -s "$R2/etc/haven/stack.env" "$LEGACY_ENV_COPY" && echo yes || echo no)"
 
 # ---------------------------------------------------------------------------
 echo
@@ -643,7 +643,7 @@ run_bootstrap "$R6" "$WORK/rerun-from-2.log" --deploy-pubkey "$PUBKEY" --from "$
 check "a second --from run exits 0" "0" "$rc"
 if (( rc != 0 )); then sed 's/^/      /' "$WORK/rerun-from-2.log" >&2; fi
 have "the re-run stopped the stack with the stack env file" "$(cat "$EVENTS")" \
-  "docker compose -p hybrid-ai --env-file $R6/etc/hybrid-ai/stack.env"
+  "docker compose -p haven --env-file $R6/etc/haven/stack.env"
 have "the re-run reached the install.sh hand-off" "$(cat "$EVENTS")" "install.sh HAVEN_ENV_FILE="
 if grep -q 'could not stop the stack' "$WORK/rerun-from-2.log"; then
   bad "the second --from run died at the stop step"
@@ -662,41 +662,41 @@ echo "== D8 repair: a re-run relocates the wrong child agent dirs =="
 # A re-run must rename them to the siblings when the sibling is absent, and
 # refuse (exit 6, before any move) when both copies hold data.
 R8="$(new_root)"
-mkdir -p "$R8/var/lib/hybrid-ai/agent-workspace" "$R8/var/lib/hybrid-ai/agent-repos"
-printf 'ws\n' > "$R8/var/lib/hybrid-ai/agent-workspace/KEY"
-printf 'repos\n' > "$R8/var/lib/hybrid-ai/agent-repos/REPO"
+mkdir -p "$R8/var/lib/haven/agent-workspace" "$R8/var/lib/haven/agent-repos"
+printf 'ws\n' > "$R8/var/lib/haven/agent-workspace/KEY"
+printf 'repos\n' > "$R8/var/lib/haven/agent-repos/REPO"
 LEGACY8="$R8/legacy"; mkdir -p "$LEGACY8/openhands" "$LEGACY8/hermes"
 printf '# legacy env\n' > "$LEGACY8/.env"; chmod 600 "$LEGACY8/.env"
 : > "$LEGACY8/docker-compose.yml"
 : > "$LEGACY8/openhands/docker-compose.openhands.yml"
 : > "$LEGACY8/hermes/docker-compose.hermes.yml"
-inode8_ws="$(stat -c '%i' "$R8/var/lib/hybrid-ai/agent-workspace/KEY")"
+inode8_ws="$(stat -c '%i' "$R8/var/lib/haven/agent-workspace/KEY")"
 rc=0
 run_bootstrap "$R8" "$WORK/repair.log" --deploy-pubkey "$PUBKEY" --from "$LEGACY8" --login-user pi || rc=$?
 check "the repair re-run exits 0" "0" "$rc"
 if (( rc != 0 )); then sed 's/^/      /' "$WORK/repair.log" >&2; fi
 check "the child agent-workspace was relocated to the sibling" "yes" \
-  "$([[ -f "$R8/var/lib/hybrid-ai-agent/KEY" ]] && echo yes || echo no)"
+  "$([[ -f "$R8/var/lib/haven-agent/KEY" ]] && echo yes || echo no)"
 check "the repair preserved the inode (a rename)" "$inode8_ws" \
-  "$(stat -c '%i' "$R8/var/lib/hybrid-ai-agent/KEY" 2>/dev/null)"
+  "$(stat -c '%i' "$R8/var/lib/haven-agent/KEY" 2>/dev/null)"
 check "the old child agent-workspace is gone" "no" \
-  "$([[ -e "$R8/var/lib/hybrid-ai/agent-workspace" ]] && echo yes || echo no)"
+  "$([[ -e "$R8/var/lib/haven/agent-workspace" ]] && echo yes || echo no)"
 check "the child agent-repos was relocated to the sibling" "yes" \
-  "$([[ -f "$R8/var/lib/hybrid-ai-repos/REPO" ]] && echo yes || echo no)"
+  "$([[ -f "$R8/var/lib/haven-repos/REPO" ]] && echo yes || echo no)"
 # shellcheck disable=SC2012  # the manifest name has no spaces; ls glob is fine
-manifest8="$(ls "$R8/var/log/hybrid-ai/"bootstrap-*.manifest 2>/dev/null | head -1)"
+manifest8="$(ls "$R8/var/log/haven/"bootstrap-*.manifest 2>/dev/null | head -1)"
 if [[ -n "$manifest8" ]] && grep -q -- 'agent-workspace ->' "$manifest8"; then
   ok "the repair move is recorded in the manifest"
 else
   bad "the repair move is not recorded in the manifest"
 fi
 # The layout file must now carry the SIBLING paths, never the old child paths.
-LAYOUT8="$R8/etc/hybrid-ai/hybrid-ai.env"
+LAYOUT8="$R8/etc/haven/haven.env"
 check "the repaired layout names the sibling OPENHANDS_WORKSPACE" \
-  "$R8/var/lib/hybrid-ai-agent" \
+  "$R8/var/lib/haven-agent" \
   "$(grep -E '^OPENHANDS_WORKSPACE=' "$LAYOUT8" | cut -d= -f2-)"
 check "the repaired layout names the sibling AGENT_REPOS_DIR" \
-  "$R8/var/lib/hybrid-ai-repos" \
+  "$R8/var/lib/haven-repos" \
   "$(grep -E '^AGENT_REPOS_DIR=' "$LAYOUT8" | cut -d= -f2-)"
 if grep -qE '^OPENHANDS_WORKSPACE=.*/agent-workspace$|^AGENT_REPOS_DIR=.*/agent-repos$' "$LAYOUT8"; then
   bad "the repaired layout still names an old child agent path"
@@ -706,9 +706,9 @@ fi
 
 # Both copies non-empty: refuse with exit 6 BEFORE any move.
 R9="$(new_root)"
-mkdir -p "$R9/var/lib/hybrid-ai/agent-workspace" "$R9/var/lib/hybrid-ai-agent"
-printf 'old\n' > "$R9/var/lib/hybrid-ai/agent-workspace/KEY"
-printf 'new\n' > "$R9/var/lib/hybrid-ai-agent/KEY"
+mkdir -p "$R9/var/lib/haven/agent-workspace" "$R9/var/lib/haven-agent"
+printf 'old\n' > "$R9/var/lib/haven/agent-workspace/KEY"
+printf 'new\n' > "$R9/var/lib/haven-agent/KEY"
 LEGACY9="$R9/legacy"; mkdir -p "$LEGACY9/openhands" "$LEGACY9/hermes"
 printf '# legacy env\n' > "$LEGACY9/.env"; chmod 600 "$LEGACY9/.env"
 : > "$LEGACY9/docker-compose.yml"
@@ -718,9 +718,9 @@ rc=0
 run_bootstrap "$R9" "$WORK/repair-both.log" --deploy-pubkey "$PUBKEY" --from "$LEGACY9" --login-user pi || rc=$?
 check "both copies non-empty is refused with 6" "6" "$rc"
 check "the refusal left the old child copy untouched" "yes" \
-  "$([[ -f "$R9/var/lib/hybrid-ai/agent-workspace/KEY" ]] && echo yes || echo no)"
+  "$([[ -f "$R9/var/lib/haven/agent-workspace/KEY" ]] && echo yes || echo no)"
 check "the refusal left the sibling copy untouched" "yes" \
-  "$([[ -f "$R9/var/lib/hybrid-ai-agent/KEY" ]] && echo yes || echo no)"
+  "$([[ -f "$R9/var/lib/haven-agent/KEY" ]] && echo yes || echo no)"
 
 # ---------------------------------------------------------------------------
 echo
@@ -755,7 +755,7 @@ else
   ok "the stack sentinel is absent from bootstrap output"
 fi
 check "the stack sentinel really was written by install.sh" "yes" \
-  "$(grep -qxF 'WEBUI_SECRET_KEY=__SENTINEL_STACK__' "$R3/etc/hybrid-ai/stack.env" && echo yes || echo no)"
+  "$(grep -qxF 'WEBUI_SECRET_KEY=__SENTINEL_STACK__' "$R3/etc/haven/stack.env" && echo yes || echo no)"
 
 # ---------------------------------------------------------------------------
 echo
@@ -812,6 +812,14 @@ check "restrictive caller umask permits fresh bootstrap" "0" "$rc"
 check "Git checkout uses root-owned service-readable creation modes" "yes" \
   "$(grep -q '^clone-umask 0022$' "$GIT_LOG" && echo yes || echo no)"
 
+R="$(new_root)"
+mkdir -p "$R/var/lib/hybrid-ai"
+printf 'preserve\n' > "$R/var/lib/hybrid-ai/sentinel"
+rc=0; run_bootstrap "$R" "$WORK/r_identity.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
+check "legacy data requires the coordinated migration driver" "2" "$rc"
+check "legacy identity refusal preserves data" "preserve" "$(cat "$R/var/lib/hybrid-ai/sentinel")"
+check "legacy identity refusal creates no replacement data" "absent" "$( [[ -e "$R/var/lib/haven" ]] && echo present || echo absent )"
+
 # 4 -- a credential-bearing origin.
 R="$(new_root)"
 mkdir -p "$R/opt/haven/.git"
@@ -855,15 +863,15 @@ check "an old polkit is refused with 5" "5" "$rc"
 R="$(new_root)"
 LEGACY="$R/legacy"; mkdir -p "$LEGACY/hermes_data"
 printf 'x\n' > "$LEGACY/hermes_data/HFILE"
-mkdir -p "$R/var/lib/hybrid-ai/hermes_data"
-printf 'y\n' > "$R/var/lib/hybrid-ai/hermes_data/EXISTING"
+mkdir -p "$R/var/lib/haven/hermes_data"
+printf 'y\n' > "$R/var/lib/haven/hermes_data/EXISTING"
 : > "$LEGACY/.env"; : > "$LEGACY/docker-compose.yml"
 mkdir -p "$LEGACY/openhands" "$LEGACY/hermes"
 : > "$LEGACY/openhands/docker-compose.openhands.yml"
 : > "$LEGACY/hermes/docker-compose.hermes.yml"
 rc=0; run_bootstrap "$R" "$WORK/r_nonempty.log" --deploy-pubkey "$PUBKEY" --from "$LEGACY" --login-user pi || rc=$?
 check "a non-empty move target is refused with 6" "6" "$rc"
-if [[ -f "$R/var/lib/hybrid-ai/hermes_data/EXISTING" ]]; then
+if [[ -f "$R/var/lib/haven/hermes_data/EXISTING" ]]; then
   ok "nothing was moved before the refusal"
 else
   bad "the refusal happened after a partial move"
@@ -877,8 +885,8 @@ printf 'x\n' > "$LEGACY/hermes_data/HFILE"
 : > "$LEGACY/.env"; : > "$LEGACY/docker-compose.yml"
 : > "$LEGACY/openhands/docker-compose.openhands.yml"
 : > "$LEGACY/hermes/docker-compose.hermes.yml"
-mkdir -p "$R/etc/hybrid-ai"
-printf 'preexisting\n' > "$R/etc/hybrid-ai/stack.env"
+mkdir -p "$R/etc/haven"
+printf 'preexisting\n' > "$R/etc/haven/stack.env"
 rc=0; run_bootstrap "$R" "$WORK/r_filetgt.log" --deploy-pubkey "$PUBKEY" --from "$LEGACY" --login-user pi || rc=$?
 check "a pre-existing stack-file target is refused with 6" "6" "$rc"
 if [[ -e "$LEGACY/hermes_data" ]]; then
@@ -1023,7 +1031,7 @@ echo "== the AllowUsers/AllowGroups guidance is printed, sshd_config untouched =
 R="$(new_root)"
 EXTRA_ENV=(SSHD_T_OUT=$'allowusers pi\n')
 rc=0; run_bootstrap "$R" "$WORK/allow.log" --deploy-pubkey "$PUBKEY" --login-user pi || rc=$?
-have "the exact AllowUsers line is printed" "$(cat "$WORK/allow.log")" "AllowUsers hybrid-ai-deploy"
+have "the exact AllowUsers line is printed" "$(cat "$WORK/allow.log")" "AllowUsers haven-deploy"
 check "bootstrap still exits 0" "0" "$rc"
 check "sshd_config was not created" "no" "$([[ -e "$R/etc/ssh/sshd_config" ]] && echo yes || echo no)"
 
@@ -1039,7 +1047,7 @@ INST="$WORK/install-fixture"
 INST_APP="$INST/app"
 INST_BIN="$INST/bin"
 mkdir -p "$INST_APP/scripts/lib" "$INST_APP/status" "$INST_BIN" \
-         "$INST/etc/hybrid-ai" "$INST/data" "$INST/log" "$INST/work" \
+         "$INST/etc/haven" "$INST/data" "$INST/log" "$INST/work" \
          "$INST/ws" "$INST/repos" "$INST/ohstate" "$INST/conf" "$INST/restic"
 cp "$REPO/install.sh" "$INST_APP/install.sh"
 cp "$REPO/scripts/lib/haven-env.sh" "$INST_APP/scripts/lib/"
@@ -1067,7 +1075,7 @@ cat > "$INST_BIN/getent" <<'EOF'
 case "${1:-}" in
   group)
     case "${2:-}" in
-      hybrid-ai-backup) printf 'hybrid-ai-backup:x:982:\n' ;;
+      haven-backup) printf 'haven-backup:x:982:\n' ;;
       docker)           printf 'docker:x:999:\n' ;;
       *) exit 2 ;;
     esac
@@ -1102,8 +1110,8 @@ run_real_install() { # app layout log
   return "$rc"
 }
 
-INST_LAYOUT="$INST/etc/hybrid-ai/hybrid-ai.env"
-INST_STACK="$INST/etc/hybrid-ai/stack.env"
+INST_LAYOUT="$INST/etc/haven/haven.env"
+INST_STACK="$INST/etc/haven/stack.env"
 cat > "$INST_LAYOUT" <<EOF
 HAVEN_APP_DIR=${INST_APP}
 HAVEN_ENV_FILE=${INST_LAYOUT}
@@ -1168,8 +1176,8 @@ STACK_SENTINEL_VAL="__SENTINEL_LEGACY_STACK__"
   printf 'STATUS_UID=0\nHAVEN_UID=\nHAVEN_GID=\nWEBUI_SECRET_KEY=legacy\n'
   # Legacy paths that point AWAY from the layout, as a real Pi .env would once
   # the migration moved the trees: the layout must win, not these.
-  printf 'OPENHANDS_WORKSPACE=/home/pi/hybrid-ai-agent\n'
-  printf 'AGENT_REPOS_DIR=/home/pi/hybrid-ai-repos\n'
+  printf 'OPENHANDS_WORKSPACE=/home/pi/haven-agent\n'
+  printf 'AGENT_REPOS_DIR=/home/pi/haven-repos\n'
   printf 'OPENHANDS_STATE_DIR=/home/pi/.openhands\n'
   # A sentinel in the legacy stack file must never reach the output.
   printf 'RUNPOD_API_KEY=%s\n' "$STACK_SENTINEL_VAL"
@@ -1221,7 +1229,7 @@ if grep -qE 'ssh-keygen|openssl[[:space:]]+rand|restic[[:space:]]+key' "$BOOTSTR
 else
   ok "scripts/bootstrap.sh generates no key or credential"
 fi
-if grep -qE 'ssh-keygen|openssl[[:space:]]+rand' "$REPO/deploy/hybrid-ai-deploy@.service"; then
+if grep -qE 'ssh-keygen|openssl[[:space:]]+rand' "$REPO/deploy/haven-deploy@.service"; then
   bad "the deploy unit contains a key generation command"
 else
   ok "the deploy unit contains no key generation command"
@@ -1229,25 +1237,25 @@ fi
 # The deploy unit is installed but NEVER enabled by the bootstrap. The firewall
 # unit is the deliberate exception: it must run at every boot, after Docker has
 # created DOCKER-USER.
-if grep -qE 'systemctl[[:space:]]+enable[[:space:]]+hybrid-ai-deploy' "$BOOTSTRAP"; then
+if grep -qE 'systemctl[[:space:]]+enable[[:space:]]+haven-deploy' "$BOOTSTRAP"; then
   bad "scripts/bootstrap.sh enables the deploy unit (it must never be enabled)"
 else
   ok "scripts/bootstrap.sh never enables the deploy unit"
 fi
-if grep -qE 'systemctl[[:space:]]+enable[[:space:]]+hybrid-ai-firewall\.service' "$BOOTSTRAP"; then
+if grep -qE 'systemctl[[:space:]]+enable[[:space:]]+haven-firewall\.service' "$BOOTSTRAP"; then
   ok "scripts/bootstrap.sh enables the firewall unit"
 else
-  bad "scripts/bootstrap.sh does not enable hybrid-ai-firewall.service"
+  bad "scripts/bootstrap.sh does not enable haven-firewall.service"
 fi
 # Count only the executed command, not the warning text that quotes it.
 check "bootstrap enables exactly one unit (the firewall)" "1" \
   "$(grep -E 'systemctl[[:space:]]+enable' "$BOOTSTRAP" | grep -cv 'run: systemctl')"
-if grep -qE '^ExecStart=-' "$REPO/deploy/hybrid-ai-firewall.service"; then
+if grep -qE '^ExecStart=-' "$REPO/deploy/haven-firewall.service"; then
   bad "the firewall unit hides failures with a leading - on ExecStart"
 else
   ok "the firewall unit does not hide ExecStart failures"
 fi
-if grep -qE '^Restart=' "$REPO/deploy/hybrid-ai-firewall.service"; then
+if grep -qE '^Restart=' "$REPO/deploy/haven-firewall.service"; then
   bad "the firewall unit has a Restart= policy"
 else
   ok "the firewall unit has no Restart= policy"
@@ -1262,20 +1270,32 @@ else
   ok "scripts/bootstrap.sh never writes sshd_config"
 fi
 
-# Byte-identical files (AC15), when origin/main is available.
-if git -C "$REPO" rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
-  # Resource schedules and polkit are outside canonical source/configuration.
-  # The approved namespace preparation changes backup-containers.sh callers and
-  # unit environment keys; their existing security/behavior fixtures still apply.
-  diff_out="$(git -C "$REPO" diff --stat origin/main -- \
-    backup/system/hybrid-ai-backup-capture.timer \
-    backup/system/hybrid-ai-backup-check.timer \
-    backup/hybrid-ai-backup.service backup/hybrid-ai-backup.timer \
-    backup/hybrid-ai-check.service backup/hybrid-ai-check.timer \
-    deploy/50-hybrid-ai-deploy.rules 2>/dev/null)"
-  check "the out-of-scope files are byte-identical to origin/main" "" "$diff_out"
+# PR 2 renames these controls, so compare all effective directives after the
+# exact identity substitution. Schedule, hardening and polkit scope stay equal.
+if python3 - "$REPO" <<'PYCONTROLS'
+from pathlib import Path
+import subprocess
+import sys
+root = Path(sys.argv[1])
+files = ('backup/system/haven-backup-capture.timer', 'backup/system/haven-backup-check.timer',
+         'backup/haven-backup.service', 'backup/haven-backup.timer',
+         'backup/haven-check.service', 'backup/haven-check.timer', 'deploy/50-haven-deploy.rules')
+def effective(text):
+    return [line.strip() for line in text.splitlines()
+            if line.strip() and not line.lstrip().startswith(('#', '//'))]
+for name in files:
+    previous = subprocess.run(['git', '-C', str(root), 'show', 'origin/main:' + name],
+                              capture_output=True, text=True)
+    if previous.returncode:
+        old_name = name.replace('haven-', 'hybrid-ai-')
+        previous = subprocess.run(['git', '-C', str(root), 'show', 'origin/main:' + old_name],
+                                  capture_output=True, text=True, check=True)
+    assert effective(previous.stdout.replace('hybrid-ai', 'haven')) == effective((root / name).read_text()), name
+PYCONTROLS
+then
+  ok "renamed schedules, hardening and polkit scope match their original controls"
 else
-  printf 'skip: origin/main is not available; the byte-identical check is a no-op here\n'
+  bad "identity migration changed control behavior beyond exact identity substitution"
 fi
 
 # doctor.sh COMPOSE_CMD (offline, no Docker). Every printed Fix hint inherits

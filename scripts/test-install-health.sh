@@ -57,7 +57,7 @@ BIN_ROOT="$WORK/bin-root"
 SYSD="$WORK/systemd"
 mkdir -p "$APP/scripts/lib" "$APP/deploy" "$BIN" "$BIN_ROOT" "$SYSD" "$WORK/data" "$WORK/log" "$WORK/work" \
          "$WORK/ws" "$WORK/repos" "$WORK/ohstate" "$WORK/conf" "$WORK/restic" \
-         "$WORK/etc/hybrid-ai"
+         "$WORK/etc/haven"
 cp "$REPO/install.sh" "$APP/install.sh"
 cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
 [ -f "$REPO/scripts/lib/build-gate.sh" ] || { echo "FATAL: scripts/lib/build-gate.sh is missing; the build gate does not exist in this tree." >&2; exit 2; }
@@ -69,7 +69,7 @@ mkdir -p "$APP/status"
 cp "$REPO/scripts/lib/tls.sh" "$APP/scripts/lib/"
 cp "$REPO/status/Caddyfile.tmpl" "$APP/status/Caddyfile.tmpl"
 cp "$REPO/docker-compose.yml.tmpl" "$APP/docker-compose.yml.tmpl"
-cp "$REPO/deploy/hybrid-ai-firewall.service" "$APP/deploy/"
+cp "$REPO/deploy/haven-firewall.service" "$APP/deploy/"
 # The sandbox git config is shipped by install.sh; copy it so the install path
 # can run, and give the scratch workspace a git dir so install writes the exclude.
 mkdir -p "$APP/openhands" "$WORK/ws/.git/info"
@@ -81,8 +81,8 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$APP/scripts/sync-agent-repos.sh"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$APP/scripts/check-hermes-nonroot.sh"
 chmod +x "$APP/scripts/"*.sh
 
-LAYOUT="$WORK/etc/hybrid-ai/hybrid-ai.env"
-STACK="$WORK/etc/hybrid-ai/stack.env"
+LAYOUT="$WORK/etc/haven/haven.env"
+STACK="$WORK/etc/haven/stack.env"
 {
   printf 'HAVEN_APP_DIR=%s\n' "$APP"
   printf 'HAVEN_ENV_FILE=%s\n' "$LAYOUT"
@@ -165,7 +165,7 @@ case "${1:-}" in
     # The cache-reconcile cases choose whether the backup account exists.
     # getent exits 2 for an entry it cannot find, like the real tool.
     [[ "${RECONCILE_ACCOUNT:-1}" == "1" ]] || exit 2
-    printf 'hybrid-ai-backup:x:999:999::/var/lib/hybrid-ai-backup:/usr/sbin/nologin\n'
+    printf 'haven-backup:x:999:999::/var/lib/haven-backup:/usr/sbin/nologin\n'
     exit 0 ;;
 esac
 exit 0
@@ -204,11 +204,11 @@ EOF
 cat > "$BIN/install" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${INSTALL_ARGV_LOG:-/dev/null}"
-# The cache reconcile runs `install -d -o hybrid-ai-backup -g hybrid-ai-backup
+# The cache reconcile runs `install -d -o haven-backup -g haven-backup
 # <cache>`; that account does not exist on the builder host, so create the
 # directory as this uid and report success.
 case " $* " in
-  *" -o hybrid-ai-backup "*)
+  *" -o haven-backup "*)
     for a in "$@"; do last="$a"; done
     mkdir -p "$last"
     exit 0 ;;
@@ -228,7 +228,7 @@ case "$cmd" in
   daemon-reload|reload|start|restart|stop|disable) exit 0 ;;
   cat)
     [[ -f "${SYSTEMCTL_UNIT_DIR:-/nonexistent}/${unit}" ]] && exit 0
-    case "$unit" in hybrid-ai-backup*|hybrid-ai-check*) exit 0 ;; esac
+    case "$unit" in haven-backup*|haven-check*) exit 0 ;; esac
     exit 1 ;;
   enable)
     [[ "$unit" == "--now" ]] && unit="${3:-}"
@@ -335,8 +335,8 @@ echo "== a healthy hermes-agent exits 0 and logs install_success =="
 rc=0
 run_install ok "$WORK/healthy.log" || rc=$?
 check "install.sh exits 0 when every service is healthy" "0" "$rc"
-if grep -q '^compose -p hybrid-ai .* up ' "$WORK/docker-compose.argv"; then
-  ok "installer keeps the hybrid-ai Compose project from a haven checkout"
+if grep -q '^compose -p haven .* up ' "$WORK/docker-compose.argv"; then
+  ok "installer keeps the haven Compose project from a haven checkout"
 else
   bad "installer derives a different Compose project from the new root"
 fi
@@ -474,8 +474,8 @@ fi
 # ---------------------------------------------------------------------------
 echo
 echo "== the deploy path installs and enables the boot firewall unit =="
-UNIT="hybrid-ai-firewall.service"
-UNIT_SRC="$REPO/deploy/hybrid-ai-firewall.service"
+UNIT="haven-firewall.service"
+UNIT_SRC="$REPO/deploy/haven-firewall.service"
 UNIT_INSTALLED="$SYSD/$UNIT"
 
 # The firewall step must not shell out through sudo at all. install.sh does use
@@ -483,7 +483,7 @@ UNIT_INSTALLED="$SYSD/$UNIT"
 # apt-get), so match only the argv that would belong to this step: the unit,
 # systemctl, or an install of the unit.
 firewall_sudo() {
-  grep -E "hybrid-ai-firewall|systemctl|(^|[[:space:]])install([[:space:]].*/)?hybrid-ai" \
+  grep -E "haven-firewall|systemctl|(^|[[:space:]])install([[:space:]].*/)?haven" \
     "$SUDO_ARGV" 2>/dev/null || true
 }
 
@@ -652,7 +652,7 @@ echo "== the backup cache ownership reconcile runs on every system-mode install 
 # reconcile rides install_backup_scheduler_system(), i.e. STEP 11, so these runs
 # pass NO --no-start. The ownership walk is modelled (find -print -quit answers
 # from FOREIGN_MARKER, chown clears it) because the builder host has neither a
-# hybrid-ai-backup account nor root.
+# haven-backup account nor root.
 # Regression for hosted runners whose Docker socket group is not 999.
 GID_MARKER="$WORK/gid-marker"
 printf 'foreign cache entry\n' > "$GID_MARKER"
@@ -679,7 +679,7 @@ chmod 600 "$WORK/conf/r2.env" "$WORK/conf/repo-password"
 # System mode resolves the credentials to the credstore by default; name the
 # scratch directory instead so the credential-exists path (and thus the
 # scheduler repair, where the reconcile lives) is the one exercised.
-cp "$LAYOUT" "$WORK/etc/hybrid-ai/hybrid-ai.env.no-cred-dir"
+cp "$LAYOUT" "$WORK/etc/haven/haven.env.no-cred-dir"
 printf 'HAVEN_BACKUP_CRED_DIR=%s\n' "$WORK/conf" >> "$LAYOUT"
 
 # (a) every installation: a foreign-owned entry is repaired once.
@@ -699,8 +699,8 @@ else
   bad "backup_cache_ownership_repaired was not logged"
   sed 's/^/      /' "$WORK/cache-repair.log" >&2
 fi
-if grep -qxF "hybrid-ai-backup:hybrid-ai-backup $CACHE_UNDER_TEST" "$CHOWN_ARGV" 2>/dev/null \
-   || grep -qF -- "-R hybrid-ai-backup:hybrid-ai-backup $CACHE_UNDER_TEST" "$CHOWN_ARGV" 2>/dev/null; then
+if grep -qxF "haven-backup:haven-backup $CACHE_UNDER_TEST" "$CHOWN_ARGV" 2>/dev/null \
+   || grep -qF -- "-R haven-backup:haven-backup $CACHE_UNDER_TEST" "$CHOWN_ARGV" 2>/dev/null; then
   ok "the repair chowns -R the resolved cache path only"
 else
   bad "no chown -R of the resolved cache path was recorded"
@@ -754,7 +754,7 @@ fi
 
 # (c2) root-run cache isolation: the root-invoked backup (--init and the first
 # backup) must NOT write into the unit cache, or it leaves root:root entries the
-# hybrid-ai-backup account can never write. Asserted on the CODE: run_backup
+# haven-backup account can never write. Asserted on the CODE: run_backup
 # overrides RESTIC_CACHE_DIR with the dedicated -root cache.
 if grep -qF "RESTIC_CACHE_DIR=\"\$BACKUP_ROOT_CACHE_DIR\"" "$REPO/install.sh" \
    && grep -qF "BACKUP_ROOT_CACHE_DIR=\"\${RESTIC_CACHE_DIR}-root\"" "$REPO/install.sh"; then
@@ -762,19 +762,19 @@ if grep -qF "RESTIC_CACHE_DIR=\"\$BACKUP_ROOT_CACHE_DIR\"" "$REPO/install.sh" \
 else
   bad "run_backup does not isolate the root-invoked backup's cache"
 fi
-if grep -qF 'Environment=RESTIC_CACHE_DIR=/var/cache/hybrid-ai-backup' "$REPO/backup/system/hybrid-ai-backup-upload.service"; then
-  ok "the upload unit still pins the hybrid-ai-backup cache"
+if grep -qF 'Environment=RESTIC_CACHE_DIR=/var/cache/haven-backup' "$REPO/backup/system/haven-backup-upload.service"; then
+  ok "the upload unit still pins the haven-backup cache"
 else
-  bad "the upload unit no longer pins the hybrid-ai-backup cache"
+  bad "the upload unit no longer pins the haven-backup cache"
 fi
 
 # (d) user mode is a no-op: no reconcile at all, even as root with an account.
 : > "$CHOWN_ARGV"; : > "$INSTALL_LOG"
 printf '%s\n' "$CACHE_UNDER_TEST/repoX/snapshots/19" > "$FOREIGN_MARKER"
-LAYOUT_SAVED="$WORK/etc/hybrid-ai/hybrid-ai.env.user-mode"
+LAYOUT_SAVED="$WORK/etc/haven/haven.env.user-mode"
 sed 's/^HAVEN_BACKUP_MODE=system$/HAVEN_BACKUP_MODE=user/' "$LAYOUT" > "$LAYOUT_SAVED"
-cp "$LAYOUT" "$WORK/etc/hybrid-ai/hybrid-ai.env.system-mode"
-cp "$STACK" "$WORK/etc/hybrid-ai/stack.env.system-mode"
+cp "$LAYOUT" "$WORK/etc/haven/haven.env.system-mode"
+cp "$STACK" "$WORK/etc/haven/stack.env.system-mode"
 cp "$LAYOUT_SAVED" "$LAYOUT"
 # The installer writes BACKUP_LOG into the STACK file, and the earlier system
 # runs pinned it at the system-mode path. Point it back at the user-mode log so
@@ -782,8 +782,8 @@ cp "$LAYOUT_SAVED" "$LAYOUT"
 sed -i "s#^BACKUP_LOG=.*#BACKUP_LOG=${WORK}/log/backup.log#" "$STACK"
 rc=0
 run_install ok "$WORK/cache-usermode.log" "$SYSD" "$INSTALL_ARGV" "$ROOT_PATH" || rc=$?
-cp "$WORK/etc/hybrid-ai/hybrid-ai.env.system-mode" "$LAYOUT"
-cp "$WORK/etc/hybrid-ai/stack.env.system-mode" "$STACK"
+cp "$WORK/etc/haven/haven.env.system-mode" "$LAYOUT"
+cp "$WORK/etc/haven/stack.env.system-mode" "$STACK"
 check "a user-mode run exits 0" "0" "$rc"
 if grep -q 'event=backup_cache_ownership_repaired\|event=backup_cache_reconcile_skipped' "$INSTALL_LOG"; then
   bad "user mode ran the cache reconcile"

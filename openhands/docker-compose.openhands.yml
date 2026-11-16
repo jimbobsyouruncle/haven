@@ -42,7 +42,7 @@
 services:
   openhands:
     image: ${OPENHANDS_IMAGE:-docker.openhands.dev/openhands/openhands:1.10}
-    container_name: hybrid-ai-openhands
+    container_name: haven-openhands
     restart: unless-stopped
 
     # 127.0.0.1 is deliberate and load-bearing. Changing this to 0.0.0.0 would
@@ -112,17 +112,25 @@ services:
       - 100.100.100.100
 
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
       # Holds LLM provider credentials. Lives outside the repo so it is never
       # committed and never visible to the sandbox. Mode 0700. Resolved by
       # scripts/lib/haven-env.sh; the default keeps today's path.
-      - ${OPENHANDS_STATE_DIR:-${HOME}/.openhands}:/.openhands
+      - type: bind
+        source: ${OPENHANDS_STATE_DIR:-${HOME}/.openhands}
+        target: /.openhands
+        bind:
+          create_host_path: false
 
     extra_hosts:
       - host.docker.internal:host-gateway
 
     # Two networks, deliberately:
-    #   default   -- the shared `hybrid-ai` stack network (unchanged).
+    #   default   -- the shared `haven` stack network (unchanged).
     #   coder-net -- the internal network shared only with `hermes`, so Hermes
     #                can reach this API at http://openhands:3000 by service
     #                name without a host port. `coder-net` is `internal: true`

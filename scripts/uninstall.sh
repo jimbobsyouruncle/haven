@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------------
 # FILE: scripts/uninstall.sh
 # PURPOSE (plain English):
-#   The ONE privileged command that tears the hybrid-ai stack down. It stops
+#   The ONE privileged command that tears the haven stack down. It stops
 #   and removes the containers, the two Docker networks, the systemd units and
 #   the polkit rule, the sandbox-egress firewall rules the stack installed, and
 #   the program directory. By DEFAULT it KEEPS the data; pass --remove-data to
@@ -13,21 +13,21 @@
 #
 # KEPT, DELIBERATELY:
 #   * every Docker image and the Docker build cache
-#   * the hybrid-ai and hybrid-ai-backup system accounts
+#   * the haven and haven-backup system accounts
 #   * anything outside the allowlist below; the script refuses to guess
 #
 # REMOVED:
-#   * containers ollama, open-webui, hybrid-ai-status, hybrid-ai-proxy,
-#     hermes-agent and hybrid-ai-openhands; on a re-run, the OpenHands
+#   * containers ollama, open-webui, haven-status, haven-proxy,
+#     hermes-agent and haven-openhands; on a re-run, the OpenHands
 #     sandboxes named oh-agent-server*
-#   * Docker networks hybrid-ai and coder-net
-#   * the hybrid-ai-* systemd units in /etc/systemd/system, and the login user's
-#     hybrid-ai backup and check user units
-#   * the polkit rule 50-hybrid-ai-deploy.rules
-#   * ONLY the DOCKER-USER rules tagged hybrid-ai-sandbox-egress
+#   * Docker networks haven and haven-coder
+#   * the haven-* systemd units in /etc/systemd/system, and the login user's
+#     haven backup and check user units
+#   * the polkit rule 50-haven-deploy.rules
+#   * ONLY the DOCKER-USER rules tagged haven-sandbox-egress
 #   * the selected /opt/haven or legacy /opt/hybrid-ai code root
 #   * with --remove-data: the data, work, log, restic-cache and backup
-#     credential directories, and /etc/hybrid-ai
+#     credential directories, and /etc/haven
 #
 # BEFORE YOU START:
 #   Disable the GitHub deploy.yml workflow. It runs on every push to main and
@@ -80,7 +80,7 @@ hr()   { printf '%s%s%s\n' "$C_RST" "-------------------------------------------
 usage() { awk 'NR==1{next} /^set -Eeuo pipefail/{exit} {sub(/^# ?/,""); print}' "${BASH_SOURCE[0]}"; }
 
 # A glob that matches nothing expands to nothing rather than to itself, so the
-# hybrid-ai-* unit sweep below cannot try to remove a literal "hybrid-ai-*".
+# haven-* unit sweep below cannot try to remove a literal "haven-*".
 shopt -s nullglob
 
 # --- Test-only filesystem prefix -------------------------------------------
@@ -140,26 +140,26 @@ LOGIN_USER="${LOGIN_USER:-${SUDO_USER:-}}"
 
 # --- Fixed host paths (FHS defaults) ---------------------------------------
 APP_DIR="$(host_path /opt/haven)"
-ETC_DIR="$(host_path /etc/hybrid-ai)"
-LAYOUT_ENV="${ETC_DIR}/hybrid-ai.env"
+ETC_DIR="$(host_path /etc/haven)"
+LAYOUT_ENV="${ETC_DIR}/haven.env"
 STACK_ENV="${ETC_DIR}/stack.env"
 SYSTEMD_DIR="$(host_path /etc/systemd/system)"
 POLKIT_DIRS=( "$(host_path /etc/polkit-1/rules.d)" "$(host_path /usr/share/polkit-1/rules.d)" )
-POLKIT_RULE="50-hybrid-ai-deploy.rules"
-DATA_DIR="$(host_path /var/lib/hybrid-ai)"
-LOG_DIR="$(host_path /var/log/hybrid-ai)"
+POLKIT_RULE="50-haven-deploy.rules"
+DATA_DIR="$(host_path /var/lib/haven)"
+LOG_DIR="$(host_path /var/log/haven)"
 WORK_DIR="${DATA_DIR}/work"
-RESTIC_CACHE="$(host_path /var/cache/hybrid-ai-backup)"
-CRED_DIR="$(host_path /etc/credstore/hybrid-ai-backup)"
+RESTIC_CACHE="$(host_path /var/cache/haven-backup)"
+CRED_DIR="$(host_path /etc/credstore/haven-backup)"
 # The agent workspace and the repo reference tree are SIBLINGS of the data dir,
 # never children of it. The deploy and backup account homes are fixed layout
 # paths with no env setting. The backup log directory is the directory of
-# BACKUP_LOG, whose system-mode default is /var/log/hybrid-ai-backup/backup.log.
-AGENT_WS="$(host_path /var/lib/hybrid-ai-agent)"
-AGENT_REPOS="$(host_path /var/lib/hybrid-ai-repos)"
-DEPLOY_HOME="$(host_path /var/lib/hybrid-ai-deploy)"
-BACKUP_HOME="$(host_path /var/lib/hybrid-ai-backup)"
-BACKUP_LOG_DIR="$(host_path /var/log/hybrid-ai-backup)"
+# BACKUP_LOG, whose system-mode default is /var/log/haven-backup/backup.log.
+AGENT_WS="$(host_path /var/lib/haven-agent)"
+AGENT_REPOS="$(host_path /var/lib/haven-repos)"
+DEPLOY_HOME="$(host_path /var/lib/haven-deploy)"
+BACKUP_HOME="$(host_path /var/lib/haven-backup)"
+BACKUP_LOG_DIR="$(host_path /var/log/haven-backup)"
 
 # --- Layout-file reader (PARSE, never source) ------------------------------
 # Read ONE key from a layout file, line by line. The value is DATA, never code,
@@ -289,17 +289,17 @@ resolve_paths
 # --- What we are allowed to remove -----------------------------------------
 # An exact prefix list. Anything a layout file names outside it is refused and
 # left untouched. The two trailing glob prefixes mirror the documented
-# /var/lib/hybrid-ai* and /var/log/hybrid-ai* allowlist entries.
+# /var/lib/haven* and /var/log/haven* allowlist entries.
 ALLOW_EXACT=(
   "$(host_path /opt/haven)"
   "$(host_path /opt/hybrid-ai)"
-  "$(host_path /var/cache/hybrid-ai-backup)"
-  "$(host_path /etc/hybrid-ai)"
-  "$(host_path /etc/credstore/hybrid-ai-backup)"
+  "$(host_path /var/cache/haven-backup)"
+  "$(host_path /etc/haven)"
+  "$(host_path /etc/credstore/haven-backup)"
 )
 ALLOW_GLOB=(
-  "$(host_path /var/lib/hybrid-ai)"
-  "$(host_path /var/log/hybrid-ai)"
+  "$(host_path /var/lib/haven)"
+  "$(host_path /var/log/haven)"
 )
 
 allowlisted_path() { # path
@@ -319,30 +319,30 @@ COMPOSE_FILES=(
   "${APP_DIR}/openhands/docker-compose.openhands.yml"
   "${APP_DIR}/hermes/docker-compose.hermes.yml"
 )
-CONTAINER_NAMES=( ollama open-webui hybrid-ai-status hybrid-ai-proxy hermes-agent hybrid-ai-openhands )
+CONTAINER_NAMES=( ollama open-webui haven-status haven-proxy hermes-agent haven-openhands )
 SANDBOX_FILTER="oh-agent-server"
-NETWORKS=( hybrid-ai coder-net )
+NETWORKS=( haven haven-coder )
 SYSTEM_UNITS=(
-  hybrid-ai-firewall.service
-  hybrid-ai-prune.service
-  hybrid-ai-prune.timer
-  hybrid-ai-deploy@.service
-  hybrid-ai-backup-capture.service
-  hybrid-ai-backup-capture.timer
-  hybrid-ai-backup-check.service
-  hybrid-ai-backup-check.timer
-  hybrid-ai-backup-upload.service
+  haven-firewall.service
+  haven-prune.service
+  haven-prune.timer
+  haven-deploy@.service
+  haven-backup-capture.service
+  haven-backup-capture.timer
+  haven-backup-check.service
+  haven-backup-check.timer
+  haven-backup-upload.service
 )
 USER_UNITS=(
-  hybrid-ai-backup.service
-  hybrid-ai-backup.timer
-  hybrid-ai-check.service
-  hybrid-ai-check.timer
-  hybrid-ai-tls-check.service
-  hybrid-ai-tls-check.timer
+  haven-backup.service
+  haven-backup.timer
+  haven-check.service
+  haven-check.timer
+  haven-tls-check.service
+  haven-tls-check.timer
 )
 FIREWALL_CHAIN="DOCKER-USER"
-FIREWALL_TAG="hybrid-ai-sandbox-egress"
+FIREWALL_TAG="haven-sandbox-egress"
 IPT_LOCK_WAIT="5"
 IPT=( iptables -w "$IPT_LOCK_WAIT" )
 
@@ -430,7 +430,7 @@ find_remnants() {
   for d in "${POLKIT_DIRS[@]}"; do
     if [[ -e "${d}/${POLKIT_RULE}" ]]; then REMNANTS+=("${d}/${POLKIT_RULE}"); fi
   done
-  for p in "${SYSTEMD_DIR}"/hybrid-ai-*; do
+  for p in "${SYSTEMD_DIR}"/haven-*; do
     REMNANTS+=("$p")
   done
   return 0
@@ -451,7 +451,7 @@ detect_state() {
 }
 
 report_detection() {
-  hr; log "Detecting the hybrid-ai stack"; hr
+  hr; log "Detecting the haven stack"; hr
   case "$STATE" in
     existing)
       ok "existing install: ${APP_DIR} (all three compose files are present)"
@@ -546,7 +546,7 @@ step_containers() {
   if [[ "$STATE" == "existing" ]]; then
     # The SAME compose shape install.sh uses: one env file, the project
     # directory, and the three files in the same order.
-    local -a compose=( docker compose -p hybrid-ai --env-file "$STACK_ENV" --project-directory "$APP_DIR" \
+    local -a compose=( docker compose -p haven --env-file "$STACK_ENV" --project-directory "$APP_DIR" \
       -f "$APP_DIR/docker-compose.yml" \
       -f "$APP_DIR/openhands/docker-compose.openhands.yml" \
       -f "$APP_DIR/hermes/docker-compose.hermes.yml" )
@@ -594,9 +594,9 @@ step_remove_unit_files() {
   local f base d
   hr; log "Removing the systemd unit files and the polkit rule"; hr
   if [[ -d "$SYSTEMD_DIR" ]]; then
-    for f in "${SYSTEMD_DIR}"/hybrid-ai-*; do
+    for f in "${SYSTEMD_DIR}"/haven-*; do
       base="$(basename "$f")"
-      if [[ "$base" != hybrid-ai-* ]]; then continue; fi
+      if [[ "$base" != haven-* ]]; then continue; fi
       if [[ "$(dirname "$f")" != "$SYSTEMD_DIR" ]]; then continue; fi
       if (( DRY_RUN )); then
         printf '      [plan] rm -rf %s\n' "$f"
@@ -762,6 +762,6 @@ hr
 if (( DRY_RUN )); then
   ok "--dry-run: nothing was changed."
 else
-  ok "Teardown complete. Images, the Docker build cache and the hybrid-ai system accounts were kept."
+  ok "Teardown complete. Images, the Docker build cache and the haven system accounts were kept."
 fi
 hr

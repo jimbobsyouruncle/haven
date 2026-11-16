@@ -61,7 +61,7 @@
 #                                                    ONE side effect: on the TLS
 #                                                    DNS-01 path it builds the
 #                                                    DNS-capable validation image
-#                                                    (hybrid-ai-caddy:2.11.7-dns)
+#                                                    (haven-caddy:2.11.7-dns)
 #                                                    from ./caddy, so the render
 #                                                    can be validated at all. A
 #                                                    Docker image is build cache,
@@ -71,7 +71,7 @@
 #     ./install.sh --dry-run --tls --tls-domain daemonhub.dev \
 #       --tls-email you@example.org --tls-validation dns \
 #       --tls-dns-provider cloudflare \
-#       --tls-token-file /etc/hybrid-ai/acme/cloudflare_dns_token
+#       --tls-token-file /etc/haven/acme/cloudflare_dns_token
 # ---------------------------------------------------------------------------
 
 # "set -Eeuo pipefail" makes bash strict and safe:
@@ -84,6 +84,10 @@ set -Eeuo pipefail
 # Work from the folder this script lives in, no matter where it was called from.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+if [[ "$SCRIPT_DIR" == /opt/haven && -e /etc/hybrid-ai/hybrid-ai.env ]]; then
+  echo 'install: legacy host identity requires the reviewed migration driver' >&2
+  exit 2
+fi
 
 # Every host path comes from the ONE shared helper. With no settings, the
 # resolved paths are exactly today's.
@@ -194,7 +198,7 @@ trap 'event "install_aborted" "line=${LINENO}"; die "Failed at line ${LINENO}: $
 trap 'haven_progress_stop' EXIT
 
 hr
-printf '  hybrid-ai :: local control plane bootstrap\n'
+printf '  haven :: local control plane bootstrap\n'
 hr
 
 # ---------------------------------------------------------------------------
@@ -413,7 +417,7 @@ fi
 # the old image forever. Unset it ONLY on an exact match: any other value (a
 # GHCR reference, a self-built tag, a digest pin) is an owner-chosen pin.
 # Idempotent: after one run the loaded value no longer matches.
-if [[ "${CADDY_IMAGE:-}" == "hybrid-ai-caddy:2.8.4-dns" ]]; then
+if [[ "${CADDY_IMAGE:-}" == "haven-caddy:2.8.4-dns" ]]; then
   log "Migrating CADDY_IMAGE off the retired Caddy 2.8.4 pin to the current default."
   unset CADDY_IMAGE
 fi
@@ -575,8 +579,8 @@ if [[ -n "${HAVEN_UID:-}" ]]; then
 fi
 
 # The backup log's group gid. In system mode the log is 0640 owned by
-# hybrid-ai-backup, and the status container reads it through exactly one
-# supplementary group, so the gid must be the hybrid-ai-backup group's. It is
+# haven-backup, and the status container reads it through exactly one
+# supplementary group, so the gid must be the haven-backup group's. It is
 # resolved BY NAME (numeric ids differ per host and appear nowhere in the repo)
 # and this installer fails closed if the group cannot be found: a status
 # container with the wrong gid leaves the Backups tile blind while the backup
@@ -584,9 +588,9 @@ fi
 # In user mode the log stays 0600 owned by the invoking account, so the only
 # value that grants nothing new is the primary gid the container already has.
 if [[ "$HAVEN_BACKUP_MODE" == "system" ]]; then
-  BACKUP_GROUP_GID_DEFAULT="$(getent group hybrid-ai-backup 2>/dev/null | cut -d: -f3 || true)"
+  BACKUP_GROUP_GID_DEFAULT="$(getent group haven-backup 2>/dev/null | cut -d: -f3 || true)"
   [[ "$BACKUP_GROUP_GID_DEFAULT" =~ ^[0-9]+$ ]] \
-    || die "the hybrid-ai-backup group does not exist, so the status container cannot be granted read access to BACKUP_LOG. Create it (useradd --system hybrid-ai-backup) and re-run ./install.sh."
+    || die "the haven-backup group does not exist, so the status container cannot be granted read access to BACKUP_LOG. Create it (useradd --system haven-backup) and re-run ./install.sh."
 else
   BACKUP_GROUP_GID_DEFAULT="${DOCKER_GID:-999}"
 fi
@@ -844,18 +848,18 @@ log "Ensuring persistent host mounts..."
 for f in "$HAVEN_INSTALL_LOG" "$BACKUP_LOG"; do
   if [[ "$HAVEN_BACKUP_MODE" == "system" && "$f" == "$BACKUP_LOG" ]]; then
     # In system mode the backup log lives in the units' LogsDirectory=
-    # (/var/log/hybrid-ai-backup) and is written by the hybrid-ai-backup account.
+    # (/var/log/haven-backup) and is written by the haven-backup account.
     # install.sh must not leave a root:root 0600 file the account cannot append
     # to: as root it repairs the ownership of an existing file; otherwise it
     # leaves the path to LogsDirectory=, which systemd creates and owns on the
     # first unit start. User mode is unchanged (the log is created 0600 by the
     # invoking account, below).
     # The repair makes the file readable by the account that writes it AND by
-    # the status container's supplementary group (0640, group hybrid-ai-backup).
+    # the status container's supplementary group (0640, group haven-backup).
     # It never widens the log to the world, and it converges an existing host on
     # the next deploy with no by-hand chmod or chown step.
     if [[ -e "$f" && "$(id -u)" == "0" ]]; then
-      chown hybrid-ai-backup:hybrid-ai-backup "$f" 2>/dev/null || true
+      chown haven-backup:haven-backup "$f" 2>/dev/null || true
       chmod 640 "$f" 2>/dev/null || true
     fi
     continue
@@ -889,7 +893,7 @@ chmod 700 "$OPENHANDS_STATE_DIR"
 mkdir -p "$RESTIC_CACHE_DIR"
 # A root-invoked backup.sh -- the --init below and the first-backup prompt -- must
 # not write into the cache the units use. Entries it creates are root:root and
-# the hybrid-ai-backup account can never write them: that is the shape of the
+# the haven-backup account can never write them: that is the shape of the
 # 42-hour outage (a root-owned nested directory under the unit cache silently
 # disabling every scheduled upload). run_backup() points a root run here instead.
 BACKUP_ROOT_CACHE_DIR="${RESTIC_CACHE_DIR}-root"
@@ -996,7 +1000,7 @@ HAVEN_GID=${HAVEN_GID:-}
 # not commented: docker-compose.yml interpolates it for the status service's
 # read-only mount and refuses a bind whose source is unset. Written as
 # ${VAR:-default} so an owner override in this file survives every reinstall.
-HAVEN_POST_DEPLOY_VERIFY_LOG=${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}
+HAVEN_POST_DEPLOY_VERIFY_LOG=${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/haven-post-deploy-verify.log}
 
 # The backup log the status service mounts read-only. WRITTEN, not commented:
 # docker-compose.yml interpolates BACKUP_LOG fail-closed for that bind. The
@@ -1008,7 +1012,7 @@ BACKUP_LOG=${BACKUP_LOG}
 # The ONE supplementary group the status container is given, so it can read the
 # backup log without the file becoming world-readable and without the service
 # running as root. Scripts/lib/haven-env.sh does not resolve this setting;
-# install.sh does, by NAME: the hybrid-ai-backup group's gid in system mode (the
+# install.sh does, by NAME: the haven-backup group's gid in system mode (the
 # log's group owner), and the container's own primary gid in user mode (which
 # grants no new access). Written as ${VAR:-default} so an owner override
 # survives every reinstall. docker-compose.yml fails closed if it is unset.
@@ -1031,14 +1035,14 @@ OPENHANDS_MEM_LIMIT=${OPENHANDS_MEM_LIMIT:-3g}
 OPENHANDS_CPUS=${OPENHANDS_CPUS:-2.5}
 
 # --- Docker build-cache cap ------------------------------------------------
-# hybrid-ai-docker-prune.timer runs scripts/prune-docker-cache.sh daily at
+# haven-docker-prune.timer runs scripts/prune-docker-cache.sh daily at
 # 04:35 to cap the Docker BUILD CACHE (cache only; never images, containers,
 # volumes or bind-mounted data). This size is handed to whichever cap flag the
 # local docker supports (--max-used-space, else --keep-storage).
 HAVEN_BUILD_CACHE_CAP=${HAVEN_BUILD_CACHE_CAP:-15GB}
 
 # --- Conversation prune (quarantine sweep) ---------------------------------
-# Read by scripts/prune-conversations.sh (hybrid-ai-prune.timer, daily 04:20).
+# Read by scripts/prune-conversations.sh (haven-prune.timer, daily 04:20).
 # ALLOW_LEASE_LESS is written empty: a directory with no owner_lease.json is
 # refused, never moved, unless the owner sets 1. QUARANTINE_RETENTION_DAYS is
 # written as 90, so the quarantine root is bounded by default.
@@ -1063,7 +1067,7 @@ ACME_DNS_PROVIDER=${ACME_DNS_PROVIDER:-cloudflare}
 HAVEN_TLS_TOKEN_FILE=${HAVEN_TLS_TOKEN_FILE:-}
 TLS_HOSTS=${TLS_HOSTS:-}
 ACME_AUTO_HTTPS=${ACME_AUTO_HTTPS:-disable_redirects}
-CADDY_IMAGE=${CADDY_IMAGE:-hybrid-ai-caddy:2.11.7-dns}
+CADDY_IMAGE=${CADDY_IMAGE:-haven-caddy:2.11.7-dns}
 # Login gate for the *.daemonhub.dev HTTPS sites. off by default: the rendered
 # Caddyfile is then byte-identical to the one without the gate. Turn it on with
 # AUTH_ENABLED=on plus HAVEN_AUTH_USER and a bcrypt HAVEN_AUTH_HASH.
@@ -1191,7 +1195,7 @@ prepare_openhands_workspace || warn "OpenHands workspace ACLs not applied (needs
 # ---------------------------------------------------------------------------
 # STEP 9b applies the DOCKER-USER rules for this run, but Docker recreates an
 # empty DOCKER-USER chain on every boot, so those rules are gone after a reboot.
-# hybrid-ai-firewall.service re-applies them at boot. scripts/bootstrap.sh has
+# haven-firewall.service re-applies them at boot. scripts/bootstrap.sh has
 # always installed and enabled it; the deploy path did not, so a host deployed
 # for weeks could reboot with an empty chain. Install it on every deploy.
 #
@@ -1207,14 +1211,14 @@ prepare_openhands_workspace || warn "OpenHands workspace ACLs not applied (needs
 # scripts/test-install-health.sh, which installs into a scratch directory. Do
 # not document it: it is not in .env.example and not in STEP 8's .env template.
 install_firewall_unit() {
-  local unit="hybrid-ai-firewall.service"
+  local unit="haven-firewall.service"
   local unit_dir="${HAVEN_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
   local source_file="${APP_DIR}/deploy/${unit}"
   local target_file="${unit_dir}/${unit}"
   local was_enabled=0
 
   if [[ "$(id -u)" != "0" ]]; then
-    warn "hybrid-ai-firewall.service needs root to install into ${unit_dir}; not calling sudo."
+    warn "haven-firewall.service needs root to install into ${unit_dir}; not calling sudo."
     warn "Re-run ./install.sh as root so the boot firewall unit is installed and enabled."
     event "sandbox_firewall_unit_failed" "reason=not_root"
     return 0
@@ -1294,7 +1298,7 @@ install_firewall_unit() {
 # unaffected, and the new content takes effect from the next deploy.
 #
 # NEVER enable and NEVER start the unit: it is an instantiated template, and the
-# polkit rule grants only `start` of `hybrid-ai-deploy@<40-hex>.service`. No
+# polkit rule grants only `start` of `haven-deploy@<40-hex>.service`. No
 # `Restart=` policy is added either (incident B1).
 #
 # Both functions sit before the --no-start exit so both paths place the files,
@@ -1308,7 +1312,7 @@ install_firewall_unit() {
 # overrides for scripts/test-deploy-wiring-install.sh, which installs into
 # scratch directories. Do not document them.
 install_deploy_unit() {
-  local unit="hybrid-ai-deploy@.service"
+  local unit="haven-deploy@.service"
   local unit_dir="${HAVEN_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
   local source_file="${APP_DIR}/deploy/${unit}"
   local target_file="${unit_dir}/${unit}"
@@ -1359,7 +1363,7 @@ install_deploy_unit() {
 # unit shape and nothing else. The first existing rules directory wins, in the
 # same order scripts/bootstrap.sh probes.
 install_deploy_polkit_rule() {
-  local rule="50-hybrid-ai-deploy.rules"
+  local rule="50-haven-deploy.rules"
   local source_file="${APP_DIR}/deploy/${rule}"
   local polkit_dir="" target_file="" d
 
@@ -1470,10 +1474,10 @@ install_post_deploy_verifier() {
 # STEP 9a-2. Install and enable the prune units (conversations and Docker cache)
 # ---------------------------------------------------------------------------
 # Two timers, two independent daily jobs, installed together:
-#   * hybrid-ai-prune.timer        (04:20) quarantines stale OpenHands
+#   * haven-prune.timer        (04:20) quarantines stale OpenHands
 #     conversations. It QUARANTINES and never deletes them. install.sh also runs
 #     the script once after the stack is up (run_prune_catch_up), catch-up only.
-#   * hybrid-ai-docker-prune.timer (04:35) caps the Docker BUILD CACHE so
+#   * haven-docker-prune.timer (04:35) caps the Docker BUILD CACHE so
 #     repeated rebuilds of the multi-GB stack images cannot fill the disk. It is
 #     cache only: no images, containers, volumes or bind-mounted data.
 #
@@ -1490,9 +1494,9 @@ install_post_deploy_verifier() {
 install_prune_scheduler() {
   local unit timer
   local unit_dir="${HAVEN_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
-  local units=(hybrid-ai-prune.service hybrid-ai-prune.timer \
-               hybrid-ai-docker-prune.service hybrid-ai-docker-prune.timer)
-  local timers=(hybrid-ai-prune.timer hybrid-ai-docker-prune.timer)
+  local units=(haven-prune.service haven-prune.timer \
+               haven-docker-prune.service haven-docker-prune.timer)
+  local timers=(haven-prune.timer haven-docker-prune.timer)
 
   if [[ "$(id -u)" != "0" ]]; then
     warn "The prune units need root to install into ${unit_dir}; not calling sudo."
@@ -1502,7 +1506,7 @@ install_prune_scheduler() {
   fi
 
   if ! command -v systemctl >/dev/null 2>&1; then
-    warn "systemctl is unavailable; install and enable hybrid-ai-prune.timer by hand."
+    warn "systemctl is unavailable; install and enable haven-prune.timer by hand."
     event "prune_schedule_failed" "reason=systemctl_missing"
     return 0
   fi
@@ -1564,7 +1568,7 @@ install_prune_scheduler() {
     fi
   done
 
-  ok "Installed and enabled hybrid-ai-prune.timer (daily conversation prune) and hybrid-ai-docker-prune.timer (daily Docker build-cache cap)."
+  ok "Installed and enabled haven-prune.timer (daily conversation prune) and haven-docker-prune.timer (daily Docker build-cache cap)."
   event "prune_schedule_installed"
   return 0
 }
@@ -1801,14 +1805,14 @@ install_secret_guard_hook || true
 
 if (( NO_START )); then
   hr; ok "--no-start requested. Environment prepared; Docker untouched."
-  warn "Sandbox firewall rules not applied: DOCKER-USER does not exist until Docker starts. hybrid-ai-firewall.service applies them at boot."
+  warn "Sandbox firewall rules not applied: DOCKER-USER does not exist until Docker starts. haven-firewall.service applies them at boot."
   hr
   exit 0
 fi
 
 # Keep the deployed stack identity when the installation directory changes.
 COMPOSE=(
-  docker compose -p hybrid-ai
+  docker compose -p haven
   --env-file "$ENV_FILE"
   --project-directory "$APP_DIR"
   -f "$APP_DIR/docker-compose.yml"
@@ -1930,7 +1934,7 @@ fi
 # stack starts. install.sh already runs as root in the deploy path, so the
 # script is called directly and never through sudo. A host without the chain
 # (for example Docker present but not running) is a warning, not a failure:
-# hybrid-ai-firewall.service applies the same rules at the next boot.
+# haven-firewall.service applies the same rules at the next boot.
 log "Applying sandbox firewall rules..."
 FIREWALL_RC=0
 if [[ -x "${APP_DIR}/scripts/sandbox-firewall.sh" ]]; then
@@ -1944,7 +1948,7 @@ case "$FIREWALL_RC" in
     ;;
   4)
     event "sandbox_firewall_skipped" "reason=no-docker-user"
-    warn "DOCKER-USER does not exist yet, so the sandbox firewall rules were not applied. hybrid-ai-firewall.service applies them at boot."
+    warn "DOCKER-USER does not exist yet, so the sandbox firewall rules were not applied. haven-firewall.service applies them at boot."
     ;;
   *)
     event "sandbox_firewall_failed" "rc=${FIREWALL_RC}"
@@ -2130,7 +2134,7 @@ tls_check_dns
 # and backup.sh cannot disagree. "user" (the default) installs the per-user
 # units under ~/.config/systemd/user, exactly as before. "system" installs the
 # two-unit privilege split from backup/system/ into /etc/systemd/system,
-# running as the dedicated hybrid-ai-backup account; this needs root, and card
+# running as the dedicated haven-backup account; this needs root, and card
 # F creates that account once (see backup/README.md).
 BACKUP_MODE="$HAVEN_BACKUP_MODE"
 
@@ -2143,23 +2147,23 @@ RESTIC_PW_FILE="${BACKUP_CRED_DIR}/repo-password"
 
 # User-mode units (unchanged). System mode installs the backup/system set.
 BACKUP_UNITS=(
-  hybrid-ai-backup.service
-  hybrid-ai-backup.timer
-  hybrid-ai-check.service
-  hybrid-ai-check.timer
+  haven-backup.service
+  haven-backup.timer
+  haven-check.service
+  haven-check.timer
   # TLS certificate health watchdog. Its templates live in deploy/, not
   # backup/; the install loop below falls back to that directory. The timer is
   # only ENABLED when TLS_ENABLED is true (see the enable block below), so a
   # TLS-off install keeps exactly the schedule it had.
-  hybrid-ai-tls-check.service
-  hybrid-ai-tls-check.timer
+  haven-tls-check.service
+  haven-tls-check.timer
 )
 SYSTEM_UNITS=(
-  hybrid-ai-backup-capture.service
-  hybrid-ai-backup-capture.timer
-  hybrid-ai-backup-upload.service
-  hybrid-ai-backup-check.service
-  hybrid-ai-backup-check.timer
+  haven-backup-capture.service
+  haven-backup-capture.timer
+  haven-backup-upload.service
+  haven-backup-check.service
+  haven-backup-check.timer
 )
 
 # Install (or refresh) the system-mode units into /etc/systemd/system. Requires
@@ -2174,8 +2178,8 @@ SYSTEM_UNITS=(
 # root-owned (or any other foreign owner) is handed to the backup account.
 # Never fatal: every failure warns, logs, and returns 0, so install.sh's exit
 # status cannot depend on it. It changes ownership only (never a mode) and only
-# inside the resolved cache path -- never /var/lib/hybrid-ai-backup (staging) and
-# never /etc/credstore/hybrid-ai-backup.
+# inside the resolved cache path -- never /var/lib/haven-backup (staging) and
+# never /etc/credstore/haven-backup.
 reconcile_backup_cache_ownership() {
   local cache="${RESTIC_CACHE_DIR:-}" foreign link
 
@@ -2184,13 +2188,13 @@ reconcile_backup_cache_ownership() {
   # A "/" or a relative value here would make the chown -R below catastrophic.
   [[ "$cache" == /* && "$cache" != "/" ]] || return 0
 
-  if ! getent passwd hybrid-ai-backup >/dev/null 2>&1; then
-    warn "The hybrid-ai-backup account does not exist; leaving ${cache} alone."
+  if ! getent passwd haven-backup >/dev/null 2>&1; then
+    warn "The haven-backup account does not exist; leaving ${cache} alone."
     event "backup_cache_reconcile_skipped" "reason=no_account" "path=${cache}"
     return 0
   fi
 
-  if ! install -d -o hybrid-ai-backup -g hybrid-ai-backup "$cache"; then
+  if ! install -d -o haven-backup -g haven-backup "$cache"; then
     warn "Could not create or own ${cache}; its ownership was not reconciled."
     event "backup_cache_reconcile_skipped" "reason=install_dir_failed" "path=${cache}"
     return 0
@@ -2204,13 +2208,13 @@ reconcile_backup_cache_ownership() {
 
   # Cheap walk: stop at the FIRST foreign-owned entry, so a correct cache costs
   # one stat per entry and no chown at all (idempotent: no repair event).
-  foreign="$(find -P "$cache" -xdev ! -user hybrid-ai-backup -print -quit 2>/dev/null)"
+  foreign="$(find -P "$cache" -xdev ! -user haven-backup -print -quit 2>/dev/null)"
   if [[ -z "$foreign" ]]; then
     ok "Backup cache ownership is correct (${cache})."
     return 0
   fi
 
-  if ! chown -R hybrid-ai-backup:hybrid-ai-backup "$cache"; then
+  if ! chown -R haven-backup:haven-backup "$cache"; then
     warn "Could not repair backup cache ownership under ${cache} (first foreign entry: ${foreign})."
     event "backup_cache_reconcile_skipped" "reason=chown_failed" "path=${cache}" "offending=${foreign}"
     return 0
@@ -2293,14 +2297,14 @@ install_backup_scheduler_system() {
   # ownership now that the units (and their CacheDirectory=) are in place.
   reconcile_backup_cache_ownership || true
 
-  if systemctl enable --now hybrid-ai-backup-capture.timer >/dev/null 2>&1; then
+  if systemctl enable --now haven-backup-capture.timer >/dev/null 2>&1; then
     ok "Backup capture timer enabled and active."
   else
     warn "Backup capture timer could not be enabled or started."
     event "backup_timer_failed"
     return 1
   fi
-  if systemctl enable --now hybrid-ai-backup-check.timer >/dev/null 2>&1; then
+  if systemctl enable --now haven-backup-check.timer >/dev/null 2>&1; then
     ok "Integrity-check timer enabled and active."
   else
     warn "Integrity-check timer could not be enabled or started."
@@ -2308,14 +2312,14 @@ install_backup_scheduler_system() {
     return 1
   fi
 
-  if ! systemctl is-enabled hybrid-ai-backup-capture.timer >/dev/null 2>&1 ||
-     ! systemctl is-active hybrid-ai-backup-capture.timer >/dev/null 2>&1; then
+  if ! systemctl is-enabled haven-backup-capture.timer >/dev/null 2>&1 ||
+     ! systemctl is-active haven-backup-capture.timer >/dev/null 2>&1; then
     warn "Backup capture timer verification failed."
     event "backup_timer_verification_failed"
     return 1
   fi
-  if ! systemctl is-enabled hybrid-ai-backup-check.timer >/dev/null 2>&1 ||
-     ! systemctl is-active hybrid-ai-backup-check.timer >/dev/null 2>&1; then
+  if ! systemctl is-enabled haven-backup-check.timer >/dev/null 2>&1 ||
+     ! systemctl is-active haven-backup-check.timer >/dev/null 2>&1; then
     warn "Integrity-check timer verification failed."
     event "check_timer_verification_failed"
     return 1
@@ -2399,7 +2403,7 @@ install_backup_scheduler() {
     return 1
   fi
 
-  if systemctl --user enable --now hybrid-ai-backup.timer >/dev/null 2>&1; then
+  if systemctl --user enable --now haven-backup.timer >/dev/null 2>&1; then
     ok "Backup timer enabled and active."
   else
     warn "Backup timer could not be enabled or started."
@@ -2407,7 +2411,7 @@ install_backup_scheduler() {
     return 1
   fi
 
-  if systemctl --user enable --now hybrid-ai-check.timer >/dev/null 2>&1; then
+  if systemctl --user enable --now haven-check.timer >/dev/null 2>&1; then
     ok "Integrity-check timer enabled and active."
   else
     warn "Integrity-check timer could not be enabled or started."
@@ -2415,15 +2419,15 @@ install_backup_scheduler() {
     return 1
   fi
 
-  if ! systemctl --user is-enabled hybrid-ai-backup.timer >/dev/null 2>&1 ||
-     ! systemctl --user is-active hybrid-ai-backup.timer >/dev/null 2>&1; then
+  if ! systemctl --user is-enabled haven-backup.timer >/dev/null 2>&1 ||
+     ! systemctl --user is-active haven-backup.timer >/dev/null 2>&1; then
     warn "Backup timer verification failed."
     event "backup_timer_verification_failed"
     return 1
   fi
 
-  if ! systemctl --user is-enabled hybrid-ai-check.timer >/dev/null 2>&1 ||
-     ! systemctl --user is-active hybrid-ai-check.timer >/dev/null 2>&1; then
+  if ! systemctl --user is-enabled haven-check.timer >/dev/null 2>&1 ||
+     ! systemctl --user is-active haven-check.timer >/dev/null 2>&1; then
     warn "Integrity-check timer verification failed."
     event "check_timer_verification_failed"
     return 1
@@ -2437,14 +2441,14 @@ install_backup_scheduler() {
   tls_enabled_val="$(printf '%s' "$tls_enabled_val" | tr '[:upper:]' '[:lower:]')"
   case "$tls_enabled_val" in
     yes|true|1|on)
-      if systemctl --user enable --now hybrid-ai-tls-check.timer >/dev/null 2>&1; then
+      if systemctl --user enable --now haven-tls-check.timer >/dev/null 2>&1; then
         ok "TLS certificate watchdog timer enabled and active (daily 06:10)."
       else
         warn "TLS certificate watchdog timer could not be enabled or started."
         event "tls_check_timer_failed"
       fi
-      if ! systemctl --user is-enabled hybrid-ai-tls-check.timer >/dev/null 2>&1 ||
-         ! systemctl --user is-active hybrid-ai-tls-check.timer >/dev/null 2>&1; then
+      if ! systemctl --user is-enabled haven-tls-check.timer >/dev/null 2>&1 ||
+         ! systemctl --user is-active haven-tls-check.timer >/dev/null 2>&1; then
         warn "TLS certificate watchdog timer verification failed."
         event "tls_check_timer_verification_failed"
       fi
@@ -2484,7 +2488,7 @@ setup_backups() {
     if [[ "$BACKUP_MODE" == "system" ]]; then
       # The root-run cache keeps root:root entries out of the unit cache, so
       # --init and the first backup cannot create the root-owned tree that
-      # disables the hybrid-ai-backup account's uploads.
+      # disables the haven-backup account's uploads.
       RESTIC_CACHE_DIR="$BACKUP_ROOT_CACHE_DIR" \
         CREDENTIALS_DIRECTORY="$BACKUP_CRED_DIR" "${APP_DIR}/backup/backup.sh" "$@"
     else
@@ -2546,8 +2550,8 @@ setup_backups() {
       [[ -n "$cf_account" ]] || warn "Account ID cannot be empty."
     done
 
-    read -r -p "    R2 bucket name [hybrid-ai-backup]: " cf_bucket < /dev/tty
-    cf_bucket="${cf_bucket:-hybrid-ai-backup}"
+    read -r -p "    R2 bucket name [haven-backup]: " cf_bucket < /dev/tty
+    cf_bucket="${cf_bucket:-haven-backup}"
     cf_bucket="$(printf '%s' "$cf_bucket" | tr -d '[:space:]')"
 
     while [[ -z "$cf_key_id" ]]; do
@@ -2584,7 +2588,7 @@ setup_backups() {
     tmp_env="$(mktemp "${BACKUP_CRED_DIR}/.r2.XXXXXX")"
     chmod 600 "$tmp_env"
     cat > "$tmp_env" <<EOF2
-# hybrid-ai backup credentials -- generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
+# haven backup credentials -- generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 RESTIC_REPOSITORY=s3:https://${cf_account}.r2.cloudflarestorage.com/${cf_bucket}
 RESTIC_PASSWORD_FILE=${RESTIC_PW_FILE}
 AWS_ACCESS_KEY_ID=${cf_key_id}

@@ -19,7 +19,7 @@
 #   (b) stale unit (20 min timeout)  -> replaced by the tree content
 #   (c) absent / stale polkit rule   -> installed / refreshed, byte-identical
 #   (d) the systemctl log never shows an enable or start of a
-#       hybrid-ai-deploy@* unit (the template must stay never-enabled)
+#       haven-deploy@* unit (the template must stay never-enabled)
 #   (e) non-root                     -> warns, writes nothing, exit 0
 #   (f) systemctl missing            -> warns, writes nothing, exit 0
 #   (g) install.sh's exit status is unchanged in EVERY case
@@ -58,8 +58,8 @@ else
   trap 'rm -rf -- "$WORK"' EXIT
 fi
 
-UNIT="hybrid-ai-deploy@.service"
-RULE="50-hybrid-ai-deploy.rules"
+UNIT="haven-deploy@.service"
+RULE="50-haven-deploy.rules"
 VERIFIER="run-post-deploy-verify.sh"
 UNIT_SRC="$REPO/deploy/$UNIT"
 RULE_SRC="$REPO/deploy/$RULE"
@@ -77,7 +77,7 @@ POLKITD="$WORK/polkit-rules.d"
 SBIND="$WORK/sbin"
 mkdir -p "$APP/scripts/lib" "$APP/deploy" "$BIN" "$BIN_ROOT" "$SYSD" "$POLKITD" "$SBIND" \
          "$WORK/data" "$WORK/log" "$WORK/work" "$WORK/ws" "$WORK/repos" \
-         "$WORK/ohstate" "$WORK/conf" "$WORK/restic" "$WORK/etc/hybrid-ai" \
+         "$WORK/ohstate" "$WORK/conf" "$WORK/restic" "$WORK/etc/haven" \
          "$WORK/sysstate"
 cp "$REPO/install.sh" "$APP/install.sh"
 cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
@@ -92,8 +92,8 @@ cp "$REPO/scripts/lib/tls.sh" "$APP/scripts/lib/"
 cp "$REPO/status/Caddyfile.tmpl" "$APP/status/Caddyfile.tmpl"
 cp "$REPO/docker-compose.yml.tmpl" "$APP/docker-compose.yml.tmpl"
 cp "$UNIT_SRC" "$RULE_SRC" "$APP/deploy/"
-[[ -f "$REPO/deploy/hybrid-ai-firewall.service" ]] && \
-  cp "$REPO/deploy/hybrid-ai-firewall.service" "$APP/deploy/"
+[[ -f "$REPO/deploy/haven-firewall.service" ]] && \
+  cp "$REPO/deploy/haven-firewall.service" "$APP/deploy/"
 mkdir -p "$APP/openhands" "$WORK/ws/.git/info"
 [[ -f "$REPO/openhands/sandbox-gitconfig" ]] && \
   cp "$REPO/openhands/sandbox-gitconfig" "$APP/openhands/sandbox-gitconfig"
@@ -107,8 +107,8 @@ done
 cp "$VERIFIER_SRC" "$APP/scripts/$VERIFIER"
 chmod +x "$APP/scripts/"*.sh
 
-LAYOUT="$WORK/etc/hybrid-ai/hybrid-ai.env"
-STACK="$WORK/etc/hybrid-ai/stack.env"
+LAYOUT="$WORK/etc/haven/haven.env"
+STACK="$WORK/etc/haven/stack.env"
 {
   printf 'HAVEN_APP_DIR=%s\n' "$APP"
   printf 'HAVEN_ENV_FILE=%s\n' "$LAYOUT"
@@ -186,7 +186,7 @@ case "$cmd" in
   daemon-reload|reload|start|restart|stop|disable) exit 0 ;;
   cat)
     [[ -f "${SYSTEMCTL_UNIT_DIR:-/nonexistent}/${unit}" ]] && exit 0
-    case "$unit" in hybrid-ai-backup*|hybrid-ai-check*) exit 0 ;; esac
+    case "$unit" in haven-backup*|haven-check*) exit 0 ;; esac
     exit 1 ;;
   enable)
     [[ "$unit" == "--now" ]] && unit="${3:-}"
@@ -365,11 +365,11 @@ fi
 echo
 echo "== (d) the template unit is never enabled and never started =="
 if grep -E '^(enable|start|restart|stop|disable)[[:space:]]' "$SYSTEMCTL_ARGV" \
-     | grep -q 'hybrid-ai-deploy'; then
-  bad "(d) systemctl was asked to enable/start/stop a hybrid-ai-deploy unit"
+     | grep -q 'haven-deploy'; then
+  bad "(d) systemctl was asked to enable/start/stop a haven-deploy unit"
   grep -E '^(enable|start|restart|stop|disable)[[:space:]]' "$SYSTEMCTL_ARGV" | sed 's/^/      /' >&2
 else
-  ok "(d) no enable/start/stop of any hybrid-ai-deploy unit was recorded"
+  ok "(d) no enable/start/stop of any haven-deploy unit was recorded"
 fi
 if grep -qxF 'daemon-reload' "$SYSTEMCTL_ARGV"; then
   ok "(d) daemon-reload was recorded so the new unit is visible"
@@ -445,14 +445,14 @@ if [[ -e "$SYSD/$UNIT" || -e "$POLKITD/$RULE" ]]; then
 else
   ok "(e) the non-root run wrote no file"
 fi
-if grep -q 'hybrid-ai-deploy' "$INSTALL_ARGV" || grep -q 'hybrid-ai-deploy' "$SYSTEMCTL_ARGV"; then
+if grep -q 'haven-deploy' "$INSTALL_ARGV" || grep -q 'haven-deploy' "$SYSTEMCTL_ARGV"; then
   bad "(e) the non-root run tried to install or reload the deploy unit"
 else
   ok "(e) the non-root run made no install/systemctl call for the deploy wiring"
 fi
-if grep -q 'hybrid-ai-deploy' "$SUDO_ARGV"; then
+if grep -q 'haven-deploy' "$SUDO_ARGV"; then
   bad "(e) the non-root run shelled out through sudo"
-  grep 'hybrid-ai-deploy' "$SUDO_ARGV" | sed 's/^/      sudo /' >&2
+  grep 'haven-deploy' "$SUDO_ARGV" | sed 's/^/      sudo /' >&2
 else
   ok "(e) the non-root run made no sudo call for the deploy wiring"
 fi

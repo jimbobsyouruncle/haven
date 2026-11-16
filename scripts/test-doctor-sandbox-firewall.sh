@@ -75,8 +75,8 @@ done
 if [[ "${1:-}" == "network" ]]; then
   [[ "${NETWORK_FAIL:-}" == "1" ]] && exit 1
   case "${*: -1}" in
-    hybrid-ai) echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
-    coder-net) echo bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ;;
+    haven) echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+    haven-coder) echo bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ;;
     *) exit 1 ;;
   esac
   exit 0
@@ -168,7 +168,7 @@ for a in "$@"; do
     -I) echo '10.0.0.5 '; exit 0 ;;
   esac
 done
-echo 'hybrid-ai-test-host'
+echo 'haven-test-host'
 EOF
 
 cat > "$BIN/getent" <<'EOF'
@@ -569,7 +569,7 @@ if grep -q "$PASS_RE" "$WORK/out.return-last"; then
 else
   fail "foreign RETURN after the policy rejected"
 fi
-{ cat "$STATE_PRESENT"; echo '-i docker0 ! -o docker0 -m comment --comment hybrid-ai-sandbox-egress -j DROP'; } > "$FIXDIR/legacy"
+{ cat "$STATE_PRESENT"; echo '-i docker0 ! -o docker0 -m comment --comment haven-sandbox-egress -j DROP'; } > "$FIXDIR/legacy"
 run_doctor legacy "$APPD/doctor.sh" "$FIXDIR/legacy"
 assert_warn legacy 'out-of-policy tagged rule'
 # Kernel listing form: implied modules, destination before interface, reversed

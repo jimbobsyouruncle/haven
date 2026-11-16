@@ -121,13 +121,13 @@ RETENTION_DAYS=""
 # --- Fixture helpers -------------------------------------------------------
 # Build a fresh tree with four distinct directories inside it and an (absent)
 # layout env file. The default quarantine root is then
-# <tree>/hybrid-ai-conversation-quarantine, a sibling of the data dir and
+# <tree>/haven-conversation-quarantine, a sibling of the data dir and
 # outside every tree the backup captures.
 new_tree() {
   TREE="$(mktemp -d "${WORK_ROOT}/case.XXXXXX")"
   mkdir -p "${TREE}/data" "${TREE}/app" "${TREE}/work" "${TREE}/workspace/conversations"
   CONV="${TREE}/workspace/conversations"
-  QROOT="${TREE}/hybrid-ai-conversation-quarantine"
+  QROOT="${TREE}/haven-conversation-quarantine"
 }
 
 # Write a lease file. $1 dir, $2 expiry epoch seconds.
@@ -154,7 +154,7 @@ run_prune() {
   fi
   local -a e=(
     "PATH=${STUB_BIN}:${PATH}"
-    "HAVEN_ENV_FILE=${tree}/hybrid-ai.env"
+    "HAVEN_ENV_FILE=${tree}/haven.env"
     "HAVEN_APP_DIR=${tree}/app"
     "HAVEN_DATA_DIR=${tree}/data"
     "HAVEN_WORK_DIR=${tree}/work"
@@ -428,7 +428,7 @@ for optout in "" 0; do
   rc=0
   RUN_OUT="$(env -u HAVEN_PRUNE_ALLOW_LEASE_LESS \
     "PATH=${STUB_BIN}:${PATH}" \
-    "HAVEN_ENV_FILE=${TREE}/hybrid-ai.env" \
+    "HAVEN_ENV_FILE=${TREE}/haven.env" \
     "HAVEN_APP_DIR=${TREE}/app" "HAVEN_DATA_DIR=${TREE}/data" \
     "HAVEN_WORK_DIR=${TREE}/work" "OPENHANDS_WORKSPACE=${TREE}/workspace" \
     "HAVEN_PRUNE_AGE_SECONDS=${AGE}" "HAVEN_PRUNE_GRACE_SECONDS=${GRACE}" \

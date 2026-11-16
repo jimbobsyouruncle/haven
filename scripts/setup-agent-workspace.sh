@@ -77,7 +77,7 @@ die()  { printf '%s[ X ]%s %s\n'  "$C_ERR" "$C_RST" "$*" >&2; exit 1; }
 # git status -- and the env file would sit one directory traversal away.
 # OPENHANDS_WORKSPACE is resolved by the shared helper (environment, then the
 # env file parsed line by line, then the default), so nothing is parsed twice.
-DEFAULT_WORKSPACE="${HOME}/hybrid-ai-agent"
+DEFAULT_WORKSPACE="${HOME}/haven-agent"
 WORKSPACE="$OPENHANDS_WORKSPACE"
 
 # --- THE CONTROL: the workspace must not reach protected trees -------------

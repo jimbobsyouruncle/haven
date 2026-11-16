@@ -126,7 +126,7 @@ case "$me" in
     fi
     case "$tmpl" in
       '{{.Id}}')
-        [[ "$last" == "hybrid-ai-openhands" && "${FIX_APP_PRESENT:-1}" == "1" ]] || exit 1
+        [[ "$last" == "haven-openhands" && "${FIX_APP_PRESENT:-1}" == "1" ]] || exit 1
         echo 'sha256:0000000000000000000000000000000000000000000000000000000000000000'
         exit 0 ;;
       '{{.Config.Image}}')
@@ -140,7 +140,7 @@ case "$me" in
       *"RestartCount"*)  echo 0; exit 0 ;;
       *"PortBindings"*)  printf '%s:3001 %s:3001 ' "$BRIDGE_IP" "$BRIDGE_IP"; exit 0 ;;
       *"println ."*)
-        if [[ "$last" == "hybrid-ai-openhands" ]]; then
+        if [[ "$last" == "haven-openhands" ]]; then
           [[ -n "${FIX_APP_REPO+x}" ]] && printf 'AGENT_SERVER_IMAGE_REPOSITORY=%s\n' "$FIX_APP_REPO"
           [[ -n "${FIX_APP_TAG+x}" ]] && printf 'AGENT_SERVER_IMAGE_TAG=%s\n' "$FIX_APP_TAG"
           printf '%s\n' \

@@ -131,7 +131,7 @@ jobs:
 
       - name: Backup container-control helper tests
         # Offline. Proves backup/backup-containers.sh is root-only, uses a fixed
-        # container list, writes only under /run/hybrid-ai-backup, is idempotent
+        # container list, writes only under /run/haven-backup, is idempotent
         # on unpause and never starts or stops a container.
         run: bash scripts/test-backup-containers.sh
 
@@ -306,7 +306,7 @@ jobs:
 
       - name: Headless deploy trigger tests
         # Offline. Proves scripts/deploy-trigger.sh sends exactly one command
-        # string (`deploy <sha>`) to the literal `hybrid-ai-deploy` account,
+        # string (`deploy <sha>`) to the literal `haven-deploy` account,
         # refuses a malformed sha without invoking ssh, refuses a host-key
         # fingerprint mismatch before authenticating, maps the remote exit
         # codes 0/2/3/255, removes the temporary private key on success and
@@ -343,7 +343,7 @@ jobs:
 
       - name: Deploy wiring install tests
         # Offline, no root, no Docker, no network. Proves install.sh re-applies
-        # deploy/hybrid-ai-deploy@.service and deploy/50-hybrid-ai-deploy.rules
+        # deploy/haven-deploy@.service and deploy/50-haven-deploy.rules
         # on every deploy (including --no-start), so a fix to either file
         # reaches an already-bootstrapped host through the normal deploy. A
         # stale 20-min unit is replaced by the tree content; the unit is never
@@ -409,7 +409,7 @@ jobs:
         # removes the fixture data while the default keeps it, an
         # out-of-allowlist layout value is refused and left untouched, a mixed
         # DOCKER-USER chain loses only its tagged rules (never a flush or a
-        # chain delete), a hybrid-ai-* glob unit is removed, and --dry-run
+        # chain delete), a haven-* glob unit is removed, and --dry-run
         # mutates nothing. docker, systemctl, runuser, iptables, getent and id
         # are stubbed on PATH; HAVEN_UNINSTALL_ROOT points at a scratch tree.
         run: bash scripts/test-uninstall.sh
@@ -440,10 +440,10 @@ jobs:
         # byte-for-byte. Without the template line the mount would point at a
         # file nothing writes on system-mode hosts.
         # It also proves the second half of that contract: BACKUP_GROUP_GID is
-        # the hybrid-ai-backup group's gid in system mode (resolved BY NAME),
+        # the haven-backup group's gid in system mode (resolved BY NAME),
         # the container's own primary gid in user mode, an owner override
         # survives reruns, a missing group is fatal, and STEP 7 repairs an
-        # existing log to 0640 owned by hybrid-ai-backup.
+        # existing log to 0640 owned by haven-backup.
         # Docker and friends are stubbed on PATH; the run uses --no-start.
         run: bash scripts/test-status-backup-log-env.sh
 
@@ -625,7 +625,7 @@ jobs:
           # (--network none).
           printf '%s\n' 'dummy-cloudflare-token-for-ci-only-not-a-secret' > "$WORK/dummy_dns_token"
 
-          docker build -t hybrid-ai-caddy:ci ./caddy
+          docker build -t haven-caddy:ci ./caddy
 
           LOCAL_DOMAIN="jarvis.lan"
           TLS_DOMAIN="daemonhub.dev"
@@ -676,7 +676,7 @@ jobs:
               -e HAVEN_AUTH_HASH="$HAVEN_AUTH_HASH" \
               -v "${out}:/etc/caddy/Caddyfile:ro" \
               -v "$WORK/dummy_dns_token:/run/secrets/cloudflare_dns_token:ro" \
-              hybrid-ai-caddy:ci validate --adapter caddyfile --config /etc/caddy/Caddyfile
+              haven-caddy:ci validate --adapter caddyfile --config /etc/caddy/Caddyfile
             echo "case ${name}: accepted by caddy"
           }
 
@@ -828,7 +828,7 @@ jobs:
           SYS_BACKUP_LOG="$(env -u BACKUP_LOG HAVEN_BACKUP_MODE=system \
             HAVEN_LOG_DIR="$HAVEN_LOG_DIR" \
             bash -c 'source scripts/lib/haven-env.sh; printf "%s" "$BACKUP_LOG"')"
-          [ "$SYS_BACKUP_LOG" = "/var/log/hybrid-ai-backup/backup.log" ] \
+          [ "$SYS_BACKUP_LOG" = "/var/log/haven-backup/backup.log" ] \
             || { echo "::error::system mode BACKUP_LOG is not the units' log: $SYS_BACKUP_LOG"; exit 1; }
           RENDER_SYS="$(env BACKUP_LOG="$SYS_BACKUP_LOG" HAVEN_BACKUP_MODE=system \
             docker compose -f docker-compose.yml \
@@ -889,7 +889,7 @@ jobs:
           tls_render_to_file "$APP_DIR/status/Caddyfile.tmpl" "on dns" "$APP_DIR/Caddyfile"
           echo "rendered Caddyfile: $(grep -c 'import trusted_only' "$APP_DIR/Caddyfile") 'import trusted_only' lines"
 
-          docker build -t hybrid-ai-caddy:ci ./caddy
+          docker build -t haven-caddy:ci ./caddy
 
           # Pass the same runtime values the proxy's compose environment: block
           # supplies, else the placeholders expand empty and a good file fails.
@@ -901,7 +901,7 @@ jobs:
             -e ACME_AUTO_HTTPS=disable_redirects \
             -v "$APP_DIR/Caddyfile:/etc/caddy/Caddyfile:ro" \
             -v "$APP_DIR/dummy_dns_token:/run/secrets/cloudflare_dns_token:ro" \
-            hybrid-ai-caddy:ci validate --adapter caddyfile --config /etc/caddy/Caddyfile
+            haven-caddy:ci validate --adapter caddyfile --config /etc/caddy/Caddyfile
 
       - name: Assert proxy allowlist is intact
         # A future edit could remove `import trusted_only` from a sensitive

@@ -140,8 +140,8 @@ INSTALL_LOG = os.getenv("INSTALL_LOG_PATH", "/data/install.log")
 # The journal command a hint names depends on which units this host installed.
 # Derived from the install log (already mounted read-only) so no new setting is
 # needed. In user mode the strings are exactly what the tile printed before.
-BACKUP_USER_HINT = "journalctl --user -u hybrid-ai-backup.service -n 50"
-BACKUP_SYSTEM_HINT = "sudo journalctl -u hybrid-ai-backup-upload.service -n 50"
+BACKUP_USER_HINT = "journalctl --user -u haven-backup.service -n 50"
+BACKUP_SYSTEM_HINT = "sudo journalctl -u haven-backup-upload.service -n 50"
 POST_DEPLOY_VERIFY_LOG = os.getenv("POST_DEPLOY_VERIFY_LOG_PATH",
                                    "/data/post-deploy-verify.log")
 
@@ -149,9 +149,9 @@ WATCHED = [
     "ollama",
     "open-webui",
     "hermes-agent",
-    "hybrid-ai-openhands",
-    "hybrid-ai-status",
-    "hybrid-ai-proxy",
+    "haven-openhands",
+    "haven-status",
+    "haven-proxy",
 ]
 
 # ---------------------------------------------------------------------------
@@ -269,7 +269,7 @@ def probe_containers() -> List[Dict[str, Any]]:
     for name in WATCHED:
         raw = docker_get(f"/containers/{name}/json")
         if raw is None:
-            if name in ("hybrid-ai-status", "hybrid-ai-proxy"):
+            if name in ("haven-status", "haven-proxy"):
                 continue
             results.append({"name": name, "state": "fail",
                             "detail": "container not found",
@@ -584,7 +584,7 @@ def probe_deploy_verification() -> Dict[str, Any]:
                 "detail": f"verified {short} · {stamp}", "hint": ""}
     return {"name": name, "state": "warn" if verdict.startswith("WARN:") else "fail",
             "detail": f"{redact(verdict)} for {short}",
-            "hint": "journalctl -u 'hybrid-ai-post-deploy-verify-*'"}
+            "hint": "journalctl -u 'haven-post-deploy-verify-*'"}
 
 
 def probe_data() -> Dict[str, Any]:
@@ -878,7 +878,7 @@ def build_diagnostic() -> str:
     add = lines.append
 
     add("=" * 63)
-    add("  hybrid-ai DIAGNOSTIC BUNDLE (generated from the status page)")
+    add("  haven DIAGNOSTIC BUNDLE (generated from the status page)")
     add("=" * 63)
     add(f"generated : {data['generated']}")
     add(f"overall   : {data['overall'].upper()}")
@@ -1086,7 +1086,7 @@ async function download(btn){{
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
-    a.href = url; a.download = 'hybrid-ai-diagnostic-' + stamp + '.txt';
+    a.href = url; a.download = 'haven-diagnostic-' + stamp + '.txt';
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
     btn.textContent = 'Downloaded';
@@ -1175,7 +1175,7 @@ def render_hub(data: Dict[str, Any]) -> str:
 # HTTP server
 # ---------------------------------------------------------------------------
 class Handler(BaseHTTPRequestHandler):
-    server_version = "hybrid-ai-status"
+    server_version = "haven-status"
     sys_version = ""
 
     def log_message(self, fmt: str, *args: Any) -> None:
@@ -1244,7 +1244,7 @@ class Handler(BaseHTTPRequestHandler):
             stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
             self._send(200, body, "text/plain; charset=utf-8",
                        {"Content-Disposition":
-                        f'attachment; filename="hybrid-ai-diagnostic-{stamp}.txt"'})
+                        f'attachment; filename="haven-diagnostic-{stamp}.txt"'})
         else:
             self._send(404, b"not found", "text/plain; charset=utf-8")
 

@@ -47,7 +47,7 @@
 #       refused with reason=cap-reached.
 #   HAVEN_PRUNE_QUARANTINE_BASE     optional
 #       Quarantine root override. Default: the sibling directory
-#       <dirname HAVEN_DATA_DIR>/hybrid-ai-conversation-quarantine.
+#       <dirname HAVEN_DATA_DIR>/haven-conversation-quarantine.
 #       It is still checked against every tree the backup captures.
 #   HAVEN_PRUNE_ALLOW_LEASE_LESS    default empty (OFF)
 #       Set to 1/true/yes to let a directory with NO owner_lease.json be swept
@@ -231,7 +231,7 @@ else
     warn "quarantine: HAVEN_DATA_DIR is empty, so the default quarantine root cannot be derived; refusing to sweep."
     finish
   fi
-  QUARANTINE_BASE_RAW="$(dirname -- "${HAVEN_DATA_DIR%/}")/hybrid-ai-conversation-quarantine"
+  QUARANTINE_BASE_RAW="$(dirname -- "${HAVEN_DATA_DIR%/}")/haven-conversation-quarantine"
 fi
 
 QUARANTINE_BASE="$(canon "$QUARANTINE_BASE_RAW")" || QUARANTINE_BASE=""

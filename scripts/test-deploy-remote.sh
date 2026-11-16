@@ -335,10 +335,10 @@ if [[ "$INVOCATIONS" -eq 1 ]]; then
   else
     fail "verifier present -> argv is missing:${missing}"
   fi
-  if grep -qE -- '--unit=hybrid-ai-post-deploy-verify-[0-9a-f]{12}-[0-9]+' "$SDRUN_LOG"; then
-    pass "verifier present -> the transient unit is named hybrid-ai-post-deploy-verify-<sha12>-<pid>"
+  if grep -qE -- '--unit=haven-post-deploy-verify-[0-9a-f]{12}-[0-9]+' "$SDRUN_LOG"; then
+    pass "verifier present -> the transient unit is named haven-post-deploy-verify-<sha12>-<pid>"
   else
-    fail "verifier present -> the unit name does not match hybrid-ai-post-deploy-verify-<sha12>-<pid>"
+    fail "verifier present -> the unit name does not match haven-post-deploy-verify-<sha12>-<pid>"
   fi
   # --setenv must carry the APP_DIR the deploy resolved (scripts/lib/haven-env.sh,
   # line 9), so the transient unit checks the real tree instead of its own default.

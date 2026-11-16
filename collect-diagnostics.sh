@@ -85,7 +85,7 @@ fi
 # Both compose files. Omitting the overlay makes `ps` and `logs` silently skip
 # OpenHands -- and a diagnostic bundle that omits a running service is worse
 # than one that says nothing about it, because it looks complete.
-COMPOSE=(docker compose -p hybrid-ai
+COMPOSE=(docker compose -p haven
          --env-file "$ENV_FILE"
          --project-directory "$APP_DIR"
          -f "$APP_DIR/docker-compose.yml"
@@ -139,7 +139,7 @@ run() {
 note() { printf '%s\n' "$*" >> "$OUTFILE"; }
 
 printf '%s\n' "============================================================"
-printf '  hybrid-ai diagnostics collector\n'
+printf '  haven diagnostics collector\n'
 printf '%s\n' "============================================================"
 if (( REDACT )); then
   printf '  %sRedaction: ON%s  (secrets will be removed)\n\n' "$C_OK" "$C_RST"
@@ -155,7 +155,7 @@ chmod 600 "$OUTFILE"
 # ---------------------------------------------------------------------------
 cat >> "$OUTFILE" <<EOF
 ===============================================================
-  hybrid-ai DIAGNOSTIC REPORT
+  haven DIAGNOSTIC REPORT
 ===============================================================
 generated_utc : $(date -u +%Y-%m-%dT%H:%M:%SZ)
 generated_by  : collect-diagnostics.sh
@@ -283,11 +283,11 @@ note "how long the value is, which is what actually matters for diagnosis."
 sub "$ENV_FILE (stack)"
 # Note the LAYOUT file too, when it differs: after scripts/bootstrap.sh the
 # secrets live in the stack file (0600) and the host layout lives in
-# /etc/hybrid-ai/hybrid-ai.env (0644). Names, paths and lengths only -- never a
+# /etc/haven/haven.env (0644). Names, paths and lengths only -- never a
 # value, and the layout file is not read as a stack env file.
 if [[ "$HAVEN_STACK_ENV_FILE" != "$HAVEN_ENV_FILE" ]]; then
   {
-    printf 'hybrid-ai layout file: %s (mode %s)\n\n' \
+    printf 'haven layout file: %s (mode %s)\n\n' \
       "$HAVEN_ENV_FILE" "$(stat -c '%a' "$HAVEN_ENV_FILE" 2>/dev/null)"
   } 2>&1 | redact >> "$OUTFILE"
 fi
@@ -378,7 +378,7 @@ run "Compose services"    "${COMPOSE[@]}" ps
 run "All containers"      docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
 run "Resource usage"      docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}'
 
-for svc in ollama open-webui hybrid-ai-status hybrid-ai-proxy hybrid-ai-openhands; do
+for svc in ollama open-webui haven-status haven-proxy haven-openhands; do
   sub "${svc}: state detail"
   {
     docker inspect "$svc" --format '
@@ -553,7 +553,7 @@ printf '  %s[9/9]%s Backups...\n' "$C_INF" "$C_RST"
 sec "9. BACKUPS"
 # The shared helper resolves which units and which scopes apply for the
 # configured mode, so this section cannot disagree with doctor.sh or install.sh.
-run "Timers" bash -c "systemctl $HAVEN_BACKUP_SYSTEMCTL_SCOPE list-timers 'hybrid-ai-*' --no-pager 2>/dev/null || echo 'no timers in scope'"
+run "Timers" bash -c "systemctl $HAVEN_BACKUP_SYSTEMCTL_SCOPE list-timers 'haven-*' --no-pager 2>/dev/null || echo 'no timers in scope'"
 run "Linger (required for user-mode backups to run while logged out)" bash -c "loginctl show-user \"\$USER\" 2>/dev/null | grep -i linger || echo 'unknown'"
 run "Recent backup events" bash -c "grep '^EVENT' '$BACKUP_LOG' 2>/dev/null | tail -25 || echo '(no backup.log)'"
 run "Backup service journal" bash -c "journalctl $HAVEN_BACKUP_JOURNAL_SCOPE -u $HAVEN_BACKUP_SERVICE_UNIT -n 40 --no-pager 2>/dev/null || echo 'unavailable'"

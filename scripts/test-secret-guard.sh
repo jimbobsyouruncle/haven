@@ -133,7 +133,7 @@ check "persistence tool: rule key is the tool name" "guard:cronjob_manage" "$(jq
 # ---------------------------------------------------------------------------
 echo
 echo "== allow path =="
-run_guard '{"hook_event_name":"pre_tool_call","tool_name":"read_file","tool_input":{"path":"/workspace/project/hybrid-ai/README.md"}}'
+run_guard '{"hook_event_name":"pre_tool_call","tool_name":"read_file","tool_input":{"path":"/workspace/project/haven/README.md"}}'
 check "benign payload: exit code is 0" "0" "$GUARD_RC"
 check "benign payload: decision is {}" "{}" "$(jq -c '.' "$GUARD_OUT")"
 check "benign payload: nothing on stderr" "" "$(cat "$GUARD_ERR")"

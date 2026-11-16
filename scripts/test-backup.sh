@@ -96,6 +96,7 @@ case "$1" in
     fi
     exit 0 ;;
   restore)
+    if [[ -n "${RESTORE_ARGS:-}" ]]; then printf '%s\n' "$@" > "$RESTORE_ARGS"; fi
     if [[ -n "${SNAPSHOT_SRC:-}" && -d "${SNAPSHOT_SRC:-}" ]]; then
       target=""; prev=""
       for a in "$@"; do
@@ -491,6 +492,23 @@ assert "case g: restore test dir made under WORK_DIR" \
 assert "case g: restore wrote nothing under APP_DIR" \
   bash -c "[[ \"\$(find '$APP2' -mindepth 1 | sort)\" == '$APP_BEFORE' ]]"
 
+# Both identity eras select exact IDs and restore only into scratch. The
+# existing captured SQLite fixture supplies the old/new application-relative
+# format; tags and host paths do not alter that format.
+for era in legacy canonical; do
+  args_file="$TMPROOT/restore-${era}.args"
+  restore_rc=0
+  env -u BACKUP_LOG HOME="$HOME2" HAVEN_APP_DIR="$APP2" \
+      HAVEN_DATA_DIR="$DATA2" HAVEN_LOG_DIR="$LOG2" HAVEN_WORK_DIR="$WORK2" \
+      BACKUP_CONF_DIR="$CONF" SNAPSHOT_SRC="$CAPTURE" RESTORE_ARGS="$args_file" \
+      PATH="$STUB:$PATH" \
+    bash "$APP2/backup/restore.sh" --test --snapshot "${era}-fixture" > "$TMPROOT/out" 2>&1 || restore_rc=$?
+  check "identity restore: ${era} exact-ID scratch integrity" 0 "$restore_rc"
+  assert "identity restore: ${era} ID preserved after --test" grep -Fxq "${era}-fixture" "$args_file"
+  assert "identity restore: ${era} includes canonical tag" grep -Fxq haven "$args_file"
+  assert "identity restore: ${era} includes historical tag" grep -Fxq hybrid-ai "$args_file"
+done
+
 # ---------------------------------------------------------------------------
 # Cases l-p: the stage/upload split (system-mode units call these flags).
 # Everything stays offline: an empty CONF proves --stage-only loads no
@@ -594,7 +612,7 @@ assert "case r: docker version came from the helper file" bash -c "grep -qx 'doc
 
 # ---------------------------------------------------------------------------
 # Cases s1-s3: the capture guard regression. On a bootstrapped host the
-# hybrid-ai-backup account's HOME is its work directory, so with
+# haven-backup account's HOME is its work directory, so with
 # CREDENTIALS_DIRECTORY and both credential-dir settings unset the default
 # HAVEN_BACKUP_CRED_DIR lands INSIDE HAVEN_WORK_DIR. The capture
 # (--stage-only) reads no credential, so it must run clean; every phase that
@@ -604,7 +622,7 @@ assert "case r: docker version came from the helper file" bash -c "grep -qx 'doc
 # status=complete, and never prints the guard message. This is the exact shape
 # of the live failure; it FAILS on unpatched main with "BACKUP_CONF_DIR is
 # inside". BACKUP_CONF_DIR and HAVEN_BACKUP_CRED_DIR are unset, so the
-# credential dir defaults to $HOME/.config/hybrid-ai-backup, inside WORK_DIR.
+# credential dir defaults to $HOME/.config/haven-backup, inside WORK_DIR.
 rm -rf "$REPO/hermes_data" "$STAGE"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1);'
 run_backup_env -u BACKUP_CONF_DIR -u HAVEN_BACKUP_CRED_DIR HOME="$STAGE_WORK" HAVEN_WORK_DIR="$STAGE_WORK" BACKUP_NO_PAUSE=1 -- --non-interactive --stage-only

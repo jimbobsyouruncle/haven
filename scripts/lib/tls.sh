@@ -14,7 +14,7 @@
 #   die(), warn(), ok() and log().
 # ---------------------------------------------------------------------------
 
-TLS_TOKEN_DIR="/etc/hybrid-ai/acme"
+TLS_TOKEN_DIR="/etc/haven/acme"
 TLS_CA_STAGING_URL="https://acme-staging-v02.api.letsencrypt.org/directory"
 TLS_CA_PRODUCTION_URL="https://acme-v02.api.letsencrypt.org/directory"
 TLS_DEFAULT_DOMAIN="daemonhub.dev"
@@ -27,7 +27,7 @@ TLS_DEFAULT_DOMAIN="daemonhub.dev"
 # install.sh sources this file before the stack .env is loaded, so a CADDY_IMAGE
 # from .env does not exist yet at source time.
 TLS_STOCK_VALIDATE_IMAGE="caddy:2.11-alpine"
-TLS_DNS_VALIDATE_IMAGE_DEFAULT="hybrid-ai-caddy:2.11.7-dns"
+TLS_DNS_VALIDATE_IMAGE_DEFAULT="haven-caddy:2.11.7-dns"
 
 # --- Output helpers: reuse install.sh's, fall back when sourced alone ------
 tls__warn() {
@@ -798,8 +798,8 @@ tls_dry_run() {
     printf 'BACKUP_GROUP_GID=%s\n' "${BACKUP_GROUP_GID:-$(id -g 2>/dev/null || printf 1000)}"
     printf 'DOCKER_GID=%s\n' "${DOCKER_GID:-$(getent group docker 2>/dev/null | cut -d: -f3 || printf 999)}"
     printf 'STATUS_UID=%s\n' "${STATUS_UID:-$(id -u 2>/dev/null || printf 1000)}"
-    printf 'HAVEN_POST_DEPLOY_VERIFY_LOG=%s\n' "${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/hybrid-ai-post-deploy-verify.log}"
-    printf 'HAVEN_TLS_TOKEN_FILE=%s\n' "${HAVEN_TLS_TOKEN_FILE:-/etc/hybrid-ai/acme/cloudflare_dns_token}"
+    printf 'HAVEN_POST_DEPLOY_VERIFY_LOG=%s\n' "${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/haven-post-deploy-verify.log}"
+    printf 'HAVEN_TLS_TOKEN_FILE=%s\n' "${HAVEN_TLS_TOKEN_FILE:-/etc/haven/acme/cloudflare_dns_token}"
   } > "$env_tmp"
 
   local rc=0

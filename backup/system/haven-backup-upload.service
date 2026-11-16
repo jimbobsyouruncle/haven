@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: backup/system/hybrid-ai-backup-upload.service
+# FILE: backup/system/haven-backup-upload.service
 # PURPOSE (plain English):
 #   The UPLOAD half of a system-mode backup. It is started by the capture unit
 #   (OnSuccess=) after a capture has staged a consistent copy, and it does one
@@ -24,12 +24,12 @@
 #   (exit 3) is never retried (RestartPreventExitStatus=3).
 #
 # INSTALLED BY (card F later): install.sh in system mode copies this file to
-#   /etc/systemd/system/ and writes /etc/credstore/hybrid-ai-backup/{r2.env,
+#   /etc/systemd/system/ and writes /etc/credstore/haven-backup/{r2.env,
 #   repo-password}. See backup/README.md, "System mode (fresh install and
 #   migration)".
 # ---------------------------------------------------------------------------
 [Unit]
-Description=hybrid-ai backup upload (credentials and network, no read privilege)
+Description=haven backup upload (credentials and network, no read privilege)
 Documentation=file:///opt/haven/backup/README.md
 After=network-online.target
 Wants=network-online.target
@@ -41,8 +41,8 @@ StartLimitBurst=2
 
 [Service]
 Type=oneshot
-User=hybrid-ai-backup
-Group=hybrid-ai-backup
+User=haven-backup
+Group=haven-backup
 
 ExecStart=/opt/haven/backup/backup.sh --upload-only
 
@@ -57,25 +57,25 @@ SuccessExitStatus=3
 # The R2 credentials. systemd copies these into $CREDENTIALS_DIRECTORY, a
 # private tmpfs, readable only by this unit; backup.sh reads them from there.
 # Only the two credentials this host needs -- never a copy in a data tree.
-LoadCredential=r2.env:/etc/credstore/hybrid-ai-backup/r2.env
-LoadCredential=repo-password:/etc/credstore/hybrid-ai-backup/repo-password
+LoadCredential=r2.env:/etc/credstore/haven-backup/r2.env
+LoadCredential=repo-password:/etc/credstore/haven-backup/repo-password
 
 # The staged capture and the restic cache are the only places this unit reads
 # or writes. StateDirectory= is the staging root (the capture unit writes it,
 # this unit reads it and later removes the whole tree); CacheDirectory= is
 # RESTIC_CACHE_DIR; LogsDirectory= is the directory systemd grants write access
 # to under ProtectSystem=strict, and it is where the backup log lives (the
-# shared helper resolves BACKUP_LOG to /var/log/hybrid-ai-backup/backup.log in
+# shared helper resolves BACKUP_LOG to /var/log/haven-backup/backup.log in
 # system mode, the SAME path doctor.sh reads). Names and paths only.
-StateDirectory=hybrid-ai-backup
-RuntimeDirectory=hybrid-ai-backup
-CacheDirectory=hybrid-ai-backup
-LogsDirectory=hybrid-ai-backup
-Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
-Environment=HAVEN_STACK_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
+StateDirectory=haven-backup
+RuntimeDirectory=haven-backup
+CacheDirectory=haven-backup
+LogsDirectory=haven-backup
+Environment=HAVEN_ENV_FILE=/etc/haven/haven.env
+Environment=HAVEN_STACK_ENV_FILE=/etc/haven/haven.env
 Environment=HAVEN_BACKUP_MODE=system
-Environment=HAVEN_WORK_DIR=/var/lib/hybrid-ai-backup
-Environment=RESTIC_CACHE_DIR=/var/cache/hybrid-ai-backup
+Environment=HAVEN_WORK_DIR=/var/lib/haven-backup
+Environment=RESTIC_CACHE_DIR=/var/cache/haven-backup
 
 # Give up rather than run forever. A hung upload holding the staging directory
 # open is worse than a missed night.
@@ -93,7 +93,7 @@ PrivateTmp=yes
 # strict makes all of /var read-only, and the ONLY write re-granted is the
 # staging root, so `rm -rf` can clear it after a successful upload. The script
 # reads the captured files and never writes them.
-ReadWritePaths=-/var/lib/hybrid-ai-backup
+ReadWritePaths=-/var/lib/haven-backup
 
 # No Docker: the socket is not reachable from this unit.
 InaccessiblePaths=-/run/docker.sock

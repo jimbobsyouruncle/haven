@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: backup/hybrid-ai-backup.service
+# FILE: backup/haven-backup.service
 # PURPOSE (plain English):
 #   Tells systemd HOW to run the nightly backup. Paired with the .timer file,
 #   which decides WHEN.
@@ -9,9 +9,9 @@
 #   than as root. Least privilege: a backup job has no need for root.
 #
 #   Manage it with:
-#     systemctl --user status  hybrid-ai-backup.service
-#     systemctl --user start   hybrid-ai-backup.service   # run now
-#     journalctl --user -u hybrid-ai-backup.service -n 50 # recent output
+#     systemctl --user status  haven-backup.service
+#     systemctl --user start   haven-backup.service   # run now
+#     journalctl --user -u haven-backup.service -n 50 # recent output
 #
 # INCIDENT B1 (2026-10-15):
 #   This unit (Restart=on-failure, RestartSec=15min) retried a failing run
@@ -34,8 +34,8 @@
 #   run is INCOMPLETE, never fatal) because it kills in-flight sessions.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=hybrid-ai encrypted backup to Cloudflare R2
-Documentation=file://%h/hybrid-ai/backup/README.md
+Description=haven encrypted backup to Cloudflare R2
+Documentation=file://%h/haven/backup/README.md
 # Do not start a backup while the network is still coming up after a reboot.
 After=network-online.target
 Wants=network-online.target

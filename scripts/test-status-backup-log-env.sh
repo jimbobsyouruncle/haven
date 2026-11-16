@@ -13,7 +13,7 @@
 #   whatever scripts/lib/haven-env.sh resolved. docker-compose.yml used to
 #   mount ${HAVEN_LOG_DIR}/backup.log unconditionally, which in SYSTEM mode
 #   is a file nothing writes: the units append to their LogsDirectory=
-#   (/var/log/hybrid-ai-backup/backup.log). The status page therefore said
+#   (/var/log/haven-backup/backup.log). The status page therefore said
 #   "no successful backup recorded" forever on a host whose backups worked.
 #   STEP 8 now writes the RESOLVED value
 #     BACKUP_LOG=${BACKUP_LOG}
@@ -23,7 +23,7 @@
 # CASES:
 #   (a) user mode, unset     -> <log dir>/backup.log is written, i.e. exactly
 #                               the path the old compose expression rendered
-#   (b) system mode, unset   -> /var/log/hybrid-ai-backup/backup.log is written
+#   (b) system mode, unset   -> /var/log/haven-backup/backup.log is written
 #   (c) system mode, owner-set value in the stack env file -> preserved
 #                               byte-for-byte, and again on a second run
 #   (d) user mode, owner-set value -> preserved byte-for-byte
@@ -48,7 +48,7 @@ for t in mktemp stat grep; do
   command -v "$t" >/dev/null 2>&1 || { echo "error: $t is required" >&2; exit 2; }
 done
 
-SYSTEM_LOG="/var/log/hybrid-ai-backup/backup.log"
+SYSTEM_LOG="/var/log/haven-backup/backup.log"
 OVER="$(mktemp -d)/owner-backup.log"
 
 PASS=0
@@ -69,7 +69,7 @@ APP="$WORK/app"
 BIN="$WORK/bin"
 mkdir -p "$APP/scripts/lib" "$BIN" "$WORK/data" "$WORK/log" "$WORK/work" \
          "$WORK/ws" "$WORK/repos" "$WORK/ohstate" "$WORK/conf" "$WORK/restic" \
-         "$WORK/etc/hybrid-ai" "$WORK/ws/.git/info"
+         "$WORK/etc/haven" "$WORK/ws/.git/info"
 cp "$REPO/install.sh" "$APP/install.sh"
 cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
 [ -f "$REPO/scripts/lib/build-gate.sh" ] || { echo "FATAL: scripts/lib/build-gate.sh is missing; the build gate does not exist in this tree." >&2; exit 2; }
@@ -86,8 +86,8 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$APP/scripts/sync-agent-repos.sh"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$APP/scripts/check-hermes-nonroot.sh"
 chmod +x "$APP/scripts/"*.sh
 
-LAYOUT="$WORK/etc/hybrid-ai/hybrid-ai.env"
-STACK="$WORK/etc/hybrid-ai/stack.env"
+LAYOUT="$WORK/etc/haven/haven.env"
+STACK="$WORK/etc/haven/stack.env"
 write_layout() { # mode [extra KEY=VALUE lines...]
   local mode="$1"; shift
   {
@@ -138,7 +138,7 @@ cat > "$BIN/getent" <<'EOF'
 case "${1:-}" in
   group)
     case "${2:-}" in
-      hybrid-ai-backup) printf 'hybrid-ai-backup:x:%s:\n' "${GETENT_BACKUP_GID-982}" ;;
+      haven-backup) printf 'haven-backup:x:%s:\n' "${GETENT_BACKUP_GID-982}" ;;
       docker)           printf 'docker:x:999:\n' ;;
       *) exit 2 ;;
     esac
@@ -261,7 +261,7 @@ rm -f "$STACK"
 rc=0
 run_install "$LOG" || rc=$?
 check "install.sh exits 0 in system mode" "0" "$rc"
-check "system mode writes the hybrid-ai-backup group's gid" \
+check "system mode writes the haven-backup group's gid" \
       "982" "$(env_value "$STACK" BACKUP_GROUP_GID)"
 
 # ---------------------------------------------------------------------------
@@ -290,8 +290,8 @@ write_layout system
 rm -f "$STACK"
 rc=0
 GETENT_BACKUP_GID="" run_install "$LOG" || rc=$?
-check "a missing hybrid-ai-backup group is fatal" "1" "$rc"
-if grep -q 'hybrid-ai-backup group does not exist' "$LOG"; then
+check "a missing haven-backup group is fatal" "1" "$rc"
+if grep -q 'haven-backup group does not exist' "$LOG"; then
   ok "the failure names the missing group"
 else
   bad "the failure does not name the missing group"
@@ -320,10 +320,10 @@ ID_STUB_UID=0 CHOWN_LOG="$CHOWN_LOG" \
 check "install.sh exits 0 with root-like id" "0" "$rc"
 check "STEP 7 leaves the system-mode log at 0640" "640" \
       "$(stat -c '%a' "$SYSLOG" 2>/dev/null || echo missing)"
-if grep -q 'hybrid-ai-backup:hybrid-ai-backup' "$CHOWN_LOG"; then
-  ok "STEP 7 keeps owner hybrid-ai-backup:hybrid-ai-backup"
+if grep -q 'haven-backup:haven-backup' "$CHOWN_LOG"; then
+  ok "STEP 7 keeps owner haven-backup:haven-backup"
 else
-  bad "STEP 7 did not chown to hybrid-ai-backup:hybrid-ai-backup"
+  bad "STEP 7 did not chown to haven-backup:haven-backup"
 fi
 
 # Private transport provisioning is idempotent and never follows a symlink.

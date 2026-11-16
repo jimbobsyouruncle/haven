@@ -15,7 +15,7 @@
 #                and the local model list
 #
 # WHY IT EXISTS -- THE PRIVILEGE SPLIT:
-#   The capture unit runs as the unprivileged hybrid-ai-backup account with a
+#   The capture unit runs as the unprivileged haven-backup account with a
 #   single capability (CAP_DAC_READ_SEARCH) so it can read the container-owned
 #   data, and with PrivateNetwork=yes and the docker socket made inaccessible,
 #   so it holds no network and no docker access. The upload unit holds the R2
@@ -30,7 +30,7 @@
 #   * It takes NO path and NO container name from its arguments. The only
 #     argument it accepts is the verb above; the container list is the fixed
 #     APP_CONTAINERS set below.
-#   * It writes ONLY under /run/hybrid-ai-backup (a root-owned runtime dir).
+#   * It writes ONLY under /run/haven-backup (a root-owned runtime dir).
 #   * It refuses to run as a non-root account.
 #
 # USAGE:
@@ -51,14 +51,14 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../scripts/lib/haven-env.sh"
 
 # The one directory this helper writes to. It matches the units'
-# RuntimeDirectory=hybrid-ai-backup (systemd sets that to /run/hybrid-ai-backup).
-CONTROL_RUN_DIR="${BACKUP_CONTROL_RUN_DIR:-/run/hybrid-ai-backup}"
+# RuntimeDirectory=haven-backup (systemd sets that to /run/haven-backup).
+CONTROL_RUN_DIR="${BACKUP_CONTROL_RUN_DIR:-/run/haven-backup}"
 
 # The unprivileged account the capture unit runs as. This helper is root, but
 # the files it leaves behind (the paused list, the host facts) are READ by the
 # capture unit, so they are made readable by that account. Only names and paths
 # here -- never a credential.
-SERVICE_USER="hybrid-ai-backup"
+SERVICE_USER="haven-backup"
 
 # The FIXED list of containers that write durable state. It is the same
 # APP_CONTAINERS set backup.sh uses; nothing here is ever taken from an argument.
@@ -66,7 +66,7 @@ APP_CONTAINERS=(open-webui hermes-agent)
 
 # Every compose file, so 'config --images' reports the full stack, matching the
 # way backup.sh and doctor.sh render it.
-COMPOSE=(docker compose -p hybrid-ai --env-file "$HAVEN_STACK_ENV_FILE"
+COMPOSE=(docker compose -p haven --env-file "$HAVEN_STACK_ENV_FILE"
          --project-directory "$HAVEN_APP_DIR"
          -f "$HAVEN_APP_DIR/docker-compose.yml"
          -f "$HAVEN_APP_DIR/openhands/docker-compose.openhands.yml"

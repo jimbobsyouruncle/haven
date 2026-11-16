@@ -24,13 +24,13 @@ umask 022
 #      install.sh REWROTE that file on every run. A root deploy would therefore
 #      erase HAVEN_BACKUP_MODE=system and could not leave the file readable
 #      by the backup account it needed. The layout now lives in
-#      /etc/hybrid-ai/hybrid-ai.env (mode 0644, names and paths only) and the
-#      secrets live in /etc/hybrid-ai/stack.env (mode 0600). install.sh writes
+#      /etc/haven/haven.env (mode 0644, names and paths only) and the
+#      secrets live in /etc/haven/stack.env (mode 0600). install.sh writes
 #      ONLY the stack file. See scripts/lib/haven-env.sh.
 #
 # SAFE TO RE-RUN; NOT SAFE TO SKIP:
 #   The accounts are least-privilege by construction: each gets its own group
-#   and none is added to docker, sudo or systemd-journal. hybrid-ai-deploy has a
+#   and none is added to docker, sudo or systemd-journal. haven-deploy has a
 #   /bin/sh shell and a LOCKED password because sshd runs the forced command
 #   through the account's login shell; a nologin shell would refuse it.
 #
@@ -45,7 +45,7 @@ umask 022
 #
 #     --deploy-pubkey <file>  the PUBLIC key the headless deploy will use. One
 #                             key, no options. Installed as the forced-command
-#                             line in ~hybrid-ai-deploy/.ssh/authorized_keys.
+#                             line in ~haven-deploy/.ssh/authorized_keys.
 #     --from <dir>            migrate from a legacy checkout instead of a fresh
 #                             install. Moves, never copies or merges.
 #     --login-user <name>     the login account to migrate away from.
@@ -142,27 +142,27 @@ host_path() {
 
 # --- Fixed layout ----------------------------------------------------------
 APP_DIR="$(host_path /opt/haven)"
-ETC_DIR="$(host_path /etc/hybrid-ai)"
-LAYOUT_ENV="${ETC_DIR}/hybrid-ai.env"
+ETC_DIR="$(host_path /etc/haven)"
+LAYOUT_ENV="${ETC_DIR}/haven.env"
 STACK_ENV="${ETC_DIR}/stack.env"
-CRED_DIR="$(host_path /etc/credstore/hybrid-ai-backup)"
-DATA_DIR="$(host_path /var/lib/hybrid-ai)"
+CRED_DIR="$(host_path /etc/credstore/haven-backup)"
+DATA_DIR="$(host_path /var/lib/haven)"
 WORK_DIR="${DATA_DIR}/work"
-LOG_DIR="$(host_path /var/log/hybrid-ai)"
+LOG_DIR="$(host_path /var/log/haven)"
 # The agent workspace and the repo reference tree are SIBLINGS of the data dir,
 # never children of it. setup-agent-workspace.sh and sync-agent-repos.sh both
 # refuse a path inside HAVEN_DATA_DIR (it would sit one traversal away from
 # the stack env file and the backup credentials), so the bootstrap must render
 # these two paths outside it.
-AGENT_WS="$(host_path /var/lib/hybrid-ai-agent)"
-AGENT_REPOS="$(host_path /var/lib/hybrid-ai-repos)"
+AGENT_WS="$(host_path /var/lib/haven-agent)"
+AGENT_REPOS="$(host_path /var/lib/haven-repos)"
 OPENHANDS_STATE="${DATA_DIR}/openhands"
 HERMES_HOME="${DATA_DIR}/hermes-home"
 HERMES_DATA="${DATA_DIR}/hermes_data"
-RESTIC_CACHE="$(host_path /var/cache/hybrid-ai-backup)"
+RESTIC_CACHE="$(host_path /var/cache/haven-backup)"
 SYSTEMD_DIR="$(host_path /etc/systemd/system)"
-DEPLOY_HOME="$(host_path /var/lib/hybrid-ai-deploy)"
-BACKUP_HOME="$(host_path /var/lib/hybrid-ai-backup)"
+DEPLOY_HOME="$(host_path /var/lib/haven-deploy)"
+BACKUP_HOME="$(host_path /var/lib/haven-backup)"
 LOGIN_DEFS="$(host_path /etc/login.defs)"
 
 # Select before host mutation. Only an explicit process environment setting
@@ -174,9 +174,9 @@ REPO_SLUG="$(haven_repository_slug)" || exit 2
 PUBLIC_REMOTE="https://github.com/${REPO_SLUG}.git"
 
 # Account names. Names only -- never a credential.
-STACK_ACCOUNT="hybrid-ai"
-BACKUP_ACCOUNT="hybrid-ai-backup"
-DEPLOY_ACCOUNT="hybrid-ai-deploy"
+STACK_ACCOUNT="haven"
+BACKUP_ACCOUNT="haven-backup"
+DEPLOY_ACCOUNT="haven-deploy"
 
 usage() { awk 'NR==1{next} /^set -Eeuo pipefail/{exit} {sub(/^# ?/,""); print}' "${BASH_SOURCE[0]}"; }
 
@@ -216,6 +216,10 @@ done
 
 # --- 1. Root only ----------------------------------------------------------
 [[ "$(id -u)" == "0" ]] || die 2 "must run as root: sudo ./scripts/bootstrap.sh --deploy-pubkey <file>"
+if [[ -e "$(host_path /etc/hybrid-ai/hybrid-ai.env)" ||
+      -e "$(host_path /var/lib/hybrid-ai)" ]]; then
+  die 2 "existing legacy host identity requires the reviewed migration driver"
+fi
 
 LOGIN_USER="${LOGIN_USER:-${SUDO_USER:-}}"
 [[ -n "$LOGIN_USER" ]] || die 1 "--login-user is required when SUDO_USER is not set"
@@ -279,7 +283,7 @@ detect_polkit
 
 # Bootstrap and normal deployments share the same lock. The scratch prefix
 # keeps the offline fixtures away from the real host lock.
-BOOTSTRAP_LOCK="$(host_path /run/lock/hybrid-ai-deploy.lock)"
+BOOTSTRAP_LOCK="$(host_path /run/lock/haven-deploy.lock)"
 mkdir -p -- "$(dirname -- "$BOOTSTRAP_LOCK")"
 exec 9>"$BOOTSTRAP_LOCK"
 flock -n 9 || die 1 "another bootstrap or deployment holds the installation lock"
@@ -529,36 +533,36 @@ ok "Both ${BACKUP_ACCOUNT} and ${DEPLOY_ACCOUNT} can read ${LAYOUT_ENV}."
 # --- 8. Deploy pieces ------------------------------------------------------
 # The system unit is installed but NEVER enabled: an instantiated unit is
 # started explicitly by the forced command and the polkit rule, nothing else.
-install -m 0644 "$APP_DIR/deploy/hybrid-ai-deploy@.service" \
-  "${SYSTEMD_DIR}/hybrid-ai-deploy@.service" \
+install -m 0644 "$APP_DIR/deploy/haven-deploy@.service" \
+  "${SYSTEMD_DIR}/haven-deploy@.service" \
   || die 1 "could not install the deploy unit"
-ok "Installed hybrid-ai-deploy@.service (0644, not enabled)."
+ok "Installed haven-deploy@.service (0644, not enabled)."
 
-install -m 0644 "$APP_DIR/deploy/50-hybrid-ai-deploy.rules" \
-  "${POLKIT_DIR}/50-hybrid-ai-deploy.rules" \
+install -m 0644 "$APP_DIR/deploy/50-haven-deploy.rules" \
+  "${POLKIT_DIR}/50-haven-deploy.rules" \
   || die 1 "could not install the polkit rule"
-ok "Installed 50-hybrid-ai-deploy.rules into ${POLKIT_DIR} (0644)."
+ok "Installed 50-haven-deploy.rules into ${POLKIT_DIR} (0644)."
 
 # --- 8b. Sandbox firewall unit ---------------------------------------------
 # Unlike the deploy unit above, this one IS enabled: Docker recreates the
 # DOCKER-USER chain on every boot, so the sandbox drops have to be re-applied
 # after docker.service starts. The script is idempotent, so the boot unit and
 # the deploy path can both run it.
-install -m 0644 "$APP_DIR/deploy/hybrid-ai-firewall.service" \
-  "${SYSTEMD_DIR}/hybrid-ai-firewall.service" \
+install -m 0644 "$APP_DIR/deploy/haven-firewall.service" \
+  "${SYSTEMD_DIR}/haven-firewall.service" \
   || die 1 "could not install the sandbox firewall unit"
-ok "Installed hybrid-ai-firewall.service (0644)."
+ok "Installed haven-firewall.service (0644)."
 
 # Guarded like the systemctl calls below: a host without systemd still gets the
 # file, and the warning says how to finish the job by hand.
 if command -v systemctl >/dev/null 2>&1; then
-  if systemctl enable hybrid-ai-firewall.service >/dev/null 2>&1; then
-    ok "Enabled hybrid-ai-firewall.service (applies the drops at every boot)."
+  if systemctl enable haven-firewall.service >/dev/null 2>&1; then
+    ok "Enabled haven-firewall.service (applies the drops at every boot)."
   else
-    warn "Could not enable hybrid-ai-firewall.service; run: systemctl enable hybrid-ai-firewall.service"
+    warn "Could not enable haven-firewall.service; run: systemctl enable haven-firewall.service"
   fi
 else
-  warn "systemctl not found; hybrid-ai-firewall.service is installed but not enabled."
+  warn "systemctl not found; haven-firewall.service is installed but not enabled."
 fi
 
 command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload >/dev/null 2>&1 || true
@@ -707,22 +711,22 @@ run_migration() {
   # that file to the stack env file, so a re-run must stop the stack with
   # whichever env file is readable: the legacy one if present, else the resolved
   # stack env file. When neither is readable the stop is skipped with a warning
-  # ONLY if no `hybrid-ai` compose container is running; otherwise it refuses.
+  # ONLY if no `haven` compose container is running; otherwise it refuses.
   if [[ -f "${FROM}/docker-compose.yml" ]]; then
     local stop_env="$legacy_env"
     [[ -r "$stop_env" ]] || stop_env="$STACK_ENV"
     if [[ -r "$stop_env" ]]; then
       log "Stopping the running stack (down, never -v)..."
-      docker compose -p hybrid-ai --env-file "$stop_env" --project-directory "$FROM" \
+      docker compose -p haven --env-file "$stop_env" --project-directory "$FROM" \
         -f "${FROM}/docker-compose.yml" \
         -f "${FROM}/openhands/docker-compose.openhands.yml" \
         -f "${FROM}/hermes/docker-compose.hermes.yml" down \
         || die 1 "could not stop the stack; refusing to migrate while it runs"
     else
       local running
-      running="$(docker ps -q --filter 'label=com.docker.compose.project=hybrid-ai' 2>/dev/null || true)"
+      running="$(docker ps -q --filter 'label=com.docker.compose.project=haven' 2>/dev/null || true)"
       if [[ -z "$running" ]]; then
-        warn "No readable env file ('${legacy_env}' or '${STACK_ENV}'); no hybrid-ai container is running, so the stop step is skipped."
+        warn "No readable env file ('${legacy_env}' or '${STACK_ENV}'); no haven container is running, so the stop step is skipped."
       else
         die 1 "could not stop the stack; refusing to migrate while it runs"
       fi
@@ -733,8 +737,8 @@ run_migration() {
 
   # (b) The legacy OpenHands paths, from the legacy .env, then the defaults.
   local legacy_ws legacy_repos legacy_state
-  legacy_ws="$(file_get "$legacy_env" OPENHANDS_WORKSPACE)";     legacy_ws="${legacy_ws:-${login_home}/hybrid-ai-agent}"
-  legacy_repos="$(file_get "$legacy_env" AGENT_REPOS_DIR)";      legacy_repos="${legacy_repos:-${login_home}/hybrid-ai-repos}"
+  legacy_ws="$(file_get "$legacy_env" OPENHANDS_WORKSPACE)";     legacy_ws="${legacy_ws:-${login_home}/haven-agent}"
+  legacy_repos="$(file_get "$legacy_env" AGENT_REPOS_DIR)";      legacy_repos="${legacy_repos:-${login_home}/haven-repos}"
   legacy_state="$(file_get "$legacy_env" OPENHANDS_STATE_DIR)";  legacy_state="${legacy_state:-${login_home}/.openhands}"
 
   # (c) Refuse BEFORE any move. Every source is checked here, including the
@@ -761,7 +765,7 @@ run_migration() {
   fi
   preflight_move "$legacy_repos" "$AGENT_REPOS"
   preflight_move "$legacy_state"         "$OPENHANDS_STATE"
-  local cred_src="${login_home}/.config/hybrid-ai-backup"
+  local cred_src="${login_home}/.config/haven-backup"
   preflight_move "$legacy_env"                       "$STACK_ENV"
   preflight_move "${cred_src}/r2.env"                "${CRED_DIR}/r2.env"
   preflight_move "${cred_src}/repo-password"         "${CRED_DIR}/repo-password"
@@ -857,7 +861,7 @@ if [[ -x "${APP_DIR}/scripts/sandbox-firewall.sh" ]]; then
   if "${APP_DIR}/scripts/sandbox-firewall.sh" apply; then
     ok "Sandbox firewall rules applied."
   else
-    warn "Sandbox firewall rules were not applied; hybrid-ai-firewall.service will apply them at the next boot."
+    warn "Sandbox firewall rules were not applied; haven-firewall.service will apply them at the next boot."
   fi
 else
   warn "scripts/sandbox-firewall.sh is missing or not executable; the boot unit cannot apply the rules either."
@@ -893,7 +897,7 @@ run_cutoff() {
   uid="$(account_uid "$login_user")"
   xdg="/run/user/${uid}"
 
-  for unit in hybrid-ai-backup.timer hybrid-ai-check.timer; do
+  for unit in haven-backup.timer haven-check.timer; do
     runuser -u "$login_user" -- env "XDG_RUNTIME_DIR=$xdg" \
       systemctl --user disable --now "$unit" >/dev/null 2>&1 \
       || warn "could not disable the ${login_user} user unit ${unit} (it may not be installed)"

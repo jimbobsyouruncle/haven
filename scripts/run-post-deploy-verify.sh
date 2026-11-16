@@ -16,7 +16,7 @@ set -Eeuo pipefail
 #
 #   It also records that verdict as JSON for Hermes consumers through the
 #   existing data mount: one file per deploy SHA at
-#   ${HAVEN_DATA_DIR:-/var/lib/hybrid-ai}/hermes_data/deploy-verdicts/
+#   ${HAVEN_DATA_DIR:-/var/lib/haven}/hermes_data/deploy-verdicts/
 #   <sha>.json. Optional missing evidence produces WARN (exit 0); mandatory
 #   missing evidence produces FAIL (exit 1). See backup/README.md for policy.
 #
@@ -35,7 +35,7 @@ set -Eeuo pipefail
 #
 #   APP_DIR resolves in order: HAVEN_APP_DIR from the environment; else
 #   HAVEN_APP_DIR parsed line by line from the layout file named by
-#   ${HAVEN_ENV_FILE_FALLBACK:-/etc/hybrid-ai/hybrid-ai.env}; else /workspace.
+#   ${HAVEN_ENV_FILE_FALLBACK:-/etc/haven/haven.env}; else /workspace.
 #   The layout file is read as DATA (KEY=VALUE), never sourced, and no value from
 #   it is ever printed. Tests point APP_DIR at a throwaway checkout.
 #
@@ -95,7 +95,7 @@ haven_repository_slug() {
 REPO_SLUG="$(haven_repository_slug)" || exit 2
 POLL_SECONDS=30
 DEADLINE_SECONDS=3600
-USER_AGENT="hybrid-ai-post-deploy-verify"
+USER_AGENT="haven-post-deploy-verify"
 
 usage_refuse() {
   printf 'run-post-deploy-verify: %s\n' "$1" >&2
@@ -217,7 +217,7 @@ printf 'waiting for %s at %s\n' "$SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Resolve APP_DIR in three steps. The layout file is read as DATA, one KEY=VALUE
 # line at a time -- it is NEVER sourced, and no value read from it is printed.
 # An unreadable EXISTING file fails closed and names the setting, never a value.
-HAVEN_ENV_FILE_FALLBACK="${HAVEN_ENV_FILE_FALLBACK:-/etc/hybrid-ai/hybrid-ai.env}"
+HAVEN_ENV_FILE_FALLBACK="${HAVEN_ENV_FILE_FALLBACK:-/etc/haven/haven.env}"
 
 # Check this even with an APP_DIR environment override: otherwise an unreadable
 # system-mode layout could silently select optional user-mode verification.
@@ -318,7 +318,7 @@ layout_value() { # <KEY>
 # Standalone installation cannot source repository helpers. Resolve only
 # non-secret layout keys as data, matching the shared helper's mode defaults.
 DATA_DIR="${HAVEN_DATA_DIR:-$(layout_value HAVEN_DATA_DIR)}"
-DATA_DIR="${DATA_DIR:-/var/lib/hybrid-ai}"
+DATA_DIR="${DATA_DIR:-/var/lib/haven}"
 BACKUP_MODE="${HAVEN_BACKUP_MODE:-$(layout_value HAVEN_BACKUP_MODE)}"
 BACKUP_MODE="${BACKUP_MODE:-user}"
 BACKUP_POLICY="${HAVEN_VERIFY_BACKUP_GATES:-$(layout_value HAVEN_VERIFY_BACKUP_GATES)}"
@@ -419,7 +419,7 @@ check_backup_tile() {
   log="${BACKUP_LOG:-$(layout_value BACKUP_LOG)}"
   if [[ -z "$log" ]]; then
     if [[ "$BACKUP_MODE" == system ]]; then
-      log=/var/log/hybrid-ai-backup/backup.log
+      log=/var/log/haven-backup/backup.log
     else
       log_dir="${HAVEN_LOG_DIR:-$(layout_value HAVEN_LOG_DIR)}"
       [[ -z "$log_dir" ]] || log="${log_dir}/backup.log"
@@ -427,7 +427,7 @@ check_backup_tile() {
   fi
   gid="${BACKUP_GROUP_GID:-$(layout_value BACKUP_GROUP_GID)}"
   if [[ -z "$gid" && "$BACKUP_MODE" == system ]]; then
-    gid="$(getent group hybrid-ai-backup 2>/dev/null | cut -d: -f3 || true)"
+    gid="$(getent group haven-backup 2>/dev/null | cut -d: -f3 || true)"
   fi
 
   GATE_REASON=""

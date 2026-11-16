@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: deploy/logrotate/hybrid-ai-tls
+# FILE: deploy/logrotate/haven-tls
 # PURPOSE (plain English):
 #   Rotates the two TLS observability logs:
 #     - tls-check.log  one line per host per watchdog run
@@ -10,9 +10,9 @@
 #   resolved log directory (HAVEN_LOG_DIR from .env, else <repo>/logs):
 #
 #     LOGDIR=/opt/haven/logs        # or the HAVEN_LOG_DIR value from .env
-#     sudo sed "s#__HAVEN_LOG_DIR__#$LOGDIR#g" deploy/logrotate/hybrid-ai-tls \
-#       | sudo tee /etc/logrotate.d/hybrid-ai-tls >/dev/null
-#     sudo logrotate --debug /etc/logrotate.d/hybrid-ai-tls
+#     sudo sed "s#__HAVEN_LOG_DIR__#$LOGDIR#g" deploy/logrotate/haven-tls \
+#       | sudo tee /etc/logrotate.d/haven-tls >/dev/null
+#     sudo logrotate --debug /etc/logrotate.d/haven-tls
 #
 #   An unsubstituted placeholder PARSES but matches no file and rotates
 #   nothing, so always check the debug output names both paths.

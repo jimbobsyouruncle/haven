@@ -71,7 +71,7 @@ else
   trap 'rm -rf -- "$WORK"' EXIT
 fi
 
-TAG="hybrid-ai-sandbox-egress"
+TAG="haven-sandbox-egress"
 BR_HYBRID="br-aaaaaaaaaaaa"
 BR_CODER="br-bbbbbbbbbbbb"
 PORTS="8000,8001,8011,8012"
@@ -242,7 +242,7 @@ STUB
 chmod +x "$STUBS/docker"
 
 NETWORKS_FILE="$WORK/networks"
-printf '%s\n' "hybrid-ai aaaaaaaaaaaa000011112222" "coder-net bbbbbbbbbbbb333344445555" > "$NETWORKS_FILE"
+printf '%s\n' "haven aaaaaaaaaaaa000011112222" "haven-coder bbbbbbbbbbbb333344445555" > "$NETWORKS_FILE"
 
 new_fixture() { # name chains-line...
   local name="$1"; shift
@@ -570,15 +570,15 @@ check "and it added nothing" "0" "$(grep -cE '^-I |^-A ' "$S1/calls" || true)"
 # ---------------------------------------------------------------------------
 echo
 echo "== degraded paths =="
-# coder-net unresolvable: only that bridge's rules are skipped.
+# haven-coder unresolvable: only that bridge's rules are skipped.
 PARTIAL_NETS="$WORK/networks-partial"
-printf '%s\n' "hybrid-ai aaaaaaaaaaaa000011112222" > "$PARTIAL_NETS"
+printf '%s\n' "haven aaaaaaaaaaaa000011112222" > "$PARTIAL_NETS"
 S4="$(new_fixture partial DOCKER-USER)"
 rc=0
 env PATH="$STUBS:$PATH" STUB_STATE="$S4" STUB_NETWORKS="$PARTIAL_NETS" \
   bash "$FIREWALL" apply > "$WORK/partial.log" 2>&1 || rc=$?
 check "an unresolvable network still exits 0" "0" "$rc"
-have "the warning names coder-net" "$(cat "$WORK/partial.log")" "network coder-net"
+have "the warning names haven-coder" "$(cat "$WORK/partial.log")" "network haven-coder"
 RULES4="$(rules_of "$S4")"
 have "the resolvable bridge still gets its app->sandbox accept" "$RULES4" "$(accept_app_to_sandbox "$BR_HYBRID")"
 have "the resolvable bridge still gets its sandbox->app accept" "$RULES4" "$(accept_sandbox_to_app "$BR_HYBRID")"
@@ -603,8 +603,8 @@ if [[ "$rc" == "9" ]]; then
   bad "the no-docker fixture still had docker on PATH, so the case proved nothing"
 else
   check "a host without docker still exits 0" "0" "$rc"
-  have "the warning names hybrid-ai" "$(cat "$WORK/nodocker.log")" "network hybrid-ai"
-  have "the warning names coder-net" "$(cat "$WORK/nodocker.log")" "network coder-net"
+  have "the warning names haven" "$(cat "$WORK/nodocker.log")" "network haven"
+  have "the warning names haven-coder" "$(cat "$WORK/nodocker.log")" "network haven-coder"
   absent "no bridge-scoped rule was installed" "$(rules_of "$S5")" "br-"
 fi
 
@@ -786,14 +786,14 @@ else
   bad "a LAN packet into docker0 is not dropped"
 fi
 if drop_matches docker0 "$BR_HYBRID" 172.18.0.9; then
-  ok "a sandbox packet to the hybrid-ai bridge is dropped"
+  ok "a sandbox packet to the haven bridge is dropped"
 else
-  bad "a sandbox packet to the hybrid-ai bridge is not dropped"
+  bad "a sandbox packet to the haven bridge is not dropped"
 fi
 if drop_matches docker0 "$BR_CODER" 172.19.0.9; then
-  ok "a sandbox packet to the coder-net bridge is dropped"
+  ok "a sandbox packet to the haven-coder bridge is dropped"
 else
-  bad "a sandbox packet to the coder-net bridge is not dropped"
+  bad "a sandbox packet to the haven-coder bridge is not dropped"
 fi
 if drop_matches docker0 eth0 10.0.0.7; then
   ok "a sandbox packet to the LAN is dropped"

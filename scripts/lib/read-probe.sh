@@ -5,7 +5,7 @@
 #   Readability tests that keep working under a Linux file capability.
 #
 # WHY THE OBVIOUS TESTS ARE WRONG HERE:
-#   In system mode the capture unit runs as the unprivileged hybrid-ai-backup
+#   In system mode the capture unit runs as the unprivileged haven-backup
 #   account holding AmbientCapabilities=CAP_DAC_READ_SEARCH. That capability
 #   lets open(2) read files the account does not own. But Linux DROPS file
 #   capabilities for the whole access(2) family -- and `find -readable` and the

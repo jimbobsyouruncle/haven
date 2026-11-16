@@ -18,7 +18,7 @@
 #     message names the setting
 #   * a mixed DOCKER-USER chain -> only the tagged rules are deleted, the
 #     untagged rules survive, and nothing flushes or deletes the chain
-#   * a hybrid-ai-* glob unit (e.g. hybrid-ai-docker-cache-prune.timer) is
+#   * a haven-* glob unit (e.g. haven-docker-cache-prune.timer) is
 #     removed
 #   * --dry-run mutates neither the fixture tree nor the event log
 #
@@ -130,18 +130,18 @@ new_root() { # name -> prints the prefix
 # only, exactly like scripts/bootstrap.sh writes. Never a secret.
 write_layout() { # root
   local r="$1"
-  mkdir -p "$r/etc/hybrid-ai"
-  cat > "$r/etc/hybrid-ai/hybrid-ai.env" <<EOF
+  mkdir -p "$r/etc/haven"
+  cat > "$r/etc/haven/haven.env" <<EOF
 HAVEN_APP_DIR=${r}/opt/hybrid-ai
-HAVEN_STACK_ENV_FILE=${r}/etc/hybrid-ai/stack.env
-HAVEN_DATA_DIR=${r}/var/lib/hybrid-ai
-HAVEN_LOG_DIR=${r}/var/log/hybrid-ai
-HAVEN_WORK_DIR=${r}/var/lib/hybrid-ai/work
-RESTIC_CACHE_DIR=${r}/var/cache/hybrid-ai-backup
-HAVEN_BACKUP_CRED_DIR=${r}/etc/credstore/hybrid-ai-backup
-OPENHANDS_WORKSPACE=${r}/var/lib/hybrid-ai-agent
-AGENT_REPOS_DIR=${r}/var/lib/hybrid-ai-repos
-BACKUP_LOG=${r}/var/log/hybrid-ai-backup/backup.log
+HAVEN_STACK_ENV_FILE=${r}/etc/haven/stack.env
+HAVEN_DATA_DIR=${r}/var/lib/haven
+HAVEN_LOG_DIR=${r}/var/log/haven
+HAVEN_WORK_DIR=${r}/var/lib/haven/work
+RESTIC_CACHE_DIR=${r}/var/cache/haven-backup
+HAVEN_BACKUP_CRED_DIR=${r}/etc/credstore/haven-backup
+OPENHANDS_WORKSPACE=${r}/var/lib/haven-agent
+AGENT_REPOS_DIR=${r}/var/lib/haven-repos
+BACKUP_LOG=${r}/var/log/haven-backup/backup.log
 EOF
 }
 
@@ -160,17 +160,17 @@ write_full_install() { # root
 # The data directories a full or remnant fixture can carry.
 write_data_dirs() { # root
   local r="$1"
-  mkdir -p "$r/var/lib/hybrid-ai/work" "$r/var/log/hybrid-ai" \
-           "$r/var/cache/hybrid-ai-backup" "$r/etc/credstore/hybrid-ai-backup"
-  : > "$r/var/lib/hybrid-ai/keepme.txt"
+  mkdir -p "$r/var/lib/haven/work" "$r/var/log/haven" \
+           "$r/var/cache/haven-backup" "$r/etc/credstore/haven-backup"
+  : > "$r/var/lib/haven/keepme.txt"
 }
 
 # The five bootstrapped sibling trees a bootstrap creates beside the data dir:
 # the agent workspace, the repo reference tree, the two account homes and the
 # backup log directory. Each gets a file so its removal is provable.
-SIBLING_DIRS=( var/lib/hybrid-ai-agent var/lib/hybrid-ai-repos \
-               var/lib/hybrid-ai-deploy var/lib/hybrid-ai-backup \
-               var/log/hybrid-ai-backup )
+SIBLING_DIRS=( var/lib/haven-agent var/lib/haven-repos \
+               var/lib/haven-deploy var/lib/haven-backup \
+               var/log/haven-backup )
 write_siblings() { # root
   local r="$1" d
   for d in "${SIBLING_DIRS[@]}"; do
@@ -184,18 +184,18 @@ write_siblings() { # root
 # ===========================================================================
 R="$(new_root full)"
 write_layout "$R"; write_full_install "$R"; write_data_dirs "$R"
-touch "$R/etc/hybrid-ai/stack.env"
+touch "$R/etc/haven/stack.env"
 EV="$WORK/ev-full"; : > "$EV"
 OUT="$(EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes 2>&1)"; RC=$?
 check "full install: exit 0" "0" "$RC"
 have "full install: reports the existing install" "$OUT" "existing install"
 have "full install: runs the container removal step" "$OUT" "Removing the containers"
 EVLOG="$(cat "$EV")"
-EXPECT_DOWN="docker compose -p hybrid-ai --env-file ${R}/etc/hybrid-ai/stack.env --project-directory ${R}/opt/hybrid-ai -f ${R}/opt/hybrid-ai/docker-compose.yml -f ${R}/opt/hybrid-ai/openhands/docker-compose.openhands.yml -f ${R}/opt/hybrid-ai/hermes/docker-compose.hermes.yml down --remove-orphans"
+EXPECT_DOWN="docker compose -p haven --env-file ${R}/etc/haven/stack.env --project-directory ${R}/opt/hybrid-ai -f ${R}/opt/hybrid-ai/docker-compose.yml -f ${R}/opt/hybrid-ai/openhands/docker-compose.openhands.yml -f ${R}/opt/hybrid-ai/hermes/docker-compose.hermes.yml down --remove-orphans"
 have "full install: exact compose argv in the event log" "$EVLOG" "$EXPECT_DOWN"
-have "full install: firewall unit stopped first" "$EVLOG" "systemctl disable --now hybrid-ai-firewall.service"
+have "full install: firewall unit stopped first" "$EVLOG" "systemctl disable --now haven-firewall.service"
 have "full install: the app dir is gone" "$( [[ -e "$R/opt/hybrid-ai" ]] && echo present || echo gone )" "gone"
-have "full install: the data is kept" "$( [[ -e "$R/var/lib/hybrid-ai/keepme.txt" ]] && echo kept || echo lost )" "kept"
+have "full install: the data is kept" "$( [[ -e "$R/var/lib/haven/keepme.txt" ]] && echo kept || echo lost )" "kept"
 
 # ===========================================================================
 # 2. Remnants only: remove by container name, NO compose call.
@@ -207,8 +207,8 @@ OUT="$(EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes 2>&1)"; RC
 check "remnants: exit 0" "0" "$RC"
 have "remnants: reports remnants only" "$OUT" "remnants only"
 EVLOG="$(cat "$EV")"
-have "remnants: removes by name (ollama ... hybrid-ai-openhands)" "$EVLOG" \
-  "docker rm -f ollama open-webui hybrid-ai-status hybrid-ai-proxy hermes-agent hybrid-ai-openhands"
+have "remnants: removes by name (ollama ... haven-openhands)" "$EVLOG" \
+  "docker rm -f ollama open-webui haven-status haven-proxy hermes-agent haven-openhands"
 have "remnants: sweeps the sandboxes by filter" "$EVLOG" "docker ps -aq --filter name=oh-agent-server"
 have_not "remnants: NO compose call" "$EVLOG" "compose"
 
@@ -229,15 +229,15 @@ R="$(new_root keepdata)"
 write_layout "$R"; write_data_dirs "$R"
 EV="$WORK/ev-keep"; : > "$EV"
 EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes >/dev/null 2>&1
-check "default keeps the data dirs" "kept" "$( [[ -e "$R/var/lib/hybrid-ai" ]] && echo kept || echo lost )"
+check "default keeps the data dirs" "kept" "$( [[ -e "$R/var/lib/haven" ]] && echo kept || echo lost )"
 
 R="$(new_root rmdata)"
 write_layout "$R"; write_data_dirs "$R"
 EV="$WORK/ev-rm"; : > "$EV"
 EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes --remove-data >/dev/null 2>&1
-check "--remove-data removes the data dir" "gone" "$( [[ -e "$R/var/lib/hybrid-ai" ]] && echo present || echo gone )"
-check "--remove-data removes the log dir" "gone" "$( [[ -e "$R/var/log/hybrid-ai" ]] && echo present || echo gone )"
-check "--remove-data removes /etc/hybrid-ai" "gone" "$( [[ -e "$R/etc/hybrid-ai" ]] && echo present || echo gone )"
+check "--remove-data removes the data dir" "gone" "$( [[ -e "$R/var/lib/haven" ]] && echo present || echo gone )"
+check "--remove-data removes the log dir" "gone" "$( [[ -e "$R/var/log/haven" ]] && echo present || echo gone )"
+check "--remove-data removes /etc/haven" "gone" "$( [[ -e "$R/etc/haven" ]] && echo present || echo gone )"
 
 # ===========================================================================
 # 5. Out-of-allowlist layout value: refused, path survives, setting named.
@@ -251,17 +251,17 @@ mkdir -p "$R/opt/hybrid-ai/openhands" "$R/opt/hybrid-ai/hermes" \
 : > "$R/opt/hybrid-ai/hermes/docker-compose.hermes.yml"
 cp "$REPO/scripts/lib/haven-env.sh" "$R/opt/hybrid-ai/scripts/lib/haven-env.sh"
 mkdir -p "$R/tmp/evil-data"; : > "$R/tmp/evil-data/precious.txt"
-touch "$R/etc/hybrid-ai/stack.env"
+touch "$R/etc/haven/stack.env"
 # Name an out-of-allowlist data dir in the layout file. One line only: the env
 # library concatenates duplicate matches, so a fixture must not carry two.
-cat > "$R/etc/hybrid-ai/hybrid-ai.env" <<EOF
+cat > "$R/etc/haven/haven.env" <<EOF
 HAVEN_APP_DIR=${R}/opt/hybrid-ai
-HAVEN_STACK_ENV_FILE=${R}/etc/hybrid-ai/stack.env
+HAVEN_STACK_ENV_FILE=${R}/etc/haven/stack.env
 HAVEN_DATA_DIR=${R}/tmp/evil-data
-HAVEN_LOG_DIR=${R}/var/log/hybrid-ai
-HAVEN_WORK_DIR=${R}/var/lib/hybrid-ai/work
-RESTIC_CACHE_DIR=${R}/var/cache/hybrid-ai-backup
-HAVEN_BACKUP_CRED_DIR=${R}/etc/credstore/hybrid-ai-backup
+HAVEN_LOG_DIR=${R}/var/log/haven
+HAVEN_WORK_DIR=${R}/var/lib/haven/work
+RESTIC_CACHE_DIR=${R}/var/cache/haven-backup
+HAVEN_BACKUP_CRED_DIR=${R}/etc/credstore/haven-backup
 EOF
 EV="$WORK/ev-evil"; : > "$EV"
 OUT="$(EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes --remove-data 2>&1)"; RC=$?
@@ -279,9 +279,9 @@ write_layout "$R"; write_data_dirs "$R"
 IPT_FIXTURE="$WORK/ipt.txt"
 cat > "$IPT_FIXTURE" <<'EOF'
 -P DOCKER-USER ACCEPT
--A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment hybrid-ai-sandbox-egress -j ACCEPT
--A DOCKER-USER -i br-abc -o docker0 -p tcp -m multiport --dports 8000,8001,8011,8012 -m comment --comment hybrid-ai-sandbox-egress -j ACCEPT
--A DOCKER-USER ! -i lo -o docker0 -m comment --comment hybrid-ai-sandbox-egress -j DROP
+-A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment haven-sandbox-egress -j ACCEPT
+-A DOCKER-USER -i br-abc -o docker0 -p tcp -m multiport --dports 8000,8001,8011,8012 -m comment --comment haven-sandbox-egress -j ACCEPT
+-A DOCKER-USER ! -i lo -o docker0 -m comment --comment haven-sandbox-egress -j DROP
 -A DOCKER-USER -s 10.0.0.0/8 -j RETURN
 -A DOCKER-USER -j ACCEPT
 EOF
@@ -290,28 +290,28 @@ EVENTS="$EV" IPT_FIXTURE="$IPT_FIXTURE" HAVEN_UNINSTALL_ROOT="$R" \
   bash "$UNINSTALL" --yes >/dev/null 2>&1
 EVLOG="$(cat "$EV")"
 have "firewall: deletes the conntrack tagged rule" "$EVLOG" \
-  "iptables -D DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment hybrid-ai-sandbox-egress -j ACCEPT"
+  "iptables -D DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment haven-sandbox-egress -j ACCEPT"
 have "firewall: preserves the negation on the tagged DROP" "$EVLOG" \
-  "iptables -D DOCKER-USER ! -i lo -o docker0 -m comment --comment hybrid-ai-sandbox-egress -j DROP"
+  "iptables -D DOCKER-USER ! -i lo -o docker0 -m comment --comment haven-sandbox-egress -j DROP"
 have_not "firewall: never deletes the untagged RETURN rule" "$EVLOG" "-s 10.0.0.0/8"
 have_not "firewall: never flushes the chain" "$EVLOG" "iptables -F"
 have_not "firewall: never deletes the chain" "$EVLOG" "iptables -X"
 
 # ===========================================================================
-# 7. The hybrid-ai-* glob unit is removed without editing the script.
+# 7. The haven-* glob unit is removed without editing the script.
 # ===========================================================================
 R="$(new_root glob)"
 write_layout "$R"; write_data_dirs "$R"
 mkdir -p "$R/etc/systemd/system"
-: > "$R/etc/systemd/system/hybrid-ai-docker-cache-prune.timer"
-: > "$R/etc/systemd/system/hybrid-ai-docker-cache-prune.service"
+: > "$R/etc/systemd/system/haven-docker-cache-prune.timer"
+: > "$R/etc/systemd/system/haven-docker-cache-prune.service"
 : > "$R/etc/systemd/system/unrelated.service"
 EV="$WORK/ev-glob"; : > "$EV"
 EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes >/dev/null 2>&1
-check "glob unit: hybrid-ai-docker-cache-prune.timer removed" "gone" \
-  "$( [[ -e "$R/etc/systemd/system/hybrid-ai-docker-cache-prune.timer" ]] && echo present || echo gone )"
-check "glob unit: hybrid-ai-docker-cache-prune.service removed" "gone" \
-  "$( [[ -e "$R/etc/systemd/system/hybrid-ai-docker-cache-prune.service" ]] && echo present || echo gone )"
+check "glob unit: haven-docker-cache-prune.timer removed" "gone" \
+  "$( [[ -e "$R/etc/systemd/system/haven-docker-cache-prune.timer" ]] && echo present || echo gone )"
+check "glob unit: haven-docker-cache-prune.service removed" "gone" \
+  "$( [[ -e "$R/etc/systemd/system/haven-docker-cache-prune.service" ]] && echo present || echo gone )"
 check "glob unit: an unrelated unit survives" "present" \
   "$( [[ -e "$R/etc/systemd/system/unrelated.service" ]] && echo present || echo gone )"
 
@@ -321,20 +321,20 @@ check "glob unit: an unrelated unit survives" "present" \
 # ===========================================================================
 R="$(new_root rerun)"
 write_layout "$R"; write_full_install "$R"; write_data_dirs "$R"
-touch "$R/etc/hybrid-ai/stack.env"
+touch "$R/etc/haven/stack.env"
 EV="$WORK/ev-rerun1"; : > "$EV"
 EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes >/dev/null 2>&1
 check "re-run: the app dir is gone after the first run" "gone" \
   "$( [[ -e "$R/opt/hybrid-ai" ]] && echo present || echo gone )"
 check "re-run: the data survives the first run" "kept" \
-  "$( [[ -e "$R/var/lib/hybrid-ai/keepme.txt" ]] && echo kept || echo lost )"
+  "$( [[ -e "$R/var/lib/haven/keepme.txt" ]] && echo kept || echo lost )"
 EV="$WORK/ev-rerun2"; : > "$EV"
 OUT="$(EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes --remove-data 2>&1)"; RC=$?
 check "re-run: second run exits 0" "0" "$RC"
 have "re-run: second run takes the remnants path" "$OUT" "remnants only"
 have_not "re-run: second run makes NO compose call" "$(cat "$EV")" "compose"
 check "re-run: second run removes the data" "gone" \
-  "$( [[ -e "$R/var/lib/hybrid-ai" ]] && echo present || echo gone )"
+  "$( [[ -e "$R/var/lib/haven" ]] && echo present || echo gone )"
 
 # ===========================================================================
 # 9. --dry-run mutates nothing.
@@ -342,7 +342,7 @@ check "re-run: second run removes the data" "gone" \
 R="$(new_root dry)"
 write_layout "$R"; write_full_install "$R"; write_data_dirs "$R"
 mkdir -p "$R/etc/systemd/system"
-: > "$R/etc/systemd/system/hybrid-ai-prune.timer"
+: > "$R/etc/systemd/system/haven-prune.timer"
 BEFORE="$(cd "$R" && find . | sort)"
 EV="$WORK/ev-dry"; : > "$EV"
 OUT="$(EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --dry-run --remove-data 2>&1)"; RC=$?
@@ -358,7 +358,7 @@ check "dry-run: the event log is unchanged" "" "$(cat "$EV")"
 # ===========================================================================
 R="$(new_root siblings-full)"
 write_layout "$R"; write_full_install "$R"; write_data_dirs "$R"; write_siblings "$R"
-touch "$R/etc/hybrid-ai/stack.env"
+touch "$R/etc/haven/stack.env"
 EV="$WORK/ev-sib-full"; : > "$EV"
 OUT="$(EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes --remove-data 2>&1)"; RC=$?
 check "siblings: --remove-data exit 0" "0" "$RC"
@@ -397,16 +397,16 @@ done
 # ===========================================================================
 R="$(new_root legacy-ws)"
 write_layout "$R"; write_data_dirs "$R"
-mkdir -p "$R/home/pi/hybrid-ai-agent"; : > "$R/home/pi/hybrid-ai-agent/precious.txt"
-cat > "$R/etc/hybrid-ai/hybrid-ai.env" <<EOF
+mkdir -p "$R/home/pi/haven-agent"; : > "$R/home/pi/haven-agent/precious.txt"
+cat > "$R/etc/haven/haven.env" <<EOF
 HAVEN_APP_DIR=${R}/opt/hybrid-ai
-HAVEN_STACK_ENV_FILE=${R}/etc/hybrid-ai/stack.env
-HAVEN_DATA_DIR=${R}/var/lib/hybrid-ai
-HAVEN_LOG_DIR=${R}/var/log/hybrid-ai
-HAVEN_WORK_DIR=${R}/var/lib/hybrid-ai/work
-RESTIC_CACHE_DIR=${R}/var/cache/hybrid-ai-backup
-HAVEN_BACKUP_CRED_DIR=${R}/etc/credstore/hybrid-ai-backup
-OPENHANDS_WORKSPACE=${R}/home/pi/hybrid-ai-agent
+HAVEN_STACK_ENV_FILE=${R}/etc/haven/stack.env
+HAVEN_DATA_DIR=${R}/var/lib/haven
+HAVEN_LOG_DIR=${R}/var/log/haven
+HAVEN_WORK_DIR=${R}/var/lib/haven/work
+RESTIC_CACHE_DIR=${R}/var/cache/haven-backup
+HAVEN_BACKUP_CRED_DIR=${R}/etc/credstore/haven-backup
+OPENHANDS_WORKSPACE=${R}/home/pi/haven-agent
 EOF
 EV="$WORK/ev-legacy-ws"; : > "$EV"
 OUT="$(EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes --remove-data 2>&1)"; RC=$?
@@ -414,15 +414,15 @@ check "legacy workspace: exit 0" "0" "$RC"
 have "legacy workspace: refusal names the setting" "$OUT" "OPENHANDS_WORKSPACE"
 have "legacy workspace: refusal says outside the allowlist" "$OUT" "outside the allowlist"
 check "legacy workspace: the path survives" "present" \
-  "$( [[ -e "$R/home/pi/hybrid-ai-agent/precious.txt" ]] && echo present || echo gone )"
+  "$( [[ -e "$R/home/pi/haven-agent/precious.txt" ]] && echo present || echo gone )"
 
 # Canonical installation with retained migration checkpoints. Uninstall must
 # select the layout root and keep rollback artifacts and data by default.
 R="$(new_root canonical)"
 write_layout "$R"; write_full_install "$R"; write_data_dirs "$R"
 mv "$R/opt/hybrid-ai" "$R/opt/haven"
-sed -i 's|/opt/hybrid-ai|/opt/haven|g' "$R/etc/hybrid-ai/hybrid-ai.env"
-mkdir -p "$R/opt/hybrid-ai" "$R/opt/.haven-previous-fixture" "$R/var/lib/hybrid-ai-install-root"
+sed -i 's|/opt/hybrid-ai|/opt/haven|g' "$R/etc/haven/haven.env"
+mkdir -p "$R/opt/hybrid-ai" "$R/opt/.haven-previous-fixture" "$R/var/lib/haven-install-root"
 printf 'retained\n' > "$R/opt/hybrid-ai/checkpoint"
 EV="$WORK/ev-canonical"; : > "$EV"
 OUT="$(EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes --keep-data 2>&1)"; RC=$?
@@ -430,15 +430,15 @@ check "canonical: exit 0" "0" "$RC"
 check "canonical: active app removed" "gone" "$( [[ -e "$R/opt/haven" ]] && echo present || echo gone )"
 check "canonical: legacy checkpoint kept" "present" "$( [[ -f "$R/opt/hybrid-ai/checkpoint" ]] && echo present || echo gone )"
 check "canonical: previous checkpoint kept" "present" "$( [[ -d "$R/opt/.haven-previous-fixture" ]] && echo present || echo gone )"
-check "canonical: journal kept" "present" "$( [[ -d "$R/var/lib/hybrid-ai-install-root" ]] && echo present || echo gone )"
-check "canonical: persistent data kept" "present" "$( [[ -e "$R/var/lib/hybrid-ai/keepme.txt" ]] && echo present || echo gone )"
+check "canonical: journal kept" "present" "$( [[ -d "$R/var/lib/haven-install-root" ]] && echo present || echo gone )"
+check "canonical: persistent data kept" "present" "$( [[ -e "$R/var/lib/haven/keepme.txt" ]] && echo present || echo gone )"
 have_not "canonical: no volume deletion" "$(cat "$EV")" "--volumes"
-have "canonical: same Compose project after migration" "$(cat "$EV")" "docker compose -p hybrid-ai"
+have "canonical: same Compose project after migration" "$(cat "$EV")" "docker compose -p haven"
 
 # Repository-local durable state requires retaining the whole root.
 R="$(new_root local-data)"
 write_layout "$R"; write_full_install "$R"; write_data_dirs "$R"
-printf 'HAVEN_DATA_DIR=%s/opt/hybrid-ai\n' "$R" >> "$R/etc/hybrid-ai/hybrid-ai.env"
+printf 'HAVEN_DATA_DIR=%s/opt/hybrid-ai\n' "$R" >> "$R/etc/haven/haven.env"
 printf 'keep\n' > "$R/opt/hybrid-ai/database"
 EV="$WORK/ev-local-data"; : > "$EV"
 OUT="$(EVENTS="$EV" HAVEN_UNINSTALL_ROOT="$R" bash "$UNINSTALL" --yes --keep-data 2>&1)"; RC=$?

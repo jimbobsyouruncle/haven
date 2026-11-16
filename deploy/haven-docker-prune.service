@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: deploy/hybrid-ai-docker-prune.service
+# FILE: deploy/haven-docker-prune.service
 # PURPOSE (plain English):
 #   Runs the Docker build-cache prune once, on demand, as root. The script
 #   scripts/prune-docker-cache.sh caps the Docker BUILD CACHE so repeated
@@ -8,20 +8,20 @@
 #   bind-mounted data.
 #
 #   It runs as root because it talks to the Docker socket, exactly like the
-#   sibling hybrid-ai-prune.service.
+#   sibling haven-prune.service.
 #
-#   SCHEDULE: the timer hybrid-ai-docker-prune.timer is the primary mechanism
+#   SCHEDULE: the timer haven-docker-prune.timer is the primary mechanism
 #   and runs this unit daily at 04:35. There is no deploy-time catch-up run.
 #
 #   NO Restart= AT ALL, deliberately: a failing prune must not loop. A failure
-#   stays visible in `systemctl status hybrid-ai-docker-prune`.
+#   stays visible in `systemctl status haven-docker-prune`.
 #
 #   EnvironmentFile has the "-" prefix so a missing /opt/haven/.env is not
 #   fatal: the script then uses its own 15 GB default. The script logs only the
 #   cap value; it never echoes any other .env entry.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=hybrid-ai Docker build-cache prune (cap the build cache, cache only)
+Description=haven Docker build-cache prune (cap the build cache, cache only)
 Documentation=file:///opt/haven/deploy/README.md
 After=docker.service
 

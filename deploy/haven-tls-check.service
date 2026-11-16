@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: deploy/hybrid-ai-tls-check.service
+# FILE: deploy/haven-tls-check.service
 # PURPOSE (plain English):
 #   Runs the TLS certificate health check once, on demand, as the deploying
 #   user. The script connects to the live TLS endpoint with SNI, reads the
@@ -20,18 +20,18 @@
 #   The repository path is not fixed, so this unit deliberately carries no
 #   Documentation= line: a stale absolute path is worse than none.
 #
-#   SCHEDULE: hybrid-ai-tls-check.timer runs it daily at 06:10. install.sh
+#   SCHEDULE: haven-tls-check.timer runs it daily at 06:10. install.sh
 #   installs and enables that timer ONLY when TLS is enabled.
 #
 #   NO Restart= AT ALL, deliberately: a failing check must not loop. A failure
-#   stays visible in `systemctl --user status hybrid-ai-tls-check.service` and
+#   stays visible in `systemctl --user status haven-tls-check.service` and
 #   in the journal.
 #
 #   Hardening is tight because the job is read-only toward the host: the only
 #   writable path is the log directory the audit append needs.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=hybrid-ai TLS certificate health check (read-only watchdog)
+Description=haven TLS certificate health check (read-only watchdog)
 After=network-online.target
 Wants=network-online.target
 
@@ -54,7 +54,7 @@ ProtectHome=read-only
 ReadWritePaths=-__REPO_DIR__/logs
 # The other documented log directory. ProtectSystem=strict makes /var/log
 # read-only, so the audits could not append there without this entry.
-ReadWritePaths=-/var/log/hybrid-ai
+ReadWritePaths=-/var/log/haven
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
 Nice=19

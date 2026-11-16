@@ -42,7 +42,7 @@ SCRATCH="$(mktemp -d)"
 FAILED=0
 CHECKS=0
 NS="b77-$$"
-PROXY_IMAGE="hybrid-ai-b77-proxy:$$"
+PROXY_IMAGE="haven-b77-proxy:$$"
 # The container-local loopback address. Spelled out so the harness runs the
 # production healthcheck command verbatim.
 LOOPBACK="127.0.0.1"

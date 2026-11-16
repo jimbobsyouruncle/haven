@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# FILE: deploy/hybrid-ai-deploy@.service
+# FILE: deploy/haven-deploy@.service
 # PURPOSE (plain English):
 #   The systemd unit behind the headless deploy. It is an INSTANTIATED system
 #   unit: the `%i` in the name is the 40-character lowercase hex commit to
@@ -7,7 +7,7 @@
 #   single argument.
 #
 #   The forced-command SSH entrypoint (scripts/deploy-forced-command.sh) is the
-#   only thing the `hybrid-ai-deploy` account is allowed to do, and it does
+#   only thing the `haven-deploy` account is allowed to do, and it does
 #   exactly one thing: ask the SYSTEM systemd manager to start THIS unit for a
 #   given commit. Everything privileged happens here and in the script, never
 #   in the SSH command.
@@ -33,7 +33,7 @@
 #     content takes effect from the NEXT instantiation.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=hybrid-ai headless deploy for commit %i
+Description=haven headless deploy for commit %i
 Documentation=file:///opt/haven/deploy/README.md
 After=network-online.target
 Wants=network-online.target
@@ -45,7 +45,7 @@ User=root
 WorkingDirectory=/opt/haven
 
 # Paths by name only, never a value. The env file carries the host layout.
-Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env
+Environment=HAVEN_ENV_FILE=/etc/haven/haven.env
 Environment=HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven
 
 # `%i` is the 40-hex commit; deploy-instance.sh re-validates it, then fetches,

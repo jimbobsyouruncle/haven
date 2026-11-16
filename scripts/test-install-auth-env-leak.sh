@@ -76,7 +76,7 @@ BIN="$WORK/bin"
 SYSD="$WORK/systemd"
 mkdir -p "$APP/scripts/lib" "$APP/deploy" "$APP/status" "$BIN" "$SYSD" \
          "$WORK/data" "$WORK/log" "$WORK/work" "$WORK/ws" "$WORK/repos" \
-         "$WORK/ohstate" "$WORK/conf" "$WORK/restic" "$WORK/etc/hybrid-ai" \
+         "$WORK/ohstate" "$WORK/conf" "$WORK/restic" "$WORK/etc/haven" \
          "$WORK/sysstate"
 cp "$REPO/install.sh" "$APP/install.sh"
 cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
@@ -85,7 +85,7 @@ cp "$REPO/scripts/lib/build-gate.sh" "$APP/scripts/lib/"
 cp "$REPO/scripts/lib/tls.sh" "$APP/scripts/lib/"
 cp "$REPO/status/Caddyfile.tmpl" "$APP/status/Caddyfile.tmpl"
 cp "$REPO/docker-compose.yml.tmpl" "$APP/docker-compose.yml.tmpl"
-cp "$REPO/deploy/hybrid-ai-firewall.service" "$APP/deploy/" 2>/dev/null || true
+cp "$REPO/deploy/haven-firewall.service" "$APP/deploy/" 2>/dev/null || true
 mkdir -p "$APP/openhands" "$WORK/ws/.git/info"
 cp "$REPO/openhands/sandbox-gitconfig" "$APP/openhands/sandbox-gitconfig" 2>/dev/null || true
 : > "$WORK/ws/.git/info/exclude"
@@ -94,8 +94,8 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$APP/scripts/sync-agent-repos.sh"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$APP/scripts/check-hermes-nonroot.sh"
 chmod +x "$APP/scripts/"*.sh
 
-LAYOUT="$WORK/etc/hybrid-ai/hybrid-ai.env"
-STACK="$WORK/etc/hybrid-ai/stack.env"
+LAYOUT="$WORK/etc/haven/haven.env"
+STACK="$WORK/etc/haven/stack.env"
 {
   printf 'HAVEN_APP_DIR=%s\n' "$APP"
   printf 'HAVEN_ENV_FILE=%s\n' "$LAYOUT"
@@ -151,7 +151,7 @@ cat > "$BIN/getent" <<'EOF'
 case "${1:-}" in
   group) printf 'docker:x:999:\n' ;;
   hosts) exit 0 ;;
-  passwd) printf 'hybrid-ai-backup:x:999:999::/var/lib/hybrid-ai-backup:/usr/sbin/nologin\n'; exit 0 ;;
+  passwd) printf 'haven-backup:x:999:999::/var/lib/haven-backup:/usr/sbin/nologin\n'; exit 0 ;;
 esac
 exit 0
 EOF
@@ -162,7 +162,7 @@ cat > "$BIN/install" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${INSTALL_ARGV_LOG:-/dev/null}"
 case " $* " in
-  *" -o hybrid-ai-backup "*)
+  *" -o haven-backup "*)
     for a in "$@"; do last="$a"; done
     mkdir -p "$last"
     exit 0 ;;
@@ -179,7 +179,7 @@ case "$cmd" in
   daemon-reload|reload|start|restart|stop|disable) exit 0 ;;
   cat)
     [[ -f "${SYSTEMCTL_UNIT_DIR:-/nonexistent}/${unit}" ]] && exit 0
-    case "$unit" in hybrid-ai-backup*|hybrid-ai-check*) exit 0 ;; esac
+    case "$unit" in haven-backup*|haven-check*) exit 0 ;; esac
     exit 1 ;;
   enable)
     [[ "$unit" == "--now" ]] && unit="${3:-}"

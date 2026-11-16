@@ -67,11 +67,11 @@ hasnt_regex() { # file regex desc
   if grep -Eq -- "$re" "$file"; then bad "$desc (unexpected: $re)"; else ok "$desc"; fi
 }
 
-CAP="${UNITS}/hybrid-ai-backup-capture.service"
-UP="${UNITS}/hybrid-ai-backup-upload.service"
-CTIMER="${UNITS}/hybrid-ai-backup-capture.timer"
-CHECK="${UNITS}/hybrid-ai-backup-check.service"
-CHECKTIMER="${UNITS}/hybrid-ai-backup-check.timer"
+CAP="${UNITS}/haven-backup-capture.service"
+UP="${UNITS}/haven-backup-upload.service"
+CTIMER="${UNITS}/haven-backup-capture.timer"
+CHECK="${UNITS}/haven-backup-check.service"
+CHECKTIMER="${UNITS}/haven-backup-check.timer"
 
 for f in "$CAP" "$UP" "$CTIMER" "$CHECK" "$CHECKTIMER"; do
   [[ -f "$f" ]] || { bad "missing unit file ${f}"; }
@@ -86,8 +86,8 @@ fi
 # ---------------------------------------------------------------------------
 echo "== capture unit =="
 has_line "$CAP" 'Type=oneshot'                       "capture is Type=oneshot"
-has_line "$CAP" 'User=hybrid-ai-backup'              "capture runs as hybrid-ai-backup"
-has_line "$CAP" 'Group=hybrid-ai-backup'             "capture group is hybrid-ai-backup"
+has_line "$CAP" 'User=haven-backup'              "capture runs as haven-backup"
+has_line "$CAP" 'Group=haven-backup'             "capture group is haven-backup"
 has_line "$CAP" 'AmbientCapabilities=CAP_DAC_READ_SEARCH' "capture has the read capability"
 has_line "$CAP" 'CapabilityBoundingSet=CAP_DAC_READ_SEARCH' "capture bounding set is exactly the read capability"
 has_line "$CAP" 'NoNewPrivileges=yes'                "capture sets NoNewPrivileges=yes"
@@ -97,10 +97,10 @@ has_line "$CAP" 'InaccessiblePaths=-/var/run/docker.sock'  "capture cannot reach
 has_line "$CAP" 'ProtectSystem=strict'               "capture protects system"
 has_line "$CAP" 'ProtectHome=yes'                    "capture protects home"
 has_line "$CAP" 'PrivateTmp=yes'                     "capture has a private tmp"
-has_line "$CAP" 'StateDirectory=hybrid-ai-backup'    "capture has a state directory (staging)"
-has_line "$CAP" 'RuntimeDirectory=hybrid-ai-backup'  "capture has a runtime directory"
-has_line "$CAP" 'LogsDirectory=hybrid-ai-backup'     "capture has a logs directory for the backup log"
-has_line "$CAP" 'Environment=HAVEN_ENV_FILE=/etc/hybrid-ai/hybrid-ai.env' "capture reads the system env file"
+has_line "$CAP" 'StateDirectory=haven-backup'    "capture has a state directory (staging)"
+has_line "$CAP" 'RuntimeDirectory=haven-backup'  "capture has a runtime directory"
+has_line "$CAP" 'LogsDirectory=haven-backup'     "capture has a logs directory for the backup log"
+has_line "$CAP" 'Environment=HAVEN_ENV_FILE=/etc/haven/haven.env' "capture reads the system env file"
 has_line "$CAP" 'Environment=HAVEN_BACKUP_MODE=system'    "capture selects system mode"
 has_line "$CAP" 'Environment=BACKUP_CONTAINER_CONTROL=external' "capture treats container control as external"
 has_line "$CAP" 'ExecStartPre=+/opt/haven/backup/backup-containers.sh host-info' "capture collects host info first"
@@ -110,29 +110,29 @@ has_line "$CAP" 'ExecStopPost=+/opt/haven/backup/backup-containers.sh unpause'  
 has_line "$CAP" 'SuccessExitStatus=3'                "capture treats exit 3 as success"
 hasnt_regex "$CAP" '^Restart='                       "capture has NO Restart= (never loops)"
 # The upload unit is started by the capture's OnSuccess.
-if grep -Fxq -- 'OnSuccess=hybrid-ai-backup-upload.service' "$CAP"; then
+if grep -Fxq -- 'OnSuccess=haven-backup-upload.service' "$CAP"; then
   ok "capture starts the upload unit on success"
 else
-  bad "capture must have OnSuccess=hybrid-ai-backup-upload.service"
+  bad "capture must have OnSuccess=haven-backup-upload.service"
 fi
 
 # ---------------------------------------------------------------------------
 # upload unit: credentials and network, no capability, no docker
 # ---------------------------------------------------------------------------
 echo "== upload unit =="
-has_line "$UP" 'User=hybrid-ai-backup'               "upload runs as hybrid-ai-backup"
-has_line "$UP" 'Group=hybrid-ai-backup'              "upload group is hybrid-ai-backup"
+has_line "$UP" 'User=haven-backup'               "upload runs as haven-backup"
+has_line "$UP" 'Group=haven-backup'              "upload group is haven-backup"
 has_line "$UP" 'CapabilityBoundingSet='              "upload has an empty capability set"
 has_line "$UP" 'NoNewPrivileges=yes'                 "upload sets NoNewPrivileges=yes"
-has_line "$UP" 'LoadCredential=r2.env:/etc/credstore/hybrid-ai-backup/r2.env'          "upload loads r2.env from credstore"
-has_line "$UP" 'LoadCredential=repo-password:/etc/credstore/hybrid-ai-backup/repo-password' "upload loads repo-password from credstore"
+has_line "$UP" 'LoadCredential=r2.env:/etc/credstore/haven-backup/r2.env'          "upload loads r2.env from credstore"
+has_line "$UP" 'LoadCredential=repo-password:/etc/credstore/haven-backup/repo-password' "upload loads repo-password from credstore"
 has_line "$UP" 'InaccessiblePaths=-/run/docker.sock'      "upload cannot reach /run/docker.sock"
 has_line "$UP" 'InaccessiblePaths=-/var/run/docker.sock'  "upload cannot reach /var/run/docker.sock"
 has_line "$UP" 'ProtectSystem=strict'                "upload protects system"
 has_line "$UP" 'ProtectHome=yes'                     "upload protects home"
-has_line "$UP" 'CacheDirectory=hybrid-ai-backup'     "upload has a cache directory (restic cache)"
-has_line "$UP" 'Environment=RESTIC_CACHE_DIR=/var/cache/hybrid-ai-backup' "upload points RESTIC_CACHE_DIR at its cache"
-has_line "$UP" 'StateDirectory=hybrid-ai-backup'     "upload sees the staging state directory"
+has_line "$UP" 'CacheDirectory=haven-backup'     "upload has a cache directory (restic cache)"
+has_line "$UP" 'Environment=RESTIC_CACHE_DIR=/var/cache/haven-backup' "upload points RESTIC_CACHE_DIR at its cache"
+has_line "$UP" 'StateDirectory=haven-backup'     "upload sees the staging state directory"
 has_line "$UP" 'ExecStart=/opt/haven/backup/backup.sh --upload-only' "upload runs the upload-only phase"
 has_line "$UP" 'Restart=on-failure'                  "upload retries a transient failure"
 has_line "$UP" 'RestartSec=15min'                    "upload retry delay is bounded"
@@ -140,7 +140,7 @@ has_line "$UP" 'StartLimitIntervalSec=1h'            "upload limits retries per 
 has_line "$UP" 'StartLimitBurst=2'                   "upload retries at most twice"
 has_line "$UP" 'RestartPreventExitStatus=3'          "upload never retries an incomplete capture"
 # Staging read-only except its own removal: strict filesystem plus ONE write path.
-has_line "$UP" 'ReadWritePaths=-/var/lib/hybrid-ai-backup' "upload may only write the staging root (to remove it)"
+has_line "$UP" 'ReadWritePaths=-/var/lib/haven-backup' "upload may only write the staging root (to remove it)"
 hasnt_regex "$UP" '^(AmbientCapabilities|CapabilityBoundingSet)=[^ ]' "upload grants no capability"
 
 # ---------------------------------------------------------------------------
@@ -151,9 +151,9 @@ has_line "$CTIMER" 'OnCalendar=*-*-* 03:15:00'   "capture timer runs nightly at 
 has_line "$CTIMER" 'Persistent=true'             "capture timer catches up after downtime"
 has_line "$CTIMER" 'RandomizedDelaySec=15min'    "capture timer spreads the start"
 has_line "$CHECK"  'ExecStart=/opt/haven/backup/backup.sh --check' "check unit runs --check"
-has_line "$CHECK"  'LoadCredential=r2.env:/etc/credstore/hybrid-ai-backup/r2.env' "check unit loads the same credentials"
+has_line "$CHECK"  'LoadCredential=r2.env:/etc/credstore/haven-backup/r2.env' "check unit loads the same credentials"
 has_line "$CHECK"  'CapabilityBoundingSet='      "check unit has no capability (upload shape)"
-has_line "$CHECK"  'CacheDirectory=hybrid-ai-backup' "check unit shares the restic cache directory"
+has_line "$CHECK"  'CacheDirectory=haven-backup' "check unit shares the restic cache directory"
 has_line "$CHECKTIMER" 'OnCalendar=Sun *-*-01..07 04:30:00' "check timer runs monthly"
 has_line "$CHECKTIMER" 'Persistent=true'         "check timer catches up after downtime"
 
@@ -232,7 +232,7 @@ HAVEN_WORK_DIR=${D2WORK}
 HAVEN_BACKUP_MODE=system
 EOF
 chmod 0644 "$LAYOUT"
-printf 'HAVEN_DATA_DIR=/var/lib/hybrid-ai\n' > "$STACK"
+printf 'HAVEN_DATA_DIR=/var/lib/haven\n' > "$STACK"
 # Copy the helper so an unprivileged uid can read it without touching the repo.
 HELPER_COPY="$D2DIR/haven-env.sh"
 cp "${REPO}/scripts/lib/haven-env.sh" "$HELPER_COPY"
@@ -318,8 +318,8 @@ fi
 # the path the helper resolves in system mode must equal the units' log path.
 # ---------------------------------------------------------------------------
 echo "== D6a/D9: the units grant the log path and agree on BACKUP_LOG =="
-has_line "$UP"    'LogsDirectory=hybrid-ai-backup' "upload has a logs directory for the backup log"
-has_line "$CHECK" 'LogsDirectory=hybrid-ai-backup' "check has a logs directory for the backup log"
+has_line "$UP"    'LogsDirectory=haven-backup' "upload has a logs directory for the backup log"
+has_line "$CHECK" 'LogsDirectory=haven-backup' "check has a logs directory for the backup log"
 # Neither unit hardcodes a BACKUP_LOG that could diverge from the helper's
 # system-mode resolution. The helper owns the path; the units grant the dir.
 hasnt_regex "$UP"    '^Environment=BACKUP_LOG=' "upload does not pin a divergent BACKUP_LOG"
@@ -342,10 +342,10 @@ SYSMODE_ENV="$(mktemp)"
 D2_TMPDIRS+=("$SYSMODE_ENV")
 printf 'HAVEN_BACKUP_MODE=system\n' > "$SYSMODE_ENV"
 UNIT_LOG="$(unit_backup_log system "$SYSMODE_ENV")"
-if [[ "$UNIT_LOG" == "/var/log/hybrid-ai-backup/backup.log" ]]; then
+if [[ "$UNIT_LOG" == "/var/log/haven-backup/backup.log" ]]; then
   ok "the helper resolves the system-mode BACKUP_LOG to the units' LogsDirectory path"
 else
-  bad "system-mode BACKUP_LOG resolved to '${UNIT_LOG}', expected /var/log/hybrid-ai-backup/backup.log"
+  bad "system-mode BACKUP_LOG resolved to '${UNIT_LOG}', expected /var/log/haven-backup/backup.log"
 fi
 # The decoy exported above must NOT have leaked through: the unit identity and a
 # bare user-mode identity each resolve their OWN path, never /decoy/...

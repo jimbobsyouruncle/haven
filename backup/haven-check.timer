@@ -1,9 +1,9 @@
 # ---------------------------------------------------------------------------
-# FILE: backup/hybrid-ai-check.timer
+# FILE: backup/haven-check.timer
 # PURPOSE: Schedules the monthly repository integrity check.
 # ---------------------------------------------------------------------------
 [Unit]
-Description=Monthly hybrid-ai backup integrity verification
+Description=Monthly haven backup integrity verification
 
 [Timer]
 # First Sunday of each month at 04:30 -- well clear of the nightly backup.

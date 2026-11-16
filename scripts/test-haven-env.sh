@@ -84,10 +84,10 @@ check "install.log default" "${REPO}/install.log" "$(resolve "$EMPTY" HAVEN_INST
 check "backup.log default" "${REPO}/backup.log" "$(resolve "$EMPTY" BACKUP_LOG)"
 check "staging default" "${REPO}/.backup-staging" "$(resolve "$EMPTY" HAVEN_BACKUP_STAGING_DIR)"
 check "restore work default" "${REPO}/.restore-work" "$(resolve "$EMPTY" HAVEN_RESTORE_WORK_DIR)"
-check "OPENHANDS_WORKSPACE default" "$HOME/hybrid-ai-agent" "$(resolve "$EMPTY" OPENHANDS_WORKSPACE)"
-check "AGENT_REPOS_DIR default" "$HOME/hybrid-ai-repos" "$(resolve "$EMPTY" AGENT_REPOS_DIR)"
+check "OPENHANDS_WORKSPACE default" "$HOME/haven-agent" "$(resolve "$EMPTY" OPENHANDS_WORKSPACE)"
+check "AGENT_REPOS_DIR default" "$HOME/haven-repos" "$(resolve "$EMPTY" AGENT_REPOS_DIR)"
 check "OPENHANDS_STATE_DIR default" "$HOME/.openhands" "$(resolve "$EMPTY" OPENHANDS_STATE_DIR)"
-check "BACKUP_CONF_DIR default" "$HOME/.config/hybrid-ai-backup" "$(resolve "$EMPTY" BACKUP_CONF_DIR)"
+check "BACKUP_CONF_DIR default" "$HOME/.config/haven-backup" "$(resolve "$EMPTY" BACKUP_CONF_DIR)"
 check "RESTIC_CACHE_DIR default" "$HOME/.cache/restic" "$(resolve "$EMPTY" RESTIC_CACHE_DIR)"
 check "HAVEN_HERMES_HOME_DIR default" "$HOME/.hermes" "$(resolve "$EMPTY" HAVEN_HERMES_HOME_DIR)"
 # The post-deploy verifier command and log. INTERNAL test seams, but their
@@ -95,7 +95,7 @@ check "HAVEN_HERMES_HOME_DIR default" "$HOME/.hermes" "$(resolve "$EMPTY" HAVEN_
 check "HAVEN_POST_DEPLOY_VERIFY_CMD default" \
   "/usr/local/sbin/run-post-deploy-verify.sh" "$(resolve "$EMPTY" HAVEN_POST_DEPLOY_VERIFY_CMD)"
 check "HAVEN_POST_DEPLOY_VERIFY_LOG default" \
-  "/var/log/hybrid-ai-post-deploy-verify.log" "$(resolve "$EMPTY" HAVEN_POST_DEPLOY_VERIFY_LOG)"
+  "/var/log/haven-post-deploy-verify.log" "$(resolve "$EMPTY" HAVEN_POST_DEPLOY_VERIFY_LOG)"
 # An exported value wins for both, which is how the harnesses relocate them.
 check "an exported POST_DEPLOY_VERIFY_CMD wins" "${TMPROOT}/sbin/run-post-deploy-verify.sh" \
   "$(resolve "$EMPTY" HAVEN_POST_DEPLOY_VERIFY_CMD \
@@ -179,14 +179,14 @@ HAVEN_BACKUP_STAGING_DIR=${CLONE}/.backup-staging
 HAVEN_RESTORE_WORK_DIR=${CLONE}/.restore-work
 HAVEN_HERMES_HOME_DIR=${CH}/.hermes
 HAVEN_POST_DEPLOY_VERIFY_CMD=/usr/local/sbin/run-post-deploy-verify.sh
-HAVEN_POST_DEPLOY_VERIFY_LOG=/var/log/hybrid-ai-post-deploy-verify.log
+HAVEN_POST_DEPLOY_VERIFY_LOG=/var/log/haven-post-deploy-verify.log
 HAVEN_BACKUP_MODE=user
 BACKUP_CONTAINER_CONTROL=self
 BACKUP_LOG=${CLONE}/backup.log
-BACKUP_CONF_DIR=${CH}/.config/hybrid-ai-backup
+BACKUP_CONF_DIR=${CH}/.config/haven-backup
 RESTIC_CACHE_DIR=${CH}/.cache/restic
-OPENHANDS_WORKSPACE=${CH}/hybrid-ai-agent
-AGENT_REPOS_DIR=${CH}/hybrid-ai-repos
+OPENHANDS_WORKSPACE=${CH}/haven-agent
+AGENT_REPOS_DIR=${CH}/haven-repos
 OPENHANDS_STATE_DIR=${CH}/.openhands
 EOF
 )"
@@ -275,27 +275,27 @@ done
 # helper, so doctor.sh/install.sh/deploy-remote.sh/collect-diagnostics.sh/
 # backup.sh cannot disagree about which units run.
 echo "== mode-derived names =="
-check "user-mode backup timer"       "hybrid-ai-backup.timer"         "$(resolve "$EMPTY" HAVEN_BACKUP_TIMER_UNIT)"
-check "user-mode backup service"     "hybrid-ai-backup.service"       "$(resolve "$EMPTY" HAVEN_BACKUP_SERVICE_UNIT)"
-check "user-mode check timer"        "hybrid-ai-check.timer"          "$(resolve "$EMPTY" HAVEN_BACKUP_CHECK_TIMER_UNIT)"
+check "user-mode backup timer"       "haven-backup.timer"         "$(resolve "$EMPTY" HAVEN_BACKUP_TIMER_UNIT)"
+check "user-mode backup service"     "haven-backup.service"       "$(resolve "$EMPTY" HAVEN_BACKUP_SERVICE_UNIT)"
+check "user-mode check timer"        "haven-check.timer"          "$(resolve "$EMPTY" HAVEN_BACKUP_CHECK_TIMER_UNIT)"
 check "user-mode systemctl scope"    "--user"                         "$(resolve "$EMPTY" HAVEN_BACKUP_SYSTEMCTL_SCOPE)"
 check "user-mode journal scope"      "--user"                         "$(resolve "$EMPTY" HAVEN_BACKUP_JOURNAL_SCOPE)"
-check "user-mode cred dir is BACKUP_CONF_DIR" "$HOME/.config/hybrid-ai-backup" "$(resolve "$EMPTY" HAVEN_BACKUP_CRED_DIR)"
+check "user-mode cred dir is BACKUP_CONF_DIR" "$HOME/.config/haven-backup" "$(resolve "$EMPTY" HAVEN_BACKUP_CRED_DIR)"
 
 SYSMODE="${TMPROOT}/sysmode.env"; printf 'HAVEN_BACKUP_MODE=system\n' > "$SYSMODE"
-check "system-mode backup timer"     "hybrid-ai-backup-capture.timer" "$(resolve "$SYSMODE" HAVEN_BACKUP_TIMER_UNIT)"
-check "system-mode backup service"   "hybrid-ai-backup-capture.service" "$(resolve "$SYSMODE" HAVEN_BACKUP_SERVICE_UNIT)"
-check "system-mode check timer"      "hybrid-ai-backup-check.timer"   "$(resolve "$SYSMODE" HAVEN_BACKUP_CHECK_TIMER_UNIT)"
+check "system-mode backup timer"     "haven-backup-capture.timer" "$(resolve "$SYSMODE" HAVEN_BACKUP_TIMER_UNIT)"
+check "system-mode backup service"   "haven-backup-capture.service" "$(resolve "$SYSMODE" HAVEN_BACKUP_SERVICE_UNIT)"
+check "system-mode check timer"      "haven-backup-check.timer"   "$(resolve "$SYSMODE" HAVEN_BACKUP_CHECK_TIMER_UNIT)"
 check "system-mode systemctl scope"  "--system"                       "$(resolve "$SYSMODE" HAVEN_BACKUP_SYSTEMCTL_SCOPE)"
 check "system-mode journal scope"    "--system"                       "$(resolve "$SYSMODE" HAVEN_BACKUP_JOURNAL_SCOPE)"
-check "system-mode cred dir is the credstore" "/etc/credstore/hybrid-ai-backup" "$(resolve "$SYSMODE" HAVEN_BACKUP_CRED_DIR)"
+check "system-mode cred dir is the credstore" "/etc/credstore/haven-backup" "$(resolve "$SYSMODE" HAVEN_BACKUP_CRED_DIR)"
 
 # BACKUP_LOG resolves to ONE path per mode: the units' LogsDirectory= in system
 # mode, $LOG_DIR/backup.log in user mode. doctor.sh reads the same value, so the
 # two can no longer disagree (D9).
 check "user-mode BACKUP_LOG default" "${REPO}/backup.log" "$(resolve "$EMPTY" BACKUP_LOG)"
 check "system-mode BACKUP_LOG default is the units' LogsDirectory path" \
-  "/var/log/hybrid-ai-backup/backup.log" "$(resolve "$SYSMODE" BACKUP_LOG)"
+  "/var/log/haven-backup/backup.log" "$(resolve "$SYSMODE" BACKUP_LOG)"
 # A SET value still wins in both modes (no mode may silently ignore it).
 SETLOG="${TMPROOT}/setlog.env"
 printf 'HAVEN_BACKUP_MODE=system\nBACKUP_LOG=/tmp/explicit/backup.log\n' > "$SETLOG"
@@ -352,14 +352,14 @@ fi
 # 3c. Bootstrap LAYOUT fallback (D10)
 # ---------------------------------------------------------------------------
 # On a bootstrapped host $HAVEN_APP_DIR/.env does not exist: the layout
-# moved to /etc/hybrid-ai/hybrid-ai.env. When HAVEN_ENV_FILE is UNSET the
+# moved to /etc/haven/haven.env. When HAVEN_ENV_FILE is UNSET the
 # helper must probe the fallback layout file. The fallback location is the NAMED
 # variable HAVEN_ENV_FILE_FALLBACK, so these fixtures live in the temp dir
 # and NOTHING here reads or writes /etc.
 echo "== bootstrap layout fallback (D10) =="
 FBDIR="${TMPROOT}/fb"; mkdir -p "${FBDIR}/app"
 FBDIR_APP="${FBDIR}/app"            # has NO .env
-LAYOUT="${FBDIR}/hybrid-ai.env"     # the fallback LAYOUT file
+LAYOUT="${FBDIR}/haven.env"     # the fallback LAYOUT file
 STACK_FB="${FBDIR}/stack.env"       # the secrets file the layout names
 : > "$STACK_FB"
 cat > "$LAYOUT" <<FBEOF
@@ -388,10 +388,10 @@ check "fallback: HAVEN_ENV_FILE resolves to the fallback layout" "$LAYOUT" \
   "$(fb_resolve HAVEN_ENV_FILE)"
 check "fallback: mode is read from the layout (system)" "system" \
   "$(fb_resolve HAVEN_BACKUP_MODE)"
-check "fallback: BACKUP_LOG follows the mode" "/var/log/hybrid-ai-backup/backup.log" \
+check "fallback: BACKUP_LOG follows the mode" "/var/log/haven-backup/backup.log" \
   "$(fb_resolve BACKUP_LOG)"
 check "fallback: HAVEN_BACKUP_CRED_DIR is the credstore default" \
-  "/etc/credstore/hybrid-ai-backup" "$(fb_resolve HAVEN_BACKUP_CRED_DIR)"
+  "/etc/credstore/haven-backup" "$(fb_resolve HAVEN_BACKUP_CRED_DIR)"
 check "fallback: STACK_ENV_FILE is the file the layout names" "$STACK_FB" \
   "$(fb_resolve HAVEN_STACK_ENV_FILE)"
 check "fallback: APP_DIR keeps its explicit value" "$FBDIR_APP" \
@@ -596,7 +596,7 @@ echo "== no bypassing paths =="
 BYPASS_FILES="$(cd "$REPO" && git ls-files '*.sh' | grep -vE '^(scripts/lib/(hybrid-ai|haven)-env\.sh|scripts/test-haven-env\.sh)$')"
 HITS="$(cd "$REPO" && printf '%s\n' "$BYPASS_FILES" | while IFS= read -r f; do
   [[ -n "$f" ]] || continue
-  grep -nE '\$\{REPO_DIR\}|\$\{SCRIPT_DIR\}/\.env|--env-file [.]env|\$\{HOME\}/\.openhands|\$\{HOME\}/\.hermes|\$\{HOME\}/\.config/hybrid-ai-backup|\$\{HOME\}/\.cache/restic' "$f" 2>/dev/null | sed "s|^|$f:|"
+  grep -nE '\$\{REPO_DIR\}|\$\{SCRIPT_DIR\}/\.env|--env-file [.]env|\$\{HOME\}/\.openhands|\$\{HOME\}/\.hermes|\$\{HOME\}/\.config/haven-backup|\$\{HOME\}/\.cache/restic' "$f" 2>/dev/null | sed "s|^|$f:|"
 done)"
 if [[ -z "$HITS" ]]; then
   ok "no repo-relative, SCRIPT_DIR, HOME-derived, or bare --env-file paths remain"
@@ -696,7 +696,7 @@ if (( FAIL != 0 )); then
   printf 'FAILED: %d of %d checks\n' "$FAIL" "$(( PASS + FAIL ))" >&2
   exit 1
 fi
-printf 'All %d hybrid-ai-env checks passed.\n' "$PASS"
+printf 'All %d haven-env checks passed.\n' "$PASS"
 
 # Focused handoff security regressions use the real resolver and protected driver.
 python3 - "$REPO" <<'PY_IDENTITY'
@@ -833,7 +833,7 @@ class ConfigIdentityTests(unittest.TestCase):
             "scripts/test-deploy-remote.sh",  # legacy selector handoff
             "scripts/test-repository-identity.sh",  # legacy selector import
             "scripts/test-install-auth-env-leak.sh",  # literal credential migration
-            "scripts/test-install-root.py",  # unchanged historical recovery fixtures
+            "scripts/test-install-root.sh",  # historical and coordinated recovery fixtures
         }
         files = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
         unexpected = []

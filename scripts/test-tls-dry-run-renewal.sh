@@ -25,7 +25,7 @@ if [[ ! -f "$DRY_RUN" ]]; then
   exit 1
 fi
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/hybrid-ai-tls-dryrun-test.XXXXXX")" || exit 1
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/haven-tls-dryrun-test.XXXXXX")" || exit 1
 # Resolve the STACK file the shared resolver names, in a SUBSHELL: sourcing the
 # helper here would export repo-default paths and shadow the fixture env files
 # passed with --env-file below.
