@@ -29,7 +29,7 @@ set -Eeuo pipefail
 #   the check silently never ran.
 #
 # DEPENDENCIES: bash, curl, jq, git, date -- all already probed by install.sh.
-#   No Python, no token, no credential. The GitHub API is read ANONYMOUSLY.
+#   Root transaction paths also require Python. GitHub API reads are anonymous.
 #
 # USAGE:
 #   ./scripts/run-post-deploy-verify.sh --wait-for <full-40-hex-commit-sha>
@@ -165,6 +165,14 @@ write_verdict() { # <verdict> <rc> [detail]
 
 # Keep FAIL/TIMEOUT authoritative. Optional skipped/warning evidence can never
 # become a clean PASS. JSON publication itself is optional and reported in log.
+accept_evidence() {
+  if [[ "${HAVEN_VERIFY_MANUAL_CUTOVER:-0}" == 1 ]]; then
+    cat >&"$HAVEN_VERIFY_EVIDENCE_FD"
+  else
+    python3 "$APP_DIR/scripts/install-root.py" accept "$SHA"
+  fi
+}
+
 finish() { # <PASS|FAIL|TIMEOUT> <rc> [detail]
   local verdict="$1" rc="$2" detail="${3:-}"
   if [[ "$verdict" == PASS ]]; then
@@ -194,7 +202,7 @@ finish() { # <PASS|FAIL|TIMEOUT> <rc> [detail]
     if ! jq -nc --arg sha "$SHA" --arg app "$APP_DIR" --arg verdict "$verdict" \
          --argjson gates "$GATES" \
          '{schema_version:2, sha:$sha, head:$sha, app_dir:$app, rc:0, verdict:$verdict, gates:$gates}' \
-         | python3 "$APP_DIR/scripts/install-root.py" accept "$SHA"; then
+         | accept_evidence; then
       verdict=FAIL; rc=1; detail="installation transaction acceptance failed"
       record_gate installation_root true FAIL "$detail"
       write_verdict "$verdict" "$rc" "$detail" || true
@@ -290,6 +298,12 @@ for _haven_suffix in APP_DIR DATA_DIR BACKUP_MODE VERIFY_BACKUP_GATES UID GID LO
 done
 unset _haven_suffix
 APP_DIR="$(resolve_app_dir)" || { printf 'FAIL: application directory could not be resolved\n'; exit 1; }
+DRIVER_DIR="$APP_DIR/scripts"
+if [[ "${HAVEN_VERIFY_MANUAL_CUTOVER:-0}" == 1 ]]; then
+  [[ "$(id -u)" == 0 && "${HAVEN_VERIFY_INSTALL_ROOT:-0}" == 1 && "${HAVEN_VERIFY_EVIDENCE_FD:-}" =~ ^[0-9]+$ && "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 0 ]] \
+    || usage_refuse "manual cutover requires the root transaction driver"
+  DRIVER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+fi
 API_URL="https://api.github.com/repos/${REPO_SLUG}/actions/runs?head_sha=${SHA}"
 
 # --- Backups tile gate ------------------------------------------------------
@@ -489,7 +503,14 @@ probe_runs() {
   PROBE_ERROR=""
   RUN_IDS=(); RUN_STATUS=(); RUN_CONCLUSION=()
 
-  if [[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]]; then
+  if [[ "${HAVEN_VERIFY_MANUAL_CUTOVER:-0}" == 1 ]]; then
+    if ! python3 "$DRIVER_DIR/deploy-provenance.py" manual-runs "$SHA" > "$BODY_FILE"; then
+      PROBE_STATE="error"
+      PROBE_ERROR="manual cutover provenance or required CI unavailable or unsuccessful"
+      return 0
+    fi
+    http_code=200
+  elif [[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]]; then
     if ! python3 "$APP_DIR/scripts/deploy-provenance.py" runs "$SHA" > "$BODY_FILE"; then
       PROBE_STATE="error"
       PROBE_ERROR="trusted deployment validation unavailable or unsuccessful"
@@ -581,7 +602,10 @@ while :; do
         finish FAIL 1 "run conclusions: $(conclusion_list)"
       fi
 
-      if [[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]]; then
+      if [[ "${HAVEN_VERIFY_MANUAL_CUTOVER:-0}" == 1 ]]; then
+        record_gate workflow_runs true PASS "$(jq -r '"exact merged PR \(.manual_cutover.pr) head \(.manual_cutover.head_sha): required CI/SAST and context gates passed; applicable deployed-SHA workflows succeeded"' "$BODY_FILE")"
+        record_gate manual_deployment false SKIPPED "$(jq -r '"owner-authorized manual cutover: disabled push deployment runs \(.manual_cutover.intentionally_skipped_deploy_runs | tojson), both jobs skipped; automatic deployment inapplicable"' "$BODY_FILE")"
+      elif [[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]]; then
         record_gate workflow_runs true PASS "current deployment validation passed; other deployment attempts excluded; other workflows succeeded; own deploy job awaits host gates"
       else
         record_gate workflow_runs true PASS "all returned workflow runs succeeded"
@@ -603,7 +627,9 @@ while :; do
       if [[ "${HAVEN_VERIFY_INSTALL_ROOT:-0}" == 1 ]]; then
         record_gate installation_root true FAIL "installation wiring not verified"
         record_gate runtime_health true FAIL "runtime health not verified"
-        if ! python3 "$APP_DIR/scripts/install-root.py" verify "$SHA"; then
+        # Manual driver holds both locks and checks wiring/identity before
+        # launching us and again in accept. A child must not reacquire them.
+        if [[ "${HAVEN_VERIFY_MANUAL_CUTOVER:-0}" != 1 ]] && ! python3 "$DRIVER_DIR/install-root.py" verify "$SHA"; then
           finish FAIL 1 "installation wiring failed"
         fi
         record_gate installation_root true PASS "canonical root and installed control paths verified"

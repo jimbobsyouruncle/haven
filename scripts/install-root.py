@@ -1030,9 +1030,49 @@ class Transaction:
             if b'/opt/hybrid-ai' in path.read_bytes():
                 raise Refusal('installed service still uses legacy root')
 
-    def accept(self, sha, evidence):
+    def reverify_manual(self, sha):
+        """Accept existing current-data identity transaction under both locks.
+
+        The reviewed driver may be newer than the deployed SHA. It executes
+        only verification; the installed checkout, controls and data stay put.
+        Root evidence travels through an inherited anonymous file, never back
+        from the service-owned receipt. Retrying accepted state reruns all gates.
+        """
         journal = self.load()
-        if not journal or journal['sha'] != sha or journal['phase'] != 'awaiting_verifier':
+        if (not journal or journal['sha'] != sha
+                or journal['phase'] not in ('awaiting_verifier', 'accepted')
+                or not journal.get('writers_possible')
+                or journal.get('identity', {}).get('boundary') != 'post_activation'
+                or self.project != 'haven'):
+            raise Refusal('no matching post-activation manual identity transaction')
+        self.wiring(sha)
+        self.verify_identity(journal)
+        driver = Path(__file__).absolute().parent
+        self.trusted(driver, tree=True)
+        env = self.installation_environment()
+        # Do not inherit verification destinations, policies, proxies or Git
+        # configuration from an operator shell. Fixed layout supplies paths.
+        env = {k: v for k, v in env.items() if k in ('LANG', 'LC_ALL')}
+        env.update(PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                   HAVEN_APP_DIR=str(self.app), HAVEN_ENV_FILE_FALLBACK=str(self.layout),
+                   HAVEN_VERIFY_INSTALL_ROOT='1', HAVEN_VERIFY_BACKUP_GATES='required',
+                   HAVEN_VERIFY_MANUAL_CUTOVER='1', HAVEN_REPOSITORY_SLUG='jimbobsyouruncle/haven')
+        with tempfile.TemporaryFile() as evidence:
+            env['HAVEN_VERIFY_EVIDENCE_FD'] = str(evidence.fileno())
+            self.run(['/usr/bin/timeout', '--kill-after=30s', '10m', 'bash',
+                      str(driver / 'run-post-deploy-verify.sh'), '--wait-for', sha],
+                     cwd=self.app, env=env, check=True, pass_fds=(evidence.fileno(),))
+            evidence.seek(0)
+            result = json.load(evidence)
+            if not all(result.get('gates', {}).get(k, {}).get('state') == 'PASS' for k in
+                       ('backup_log', 'backup_readability', 'backup_tile', 'verdict_file')):
+                raise Refusal('mandatory manual acceptance backup or receipt evidence missing')
+            self.accept(sha, result, allow_accepted=True)
+
+    def accept(self, sha, evidence, allow_accepted=False):
+        journal = self.load()
+        phases = ('awaiting_verifier', 'accepted') if allow_accepted else ('awaiting_verifier',)
+        if not journal or journal['sha'] != sha or journal['phase'] not in phases:
             raise Refusal('no matching pending installation transaction')
         self.wiring(sha)
         self.verify_identity(journal)
@@ -1049,8 +1089,9 @@ class Transaction:
                            ('workflow_runs', 'deployed_head', 'installation_root', 'runtime_health'))
                 or any(g.get('state') != 'PASS' for g in gates.values() if g.get('required'))):
             raise Refusal('requested SHA or mandatory verification gates are unsuccessful')
-        journal['phase'] = 'accepted'
-        self.save(journal)
+        if journal['phase'] != 'accepted':
+            journal['phase'] = 'accepted'
+            self.save(journal)
 
     def deploy(self, sha):
         if self.identity_cutover:
@@ -1235,10 +1276,10 @@ class Transaction:
 
 def main():
     os.umask(0o022)
-    actions = ('deploy', 'migrate', 'recover', 'accept', 'verify', 'rollback')
+    actions = ('deploy', 'migrate', 'recover', 'accept', 'verify', 'rollback', 'reverify-manual')
     if len(sys.argv) != 3 or sys.argv[1] not in actions \
             or not re.fullmatch(r'[0-9a-f]{40}', sys.argv[2]):
-        raise Refusal('usage: install-root.py deploy|migrate|recover|accept|verify|rollback <full SHA>')
+        raise Refusal('usage: install-root.py deploy|migrate|recover|accept|verify|rollback|reverify-manual <full SHA>')
     if os.geteuid() != 0:
         raise Refusal('installation handoff requires root')
     action, sha = sys.argv[1:]
@@ -1284,6 +1325,8 @@ def main():
     elif action == 'verify':
         transaction.wiring(sha)
         transaction.verify_identity(transaction.load())
+    elif action == 'reverify-manual':
+        transaction.reverify_manual(sha)
     elif action == 'accept':
         transaction.accept(sha, json.load(sys.stdin))
     else:

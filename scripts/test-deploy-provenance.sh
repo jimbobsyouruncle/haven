@@ -138,6 +138,91 @@ class Provenance(unittest.TestCase):
             with self.subTest(data=data), patch.object(m, 'get', return_value=data):
                 with self.assertRaises((ValueError, KeyError)): m.runs(SHA)
 
+    def manual_fixture(self):
+        head = 'b' * 40
+        pr = dict(self.pr, number=7, head=dict(sha=head))
+        def run(id, path, sha=SHA, **kw):
+            return dict(self.run, id=id, path='.github/workflows/' + path,
+                        head_sha=sha, **kw)
+        ci = [run(20, 'sast-checks.yml', head), run(21, 'agent-context.yml', head)]
+        for r in ci:
+            r.update(event='pull_request', status='completed', conclusion='success')
+        deploy = run(12, 'deploy.yml')
+        deploy.update(status='completed', conclusion='skipped')
+        bot = run(13, 'agent-context-committer.yml')
+        bot.update(status='completed', conclusion='success')
+        jobs = lambda entries: dict(total_count=len(entries), jobs=entries)
+        passed = lambda name: dict(name=name, status='completed', conclusion='success')
+        self.manual_data = {
+            '/commits/' + SHA + '/pulls?per_page=100': [pr],
+            '/actions/runs?head_sha=' + head + '&per_page=100': dict(total_count=2, workflow_runs=ci),
+            '/actions/runs/20/jobs?per_page=100': jobs([passed('Security & SAST gate')]),
+            '/actions/runs/21/jobs?per_page=100': jobs([passed('Check agent context maps')]),
+            '/actions/runs?head_sha=' + SHA + '&per_page=100': dict(total_count=2, workflow_runs=[deploy, bot]),
+            '/actions/runs/12/jobs?per_page=100': jobs([
+                dict(name=name, status='completed', conclusion='skipped')
+                for name in ('validate', 'Deploy over Tailscale')])}
+        return ci, deploy, bot
+
+    def manual(self):
+        output = io.StringIO()
+        with patch.object(m, 'get', side_effect=lambda path: copy.deepcopy(self.manual_data[path])), redirect_stdout(output):
+            m.manual_runs(SHA)
+        return json.loads(output.getvalue())
+
+    def test_manual_cutover_reuses_exact_merge_pr_checks_preserves_skip(self):
+        self.manual_fixture()
+        result = self.manual()
+        self.assertEqual(result['manual_cutover']['merge_sha'], SHA)
+        self.assertEqual(result['manual_cutover']['intentionally_skipped_deploy_runs'], [12])
+        self.assertEqual([r['id'] for r in result['workflow_runs']], [13, 20, 21])
+        self.assertEqual(self.manual(), result)  # stable retry
+
+    def test_manual_cutover_required_workflows_and_jobs_fail_closed(self):
+        for index in (0, 1):
+            for state in ('skipped', 'failure', 'cancelled', 'timed_out', 'neutral', None):
+                with self.subTest(index=index, state=state):
+                    ci, _, _ = self.manual_fixture()
+                    ci[index]['conclusion'] = state
+                    with self.assertRaises(ValueError): self.manual()
+                    self.manual_fixture()
+                    self.manual_data[f'/actions/runs/{20 + index}/jobs?per_page=100']['jobs'][0]['conclusion'] = state
+                    with self.assertRaises(ValueError): self.manual()
+            self.manual_fixture()
+            self.manual_data[f'/actions/runs/{20 + index}/jobs?per_page=100']['jobs'][0]['name'] = 'unrelated'
+            with self.assertRaises(ValueError): self.manual()
+        ci, _, _ = self.manual_fixture()
+        ci[0]['path'] = 'missing.yml'
+        with self.assertRaises(ValueError): self.manual()
+
+    def test_manual_cutover_exception_is_only_disabled_push(self):
+        for field, value in [('event', 'workflow_dispatch'), ('head_branch', 'other'),
+                             ('head_sha', 'c'*40), ('status', 'in_progress'),
+                             ('conclusion', 'failure'), ('conclusion', 'success'),
+                             ('repository', dict(full_name='other/repo'))]:
+            with self.subTest(field=field, value=value):
+                _, deploy, _ = self.manual_fixture()
+                deploy[field] = value
+                with self.assertRaises(ValueError): self.manual()
+        for state in ('success', 'failure', None):
+            self.manual_fixture()
+            self.manual_data['/actions/runs/12/jobs?per_page=100']['jobs'][0]['conclusion'] = state
+            with self.assertRaises(ValueError): self.manual()
+        _, _, bot = self.manual_fixture()
+        bot['conclusion'] = 'skipped'
+        with self.assertRaises(ValueError): self.manual()
+
+    def test_manual_cutover_missing_merge_fork_and_truncated_api_refused(self):
+        ci, _, _ = self.manual_fixture()
+        ci[0]['head_repository'] = dict(full_name='fork/repo')
+        with self.assertRaises(ValueError): self.manual()
+        self.manual_fixture()
+        self.manual_data['/commits/' + SHA + '/pulls?per_page=100'][0]['merge_commit_sha'] = 'c'*40
+        with self.assertRaises(ValueError): self.manual()
+        self.manual_fixture()
+        self.manual_data['/actions/runs?head_sha=' + SHA + '&per_page=100']['total_count'] = 101
+        with self.assertRaises(ValueError): self.manual()
+
     def test_stale_main(self):
         self.path.write_text(json.dumps(self.event))
         with patch.dict(os.environ, self.env, clear=True), patch.object(m, 'get', side_effect=[

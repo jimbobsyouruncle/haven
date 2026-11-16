@@ -919,6 +919,70 @@ class IdentityTests(MigrationTests):
             self.tx.restore(journal)
         self.tx.accept(self.sha, self.receipt())
 
+    def manual_verifier(self, args, **kw):
+        self.assertIn('run-post-deploy-verify.sh', ' '.join(args))
+        self.assertEqual(args[-1], self.sha)
+        env = kw['env']
+        self.assertEqual(env['HAVEN_VERIFY_BACKUP_GATES'], 'required')
+        self.assertEqual(env['HAVEN_VERIFY_MANUAL_CUTOVER'], '1')
+        self.assertNotIn('HAVEN_VERIFY_DEPLOY_JOB', env)
+        result = self.receipt()
+        for name in ('backup_log', 'backup_readability', 'verdict_file'):
+            result['gates'][name] = dict(required=True, state='PASS')
+        os.write(int(env['HAVEN_VERIFY_EVIDENCE_FD']), json.dumps(result).encode())
+        return subprocess.CompletedProcess(args, 0)
+
+    def test_manual_reverification_accepts_original_sha_and_is_idempotent(self):
+        self.identity_fixture()
+        self.tx.deploy(self.sha)
+        data = self.tx.path('/var/lib/haven/database')
+        data.write_bytes(b'new writes after activation')
+        inode = data.stat().st_ino
+        before = self.tx.load()
+        with patch.object(self.tx, 'trusted', wraps=self.tx.trusted) as trusted, patch.object(self.tx, 'run', side_effect=self.manual_verifier):
+            # The actual reviewed driver is outside the synthetic scratch root.
+            # Its ownership is the current test user; sandbox parents are not.
+            trusted.side_effect = lambda path, tree=False: None if Path(path) == Path(MODULE.__file__).absolute().parent else MODULE.Transaction.trusted(self.tx, path, tree)
+            self.tx.reverify_manual(self.sha)
+            accepted = self.tx.journal.read_bytes()
+            self.tx.reverify_manual(self.sha)
+        self.assertEqual(self.tx.journal.read_bytes(), accepted)
+        self.assertEqual(self.tx.load(), dict(before, phase='accepted'))
+        self.assertEqual(data.read_bytes(), b'new writes after activation')
+        self.assertEqual(data.stat().st_ino, inode)
+        self.assertEqual(self.git(self.tx.app, 'rev-parse', 'HEAD'), self.sha)
+
+    def test_manual_reverification_missing_private_evidence_or_backup_never_accepts(self):
+        self.identity_fixture()
+        self.tx.deploy(self.sha)
+        before = self.tx.load()
+        for missing in ('private', 'backup'):
+            def verifier(args, **kw):
+                self.manual_verifier(args, **kw)
+                fd = int(kw['env']['HAVEN_VERIFY_EVIDENCE_FD'])
+                os.ftruncate(fd, 0)
+                os.lseek(fd, 0, os.SEEK_SET)
+                if missing == 'backup':
+                    os.write(fd, json.dumps(self.receipt()).encode())
+                return subprocess.CompletedProcess(args, 0)
+            with patch.object(self.tx, 'trusted'), patch.object(self.tx, 'run', side_effect=verifier):
+                with self.assertRaises((MODULE.Refusal, json.JSONDecodeError)):
+                    self.tx.reverify_manual(self.sha)
+            self.assertEqual(self.tx.load(), before)
+
+    def test_manual_reverification_refuses_wrong_sha_phase_or_boundary(self):
+        self.identity_fixture()
+        self.tx.deploy(self.sha)
+        original = self.tx.load()
+        for key, value in [('sha', 'f'*40), ('phase', 'recovery_required'),
+                           ('writers_possible', False), ('identity', dict(boundary='pre_activation'))]:
+            self.tx.save(dict(original, **{key: value}))
+            with self.assertRaises(MODULE.Refusal): self.tx.reverify_manual(self.sha)
+        self.tx.save(original)
+        with patch.object(self.tx, 'trusted'), patch.object(self.tx, 'run', side_effect=subprocess.CalledProcessError(1, 'verifier')):
+            with self.assertRaises(subprocess.CalledProcessError): self.tx.reverify_manual(self.sha)
+        self.assertEqual(self.tx.load(), original)
+
     def test_identity_post_activation_failure_never_restores_old_controls(self):
         self.identity_fixture()
         self.fail_install = True

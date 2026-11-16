@@ -193,6 +193,99 @@ After this fix merges, the **owner**, with separate exact-SHA production approva
    runtime checks at their existing operator stage; cleanup and automatic
    deployment activation still require their separate approvals.
 
+## Finish an existing manual cutover awaiting verification
+
+This is **acceptance only**, separately owner-operated after reviewing/merging the
+verifier fix. It is not another migration, installation, recovery or deployment.
+Keep automatic deployment disabled throughout. Retain the protected journal,
+independent backups, immutable recovery exports, previous checkout and all current
+application data. Do not restore old data or edit the journal.
+
+Use this only when the protected transaction has the original full deployment SHA,
+`phase=awaiting_verifier`, `writers_possible=true`, and
+`identity.boundary=post_activation`, with the canonical stack already running.
+A retry after successful acceptance also works and reruns the same gates without
+rewriting the accepted journal. Any other phase, mismatched SHA, changed bind
+identity, failed health/backup evidence or missing required CI refuses. An
+accepted journal remains historical acceptance if a later recheck fails; the new
+receipt/log must also be inspected. Pause competing deployment, restore, prune and
+backup operations; the driver holds both unchanged deployment lock inodes.
+
+Prepare a **separate** clean root-owned checkout of the owner-approved merged fix
+revision under `/root`, with no symlinks or group/other-writable code or parents.
+Do not update `/opt/haven` or install replacement scripts in place. The reviewed
+helper revision and the original deployed revision deliberately differ. From an
+administrator shell, set `reviewed_sha` to the full approved merged fix SHA, then:
+
+```sh
+reviewed_checkout=/root/haven-acceptance-200
+production_sha=696d76aa2cdc5bc1012bbfa3b65bfc0220d47c42
+
+# One-time preparation; retain an existing checkout instead of overwriting it.
+sudo git clone --no-checkout https://github.com/jimbobsyouruncle/haven.git "$reviewed_checkout"
+sudo git -C "$reviewed_checkout" checkout --detach "$reviewed_sha"
+```
+
+Verify the chosen helper SHA and clean checkout, then invoke the explicit manual
+acceptance action with the **original** deployment SHA (not the fix SHA):
+
+```sh
+test "$(sudo git -C "$reviewed_checkout" rev-parse HEAD)" = "$reviewed_sha" &&
+  test -z "$(sudo git -C "$reviewed_checkout" status --porcelain)" &&
+  sudo python3 "$reviewed_checkout/scripts/install-root.py" reverify-manual "$production_sha"
+```
+
+The action requires root, takes both locks, validates the matching protected
+transaction, installation wiring and current identity, then runs the reviewed
+verifier with a sanitized environment and a ten-minute ceiling. The installed
+checkout must still have the original SHA. It never invokes `install.sh`,
+`migrate`, `recover`, rollback, Docker mutation or Git checkout on the installed
+root. Identity checks are repeated before acceptance. Fresh verifier evidence
+returns through a private inherited anonymous file; the public service-owned
+receipt is never trusted as acceptance input.
+
+Workflow policy for this action is narrowly scoped:
+
+* Find the unique merged-main PR whose exact merge SHA is the deployed SHA.
+  Validate the latest PR-triggered `sast-checks.yml` and `agent-context.yml` runs
+  for its exact head SHA, their repository provenance, successful workflow
+  conclusions and successful `Security & SAST gate` / `Check agent context maps`
+  jobs. Missing, skipped, neutral, failed or incomplete required gates refuse.
+  The SAST gate retains its existing conditional ARM64 applicability policy.
+* At the original deployed SHA, exempt only a completed `deploy.yml` main **push**
+  with conclusion `skipped` and exactly the two known jobs (`validate`,
+  `Deploy over Tailscale`), both completed/skipped. Owner invocation asserts the
+  intentional disabled-deployment disposition. No dispatch, active deployment,
+  partial execution, failed deployment or unrelated skipped workflow is exempt.
+  The receipt records `manual_deployment` as optional `SKIPPED`, never PASS.
+* Every other returned deployed-SHA workflow must succeed. API errors and
+  truncated/ambiguous results refuse. Main may have advanced since deployment;
+  that never substitutes a new SHA or triggers deployment.
+* Exact deployed HEAD, installation identity, runtime health, backup log,
+  readability as the status UID, private backup socket/tile and receipt
+  publication remain mandatory. Optional doctor warnings stay warnings.
+
+On success the overall receipt is normally `WARN` because the deployment workflow
+is explicitly inapplicable; **every required gate must still be PASS** and the
+protected journal must be `accepted`. Check only sanitized projections:
+
+```sh
+sudo jq '{sha,phase,writers_possible,identity_boundary:.identity.boundary}' /var/lib/haven-install-root/current.json
+sudo jq '{schema_version,sha,head,at,verdict,rc,run_ids,gates}' \
+  /var/lib/haven/hermes_data/deploy-verdicts/696d76aa2cdc5bc1012bbfa3b65bfc0220d47c42.json
+```
+
+Require matching original SHA in journal and receipt, `head` matching that SHA,
+`phase=accepted`, `rc=0`, a fresh receipt timestamp, and all required gates PASS.
+Record the reviewed helper SHA as well as original deployed SHA and sanitized
+outcomes in the issue. Never publish the full journal (saved controls can contain
+credentials). If anything refuses, preserve state, inspect the fixed failure
+reason privately and correct that specific evidence problem; retry the same
+acceptance command. Receipt publication alone or a prior WARN/PASS cannot prove
+that the final protected acceptance succeeded. Do not enable automatic deployment
+or run a new migration to clear a refusal. Automatic activation, affected real
+backup/restore/restart evidence, cleanup and closure retain separate owner gates.
+
 ## Acceptance and later cleanup
 
 Wait for the existing root verifier's receipt, matching requested/installed SHA,
