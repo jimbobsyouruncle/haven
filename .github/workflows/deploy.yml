@@ -1,71 +1,13 @@
-# ---------------------------------------------------------------------------
-# FILE: .github/workflows/deploy.yml
-# PURPOSE (plain English):
-#   This is an owner-dispatched deployment recipe. After explicit approval of
-#   a full main-branch SHA, GitHub rents a temporary computer (a "runner"),
-#   which then:
-#
-#     1. Checks your code for syntax errors and accidentally committed secrets.
-#     2. Joins your private Tailscale network as a temporary member.
-#     3. Confirms the Pi answers on that private network.
-#     4. Connects to the Pi as the dedicated `hybrid-ai-deploy` account and
-#        sends exactly one command: `deploy <sha>`.
-#     5. The forced command on the Pi starts the system unit
-#        hybrid-ai-deploy@<sha>.service, which pulls the validated revision,
-#        reprovisions the host and gates on doctor.sh.
-#     6. Fails loudly if the unit did not finish successfully.
-#
-#   The clever part is step 2: your Pi never needs a public IP address, an open
-#   firewall port, or port forwarding on your home router. GitHub's runner
-#   joins your private network for the ~2 minutes it needs, then disappears.
-#
-#   WHY THE RUNNER NO LONGER RUNS A SHELL SCRIPT ON THE PI:
-#     The runner used to log in as the admin account and run git and install.sh
-#     over SSH. That is gone. The deploy account's SSH key is pinned to ONE
-#     forced command, so the connection can only start the deploy unit. The
-#     ancestor check, the reset to the exact SHA and the HEAD assert all happen
-#     inside scripts/deploy-instance.sh, which the unit runs as root.
-#
-# DATA SAFETY:
-#   This workflow never runs "docker compose down -v", never touches the
-#   webui_data or ollama_data folders, and never writes .env directly. Because
-#   install.sh preserves every value it finds, your login sessions survive a
-#   deploy untouched.
-#
-# SECRETS YOU MUST ADD FIRST:
-#   GitHub repo -> Settings -> Secrets and variables -> Actions -> New secret
-#
-#     TS_OAUTH_CLIENT_ID   Tailscale OAuth client ID  (scope: auth_keys, tag:ci)
-#     TS_OAUTH_SECRET      Tailscale OAuth client secret
-#     PI_TAILSCALE_FULL_DOMAIN
-#                          Your Pi's MagicDNS name exactly as Tailscale lists
-#                          it, e.g. jarvis.tailXXXX.ts.net (a NAME, not an
-#                          address). A re-registered Pi keeps its name but can
-#                          change its mesh address, so target the name.
-#     PI_SSH_KEY           private SSH key authorised on the Pi as the
-#                          `hybrid-ai-deploy` account (the key line is pinned
-#                          to the forced command, scripts/deploy-forced-command.sh)
-#     PI_SSH_HOST_KEY      SHA256 fingerprint of the Pi's SSH host key:
-#                            ssh-keyscan -t ed25519 <pi-magicdns-name> | ssh-keygen -lf -
-#                          Use the SHA256:... field. scripts/deploy-trigger.sh
-#                          compares the scanned fingerprint against this value
-#                          and refuses to connect on any mismatch.
-#
-#     PI_SSH_USER          UNUSED. The deploy no longer logs in as the admin
-#                          account; the login name is the literal
-#                          `hybrid-ai-deploy`. May be deleted by the owner.
-#     PI_REPO_PATH         UNUSED. The remote path is resolved on the host by
-#                          scripts/deploy-instance.sh via HAVEN_APP_DIR.
-#                          May be deleted by the owner.
-#
-#   You must also add an ACL rule in Tailscale allowing tag:ci to reach the Pi
-#   on port 22. Full walkthrough in .github/CICD.md.
-# ---------------------------------------------------------------------------
-
+# Exact-main deployment. Automatic production access remains disabled until
+# canonical cutover acceptance and explicit owner activation of
+# vars.HAVEN_AUTOMATIC_DEPLOYMENT=enabled. This change does not set that variable.
+# Manual recovery requires explicit assent and the current full main SHA.
 name: Deploy Control Plane
 
 # "on:" decides when this runs.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       deployment_sha:
@@ -96,6 +38,7 @@ jobs:
   # reaches the Pi that has not already passed on a pull request. No
   # secrets are passed in.
   validate:
+    if: github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha))
     uses: ./.github/workflows/validate.yml
 
   # =========================================================================
@@ -103,11 +46,15 @@ jobs:
   # =========================================================================
   deploy:
     name: Deploy over Tailscale
-    # Merging/pushing is never production authorization. Require explicit
-    # dispatch for this exact main SHA before access to production secrets.
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.authorize_production == true && inputs.deployment_sha == github.sha
+    # Automatic access requires separate owner activation; manual access
+    # requires assent for this exact main SHA. Validation has no secrets.
+    if: github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha))
     needs: validate          # gate: do not start until validation succeeds
     runs-on: ubuntu-latest
+    timeout-minutes: 105
+    permissions:
+      contents: read
+      pull-requests: read
     environment: production  # lets you require manual approval in repo settings
     steps:
       - name: Checkout
@@ -117,7 +64,14 @@ jobs:
         # GitHub token, and nothing here pushes.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
+
+      - name: Verify exact-main deployment provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
+        run: python3 scripts/deploy-provenance.py authorize "$GITHUB_SHA"
 
       - name: Wait for the sandbox image
         # Fail-closed pre-flight gate. Before the runner joins the tailnet and
@@ -130,6 +84,12 @@ jobs:
         # workflow's 30-minute ceiling.
         run: ./scripts/deploy-image-gate.sh
         timeout-minutes: 36
+
+      - name: Recheck main after image wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
+        run: python3 scripts/deploy-provenance.py authorize "$GITHUB_SHA"
 
       - name: Connect to tailnet
         # Joins the runner to your private network as an ephemeral node tagged
@@ -191,7 +151,7 @@ jobs:
           exit 1
 
       - name: Trigger deploy
-        # Connects as the dedicated `hybrid-ai-deploy` account and sends
+        # Connects as the dedicated `haven-deploy` account and sends
         # EXACTLY one command string: `deploy <sha>`. The account's key is
         # pinned to the forced command, so this is all the connection can do.
         #
@@ -202,7 +162,7 @@ jobs:
         # key mode 0600 under $RUNNER_TEMP, and removes it on every exit path.
         #
         # 60 min is STRICTLY longer than the deploy unit's TimeoutStartSec
-        # (45 min, deploy/hybrid-ai-deploy@.service). Keep that order: the unit
+        # (45 min, deploy/haven-deploy@.service). Keep that order: the unit
         # gives up first, so this step outlives it and reports the real
         # Result= instead of being killed mid-deploy.
         timeout-minutes: 60
@@ -220,8 +180,8 @@ jobs:
         # the runner. It prints no secret value.
         if: always()
         run: |
-          rm -f -- "${RUNNER_TEMP}/hybrid-ai-deploy-key" \
-                   "${RUNNER_TEMP}/hybrid-ai-deploy-known_hosts"
+          rm -f -- "${RUNNER_TEMP}/haven-deploy-key" \
+                   "${RUNNER_TEMP}/haven-deploy-known_hosts"
 
       - name: Summary
         # "if: always()" means this runs even when the deploy failed, so you

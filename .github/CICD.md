@@ -2,8 +2,8 @@
 
 | File | Purpose |
 |---|---|
-| `workflows/deploy.yml` | On an explicitly authorized manual dispatch for the exact main SHA, reuses `validate.yml` and then triggers the deploy unit over Tailscale. Merges/pushes do not deploy. |
-| `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` on every pull request and by `deploy.yml` on authorized manual dispatch. Holds no secrets. |
+| `workflows/deploy.yml` | Inert until owner activation; then canonical main pushes reuse `validate.yml` and deploy the exact validated merged SHA. Manual exact-main recovery remains available. |
+| `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` on every pull request and by `deploy.yml` on activated main pushes or authorized manual dispatch. Holds no secrets. |
 | `workflows/sandbox-image.yml` | Builds and publishes the derived agent-server image to GHCR. Auto-publishes on a push to `main` that changes `openhands/agent-server/Dockerfile` (tag read from the `image_tag` default, guarded against overwriting an existing tag); `workflow_dispatch` is the manual rebuild path. |
 | `workflows/agent-context.yml` | Checks the checked-in `REPO_MAP.md` and `CODE_INDEX.md` are fresh on every pull request. Read-only; never commits. |
 | `workflows/sast-checks.yml` | The single pull-request gate: ShellCheck, Semgrep, source validation, CodeQL and the Hermes non-root smoke test, ending in the `Security & SAST gate`. |
@@ -13,7 +13,12 @@
 
 ## What this does
 
-Dispatch **Deploy Control Plane** from `main`, supply the full current main SHA in `deployment_sha`, and explicitly select `authorize_production` after approving that deployment. GitHub then rents a temporary computer that validates your code, joins your private network, and asks your Raspberry Pi (over SSH, as the dedicated deploy account) to run the exactly-one-thing deploy unit. The unit pulls the new version and re-runs `install.sh`. If the site does not come back up, the build fails loudly with the relevant logs attached.
+Automatic deployment is prepared but **inactive** until canonical cutover acceptance and explicit owner authorization to set the repository variable `HAVEN_AUTOMATIC_DEPLOYMENT` to exactly `enabled`. This PR changes no settings or secrets. After activation, owner merges to main need no additional deployment approval. The existing `production` environment remains in use; any configured protection still applies. Clearing the variable disables future automatic jobs without cancelling a running host transaction.
+
+For manual recovery, dispatch **Deploy Control Plane** from `main`, supply the full current main SHA in `deployment_sha`, and select `authorize_production`. Both paths validate that exact SHA before production access. The automatic path additionally requires a canonical repository push and a matching merged-main PR from the GitHub API; fork, forced/deleted push, unmatched SHA and stale main are refused. Provenance is rechecked after the image wait.
+
+Generated maps still travel through the owner-reviewed draft PR path introduced in #206. The bot never merges. Its token-suppressed branch/PR events are handled by the existing bounded validation dispatches, not by production dispatch. The human owner's eventual main merge generates the ordinary deployment push; map-only main merges are validated/deployed normally after activation. No reconciliation service or bot auto-merge is introduced.
+
 
 The interesting part is how it reaches your Pi. **Your Pi has no public IP address, no open firewall ports, and no port forwarding configured.** The GitHub runner temporarily joins your Tailscale network as a member tagged `tag:ci`, connects over the encrypted mesh, does its work, and disappears when the job ends.
 
@@ -31,7 +36,7 @@ Installation-root migration must use the transactional deployment path and its a
 ### Job 1 — `validate`
 
 Runs on every pull request to `main` (through `sast-checks.yml`) and on every
-authorized manual dispatch (through `deploy.yml`). Catches mistakes before they can reach
+activated canonical-main push or authorized manual dispatch (through `deploy.yml`). Catches mistakes before they can reach
 the Pi.
 
 | Check | What it catches |
@@ -59,11 +64,11 @@ Only runs if `validate` passed.
 1. Runs `scripts/deploy-image-gate.sh`, a fail-closed pre-flight gate that polls GHCR until the sandbox image tag pinned by `install.sh` STEP 8 is published, so the deploy cannot race the image build. It needs no token and no tailnet; `permissions` stay `contents: read`. Bounded at 36 minutes, just past the build workflow's 30-minute ceiling.
 2. Joins the tailnet as an ephemeral node tagged `tag:ci`
 3. Confirms the Pi is reachable, retrying for ~50 seconds while mesh routes establish
-4. Connects as the dedicated `hybrid-ai-deploy` account and sends exactly one command string, `deploy <sha>`, through `scripts/deploy-trigger.sh`
-5. The forced command on the Pi starts the system unit `hybrid-ai-deploy@<sha>.service`, which runs `scripts/deploy-instance.sh <sha>`: it refuses any revision that is not an ancestor of `origin/main`, resets to the exact `github.sha` CI validated, and asserts `HEAD` equals it
+4. Connects as the dedicated `haven-deploy` account and sends exactly one command string, `deploy <sha>`, through `scripts/deploy-trigger.sh`
+5. The forced command on the Pi starts the system unit `haven-deploy@<sha>.service`, which runs `scripts/deploy-instance.sh <sha>`: it refuses any revision that is not an ancestor of `origin/main`, resets to the exact `github.sha` CI validated, and asserts `HEAD` equals it
 6. `scripts/deploy-instance.sh` hands off to `scripts/deploy-remote.sh <sha>`, which re-asserts `HEAD` and then runs `./install.sh --non-interactive`
 7. `scripts/deploy-remote.sh` polls the health endpoint for up to two minutes and gates on `./doctor.sh --no-cloud`: warnings stay green, failures turn the deploy red
-8. `scripts/deploy-remote.sh` also starts `scripts/run-post-deploy-verify.sh` in a transient `systemd-run` unit named `hybrid-ai-post-deploy-verify-<sha12>-<pid>`, which outlives the deploy unit and records `PASS`/`FAIL`/`TIMEOUT` for that commit in `/var/log/hybrid-ai-post-deploy-verify.log`. The next deploy's `doctor.sh` reads that recorded verdict back and surfaces it in that run's log (a pass line for `PASS`, a warning quoting the verdict for `FAIL`/`TIMEOUT`). Its outcome never changes the deploy's exit status (see [`deploy/README.md`](../deploy/README.md#post-deploy-verification-after-the-workflow-has-finished))
+8. On the canonical unit path, `ExecStartPost` runs the existing root verifier **after** the transaction process releases its locks. It has a 10-minute bound (plus a 30-second kill grace), following the unit's 45-minute install bound, inside the 60-minute SSH step. It requires the matching main deployment run's successful `validate / Validate sources` job and its in-progress deployment job, supersedes older deployment attempts at the same SHA, then checks other returned workflows, exact deployed HEAD, canonical wiring, runtime health, backup policy and durable transaction acceptance. It does not wait for its own deployment job to finish. Non-successful mandatory evidence, API failures, timeout or unresolved transactions fail closed. The existing journal blocks another deployment until acceptance or explicit recovery. Direct operator migration and custom/local deploy paths retain asynchronous verification.
 9. The forced command reads back the unit result and prints the run log into the workflow output, so you can diagnose a failure without SSHing in yourself
 
 **Why the revision is pinned, not `origin/main`.** `validate` tests the commit that
@@ -147,12 +152,12 @@ The separate **Agent context committer** (`workflows/agent-context-committer.yml
 ## Headless deploy (active after bootstrap)
 
 `deploy/` and `scripts/deploy-*.sh` hold the pieces of a **headless
-deploy**: a dedicated, unprivileged `hybrid-ai-deploy` account with a
+deploy**: a dedicated, unprivileged `haven-deploy` account with a
 forced-command SSH entrypoint that can do exactly one thing — start the system
-unit `hybrid-ai-deploy@<sha>.service` for a 40-character commit.
+unit `haven-deploy@<sha>.service` for a 40-character commit.
 
 **This path is now the deploy.** `deploy.yml` connects as the dedicated
-`hybrid-ai-deploy` account and sends exactly one command string, `deploy <sha>`,
+`haven-deploy` account and sends exactly one command string, `deploy <sha>`,
 through the tracked client `scripts/deploy-trigger.sh`. It no longer logs in as
 the admin account and no longer runs a shell script on the Pi. The ancestor
 check, the reset to that exact commit and the `HEAD` assert all run inside
@@ -206,7 +211,7 @@ ssh-keygen -t ed25519 -C "github-actions-hybrid-ai" -f ~/.ssh/haven_deploy
 ```
 
 Install the **public** half on the Pi through the bootstrap, which writes it to
-the dedicated `hybrid-ai-deploy` account and pins it to the forced command:
+the dedicated `haven-deploy` account and pins it to the forced command:
 
 ```bash
 sudo ./scripts/bootstrap.sh --deploy-pubkey ~/.ssh/haven_deploy.pub
@@ -255,21 +260,21 @@ GitHub repo → **Settings** → **Secrets and variables** → **Actions** → *
 | `TS_OAUTH_CLIENT_ID` | OAuth client ID | Step 2 |
 | `TS_OAUTH_SECRET` | OAuth client secret | Step 2 |
 | `PI_TAILSCALE_FULL_DOMAIN` | The Pi's MagicDNS name, e.g. `jarvis.tailXXXX.ts.net` | `tailscale status` on the Pi — the peer's `DNSName` without its trailing dot. Use the name, not the address: a re-registered Pi keeps its name but can change its mesh address |
-| `PI_SSH_KEY` | **Private** key contents | `cat ~/.ssh/haven_deploy` — include the BEGIN and END lines. The matching public key is pinned to the forced command on the `hybrid-ai-deploy` account |
+| `PI_SSH_KEY` | **Private** key contents | `cat ~/.ssh/haven_deploy` — include the BEGIN and END lines. The matching public key is pinned to the forced command on the `haven-deploy` account |
 | `PI_SSH_HOST_KEY` | The Pi's SSH host key fingerprint | `ssh-keyscan -t ed25519 $(tailscale ip -4) \| ssh-keygen -lf -` on the Pi — use the SHA256:... field, not the raw known_hosts line |
 | `PI_SSH_USER` | **Unused** | May be deleted by the owner |
 | `PI_REPO_PATH` | **Unused** | May be deleted by the owner |
 
-> `PI_SSH_KEY` takes the **private** key. That is correct and expected — GitHub needs it to authenticate. It is stored encrypted and masked in logs. This is also why the key should be dedicated to this purpose and authorised only on the Pi, never a key you use elsewhere. It is now the key for the dedicated `hybrid-ai-deploy` account, and its `authorized_keys` line pins it to the forced command.
+> `PI_SSH_KEY` takes the **private** key. That is correct and expected — GitHub needs it to authenticate. It is stored encrypted and masked in logs. This is also why the key should be dedicated to this purpose and authorised only on the Pi, never a key you use elsewhere. It is now the key for the dedicated `haven-deploy` account, and its `authorized_keys` line pins it to the forced command.
 
 > `PI_SSH_USER` and `PI_REPO_PATH` are unused. The deploy no longer logs in as
-> the admin account (the login name is the literal `hybrid-ai-deploy`), and the
+> the admin account (the login name is the literal `haven-deploy`), and the
 > remote path is resolved on the host by `scripts/deploy-instance.sh`. The owner
 > may delete both secrets.
 
 ### 5. Optional — require approval before deploying
 
-The workflow declares `environment: production`, but that name alone does not enforce reviewer approval. The inspected environment had only a branch policy. The tracked workflow now requires manual dispatch, explicit production assent and the exact main SHA before accessing production secrets. Automated host recovery preflight is also mandatory. Configuring required reviewers is a separate owner settings action; this PR does not change settings.
+The workflow declares `environment: production`, but that name alone does not enforce reviewer approval. The inspected environment had only a branch policy. The tracked workflow requires either separately activated automatic canonical-main deployment or manual dispatch with explicit production assent for the exact main SHA before production access. Automated host recovery preflight is also mandatory. Configuring required reviewers is a separate owner settings action; this PR does not change settings.
 
 Worth enabling if the Pi is doing anything you depend on.
 
@@ -293,7 +298,7 @@ Watch the **Actions** tab. First run takes 2–4 minutes.
 | `RUNPOD_API_KEY missing and --non-interactive was requested` | `.env` does not exist on the Pi yet | Run `./install.sh` interactively on the Pi once first |
 | `Open WebUI failed its health check` | Container did not start | The workflow output includes the last 50 log lines — read those |
 | OAuth client errors | Wrong scope or missing tag | Client needs `auth_keys` write scope and `tag:ci` |
-| Workflow does not trigger | Only doc files changed | `paths-ignore` skips `**/*.md` by design. Use the manual **Run workflow** button |
+| Automatic deploy job skipped | Activation variable absent or not `enabled` | Keep inactive until canonical acceptance and explicit owner activation; manual exact-main dispatch remains available |
 
 ---
 

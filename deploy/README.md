@@ -1,5 +1,28 @@
 # deploy/ — headless deploy (one commit, one unit)
 
+Automatic deployment preparation (#199): inactive until canonical cutover acceptance
+and explicit owner activation of `HAVEN_AUTOMATIC_DEPLOYMENT=enabled` in Actions
+repository variables. No settings/secrets or host changes occur in this PR.
+After activation, trusted main pushes validate and deploy the exact merged SHA;
+manual dispatch retains explicit assent for the current main SHA. See
+[the activation and recovery contract](../.github/CICD.md).
+
+Canonical `haven-deploy@` units now run the existing verifier in `ExecStartPost`:
+SSH success requires root verification and transaction acceptance, not merely
+scheduling. The installer releases its locks first; the unresolved journal fences
+other deployments. The verifier requires successful validation in its own waiting
+deploy workflow instead of waiting for that workflow's eventual completion.
+Older deployment attempts at the same SHA are superseded by the current validated
+run; other returned workflows must finish successfully. Verification has a ten-minute bound;
+failed, disconnected or timed-out attempts require inspection of the protected
+journal and existing current-data recovery procedure. Disconnecting the client
+never authorizes rollback or cancels the root transaction. Keep immutable recovery
+artifacts. Do not clear the journal or retry around failed mandatory controls.
+
+The asynchronous behavior described below remains for direct operator migration
+and custom/local paths. It no longer describes canonical unit success.
+
+
 ## Installation root migration
 
 Fresh bootstrap uses `/opt/haven`. Existing bootstrapped `/opt/haven`

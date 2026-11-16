@@ -187,6 +187,13 @@ case "$doctor_rc" in
     ;;
 esac
 
+# Canonical transactions use the unit's ExecStartPost verifier, after this
+# process releases the deployment locks. SSH waits for the whole unit result.
+if [[ "${HAVEN_DEPLOY_SYNCHRONOUS_VERIFY:-0}" == 1 ]]; then
+  echo 'Root verification is required by haven-deploy@.service ExecStartPost.'
+  exit 0
+fi
+
 # POST-DEPLOY VERIFICATION, in its OWN transient unit.
 # A waiter started as a child of this deploy would be killed when the deploy
 # unit exits: deploy/haven-deploy@.service is Type=oneshot with the default

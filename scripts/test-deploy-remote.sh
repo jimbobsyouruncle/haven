@@ -394,6 +394,19 @@ for slug in '' 'unapproved-selector-fixture' $'jimbobsyouruncle/haven\n'; do
   fi
 done
 
+# The canonical unit must own verification; scheduling a second waiter would
+# race ExecStartPost acceptance and can deadlock on the deployment workflow.
+rm -f "$SDRUN_LOG"
+rc=0
+HAVEN_DEPLOY_SYNCHRONOUS_VERIFY=1 SYSTEMD_RUN_LOG="$SDRUN_LOG" \
+  run_deploy "$WORKDIR/synchronous.out" "$SHA" || rc=$?
+if [[ "$rc" == 0 && ! -e "$SDRUN_LOG" ]] &&
+   has_line "$WORKDIR/synchronous.out" 'Root verification is required by haven-deploy@.service ExecStartPost.'; then
+  pass "canonical unit owns verification without a second asynchronous waiter"
+else
+  fail "canonical unit verification handoff failed"
+fi
+
 # Case: the verifier script is absent. The deployment must fail closed.
 rm -f "$MARKER" "$SDRUN_LOG"
 ABSENT_CMD="$WORKDIR/not-installed/run-post-deploy-verify.sh"

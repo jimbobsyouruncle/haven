@@ -441,10 +441,21 @@
 - url_has_userinfo()
 - url_is_https()
 
+## scripts/deploy-provenance.py
+- def require(condition)
+- def get(path, authenticated)
+- def merged(sha)
+- def authorize(sha)
+- def runs(sha)
+- def main()
+
 ## scripts/deploy-remote.sh
 - (no symbols)
 
 ## scripts/deploy-trigger.sh
+- (no symbols)
+
+## scripts/deploy-verify.sh
 - (no symbols)
 
 ## scripts/install-root.py
@@ -845,6 +856,9 @@
 - ceiling_guard()
 - check_ceiling()
 - run_verify()
+
+## scripts/test-deploy-provenance.sh
+- (no symbols)
 
 ## scripts/test-deploy-remote.sh
 - pass()
