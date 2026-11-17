@@ -497,7 +497,7 @@ RUN_CONCLUSION=()
 #   error      the API, the network or the body was unusable
 # Never sends an Authorization header: the request is anonymous on purpose.
 probe_runs() {
-  local http_code rows id status conclusion provenance_rc
+  local http_code rows id status conclusion provenance_rc remaining
 
   PROBE_STATE="pending"
   PROBE_ERROR=""
@@ -511,9 +511,12 @@ probe_runs() {
     fi
     http_code=200
   elif [[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]]; then
+    remaining=$(( DEADLINE_SECONDS - $(date +%s) + START_TS ))
+    (( remaining > 0 )) || return 0
     provenance_rc=0
-    python3 "$APP_DIR/scripts/deploy-provenance.py" runs "$SHA" > "$BODY_FILE" || provenance_rc=$?
-    if (( provenance_rc == 75 )); then
+    /usr/bin/timeout --kill-after=1s "${remaining}s" \
+      python3 "$APP_DIR/scripts/deploy-provenance.py" runs "$SHA" > "$BODY_FILE" || provenance_rc=$?
+    if (( provenance_rc == 75 || provenance_rc == 124 )); then
       # Temporary uncertainty remains pending until the existing deadline.
       return 0
     elif (( provenance_rc != 0 )); then

@@ -200,6 +200,14 @@ class Provenance(unittest.TestCase):
         with self.assertRaises(m.Refused) as caught: self.execute()
         self.assertTrue(caught.exception.retry)
 
+    def test_active_failed_conclusions_are_not_accepted(self):
+        self.rerun_fixture()
+        self.responses['/actions/runs/12/attempts/2/jobs?per_page=100']['jobs'][0]['conclusion'] = 'failure'
+        with self.assertRaisesRegex(m.Refused, 'PROVENANCE_DEPLOY_STATE'): self.execute()
+        self.rerun_fixture()
+        self.responses['/actions/runs/12']['conclusion'] = 'failure'
+        with self.assertRaisesRegex(m.Refused, 'PROVENANCE_DEPLOY_STATE'): self.execute()
+
     def test_transport_http_and_json_diagnostics_are_fixed(self):
         import urllib.error
         errors = [(urllib.error.URLError('private fixture'), 'PROVENANCE_API_TRANSPORT', True),

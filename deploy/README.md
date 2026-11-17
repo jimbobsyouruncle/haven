@@ -701,7 +701,8 @@ credentials or host configuration. `PROVENANCE_API_TRANSPORT`,
 `PROVENANCE_API_TRANSIENT`, `PROVENANCE_API_JSON`, missing/pending evidence,
 inconsistent views and changed attempts return temporary exit 75 only in `runs`
 mode. The existing verifier retries every 30 seconds within its 540-second
-job-aware deadline, still bounded by ExecStartPost's 10-minute timeout. Temporary
+job-aware deadline; each helper invocation is capped by the remaining budget,
+with ExecStartPost's 10-minute timeout as the outer bound. Temporary
 uncertainty never publishes successful acceptance. Other helper failures stop
 verification immediately. Non-rate-limit 403, other permanent HTTP errors,
 identity mismatches, ambiguous gates, failed validation and completed deployment

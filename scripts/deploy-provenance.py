@@ -137,7 +137,8 @@ def deployment_jobs(run, sha):
     if not deploy:
         pending('PROVENANCE_DEPLOY_MISSING')
     require(len(deploy) == 1, 'PROVENANCE_DEPLOY_AMBIGUOUS')
-    require(deploy[0]['status'] == 'in_progress', 'PROVENANCE_DEPLOY_STATE')
+    require(deploy[0]['status'] == 'in_progress' and deploy[0]['conclusion'] is None,
+            'PROVENANCE_DEPLOY_STATE')
 
 
 def runs(sha):
@@ -155,6 +156,7 @@ def runs(sha):
         pending('PROVENANCE_ACTIVE_MISSING')
     require(len(deployments) == 1, 'PROVENANCE_ACTIVE_AMBIGUOUS')
     current = deployments[0]
+    require(current['conclusion'] is None, 'PROVENANCE_DEPLOY_STATE')
     require(current['head_branch'] == 'main' and current['event'] in ('push', 'workflow_dispatch'),
             'PROVENANCE_WORKFLOW_IDENTITY')
     deployment_jobs(current, sha)
@@ -167,7 +169,8 @@ def runs(sha):
             and refreshed['event'] == current['event'], 'PROVENANCE_WORKFLOW_IDENTITY')
     if refreshed['run_attempt'] != current['run_attempt']:
         pending('PROVENANCE_ATTEMPT_CHANGED')
-    require(refreshed['status'] == 'in_progress', 'PROVENANCE_DEPLOY_STATE')
+    require(refreshed['status'] == 'in_progress' and refreshed['conclusion'] is None,
+            'PROVENANCE_DEPLOY_STATE')
     entries = [r for r in entries if r.get('path') != '.github/workflows/deploy.yml'
                or r['id'] == current['id']]
     current.update(status='completed', conclusion='success')
