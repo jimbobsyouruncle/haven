@@ -418,6 +418,10 @@
 ## scripts/check-no-masked-literals.sh
 - usage()
 
+## scripts/ci-components.py
+- def select(paths)
+- def main()
+
 ## scripts/ci-parity.sh
 - usage()
 - parse_steps()
@@ -829,6 +833,16 @@
 - check_absent()
 - fingerprint()
 - write_baseline()
+
+## scripts/test-ci-components.py
+- class SelectionTests(TestCase)
+  - def selected(self, *paths)
+  - def test_representative_boundaries(self)
+  - def test_shared_unknown_security_and_ci_are_full(self)
+  - def test_cli_git_diff_deletion_rename_and_invalid_base(self)
+  - def test_selected_workflow_steps(self)
+  - def test_aggregate_gate_fails_closed(self)
+  - def test_workflow_contract(self)
 
 ## scripts/test-ci-parity.sh
 - record()

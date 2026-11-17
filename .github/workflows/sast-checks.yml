@@ -1,22 +1,8 @@
 name: Security & SAST Checks
 
-# ONE gate for every pull request to main. The gate itself is deliberately
-# unfiltered: it always runs and fails closed, so the required check is always
-# present. The Hermes non-root smoke -- the longest job by far -- is the single
-# exception. A `changes` job skips it when the pull request touches neither
-# hermes/ nor this workflow, because such a pull request cannot change the
-# image the smoke builds. Every other job, and `schedule`/`workflow_dispatch`,
-# stay unfiltered. CodeQL advanced setup replaces the repository's dynamic
-# "default setup" (the owner disables that by hand before merging this).
-#
-# Triggers:
-#   pull_request -> opened, synchronize, reopened (the defaults). Note
-#     ready_for_review is NOT included, so marking a draft ready re-runs
-#     nothing.
-#   workflow_dispatch -> manual run.
-#   schedule -> a weekly main-branch baseline for CodeQL and a Semgrep
-#     rule-drift check. There is no push-to-main trigger: a merge lands
-#     through its pull request, and the deploy workflow is the push path.
+# Always-present required gate. Source validation selects affected components;
+# security scans remain blocking and unfiltered. Weekly/manual runs are full.
+# No push trigger and no ready_for_review trigger; publication cannot deploy.
 on:
   pull_request:
     branches: [ "main" ]
@@ -139,6 +125,8 @@ jobs:
   validate:
     name: Validate sources
     uses: ./.github/workflows/validate.yml
+    with:
+      changed_only: true
 
   codeql:
     name: CodeQL (${{ matrix.language }})
@@ -169,12 +157,8 @@ jobs:
         with:
           category: "/language:${{ matrix.language }}"
 
-  # Decides whether the Hermes image can possibly change. The smoke job builds
-  # only the hermes/ tree, and this workflow defines that job, so a pull
-  # request touching neither cannot change the image the smoke builds. This
-  # narrows only WHEN the smoke runs; its assertions stay untouched. It is
-  # fail-closed: `set -euo pipefail` means any git failure fails this job, and
-  # the gate requires `changes` to succeed.
+  # Exact PR base-to-head paths; Git errors fail before any output is emitted.
+  # Shared CI selection/configuration changes also exercise the ARM64 smoke.
   changes:
     name: Detect Hermes changes
     runs-on: ubuntu-latest
@@ -191,28 +175,23 @@ jobs:
           # against HEAD, which a depth-1 checkout does not contain.
           fetch-depth: 0
       - name: Decide whether the Hermes image can change
-        # The base ref is passed through env, never interpolated into the
-        # script (the same shape as the Semgrep job's BASE_SHA). An empty base
-        # (schedule, workflow_dispatch) is unfiltered. Two paths matter: the
-        # hermes/ tree the image is built from, and this workflow, which
-        # defines the smoke. `set -euo pipefail` makes any git failure fail the
-        # step rather than silently report "no change".
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
         id: detect
         run: |
           set -euo pipefail
-          if [ -z "${BASE_REF}" ]; then
-            echo "No base ref (not a pull request): running the smoke unfiltered."
+          if [ "$EVENT_NAME" != pull_request ]; then
             echo "hermes_image=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --quiet "origin/${BASE_REF}"...HEAD -- hermes/ .github/workflows/sast-checks.yml; then
-            echo "No change under hermes/ or this workflow: skipping the smoke."
-            echo "hermes_image=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "hermes/ or this workflow changed: running the smoke."
+          # The same conservative mapping used by source validation includes
+          # full-suite fallback and exercises the smoke for CI/shared paths.
+          python3 scripts/ci-components.py --base "$BASE_SHA" > /tmp/ci-components
+          if grep -qx 'hermes=true' /tmp/ci-components; then
             echo "hermes_image=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hermes_image=false" >> "$GITHUB_OUTPUT"
           fi
 
   # Proves the Hermes image runs as a dedicated non-root uid. It builds the
@@ -501,7 +480,12 @@ jobs:
           # pull request cannot change the image it builds. A `failure` or
           # `cancelled` here still reds the gate.
           smoke="${{ needs.hermes-nonroot-smoke.result }}"
-          if [ "$smoke" != "success" ] && [ "$smoke" != "skipped" ]; then
+          expected="${{ needs.changes.outputs.hermes_image }}"
+          if [ "$expected" = true ]; then
+            [ "$smoke" = success ] || failed=1
+          elif [ "$expected" = false ]; then
+            [ "$smoke" = skipped ] || failed=1
+          else
             failed=1
           fi
           if [ "$failed" -ne 0 ]; then
