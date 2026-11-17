@@ -454,12 +454,12 @@
 - def merged(sha)
 - def authorize(sha)
 - def evidence_list(data, key)
-- def deployment_jobs(run, sha)
+- def deployment_jobs(run, sha, historical)
 - def runs(sha)
 - def emit_evidence(data)
 - def complete_list(data, key)
 - def trusted_run(run, sha)
-- def manual_runs(sha)
+- def manual_runs(sha, historical)
 - def main()
 
 ## scripts/deploy-remote.sh
@@ -513,6 +513,7 @@
   - def restore(self, journal)
   - def wiring(self, sha)
   - def reverify_manual(self, sha)
+  - def reverify_recovery(self, sha, journal_hash)
   - def accept(self, sha, evidence, allow_accepted)
   - def deploy(self, sha)
 - def main()

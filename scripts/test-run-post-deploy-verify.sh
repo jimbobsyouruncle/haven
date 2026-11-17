@@ -804,6 +804,9 @@ if marker and (os.environ.get('FIXTURE_PROVENANCE_ALWAYS_RETRY') == '1' or not P
     sys.exit(75)
 if os.environ.get('FIXTURE_PROVENANCE_FAIL') == '1':
     sys.exit(1)
+if sys.argv[1] == 'recovery-runs':
+    print('{"historical_failure":{"failed_deploy_run":12},"workflow_runs":[{"id":1,"status":"completed","conclusion":"success"}]}')
+    sys.exit(0)
 print('{"workflow_runs":[{"id":1,"status":"completed","conclusion":"success"}]}')
 PYFIXTURE
 export HAVEN_VERIFY_DEPLOY_JOB=1
@@ -862,6 +865,17 @@ run_verify "$TREE_A" "__absent__"
 if [[ "$RC" == 2 ]]; then pass "manual verifier requires parent evidence descriptor";
 else fail "manual verifier ran without root parent descriptor"; fi
 unset HAVEN_VERIFY_MANUAL_CUTOVER VERIFY_MOCK_ROOT
+export HAVEN_VERIFY_RECOVERY=1 HAVEN_VERIFY_EVIDENCE_FD=7 VERIFY_MOCK_ROOT=1
+exec 7>"$WORKDIR/root-evidence.json"
+run_verify "$TREE_A" "__absent__"
+exec 7>&-
+if [[ "$RC" == 0 ]] && "$REAL_JQ" -e '
+    .gates.workflow_runs.state == "PASS" and
+    .gates.historical_deployment.state == "FAIL" and
+    (.gates.historical_deployment.required | not)' "$WORKDIR/root-evidence.json" >/dev/null; then
+  pass "recovery preserves failed workflow and returns fresh root evidence"
+else fail "recovery evidence missing: $OUT"; fi
+unset HAVEN_VERIFY_RECOVERY HAVEN_VERIFY_EVIDENCE_FD VERIFY_MOCK_ROOT
 VERIFY_SCRIPT="$SOURCE_VERIFY"
 unset HAVEN_VERIFY_INSTALL_ROOT
 

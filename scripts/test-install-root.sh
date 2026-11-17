@@ -201,6 +201,59 @@ class MigrationTests(unittest.TestCase):
         self.tx.accept(self.sha, self.receipt())
         self.tx.wiring(self.sha)
 
+    def test_acceptance_only_recovery_gates_and_retry(self):
+        self.tx.deploy(self.sha)
+        original = self.tx.journal.read_bytes()
+        digest = hashlib.sha256(original).hexdigest()
+        runner = self.tx.run
+        def verifier(args, **kw):
+            if args[0] != '/usr/bin/timeout':
+                return runner(args, **kw)
+            self.assertEqual(kw['env']['HAVEN_VERIFY_RECOVERY'], '1')
+            result = self.receipt()
+            for name in ('backup_log', 'backup_readability', 'verdict_file'):
+                result['gates'][name] = dict(required=True, state='PASS')
+            os.write(int(kw['env']['HAVEN_VERIFY_EVIDENCE_FD']), json.dumps(result).encode())
+            return subprocess.CompletedProcess(args, 0)
+        with patch.object(MODULE, 'RECOVERY_SHA', self.sha), patch.object(self.tx, 'trusted'):
+            with self.assertRaises(MODULE.Refusal):
+                self.tx.reverify_recovery(self.sha, 'f' * 64)
+            archive = Path(self.tx.load()['proxy_recovery']['archive'])
+            saved = archive.read_bytes()
+            archive.write_bytes(b'corrupt')
+            with self.assertRaises(MODULE.Refusal):
+                self.tx.reverify_recovery(self.sha, digest)
+            archive.write_bytes(saved)
+            with patch.object(self.tx, 'run', side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt): self.tx.reverify_recovery(self.sha, digest)
+            self.assertEqual(self.tx.journal.read_bytes(), original)
+            def failed_gate(args, **kw):
+                if args[0] != '/usr/bin/timeout':
+                    return runner(args, **kw)
+                result = self.receipt()
+                for name in ('backup_log', 'backup_readability', 'verdict_file'):
+                    result['gates'][name] = dict(required=True, state='PASS')
+                result['gates']['runtime_health']['state'] = 'FAIL'
+                os.write(int(kw['env']['HAVEN_VERIFY_EVIDENCE_FD']), json.dumps(result).encode())
+                return subprocess.CompletedProcess(args, 0)
+            with patch.object(self.tx, 'run', side_effect=failed_gate):
+                with self.assertRaises(MODULE.Refusal): self.tx.reverify_recovery(self.sha, digest)
+            self.assertEqual(self.tx.journal.read_bytes(), original)
+            def changed_journal(args, **kw):
+                result = verifier(args, **kw)
+                if args[0] == '/usr/bin/timeout':
+                    self.tx.journal.write_bytes(original + b' ')
+                return result
+            with patch.object(self.tx, 'run', side_effect=changed_journal):
+                with self.assertRaises(MODULE.Refusal): self.tx.reverify_recovery(self.sha, digest)
+            self.tx.journal.write_bytes(original)
+            with patch.object(self.tx, 'run', side_effect=verifier):
+                self.tx.reverify_recovery(self.sha, digest)
+                accepted = self.tx.journal.read_bytes()
+                with self.assertRaises(MODULE.Refusal): self.tx.reverify_recovery(self.sha, digest)
+            self.assertEqual(self.tx.journal.read_bytes(), accepted)
+            self.assertEqual(self.tx.load()['phase'], 'accepted')
+
     def test_legacy_and_repeated_deployment(self):
         self.tx.deploy(self.sha)
         self.assertEqual(self.tx.load()['phase'], 'awaiting_verifier')

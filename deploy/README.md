@@ -721,8 +721,8 @@ and SSH grammar, polkit rights and log permissions are unchanged.
 
 The installed revision from a failed verification is not accepted by this change.
 A successful install or matching HEAD is insufficient; a failed workflow stays
-failed. This PR does not add a failed-workflow exception, invoke recovery, clear a
-journal or change production configuration. The special `reverify-manual` identity
+failed. The incident-specific acceptance path below verifies historical CI without
+changing the failed workflow's conclusion. The special `reverify-manual` identity
 cutover path intentionally rejects a failed deployment workflow and must not be
 repurposed for this incident.
 
@@ -738,9 +738,7 @@ bounded recovery review for the installed full SHA and existing transaction:
    the original cause. Reuse valid checks where their coverage is unchanged.
 3. Review an exact recovery execution plan under the existing deployment locks.
    Require fresh root wiring, doctor/runtime, required backup and receipt gates.
-   Current code does not offer acceptance of this completed failed workflow;
-   if forward verification needs a bounded recovery-driver change, review that
-   separately rather than forging an active run or weakening normal provenance.
+   The acceptance-only action below is limited to this failed workflow.
 4. Obtain explicit owner authorization for that concrete recovery/acceptance
    operation before execution. Root evidence must satisfy the existing acceptance
    checks; never edit journal phase or public receipts to manufacture acceptance.
@@ -750,3 +748,58 @@ bounded recovery review for the installed full SHA and existing transaction:
 Owner merge review of this PR is not production deployment or recovery acceptance
 authorization. Rollback remains the existing reviewed revert plus separately
 approved host recovery procedure; changing code alone does not restore services.
+
+### Acceptance-only recovery for the 5c2df63 transaction
+
+Production execution requires separate explicit owner authorization. Before
+running, confirm privately that the installed checkout and journal identify the
+target below, the journal is `awaiting_verifier`, the retained previous checkout,
+saved controls, immutable proxy archive and independent backups are available,
+and the original failure has no unresolved cause beyond verification. Pause
+competing deployment, backup, restore and prune operations. Preserve current data
+and all recovery artifacts; do not edit the journal or replay installation.
+
+In an administrator shell, replace the placeholder with the full SHA of the
+reviewed, merged recovery driver; it is distinct from the installed SHA. The
+checkout must be a new root-owned path, with trusted parents and no symlinks or
+group/other-writable files. Do not replace the installed checkout.
+
+```sh
+set -eu
+reviewed_sha=REPLACE_WITH_REVIEWED_MERGED_DRIVER_SHA
+production_sha=5c2df63a73c81ddfbad868dbfe617ee383242ff4
+reviewed_checkout=/root/haven-acceptance-recovery
+sudo git clone --no-checkout https://github.com/jimbobsyouruncle/haven.git "$reviewed_checkout"
+sudo git -C "$reviewed_checkout" checkout --detach "$reviewed_sha"
+test "$(sudo git -C "$reviewed_checkout" rev-parse HEAD)" = "$reviewed_sha"
+test -z "$(sudo git -C "$reviewed_checkout" status --porcelain)"
+sudo jq '{sha,phase,started_ns}' /var/lib/haven-install-root/current.json
+transaction_hash=$(sudo sha256sum /var/lib/haven-install-root/current.json | cut -d ' ' -f 1)
+printf 'transaction sha256: %s\n' "$transaction_hash"
+```
+
+Require the target SHA and `awaiting_verifier` in the sanitized journal output.
+Record the journal digest privately as the transaction identity. Stop on any
+unexpected result. With separate execution authorization, invoke:
+
+```sh
+sudo python3 "$reviewed_checkout/scripts/install-root.py" reverify-recovery "$production_sha" "$transaction_hash"
+sudo jq '{sha,phase,started_ns}' /var/lib/haven-install-root/current.json
+sudo jq '{sha,head,at,verdict,rc,gates}' "/var/lib/haven/hermes_data/deploy-verdicts/$production_sha.json"
+```
+
+Success requires exit 0, the same SHA and start time with `phase=accepted`, a
+fresh receipt with matching SHA and head, `rc=0`, and every required gate PASS.
+The optional historical deployment observation remains FAIL and may produce an
+overall WARN; the original GitHub workflow remains failed. The driver uses both
+deployment locks, checks the protected journal digest again before acceptance,
+verifies retained artifacts and wiring, and obtains fresh root verifier evidence.
+A repeat using the old digest refuses without changing the accepted journal.
+
+On a lock conflict, timeout, failed gate, mismatched identity, missing artifact,
+or interruption, stop and inspect the protected journal and fresh receipt
+privately. A receipt alone does not establish acceptance. Preserve current data
+and artifacts and review the exact failure before retrying. Code/control rollback
+does not restore data or restart containers; after writers may have run, a
+separately reviewed current-data recovery is required. A successor deployment
+requires its own authorization.

@@ -296,6 +296,52 @@ class Provenance(unittest.TestCase):
             m.manual_runs(SHA)
         return json.loads(output.getvalue())
 
+    def recovery_fixture(self):
+        ci, deploy, _ = self.manual_fixture()
+        deploy.update(status='completed', conclusion='failure', run_attempt=2)
+        validation = dict(self.jobs[0])
+        failed1 = dict(self.jobs[1], status='completed', conclusion='failure')
+        failed2 = dict(failed1, id=202, run_attempt=2)
+        def jobs(items): return dict(total_count=len(items), jobs=items)
+        self.manual_data['/actions/runs/12/jobs?filter=all&per_page=100'] = jobs([validation, failed1, failed2])
+        self.manual_data['/actions/runs/12/attempts/1/jobs?per_page=100'] = jobs([validation, failed1])
+        self.manual_data['/actions/runs/12/attempts/2/jobs?per_page=100'] = jobs([failed2])
+        self.manual_data['/actions/runs/12'] = copy.deepcopy(deploy)
+        for run in ci:
+            gate = self.manual_data[f"/actions/runs/{run['id']}/jobs?per_page=100"]['jobs'][0]
+            gate.update(id=run['id']*10, run_id=run['id'], head_sha='b'*40, run_attempt=1)
+            self.manual_data[f"/actions/runs/{run['id']}/attempts/1/jobs?per_page=100"] = jobs([copy.deepcopy(gate)])
+            self.manual_data[f"/actions/runs/{run['id']}"] = copy.deepcopy(run)
+
+    def recovery(self):
+        output = io.StringIO()
+        with patch.object(m, 'RECOVERY_SHA', SHA), patch.object(m, 'RECOVERY_RUN', 12), \
+             patch.object(m, 'get', side_effect=lambda path: copy.deepcopy(self.manual_data[path])), redirect_stdout(output):
+            m.manual_runs(SHA, historical=True)
+        return json.loads(output.getvalue())
+
+    def test_recovery_preserves_failure_and_inherited_validation(self):
+        self.recovery_fixture()
+        result = self.recovery()
+        self.assertEqual(result['historical_failure']['failed_deploy_run'], 12)
+        self.assertNotIn(12, [r['id'] for r in result['workflow_runs']])
+        self.assertEqual(self.recovery(), result)
+
+    def test_recovery_rejects_wrong_or_incomplete_evidence(self):
+        for path, key, value in [('/actions/runs/12', 'run_attempt', 3),
+                                 ('/actions/runs/20', 'conclusion', 'failure')]:
+            self.recovery_fixture()
+            self.manual_data[path][key] = value
+            with self.assertRaises(ValueError): self.recovery()
+        self.recovery_fixture()
+        self.manual_data['/actions/runs/12/attempts/2/jobs?per_page=100']['jobs'][0]['conclusion'] = 'success'
+        with self.assertRaises(ValueError): self.recovery()
+        self.recovery_fixture()
+        data = self.manual_data['/actions/runs/12/jobs?filter=all&per_page=100']
+        data['jobs'].append(dict(self.jobs[0], id=203, run_attempt=2, conclusion='failure'))
+        data['total_count'] += 1
+        with self.assertRaises(ValueError): self.recovery()
+
     def test_manual_cutover_reuses_exact_merge_pr_checks_preserves_skip(self):
         self.manual_fixture()
         result = self.manual()
