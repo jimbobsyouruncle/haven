@@ -106,6 +106,69 @@ is what removes the admin-account login from the deploy path.
 
 **One gate.** Branch protection needs one check, not several. `gate` depends on all six jobs with `if: always()`, so it runs even when an earlier job fails or is cancelled. It prints each result and exits non-zero unless every result is `success`. The single exception is the Hermes non-root smoke, which may be `skipped` — and only because the `changes` job, itself required to succeed, proved the pull request cannot change the image the smoke builds. A failure or a cancellation anywhere, and a skip by any job other than `hermes-nonroot-smoke`, all fail the gate.
 
+### Deployment validation reuse decision (#219)
+
+**Retain full predeployment source validation.** This is the conservative
+implementation choice permitted by #219; it delivers **zero deployment runtime
+reduction**. PR component selection from #218 remains useful independently.
+
+Measured baseline on 2026-11-17: [PR #218 validation](https://github.com/jimbobsyouruncle/haven/actions/runs/44106521125)
+at head `eab3e524387891b0f89e0029b5b088491628110c` took 9m54s;
+[deployment validation](https://github.com/jimbobsyouruncle/haven/actions/runs/44108638958/job/134143913958)
+at merged SHA `7a898c6d3666f0dc30ffd742480728680b3a9084` took 11m40s
+(14:56:33–15:08:13 UTC). The trees are equal. Combined source-job time was
+21m34s; eliminating the second job could save at most its observed 700s,
+about 54% of combined source-job time. These are job durations, not deployment
+critical-path or future latency guarantees; queue, image wait and host work differ.
+
+| Choice | Benefit on this baseline | Added maintenance / safety boundary |
+| --- | --- | --- |
+| Keep full deploy validation | 0s saved; exact deployed tree checked independently | No new API queries, permissions, inputs or trust decisions |
+| Minimal trusted reuse with full fallback | At most 700s minus evidence lookup overhead when eligible | Must establish full coverage, exact merge/head trees, trusted workflow/check identity and completion, evidence freshness and unchanged CI/security boundaries |
+
+A green PR aggregate alone is insufficient: #218 permits docs/component-only
+validation. Even equal trees do not establish that the full suite ran. A reuse
+gate would need to prove full selection from the tested base and workflow,
+authenticate the supplying run and PR association, reject incomplete/ambiguous
+results, define freshness, and conservatively exclude CI/security changes.
+The existing `manual-runs` provenance path serves explicit manual identity
+acceptance; it is not proof of full deploy-suite coverage and is not reused here.
+This baseline itself changes CI selection/security configuration and would be
+ineligible under the issue's conservative cross-cutting-change constraint.
+Ordinary component PRs also lack full-suite coverage, so their savings under
+this minimal reuse design would be zero. No frequency estimate exists to justify
+the added gate with an aggregate runtime-saving claim.
+
+The retained policy avoids a new trust boundary for a conditional saving:
+
+| Evidence / source case | Deployment source-validation disposition |
+| --- | --- |
+| Successful trusted PR, including equal-tree merge/squash/rebase | Run full suite; merge strategy supplies no bypass |
+| Modified merge tree, mismatched SHA, direct push or untrusted source | Run full suite if entrypoint is authorized; existing automatic provenance separately rejects unmerged pushes |
+| Missing, failed, cancelled, stale, incomplete or ambiguous PR evidence | Run full suite; never reinterpret those observations as PASS |
+| CI/security/shared changes or uncertain provenance | Run full suite; retain independent authorization/provenance gates |
+
+`test-ci-components.py` executes the actual workflow selection shell for push
+and dispatch, including accidental changed-only opt-in and invalid PR metadata,
+and asserts every component is enabled. Existing provenance fixtures reject
+untrusted/mismatched runs and missing/failed/cancelled/skipped validation, and
+exercise modified merge trees in the separate manual-acceptance path. Since
+there is no reuse path, synthetic trusted-evidence mapping is not introduced.
+Positive evidence is the baseline successful full deploy job; negative evidence
+is the offline selection/provenance/gate regressions. No optimized deployment
+or reduction is claimed or needs a live production test.
+
+The verifier still requires exactly `validate / Validate sources` success before
+allowing the waiting deploy job to proceed. `Security & SAST gate` and
+`Check agent context maps`, CodeQL, Semgrep and secret checks stay intact.
+Exact-main authorization and reauthorization after image wait, host SHA/ancestry,
+image/recovery integrity, systemd transaction/rollback, doctor and post-deploy
+verification are unchanged. No credentials or production access are added.
+Operational rollback requires no action because deployment behavior is unchanged;
+the documentation/regression change can be reverted through a reviewed PR.
+Reconsider reuse only with measured eligible-deployment frequency and a small
+design that proves full coverage and all required trust properties offline.
+
 ### Component validation policy
 
 The required names remain **Security & SAST gate** and **Check agent context maps**

@@ -843,6 +843,7 @@
   - def test_selected_workflow_steps(self)
   - def test_aggregate_gate_fails_closed(self)
   - def test_workflow_contract(self)
+  - def test_deployment_selection_always_runs_full(self)
 
 ## scripts/test-ci-parity.sh
 - record()
