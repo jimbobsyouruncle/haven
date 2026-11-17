@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fail-closed main deployment provenance; API reads only, no host mutation."""
+import http.client
 import json
 import os
 from pathlib import Path
@@ -46,7 +47,7 @@ def get(path, authenticated=False):
                                    or error.headers.get('Retry-After') is not None))
         error.close()
         raise Refused('PROVENANCE_API_TRANSIENT' if retry else 'PROVENANCE_API_HTTP', retry) from None
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError):
         raise Refused('PROVENANCE_API_TRANSPORT', retry=True) from None
     except (ValueError, UnicodeError):
         raise Refused('PROVENANCE_API_JSON', retry=True) from None

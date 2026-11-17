@@ -211,6 +211,7 @@ class Provenance(unittest.TestCase):
     def test_transport_http_and_json_diagnostics_are_fixed(self):
         import urllib.error
         errors = [(urllib.error.URLError('private fixture'), 'PROVENANCE_API_TRANSPORT', True),
+                  (m.http.client.BadStatusLine('private fixture'), 'PROVENANCE_API_TRANSPORT', True),
                   (urllib.error.HTTPError('private', 503, 'private', {}, None), 'PROVENANCE_API_TRANSIENT', True),
                   (urllib.error.HTTPError('private', 403, 'private', {'X-RateLimit-Remaining': '0'}, None), 'PROVENANCE_API_TRANSIENT', True),
                   (urllib.error.HTTPError('private', 403, 'private', {}, None), 'PROVENANCE_API_HTTP', False),
