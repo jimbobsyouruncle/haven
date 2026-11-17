@@ -446,11 +446,17 @@
 - url_is_https()
 
 ## scripts/deploy-provenance.py
-- def require(condition)
+- class Refused(ValueError)
+  - def __init__(self, code, retry)
+- def require(condition, code)
+- def pending(code)
 - def get(path, authenticated)
 - def merged(sha)
 - def authorize(sha)
+- def evidence_list(data, key)
+- def deployment_jobs(run, sha)
 - def runs(sha)
+- def emit_evidence(data)
 - def complete_list(data, key)
 - def trusted_run(run, sha)
 - def manual_runs(sha)

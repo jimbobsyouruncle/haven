@@ -64,9 +64,15 @@ export HAVEN_ENV_FILE="${HAVEN_ENV_FILE:-/etc/haven/haven.env}"
 # UNCONDITIONALLY (no :- fallback) so an inherited value cannot point it back
 # at the root-only secrets file.
 export HAVEN_STACK_ENV_FILE="$HAVEN_ENV_FILE"
+# Reporting must follow canonical layout, never an inherited workspace log
+# override. Missing layout/log configuration must not fall back to /opt/haven.
+[[ -f "$HAVEN_ENV_FILE" && -r "$HAVEN_ENV_FILE" ]] || exit 2
+unset HAVEN_LOG_DIR HYBRID_AI_LOG_DIR
 # shellcheck source=scripts/lib/haven-env.sh
 source "${SCRIPT_DIR}/lib/haven-env.sh"
 
+layout_log="$(_haven_file_get "$HAVEN_ENV_FILE" HAVEN_LOG_DIR)"
+[[ -n "$layout_log" ]] || { printf 'deploy-forced-command: layout log directory missing\n' >&2; exit 2; }
 LOG_DIR="${HAVEN_LOG_DIR}/deploy"
 
 # Refuse everything that is not the one accepted command. Nothing is run.

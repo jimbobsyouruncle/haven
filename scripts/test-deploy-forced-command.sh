@@ -89,7 +89,7 @@ run() {
   printf '%s' "$rc"
 }
 
-: > "$WORKDIR/empty.env"
+printf 'HAVEN_LOG_DIR=%s\n' "$LOGDIR" > "$WORKDIR/empty.env"
 
 echo "== accepted command =="
 rc="$(run "deploy $SHA")"
@@ -172,8 +172,8 @@ fi
 
 echo "== layout-only split (bootstrapped host) =="
 # Reproduce the real bootstrapped split: a 0644 LAYOUT file names BOTH the log
-# dir and the 0600 stack file, and HAVEN_LOG_DIR / HAVEN_STACK_ENV_FILE
-# are NOT exported. The forced command must pin STACK_ENV_FILE at the layout
+# dir and the 0600 stack file, while inherited log/stack overrides point
+# elsewhere. The forced command must pin STACK_ENV_FILE at the layout
 # file, so it never reads the unreadable stack file, and it must take
 # HAVEN_LOG_DIR from the layout file (proved by printing that log).
 #
@@ -225,7 +225,7 @@ EOF
     : > "$SYSCTL_LOG"
     if (( EUID == 0 )); then chmod 0666 "$SYSCTL_LOG"; fi
     split_rc=0
-    "${priv_pre[@]}" env -u HAVEN_LOG_DIR -u HAVEN_STACK_ENV_FILE \
+    "${priv_pre[@]}" env HAVEN_LOG_DIR=/opt/haven HYBRID_AI_LOG_DIR=/opt/haven HAVEN_STACK_ENV_FILE=/unreadable/fixture \
       SSH_ORIGINAL_COMMAND="deploy $SHA" \
       HAVEN_ENV_FILE="${SPLIT}/layout.env" \
       PATH="$BIN:$PATH" SYSCTL_LOG="$SYSCTL_LOG" \
@@ -249,6 +249,22 @@ EOF
     fi
   fi
 fi
+
+echo "== missing canonical layout refuses before starting =="
+: > "$SYSCTL_LOG"
+missing_rc=0
+HAVEN_ENV_FILE="$WORKDIR/absent-layout" SSH_ORIGINAL_COMMAND="deploy $SHA" \
+  "$SCRIPT" >"$WORKDIR/out" 2>&1 || missing_rc=$?
+if [[ "$missing_rc" == 2 && ! -s "$SYSCTL_LOG" ]]; then
+  ok "missing layout refuses instead of falling back to checkout log path"
+else bad "missing layout did not refuse safely"; fi
+: > "$WORKDIR/no-log.env"
+missing_rc=0
+HAVEN_ENV_FILE="$WORKDIR/no-log.env" SSH_ORIGINAL_COMMAND="deploy $SHA" \
+  "$SCRIPT" >"$WORKDIR/out" 2>&1 || missing_rc=$?
+if [[ "$missing_rc" == 2 && ! -s "$SYSCTL_LOG" ]]; then
+  ok "missing layout log setting refuses instead of falling back"
+else bad "missing layout log setting did not refuse safely"; fi
 
 echo "== static checks =="
 # The polkit rule must contain the exact user, action id, verb and unit regex.

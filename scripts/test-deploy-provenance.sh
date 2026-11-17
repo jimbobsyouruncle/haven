@@ -34,9 +34,9 @@ class Provenance(unittest.TestCase):
                        base=dict(ref='main', repo=REPO))
         self.run = dict(id=12, head_sha=SHA, path='.github/workflows/deploy.yml',
                         repository=REPO, head_repository=REPO, head_branch='main',
-                        event='push', status='in_progress', conclusion=None)
-        self.jobs = [dict(name='validate / Validate sources', status='completed', conclusion='success'),
-                     dict(name='Deploy over Tailscale', status='in_progress', conclusion=None)]
+                        event='push', status='in_progress', conclusion=None, run_attempt=1)
+        self.jobs = [dict(id=101, run_id=12, head_sha=SHA, run_attempt=1, name='validate / Validate sources', status='completed', conclusion='success'),
+                     dict(id=102, run_id=12, head_sha=SHA, run_attempt=1, name='Deploy over Tailscale', status='in_progress', conclusion=None)]
 
     def authorize(self):
         self.path.write_text(json.dumps(self.event))
@@ -84,17 +84,32 @@ class Provenance(unittest.TestCase):
             self.path.write_text(json.dumps(self.event))
             with self.assertRaises(ValueError): m.authorize(SHA)
 
+    def run_api(self, entries=None, history=None, attempt_jobs=None, refreshed=None):
+        run = copy.deepcopy(self.run)
+        entries = copy.deepcopy(entries if entries is not None else [run, dict(
+            id=13, head_sha=SHA, path='other.yml', repository=REPO, head_repository=REPO,
+            status='completed', conclusion='success')])
+        history = copy.deepcopy(self.jobs if history is None else history)
+        attempt_jobs = attempt_jobs or {run['run_attempt']: history}
+        self.responses = {
+            '/actions/runs?head_sha=' + SHA + '&per_page=100': dict(total_count=len(entries), workflow_runs=entries),
+            '/actions/runs/12/jobs?filter=all&per_page=100': dict(total_count=len(history), jobs=history),
+            '/actions/runs/12': copy.deepcopy(refreshed or run)}
+        for attempt, jobs in attempt_jobs.items():
+            self.responses[f'/actions/runs/12/attempts/{attempt}/jobs?per_page=100'] = dict(total_count=len(jobs), jobs=copy.deepcopy(jobs))
+
+    def execute(self):
+        output = io.StringIO()
+        with patch.object(m, 'get', side_effect=lambda path: copy.deepcopy(self.responses[path])), redirect_stdout(output):
+            m.runs(SHA)
+        return json.loads(output.getvalue())['workflow_runs']
+
     def runs(self):
-        entries = [self.run, dict(id=13, head_sha=SHA, path='other.yml',
-                                 status='completed', conclusion='success')]
-        with patch.object(m, 'get', side_effect=[dict(total_count=2, workflow_runs=entries),
-                                                dict(total_count=len(self.jobs), jobs=self.jobs)]):
-            with redirect_stdout(io.StringIO()):
-                m.runs(SHA)
-        return entries
+        self.run_api()
+        return self.execute()
 
     def test_own_wait_does_not_deadlock(self):
-        self.assertEqual(self.runs()[0]['status'], 'completed')
+        self.assertEqual(self.runs()[0], dict(id=12, status='completed', conclusion='success'))
 
     def test_untrusted_runs_and_missing_failed_validation(self):
         for key, value in [('head_sha', 'b'*40), ('head_branch', 'other'),
@@ -116,20 +131,14 @@ class Provenance(unittest.TestCase):
     def test_recovery_supersedes_only_prior_deploy_attempt(self):
         old = dict(self.run, id=1, status='completed', conclusion='failure')
         entries = [old, self.run]
-        with patch.object(m, 'get', side_effect=[dict(total_count=2, workflow_runs=entries),
-                                                dict(total_count=2, jobs=self.jobs)]):
-            output = io.StringIO()
-            with redirect_stdout(output): m.runs(SHA)
-        result = json.loads(output.getvalue())['workflow_runs']
+        self.run_api(entries=entries)
+        result = self.execute()
         self.assertEqual([r['id'] for r in result], [12])
 
     def test_queued_overlap_does_not_fail_active_deployment(self):
         future = dict(self.run, id=99, status='queued', conclusion=None)
-        with patch.object(m, 'get', side_effect=[dict(total_count=2, workflow_runs=[self.run, future]),
-                                                dict(total_count=2, jobs=self.jobs)]):
-            output = io.StringIO()
-            with redirect_stdout(output): m.runs(SHA)
-        self.assertEqual([r['id'] for r in json.loads(output.getvalue())['workflow_runs']], [12])
+        self.run_api(entries=[self.run, future])
+        self.assertEqual([r['id'] for r in self.execute()], [12])
 
     def test_api_shape_missing_or_excess_results(self):
         for data in [{}, dict(total_count=0, workflow_runs=[]),
@@ -137,6 +146,112 @@ class Provenance(unittest.TestCase):
                      dict(total_count=1, workflow_runs=[dict(self.run, status='completed', conclusion='failure')])]:
             with self.subTest(data=data), patch.object(m, 'get', return_value=data):
                 with self.assertRaises((ValueError, KeyError)): m.runs(SHA)
+
+    def rerun_fixture(self, inherited=True):
+        self.run['run_attempt'] = 2
+        old_validation, old_deploy = copy.deepcopy(self.jobs)
+        old_deploy.update(status='completed', conclusion='failure')
+        deploy = dict(old_deploy, id=202, run_attempt=2, status='in_progress', conclusion=None)
+        current = [deploy]
+        if not inherited:
+            current.insert(0, dict(old_validation, id=201, run_attempt=2))
+        self.run_api(history=[old_validation, old_deploy] + current,
+                     attempt_jobs={1: [old_validation, old_deploy], 2: current})
+
+    def test_failed_job_rerun_inherits_validation(self):
+        self.rerun_fixture()
+        self.assertEqual(self.execute()[0]['conclusion'], 'success')
+
+    def test_github_copied_validation_in_latest_attempt(self):
+        self.rerun_fixture(inherited=False)
+        self.assertEqual(self.execute()[0]['conclusion'], 'success')
+
+    def test_later_validation_supersedes_success(self):
+        for state in ('failure', 'cancelled', 'skipped', 'timed_out', 'neutral', None):
+            self.rerun_fixture(inherited=False)
+            for data in self.responses.values():
+                for job in data.get('jobs', []):
+                    if job['id'] == 201:
+                        job['conclusion'] = state
+            with self.assertRaisesRegex(m.Refused, 'PROVENANCE_VALIDATION_FAILED'):
+                self.execute()
+
+    def test_attempt_change_and_incomplete_evidence_retry(self):
+        self.rerun_fixture()
+        self.responses['/actions/runs/12']['run_attempt'] = 3
+        with self.assertRaises(m.Refused) as caught: self.execute()
+        self.assertTrue(caught.exception.retry)
+        self.rerun_fixture()
+        self.responses['/actions/runs/12/jobs?filter=all&per_page=100']['total_count'] = 99
+        with self.assertRaises(m.Refused) as caught: self.execute()
+        self.assertTrue(caught.exception.retry)
+
+    def test_job_identity_duplicate_and_cross_view_disagreement(self):
+        for key, value in [('head_sha', 'b'*40), ('run_id', 99), ('run_attempt', 3)]:
+            self.rerun_fixture()
+            self.responses['/actions/runs/12/jobs?filter=all&per_page=100']['jobs'][0][key] = value
+            with self.assertRaises(m.Refused): self.execute()
+        self.rerun_fixture()
+        data = self.responses['/actions/runs/12/jobs?filter=all&per_page=100']
+        data['jobs'].append(copy.deepcopy(data['jobs'][0])); data['total_count'] += 1
+        with self.assertRaisesRegex(m.Refused, 'AMBIGUOUS'): self.execute()
+        self.rerun_fixture()
+        self.responses['/actions/runs/12/attempts/1/jobs?per_page=100']['jobs'][0]['conclusion'] = 'failure'
+        with self.assertRaises(m.Refused) as caught: self.execute()
+        self.assertTrue(caught.exception.retry)
+
+    def test_transport_http_and_json_diagnostics_are_fixed(self):
+        import urllib.error
+        errors = [(urllib.error.URLError('private fixture'), 'PROVENANCE_API_TRANSPORT', True),
+                  (urllib.error.HTTPError('private', 503, 'private', {}, None), 'PROVENANCE_API_TRANSIENT', True),
+                  (urllib.error.HTTPError('private', 403, 'private', {'X-RateLimit-Remaining': '0'}, None), 'PROVENANCE_API_TRANSIENT', True),
+                  (urllib.error.HTTPError('private', 403, 'private', {}, None), 'PROVENANCE_API_HTTP', False),
+                  (urllib.error.HTTPError('private', 404, 'private', {}, None), 'PROVENANCE_API_HTTP', False)]
+        for error, code, retry in errors:
+            with patch.object(m.urllib.request, 'build_opener') as opener:
+                opener.return_value.open.side_effect = error
+                with self.assertRaises(m.Refused) as caught: m.get('/fixture')
+                self.assertEqual(str(caught.exception), code)
+                self.assertEqual(caught.exception.retry, retry)
+        with patch.object(m.urllib.request, 'build_opener'), patch.object(m.json, 'load', side_effect=ValueError('private')):
+            with self.assertRaisesRegex(m.Refused, '^PROVENANCE_API_JSON$'): m.get('/fixture')
+
+    def test_cli_diagnostics_never_include_exception_payload(self):
+        import contextlib
+        import runpy
+        for command, error, expected in [
+                ('runs', m.urllib.error.URLError('PRIVATE_FIXTURE'), 75),
+                ('authorize', m.urllib.error.URLError('PRIVATE_FIXTURE'), 1),
+                ('runs', m.urllib.error.HTTPError('PRIVATE_FIXTURE', 401, 'PRIVATE_FIXTURE', {}, None), 1)]:
+            stderr = io.StringIO()
+            with patch.object(m.urllib.request, 'build_opener') as opener:
+                opener.return_value.open.side_effect = error
+                with patch.object(m.sys, 'argv', ['deploy-provenance.py', command, SHA]), \
+                     patch.dict(os.environ, self.env, clear=True), contextlib.redirect_stderr(stderr):
+                    self.path.write_text(json.dumps(self.event))
+                    with self.assertRaises(SystemExit) as caught:
+                        runpy.run_path('scripts/deploy-provenance.py', run_name='__main__')
+            self.assertEqual(caught.exception.code, expected)
+            self.assertRegex(stderr.getvalue(), r'^PROVENANCE_[A-Z_]+\n$')
+            self.assertNotIn('PRIVATE_FIXTURE', stderr.getvalue())
+
+    def test_pending_missing_and_terminal_run_evidence(self):
+        for changed in ('validation', 'deploy', 'empty'):
+            self.rerun_fixture()
+            path = '/actions/runs/12/attempts/2/jobs?per_page=100'
+            if changed == 'validation':
+                path = '/actions/runs/12/jobs?filter=all&per_page=100'
+                self.responses[path]['jobs'][0]['status'] = 'in_progress'
+            elif changed == 'deploy':
+                self.responses[path] = dict(total_count=0, jobs=[])
+            else:
+                self.responses[path] = {}
+            with self.assertRaises(m.Refused) as caught: self.execute()
+            self.assertTrue(caught.exception.retry)
+        self.rerun_fixture()
+        self.responses['/actions/runs/12'].update(status='completed', conclusion='failure')
+        with self.assertRaises(m.Refused) as caught: self.execute()
+        self.assertFalse(caught.exception.retry)
 
     def manual_fixture(self):
         head = 'b' * 40

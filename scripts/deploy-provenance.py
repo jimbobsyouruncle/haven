@@ -6,14 +6,25 @@ from pathlib import Path
 import re
 import sys
 import urllib.request
+import urllib.error
 
 REPO = 'jimbobsyouruncle/haven'
 API = 'https://api.github.com/repos/' + REPO
 
 
-def require(condition):
+class Refused(ValueError):
+    def __init__(self, code, retry=False):
+        self.code, self.retry = code, retry
+        super().__init__(code)
+
+
+def require(condition, code='PROVENANCE_POLICY'):
     if not condition:
-        raise ValueError('deployment provenance refused')
+        raise Refused(code)
+
+
+def pending(code):
+    raise Refused(code, retry=True)
 
 
 def get(path, authenticated=False):
@@ -26,8 +37,19 @@ def get(path, authenticated=False):
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             return None
-    with urllib.request.build_opener(NoRedirect).open(request, timeout=20) as response:
-        return json.load(response)
+    try:
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=20) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        retry = error.code in (408, 429, 500, 502, 503, 504) or (
+            error.code == 403 and (error.headers.get('X-RateLimit-Remaining') == '0'
+                                   or error.headers.get('Retry-After') is not None))
+        error.close()
+        raise Refused('PROVENANCE_API_TRANSIENT' if retry else 'PROVENANCE_API_HTTP', retry) from None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise Refused('PROVENANCE_API_TRANSPORT', retry=True) from None
+    except (ValueError, UnicodeError):
+        raise Refused('PROVENANCE_API_JSON', retry=True) from None
 
 
 def merged(sha):
@@ -59,48 +81,109 @@ def authorize(sha):
     require(get('/git/ref/heads/main', authenticated=True).get('object', {}).get('sha') == sha)
 
 
+def evidence_list(data, key):
+    require(isinstance(data, dict), 'PROVENANCE_API_SHAPE')
+    if key not in data or 'total_count' not in data:
+        pending('PROVENANCE_INCOMPLETE')
+    entries = data[key]
+    require(isinstance(entries, list) and type(data['total_count']) is int
+            and data['total_count'] >= 0, 'PROVENANCE_API_SHAPE')
+    if data['total_count'] != len(entries) or len(entries) >= 100:
+        pending('PROVENANCE_INCOMPLETE')
+    return entries
+
+
+def deployment_jobs(run, sha):
+    run_id, attempt = run['id'], run['run_attempt']
+    require(type(run_id) is int and run_id > 0 and type(attempt) is int
+            and attempt > 0, 'PROVENANCE_ATTEMPT')
+    prefix = '/actions/runs/' + str(run_id)
+    # History establishes which validation supersedes which. Never select any
+    # old success merely because the current deployment job is a rerun.
+    jobs = evidence_list(get(prefix + '/jobs?filter=all&per_page=100'), 'jobs')
+    for job in jobs:
+        require(job['run_id'] == run_id and job['head_sha'] == sha,
+                'PROVENANCE_JOB_IDENTITY')
+        require(type(job['run_attempt']) is int and 0 < job['run_attempt'] <= attempt,
+                'PROVENANCE_ATTEMPT')
+    validation = [j for j in jobs if j['name'] == 'validate / Validate sources']
+    if not validation:
+        pending('PROVENANCE_VALIDATION_MISSING')
+    latest = max(j['run_attempt'] for j in validation)
+    gates = [j for j in validation if j['run_attempt'] == latest]
+    require(len(gates) == 1, 'PROVENANCE_VALIDATION_AMBIGUOUS')
+    gate = gates[0]
+    if gate['status'] != 'completed':
+        pending('PROVENANCE_VALIDATION_PENDING')
+    require(gate['conclusion'] == 'success', 'PROVENANCE_VALIDATION_FAILED')
+    # Attempt-specific views authenticate both inherited validation and the
+    # currently waiting deployment. Cross-view disagreement cannot pass.
+    attempts = {}
+    for number in sorted({latest, attempt}):
+        attempts[number] = evidence_list(get(prefix + '/attempts/' + str(number)
+                                            + '/jobs?per_page=100'), 'jobs')
+        for job in attempts[number]:
+            require(job['run_id'] == run_id and job['head_sha'] == sha
+                    and job['run_attempt'] == number, 'PROVENANCE_JOB_IDENTITY')
+    specific = [j for j in attempts[latest] if j['name'] == gate['name']]
+    fields = ('id', 'run_id', 'head_sha', 'run_attempt', 'name', 'status', 'conclusion')
+    if len(specific) != 1 or any(specific[0][key] != gate[key] for key in fields):
+        pending('PROVENANCE_INCONSISTENT')
+    current_validation = [j for j in attempts[attempt]
+                          if j['name'] == 'validate / Validate sources']
+    if latest != attempt and current_validation:
+        pending('PROVENANCE_INCONSISTENT')
+    deploy = [j for j in attempts[attempt] if j['name'] == 'Deploy over Tailscale']
+    if not deploy:
+        pending('PROVENANCE_DEPLOY_MISSING')
+    require(len(deploy) == 1, 'PROVENANCE_DEPLOY_AMBIGUOUS')
+    require(deploy[0]['status'] == 'in_progress', 'PROVENANCE_DEPLOY_STATE')
+
+
 def runs(sha):
-    """Only the waiting deploy run may remain active, after its validation passed."""
+    """Only the waiting deploy run may remain active, after validation passed."""
     data = get('/actions/runs?head_sha=' + sha + '&per_page=100')
-    entries = data['workflow_runs']
-    require(isinstance(entries, list) and 0 < len(entries) < 100)
-    require(data['total_count'] == len(entries))
+    entries = evidence_list(data, 'workflow_runs')
+    for run in entries:
+        trusted_run(run, sha)
     deployments = [r for r in entries if r.get('path') == '.github/workflows/deploy.yml'
                    and r.get('status') == 'in_progress']
-    require(len(deployments) == 1)
-    current = int(deployments[0]['id'])
-    # The shared workflow concurrency group permits one active deployment.
-    # Queued future pushes must not fail this deployment; a new explicitly
-    # requested recovery may supersede failed attempts at this same SHA.
-    # Neither case supersedes another workflow's failure.
+    if not deployments:
+        require(not any(r.get('path') == '.github/workflows/deploy.yml'
+                        and r.get('status') == 'completed' for r in entries),
+                'PROVENANCE_DEPLOY_STATE')
+        pending('PROVENANCE_ACTIVE_MISSING')
+    require(len(deployments) == 1, 'PROVENANCE_ACTIVE_AMBIGUOUS')
+    current = deployments[0]
+    require(current['head_branch'] == 'main' and current['event'] in ('push', 'workflow_dispatch'),
+            'PROVENANCE_WORKFLOW_IDENTITY')
+    deployment_jobs(current, sha)
+    # Recheck after separate API reads, so a new attempt cannot inherit this
+    # snapshot's successful evidence. A completed failed run is never accepted.
+    refreshed = get('/actions/runs/' + str(current['id']))
+    trusted_run(refreshed, sha)
+    require(refreshed['id'] == current['id'] and refreshed['path'] == current['path']
+            and refreshed['head_branch'] == 'main'
+            and refreshed['event'] == current['event'], 'PROVENANCE_WORKFLOW_IDENTITY')
+    if refreshed['run_attempt'] != current['run_attempt']:
+        pending('PROVENANCE_ATTEMPT_CHANGED')
+    require(refreshed['status'] == 'in_progress', 'PROVENANCE_DEPLOY_STATE')
     entries = [r for r in entries if r.get('path') != '.github/workflows/deploy.yml'
-               or int(r['id']) == current]
+               or r['id'] == current['id']]
+    current.update(status='completed', conclusion='success')
     data.update(workflow_runs=entries, total_count=len(entries))
-    waiting = []
-    for run in entries:
-        require(run['head_sha'] == sha)
-        if run.get('path') != '.github/workflows/deploy.yml':
-            continue
-        require(run['repository']['full_name'] == REPO)
-        require(run['head_repository']['full_name'] == REPO)
-        require(run['head_branch'] == 'main')
-        require(run['event'] in ('push', 'workflow_dispatch'))
-        if run['status'] == 'completed':
-            continue
-        require(run['status'] == 'in_progress')
-        jobs = get('/actions/runs/' + str(int(run['id'])) + '/jobs?per_page=100')
-        require(jobs['total_count'] == len(jobs['jobs']) < 100)
-        require(any(j['name'] == 'validate / Validate sources'
-                    and j['status'] == 'completed' and j['conclusion'] == 'success'
-                    for j in jobs['jobs']))
-        require(any(j['name'] == 'Deploy over Tailscale' and j['status'] == 'in_progress'
-                    for j in jobs['jobs']))
-        waiting.append(run['id'])
-        # The host gates are part of this run's still-pending deploy job. Do
-        # not wait for that job to finish before allowing it to finish.
-        run.update(status='completed', conclusion='success')
-    require(len(waiting) == 1)
-    print(json.dumps(data))
+    emit_evidence(data)
+
+
+def emit_evidence(data):
+    # The shell verifier needs only these public identifiers and observations,
+    # never GitHub's full response (actors, URLs, repository metadata, etc.).
+    evidence = dict(total_count=data['total_count'], workflow_runs=[
+        {key: run[key] for key in ('id', 'status', 'conclusion')}
+        for run in data['workflow_runs']])
+    if 'manual_cutover' in data:
+        evidence['manual_cutover'] = data['manual_cutover']
+    print(json.dumps(evidence))
 
 
 def complete_list(data, key):
@@ -111,9 +194,9 @@ def complete_list(data, key):
 
 
 def trusted_run(run, sha):
-    require(run['head_sha'] == sha)
-    require(run['repository']['full_name'] == REPO)
-    require(run['head_repository']['full_name'] == REPO)
+    require(run['head_sha'] == sha, 'PROVENANCE_SHA')
+    require(run['repository']['full_name'] == REPO, 'PROVENANCE_REPOSITORY')
+    require(run['head_repository']['full_name'] == REPO, 'PROVENANCE_REPOSITORY')
 
 
 def manual_runs(sha):
@@ -177,7 +260,7 @@ def manual_runs(sha):
     data.update(workflow_runs=retained + evidence, total_count=len(retained) + len(evidence),
                 manual_cutover=dict(merge_sha=sha, pr=matches[0]['number'], head_sha=head,
                                     intentionally_skipped_deploy_runs=excluded))
-    print(json.dumps(data))
+    emit_evidence(data)
 
 
 def main():
@@ -194,5 +277,8 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, KeyError, TypeError, OSError):
-        sys.exit('deployment provenance unavailable or refused')
+    except Refused as error:
+        print(error.code, file=sys.stderr)
+        sys.exit(75 if error.retry and sys.argv[1:2] == ['runs'] else 1)
+    except (ValueError, KeyError, TypeError, OSError, IndexError, AttributeError):
+        sys.exit('PROVENANCE_INVALID')

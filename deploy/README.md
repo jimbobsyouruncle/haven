@@ -677,3 +677,75 @@ again fail its authenticated browser-route probe; do not suppress that failure.
 The dedicated directory can remain unused when the mount is reverted; deleting
 it or modifying live configuration is not part of this change. No backup data,
 snapshot, log, certificate or credential migration is involved.
+
+## Provenance retries and reruns
+
+The root post-deployment verifier reads public GitHub evidence over HTTPS from
+`api.github.com`, without a token. Trust comes from the fixed repository API,
+matching repository/head repository, main workflow path/event, full commit SHA,
+run ID and attempt identity; a job name alone is insufficient. Runner-side
+exact-main/merged-PR authorization and workflow `needs: validate` remain in place.
+
+For a rerun, `deploy-provenance.py runs` reads the complete bounded job history,
+selects the newest applicable `validate / Validate sources` attempt, and requires
+successful completed validation. It confirms that job through its attempt-specific
+jobs endpoint and requires the current attempt's deployment job to be in progress.
+This supports both inherited earlier validation and GitHub's copied validation
+job in a newer attempt. A newer failed, skipped, cancelled, timed-out or neutral
+validation cannot be replaced with an older success. A final run read must still
+identify the same active attempt. Historical failed deployment jobs are not
+validation failures and do not override a valid current recovery attempt.
+
+Diagnostics are fixed `PROVENANCE_*` codes, never exception text, API bodies,
+credentials or host configuration. `PROVENANCE_API_TRANSPORT`,
+`PROVENANCE_API_TRANSIENT`, `PROVENANCE_API_JSON`, missing/pending evidence,
+inconsistent views and changed attempts return temporary exit 75 only in `runs`
+mode. The existing verifier retries every 30 seconds within its 540-second
+job-aware deadline, still bounded by ExecStartPost's 10-minute timeout. Temporary
+uncertainty never publishes successful acceptance. Other helper failures stop
+verification immediately. Non-rate-limit 403, other permanent HTTP errors,
+identity mismatches, ambiguous gates, failed validation and completed deployment
+runs remain refused. Truncated/count-mismatched lists (including the existing
+100-item bound) cannot pass; persistent incompleteness expires unsuccessfully.
+Neither runner authorization nor manual-cutover acceptance gains retry/override
+semantics from exit 75.
+
+The SSH forced command takes its log directory from the non-secret canonical
+layout (`/etc/haven/haven.env`), ignoring inherited log-directory overrides. A
+missing/unreadable layout or missing log setting refuses before starting a unit;
+it cannot silently report `/opt/haven/deploy`. The stack secrets remain unread,
+and SSH grammar, polkit rights and log permissions are unchanged.
+
+### Recovery acceptance requires separate owner authorization
+
+The installed revision from a failed verification is not accepted by this change.
+A successful install or matching HEAD is insufficient; a failed workflow stays
+failed. This PR does not add a failed-workflow exception, invoke recovery, clear a
+journal or change production configuration. The special `reverify-manual` identity
+cutover path intentionally rejects a failed deployment workflow and must not be
+repurposed for this incident.
+
+Before another production deployment, the owner must explicitly authorize a
+bounded recovery review for the installed full SHA and existing transaction:
+
+1. Inspect protected transaction phase, requested/installed SHA, wiring, saved
+   controls and immutable recovery artifacts through the approved operator route.
+   Keep current data; do not replay install or overwrite post-activation writes.
+2. Establish exact-SHA trusted validation from the applicable newest run attempts,
+   and identify whether failure was confined to provenance/reporting. Inspect
+   sanitized diagnostic codes; the historical generic message does not establish
+   the original cause. Reuse valid checks where their coverage is unchanged.
+3. Review an exact recovery execution plan under the existing deployment locks.
+   Require fresh root wiring, doctor/runtime, required backup and receipt gates.
+   Current code does not offer acceptance of this completed failed workflow;
+   if forward verification needs a bounded recovery-driver change, review that
+   separately rather than forging an active run or weakening normal provenance.
+4. Obtain explicit owner authorization for that concrete recovery/acceptance
+   operation before execution. Root evidence must satisfy the existing acceptance
+   checks; never edit journal phase or public receipts to manufacture acceptance.
+   If any mandatory gate fails, retain the unresolved transaction and recovery
+   artifacts for owner-directed current-data recovery.
+
+Owner merge review of this PR is not production deployment or recovery acceptance
+authorization. Rollback remains the existing reviewed revert plus separately
+approved host recovery procedure; changing code alone does not restore services.
