@@ -88,7 +88,11 @@ setup_repo() {
     git init -q
     git config user.email test@example.com
     git config user.name test
-    git commit -q --allow-empty -m initial
+    mkdir -p backup scripts/lib
+    printf 'restore fixture\n' > backup/restore.sh
+    printf 'environment fixture\n' > scripts/lib/haven-env.sh
+    git add backup/restore.sh scripts/lib/haven-env.sh
+    git commit -q -m initial
   )
 }
 setup_repo
@@ -163,6 +167,27 @@ else
 fi
 
 SHA="$(repo_sha)"
+# A matching HEAD must still reject altered or symlinked restore entrypoints.
+for changed in backup/restore.sh scripts/lib/haven-env.sh; do
+  cp "$REPO/$changed" "$WORKDIR/original"
+  printf 'drift\n' >> "$REPO/$changed"
+  rm -f "$MARKER"
+  if run_deploy "$WORKDIR/drift.out" "$SHA" || [[ -e "$MARKER" ]]; then
+    fail "modified $changed must refuse before installation"
+  else
+    pass "modified $changed refuses before installation"
+  fi
+  cp "$WORKDIR/original" "$REPO/$changed"
+  rm "$REPO/$changed"
+  ln -s "$WORKDIR/original" "$REPO/$changed"
+  if run_deploy "$WORKDIR/drift.out" "$SHA" || [[ -e "$MARKER" ]]; then
+    fail "symlinked $changed must refuse before installation"
+  else
+    pass "symlinked $changed refuses before installation"
+  fi
+  rm "$REPO/$changed"
+  cp "$WORKDIR/original" "$REPO/$changed"
+done
 
 # Case 4: doctor exit 0 -> script exit 0.
 rm -f "$MARKER"; write_install_stub; write_doctor_stub

@@ -618,6 +618,11 @@ while IFS= read -r _line || [[ -n "$_line" ]]; do
   if [[ "$_line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
     _k="${BASH_REMATCH[1]}"; _v="${BASH_REMATCH[2]}"
     _v="${_v%\"}"; _v="${_v#\"}"; _v="${_v%\'}"; _v="${_v#\'}"
+    # Credential files configure the R2 client, never shell/restore controls.
+    case "$_k" in
+      RESTIC_REPOSITORY|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_DEFAULT_REGION|AWS_REGION|AWS_SESSION_TOKEN) ;;
+      *) continue ;;
+    esac
     printf -v "$_k" '%s' "$_v"
     export "${_k?}"
   fi

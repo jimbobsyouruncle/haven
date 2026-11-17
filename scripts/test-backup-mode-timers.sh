@@ -81,7 +81,7 @@ mkdir -p "$APPD/scripts/lib" "$APPD/backup" "$APPD/openhands" "$APPD/hermes" \
 cp "$REPO_SRC/scripts/lib/haven-env.sh" "$APPD/scripts/lib/"
 cp "$REPO_SRC/scripts/lib/repository-identity.sh" "$APPD/scripts/lib/"
 cp "$REPO_SRC/scripts/lib/read-probe.sh" "$APPD/scripts/lib/"
-cp "$REPO_SRC/backup/backup.sh" "$APPD/backup/"
+cp "$REPO_SRC/backup/backup.sh" "$REPO_SRC/backup/restore.sh" "$APPD/backup/"
 cp "$REPO_SRC/backup/backup-containers.sh" "$APPD/backup/" 2>/dev/null || true
 cp "$REPO_SRC/doctor.sh" "$APPD/"
 cp "$REPO_SRC/collect-diagnostics.sh" "$APPD/"
@@ -99,7 +99,7 @@ chmod 600 "$CRED/r2.env" "$CRED/repo-password"
 
 # --- git repo for deploy-remote ---------------------------------------------
 ( cd "$APPD" && git init -q && git config user.email t@e.com && git config user.name t \
-  && git commit -q --allow-empty -m init )
+  && git add backup/restore.sh scripts/lib/haven-env.sh && git commit -q -m init )
 SHA="$( cd "$APPD" && git rev-parse HEAD )"
 
 # Minimal install.sh / doctor.sh stubs so deploy-remote's steps succeed.
