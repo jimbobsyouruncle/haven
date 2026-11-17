@@ -215,7 +215,11 @@ cfg="${HERMES_HOME:-/nonexistent}/profiles/${profile}/config.yaml"
 [[ -f "$cfg" ]] || { echo "stub hermes: no config at ${cfg}" >&2; exit 66; }
 case "$verb" in
   get)
-    jq -c --arg k "$key" 'getpath($k | split(".")) // null' "$cfg" 2>/dev/null || echo null
+    if ! jq -e --arg k "$key" 'getpath($k | split(".")) != null' "$cfg" >/dev/null; then
+      echo "Config key not set: $key" >&2
+      exit 1
+    fi
+    jq -c --arg k "$key" 'getpath($k | split("."))' "$cfg"
     ;;
   set)
     value="${4:-}"
@@ -263,7 +267,11 @@ case "${1:-}" in
     [[ -f "$cfg" ]] || { echo "stub docker: no config at ${cfg}" >&2; exit 66; }
     case "$verb" in
       get)
-        jq -c --arg k "$key" 'getpath($k | split(".")) // null' "$cfg" 2>/dev/null || echo null
+        if ! jq -e --arg k "$key" 'getpath($k | split(".")) != null' "$cfg" >/dev/null; then
+          echo "Config key not set: $key" >&2
+          exit 1
+        fi
+        jq -c --arg k "$key" 'getpath($k | split("."))' "$cfg"
         ;;
       set)
         value="${4:-}"
@@ -415,6 +423,29 @@ else
   bad "(i) secret_guard_hook_installed was not recorded"
 fi
 
+check "(i) missing-key exit 1 declares builder" "1" \
+  "$(jq '.hooks.pre_tool_call | length' "$DATA/profiles/builder/config.yaml")"
+
+# The exact missing-key diagnostic with a different status, extra diagnostics,
+# invalid JSON, or a non-list value must never replace a peer hook.
+for response in wrong_status extra_error invalid_json wrong_shape; do
+  cp "$DATA/profiles/default/config.yaml" "$WORK/negative.before"
+  case "$response" in
+    wrong_status) reply='echo "Config key not set: hooks.pre_tool_call"; return 2' ;;
+    extra_error) reply='printf "Config key not set: hooks.pre_tool_call\npermission denied\n"; return 1' ;;
+    invalid_json) reply='echo broken; return 0' ;;
+    wrong_shape) reply='echo "{}"; return 0' ;;
+  esac
+  env PATH="$BIN_ROOT:$BIN:$PATH" INSTALL_LOG="$INSTALL_LOG" \
+    bash -c "source '$SHIM/step.sh'; hermes() { $reply; }; install_secret_guard_hook" \
+    >> "$WORK/step.log" 2>&1
+  if cmp -s "$WORK/negative.before" "$DATA/profiles/default/config.yaml"; then
+    ok "config unchanged for $response"
+  else
+    bad "config replaced for $response"
+  fi
+done
+
 echo "-- second run (idempotency) --"
 cp "$DATA/profiles/default/config.yaml" "$WORK/default.before"
 cp "$DATA/profiles/builder/config.yaml" "$WORK/builder.before"
@@ -559,6 +590,8 @@ check "(p) the declared command is the CONTAINER path" \
   "/root/.hermes/profiles/default/agent-hooks/secret-guard.py" \
   "$(jq -r '.hooks.pre_tool_call[] | select(.command | endswith("/agent-hooks/secret-guard.py")) | .command' \
      "$DATA/profiles/default/config.yaml" 2>/dev/null)"
+check "(p) missing-key exit 1 declares builder over docker" "1" \
+  "$(jq '.hooks.pre_tool_call | length' "$DATA/profiles/builder/config.yaml")"
 check "(p) the entry matcher is .*" ".*" \
   "$(jq -r '.hooks.pre_tool_call[] | select(.command | endswith("/agent-hooks/secret-guard.py")) | .matcher' \
      "$DATA/profiles/default/config.yaml" 2>/dev/null)"
@@ -682,6 +715,32 @@ if [[ -e "$DATA/profiles/default/agent-hooks/secret-guard.py" ]]; then
 else
   ok "(s) nothing was placed with no docker on PATH"
 fi
+
+# All six profiles must be declared, with no consent written by installation.
+for profile in architect reviewer tester coordinator; do
+  mkdir -p "$DATA/profiles/$profile"
+done
+for transport_case in host docker; do
+  for profile in default builder architect reviewer tester coordinator; do
+    printf '{}\n' > "$DATA/profiles/$profile/config.yaml"
+  done
+  if [[ "$transport_case" == host ]]; then
+    RUN_PATH="$BIN_ROOT:$BIN:$PATH"
+  else
+    RUN_PATH="$BIN_DOCKER:$BIN_MIN"
+    DOCKER_RUNNING=true
+  fi
+  run_step
+  for profile in default builder architect reviewer tester coordinator; do
+    check "six-profile $transport_case declaration: $profile" "1" \
+      "$(jq '.hooks.pre_tool_call | length' "$DATA/profiles/$profile/config.yaml")"
+  done
+  if find "$DATA" -name '*allowlist*' | grep -q .; then
+    bad "installer wrote consent for $transport_case"
+  else
+    ok "installer did not write per-profile consent for $transport_case"
+  fi
+done
 
 # ---------------------------------------------------------------------------
 echo

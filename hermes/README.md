@@ -431,7 +431,9 @@ transport, so a redeploy does not repeat the work.
 
 `hermes config set` on `hooks.pre_tool_call` REPLACES the list, so the step reads the current value
 first, no-ops when the guard is already declared, and otherwise appends its entry and writes the whole
-list back. A peer hook is never dropped. The written shape:
+list back. The exact exit-1 diagnostic `Config key not set: hooks.pre_tool_call` is treated as
+an empty list; other CLI errors, invalid JSON and non-list values refuse the write. Raw CLI
+output is not logged. A peer hook is never dropped. The written shape:
 
 ```yaml
 hooks:
@@ -479,6 +481,46 @@ shell hook for <event> (<command>) not allowlisted - skipped. Use --accept-hooks
 a grant, `hermes -p <profile> hooks test pre_tool_call` exercises it against a synthetic payload and
 `hermes -p <profile> hooks doctor` reports its state. Diagnosing a skipped hook is covered in
 [`../docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md).
+
+### Post-deployment security acceptance
+
+Source tests and installed executable files do not establish runtime enforcement. After a
+separately authorized deployment, the production operator must verify **each of the six
+profiles**, using the running container's configured non-root identity and pinned CLI
+`/opt/hermes-agent/.hermes/bin/hermes` (via `docker exec`, without `--user root`):
+
+1. Record the full deployed SHA and installed guard/source parity. Check the guard and its
+   directory remain root-owned, mode 0755, and unwritable by the runtime account.
+2. Run `-p <profile> config get hooks.pre_tool_call --json` and `-p <profile> hooks list`.
+   Confirm exactly one guard with the profile-specific container path, matcher `.*`, timeout
+   10 and `fail_closed: true`; confirm existing peer hooks survived. Do not publish config
+   payloads or peer commands. A file on disk or a declaration alone is insufficient.
+3. Review the declared hooks and deliberately grant consent for each profile at the supported
+   TTY prompt (for example `docker exec -it hermes-agent <cli> -p <profile> ...`). A one-run
+   acceptance flag is an explicit operator choice and does not prove persistent consent.
+   Never add a global auto-accept setting or edit the allowlist to bypass consent. Check
+   `hooks list` and `hooks doctor` for the installed version's consent status; stale script
+   mtime or an unallowlisted/skipped guard leaves acceptance **NOT VERIFIED**.
+4. Without acceptance overrides, use the supported `hooks test pre_tool_call` path with the
+   synthetic terminal/`printenv` payload shown in the offline test header. Confirm the
+   declared guard actually executes and returns `block`, rather than being skipped. Test
+   a benign synthetic tool request and confirm it is allowed. Use no real secret payloads.
+   Also exercise a harmless synthetic secret-read request through the normal agent tool
+   path and verify denial before execution, with no credential read or disclosure. Directly
+   executing `secret-guard.py` proves only script behavior, not consent or runtime wiring.
+5. Record sanitized per-profile declaration, consent and enforcement outcomes, tested SHA,
+   time, runtime identity and whether the check used a fresh session. Keep raw config,
+   allowlist and logs private. Any skipped/missing/failed control remains open under runtime
+   acceptance; successful CI does not convert it to PASS.
+
+At the same separately authorized verification, confirm OpenHands workspace maintenance
+uses the configured Haven uid for Git while deployment remains root-run. A dirty workspace
+must report refresh skipped, retain tracked edits and untracked entries byte-for-byte, and
+retain ownership. Verify Git still rejects an unrelated foreign-owned repository, with no
+new safe-directory exception. Reuse existing doctor/deployment evidence for unchanged
+controls; do not rerun identity migration or worker tests for these repairs. Rollback is a
+reviewed source revert and separately authorized deployment; reverting these fixes restores
+the two defects and cannot establish security acceptance.
 
 ## Environment variables
 

@@ -1730,10 +1730,17 @@ install_secret_guard_hook() {
     get_rc=0
     if [[ "$transport" == "docker" ]]; then
       existing="$(docker exec hermes-agent "$container_cli" \
-        -p "$profile" config get hooks.pre_tool_call --json 2>/dev/null)" || get_rc=$?
+        -p "$profile" config get hooks.pre_tool_call --json 2>&1)" || get_rc=$?
     else
       existing="$(HERMES_HOME="$HAVEN_HERMES_DATA_DIR" \
-        hermes -p "$profile" config get hooks.pre_tool_call --json 2>/dev/null)" || get_rc=$?
+        hermes -p "$profile" config get hooks.pre_tool_call --json 2>&1)" || get_rc=$?
+    fi
+    # Hermes exits 1 for an absent key. Accept only that exact diagnostic;
+    # transport, permission, parse and all other errors must not erase hooks.
+    # Keep diagnostics captured (never log config values or raw CLI output).
+    if (( get_rc == 1 )) && [[ "$existing" == 'Config key not set: hooks.pre_tool_call' ]]; then
+      existing='[]'
+      get_rc=0
     fi
     if (( get_rc != 0 )); then
       warn "Could not read hooks.pre_tool_call for profile '${profile}'; not declared."

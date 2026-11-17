@@ -687,6 +687,7 @@
 - ok()
 - warn()
 - die()
+- workspace_git()
 
 ## scripts/sync-agent-repos.sh
 - log()

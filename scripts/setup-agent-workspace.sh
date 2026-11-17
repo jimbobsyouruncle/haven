@@ -144,14 +144,33 @@ if (( CHECK_ONLY )); then
   exit 0
 fi
 
+# Workspace Git must use the configured runtime identity, never deployment
+# authority. Do not trust arbitrary on-disk owners or add safe.directory entries.
+WORKSPACE_GIT_PREFIX=()
+if (( EUID == 0 )) && [[ -n "${HAVEN_UID:-}" && "$HAVEN_UID" != 0 ]]; then
+  [[ "$HAVEN_UID" =~ ^[0-9]+$ ]] || die "Invalid workspace runtime uid."
+  runtime_entry="$(getent passwd "$HAVEN_UID")" || die "Workspace runtime account missing."
+  IFS=: read -r runtime_user _ runtime_uid _ _ runtime_home _ <<< "$runtime_entry"
+  [[ "$runtime_uid" == "$HAVEN_UID" ]] || die "Workspace runtime uid mismatch."
+  if [[ -e "$WORKSPACE" ]]; then
+    [[ "$(stat -c '%u' "$WORKSPACE")" == "$runtime_uid" ]] \
+      || die "Workspace owner does not match the runtime uid; refusing maintenance."
+  fi
+  WORKSPACE_GIT_PREFIX=(runuser -u "$runtime_user" -- env -i
+    "HOME=$runtime_home" "PATH=/usr/bin:/bin" GIT_TERMINAL_PROMPT=0)
+fi
+workspace_git() {
+  "${WORKSPACE_GIT_PREFIX[@]}" git -c core.hooksPath=/dev/null "$@"
+}
+
 # --- Create or update ------------------------------------------------------
 if [[ -d "$WORKSPACE/.git" ]]; then
   ok "Agent workspace already exists: ${WORKSPACE}"
   if [[ -n "$ORIGIN_URL" ]]; then
-    current="$(git -C "$WORKSPACE" remote get-url origin 2>/dev/null || true)"
+    current="$(workspace_git -C "$WORKSPACE" remote get-url origin 2>/dev/null || true)"
     if [[ "$current" != "$ORIGIN_URL" ]]; then
       log "Updating workspace origin to match this repository"
-      git -C "$WORKSPACE" remote set-url origin "$ORIGIN_URL"
+      workspace_git -C "$WORKSPACE" remote set-url origin "$ORIGIN_URL"
     fi
   fi
 
@@ -159,20 +178,22 @@ if [[ -d "$WORKSPACE/.git" ]]; then
   # stale. The hook path is disabled so a hostile or broken hook cannot run as
   # this user during the fetch. A failed fetch warns and does not abort, so a
   # deploy with no network still completes; install.sh keeps going.
-  if git -c core.hooksPath=/dev/null -C "$WORKSPACE" fetch --no-tags origin; then
-    default_ref="$(git -C "$WORKSPACE" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if workspace_git -C "$WORKSPACE" fetch --no-tags origin; then
+    default_ref="$(workspace_git -C "$WORKSPACE" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
     default_branch="${default_ref#origin/}"
-    current_branch="$(git -C "$WORKSPACE" symbolic-ref --short HEAD 2>/dev/null || true)"
+    current_branch="$(workspace_git -C "$WORKSPACE" symbolic-ref --short HEAD 2>/dev/null || true)"
     if [[ -z "$default_branch" ]]; then
       warn "Could not determine the default branch in ${WORKSPACE}; skipping refresh."
     elif [[ "$current_branch" != "$default_branch" ]]; then
       warn "Workspace is on '${current_branch}', not the default branch '${default_branch}'; skipping refresh."
-    elif [[ -n "$(git -C "$WORKSPACE" status --porcelain)" ]]; then
+    elif ! workspace_status="$(workspace_git -C "$WORKSPACE" status --porcelain)"; then
+      warn "Could not inspect workspace changes; skipping refresh."
+    elif [[ -n "$workspace_status" ]]; then
       warn "Workspace has uncommitted changes; skipping refresh to leave them untouched."
     else
       # Clean tree on the default branch: fast-forward only. Never reset,
       # stash, check out over changes, or delete anything.
-      if git -C "$WORKSPACE" merge --ff-only "origin/${default_branch}" >/dev/null 2>&1; then
+      if workspace_git -C "$WORKSPACE" merge --ff-only "origin/${default_branch}" >/dev/null 2>&1; then
         ok "Agent workspace refreshed to the latest ${default_branch}"
       else
         warn "Could not fast-forward ${WORKSPACE}; skipping refresh."
@@ -205,7 +226,7 @@ if [[ ! -d "$WORKSPACE/.git" ]]; then
   fi
 
   log "Cloning into ${WORKSPACE} ..."
-  git clone "$ORIGIN_URL" "$WORKSPACE" || die "Clone failed."
+  workspace_git clone "$ORIGIN_URL" "$WORKSPACE" || die "Clone failed."
   ok "Agent workspace created"
 fi
 
