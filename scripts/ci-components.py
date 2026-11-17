@@ -13,6 +13,9 @@ def select(paths):
         # Only prose and the two generated navigation maps are test-free.
         if path.endswith('.md') or path == 'LICENSE':
             continue
+        if path in ('status/Caddyfile', 'status/Caddyfile.tmpl'):
+            # Shared routing/auth/backup API trust boundary, not just TLS syntax.
+            return dict.fromkeys(('full',) + COMPONENTS, True)
         if path.startswith('backup/') or path in (
             'scripts/test-backup.sh', 'scripts/test-backup-system-units.sh',
             'scripts/test-backup-mode-timers.sh', 'scripts/test-backup-containers.sh',
@@ -29,7 +32,6 @@ def select(paths):
         elif path.startswith('caddy/') or path.startswith('scripts/test-tls-') or path in (
             'scripts/tls-check.sh',
             'scripts/test-b77-port80-dynamic.sh',
-            'status/Caddyfile', 'status/Caddyfile.tmpl',
         ):
             selected.update(('proxy', 'auth'))
         elif path.startswith('status/') or path.startswith('scripts/test-status-'):

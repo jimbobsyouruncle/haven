@@ -24,7 +24,6 @@ class SelectionTests(unittest.TestCase):
             (['README.md', 'docs/haven/ARCHITECTURE.md'], set()),
             (['status/app.py'], {'status', 'backup', 'proxy'}),
             (['openwebui/runpod_core.py'], {'inference', 'status', 'doctor'}),
-            (['status/Caddyfile.tmpl'], {'proxy', 'auth'}),
             (['hermes/agent-hooks/secret-guard.py'], {'hermes'}),
             (['auth/app.py', 'backup/restore.sh'], {'auth', 'proxy', 'backup', 'status', 'doctor'}),
         ]
@@ -37,6 +36,7 @@ class SelectionTests(unittest.TestCase):
                      'scripts/sandbox-firewall.sh', '.github/workflows/validate.yml',
                      'scripts/ci-components.py', 'scripts/test-ci-components.py',
                      'deploy/haven-deploy@.service', '.env.example',
+                     'status/Caddyfile', 'status/Caddyfile.tmpl',
                      'new-module/app.py', 'docs/haven/identity/inventory.py',
                      'scripts/test-new-contract.sh', 'odd\nname.py'):
             with self.subTest(path=path):

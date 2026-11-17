@@ -122,12 +122,12 @@ events use selection. Deployment, weekly and manual SAST runs stay full.
 | --- | --- | --- |
 | `backup/`, named backup fixtures | Backup/restore safety, system units, timers, container control; status backup socket/log mounts; doctor; remote deploy and verifier; installation-root restore identity | Restic/Docker/systemctl fixtures and scratch SQLite/Git trees; no cloud credentials |
 | `auth/`, password reset and named auth fixtures | Auth behavior, installer env escaping, reset; TLS/auth rendering, real Caddy, allowlists and headers | Python login fixtures; stubs for password reset/installer; dummy credentials and isolated Caddy |
-| TLS check, Caddy image, status Caddy templates, named TLS fixtures | Proxy plus auth tests, Compose configuration and render matrices | Stub render tests offline; real TLS loopback and Docker Caddy tests require local sockets/engine, not production |
+| TLS check, Caddy image, named TLS fixtures | Proxy plus auth tests, Compose configuration and render matrices | Stub render tests offline; real TLS loopback and Docker Caddy tests require local sockets/engine, not production |
 | Status app/tests and named status fixtures | Status probes, private backup API, backup consumers and proxy configuration | Temporary files, mocked DNS/API, real local Unix socket |
 | `openwebui/` | Generated pipe and behavioral tests; status wake probe and doctor API/mesh consumers | httpx/mock streams and synthetic worker responses; no worker source or live RunPod |
 | `hermes/`, secret-guard fixture | Guard installation/negative input tests, password reset, image pin assertions and Compose; separate ARM64 non-root smoke | Guard fixtures are offline; smoke builds pinned upstream dependencies and starts a local isolated container |
 | Doctor and named doctor fixtures | Doctor plus backup/status/inference contracts, remote deployment exit mapping and verifier | Stubbed host/API commands; healthy/degraded/failing states, no production diagnosis |
-| Shared paths (including TLS helpers), install/deploy mechanics, firewall/isolation, CI configuration/selection, unknown paths | Full existing suite, including provenance, authorization, destructive restore and rollback protections | Existing fixtures; no live destructive restores |
+| Shared paths (including TLS helpers and Caddy routing/auth templates), install/deploy mechanics, firewall/isolation, CI configuration/selection, unknown paths | Full existing suite, including provenance, authorization, destructive restore and rollback protections | Existing fixtures; no live destructive restores |
 | Markdown, LICENSE, generated navigation maps | Universal baseline only | No component behavior changes |
 
 Groups explicitly include their consumer tests rather than assuming directories
