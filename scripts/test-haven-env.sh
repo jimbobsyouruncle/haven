@@ -563,6 +563,60 @@ else
   ok "setup-agent-workspace did not fire the guard for a clean sibling"
 fi
 
+# Exercise the root routing branch without requiring root on CI. Only the
+# EUID predicate in the scratch copy changes; Git operates on real local repos.
+sed 's/(( EUID == 0 ))/(( 1 ))/' "$REPO/scripts/setup-agent-workspace.sh" \
+  > "$APPD/scripts/setup-agent-workspace.sh"
+WS="${TMPROOT}/agent-ws"
+REMOTE="${TMPROOT}/origin.git"
+git init -q --bare --initial-branch=main "$REMOTE"
+git clone -q "$REMOTE" "$WS" 2>/dev/null
+git -C "$WS" -c user.name=Fixture -c user.email=fixture@example.invalid \
+  commit -q --allow-empty -m initial
+git -C "$WS" push -q origin main
+git -C "$WS" remote set-head origin main
+git init -q "$APPD"
+git -C "$APPD" remote add origin "$REMOTE"
+mkdir -p "$WS/bin" "$WS/bash_events" "$WS/.shared-actions-fixture"
+printf 'preserve\n' > "$WS/bin/keep"
+cp "$WS/bin/keep" "$TMPROOT/keep.before"
+TEST_BIN="$TMPROOT/identity-bin"
+mkdir -p "$TEST_BIN"
+cat > "$TEST_BIN/runuser" <<'STUB'
+#!/usr/bin/env bash
+[[ "$1" == -u && "$2" == "$(id -un)" && "$3" == -- ]] || exit 90
+shift 3
+printf '%s\n' "$*" >> "$IDENTITY_CALLS"
+exec "$@"
+STUB
+chmod +x "$TEST_BIN/runuser"
+IDENTITY_CALLS="$TMPROOT/identity.calls"
+export IDENTITY_CALLS
+if env "${GUARD_ENV[@]}" PATH="$TEST_BIN:$PATH" HAVEN_UID="$(id -u)" \
+    OPENHANDS_WORKSPACE="$WS" GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0=core.bare GIT_CONFIG_VALUE_0=true \
+    bash "$APPD/scripts/setup-agent-workspace.sh" --non-interactive > "$TMPROOT/identity.out" 2>&1; then
+  ok "workspace maintenance routes Git through the configured runtime identity"
+else
+  bad "workspace maintenance failed with the runtime identity fixture"
+fi
+assert "untracked workspace bytes preserved" cmp -s "$TMPROOT/keep.before" "$WS/bin/keep"
+assert "runtime Git receives a clean environment and disabled hooks" \
+  grep -q 'env -i HOME=.*PATH=/usr/bin:/bin GIT_TERMINAL_PROMPT=0 git -c core.hooksPath=/dev/null' "$IDENTITY_CALLS"
+assert "dirty workspace refresh is skipped" grep -q 'uncommitted changes' "$TMPROOT/identity.out"
+# Wrong configured owner must fail before invoking any workspace Git command.
+: > "$IDENTITY_CALLS"
+if env "${GUARD_ENV[@]}" PATH="$TEST_BIN:$PATH" HAVEN_UID=65534 \
+    OPENHANDS_WORKSPACE="$WS" bash "$APPD/scripts/setup-agent-workspace.sh" \
+    --non-interactive > "$TMPROOT/identity.out" 2>&1; then
+  bad "mismatched workspace owner was accepted"
+else
+  ok "mismatched workspace owner refused"
+fi
+check "owner mismatch invokes no workspace Git" "0" "$(wc -c < "$IDENTITY_CALLS" | tr -d ' ')"
+# Restore the original script for subsequent guards.
+cp "$REPO/scripts/setup-agent-workspace.sh" "$APPD/scripts/"
+
 # --- sync-agent-repos.sh refuses a tree in a protected target ----------------
 for t in "$APPD" "${APPD}/repos" "$DATAD" "$LOGD" "$WORKD" "${TMPROOT}/etc" \
          "$CONFD_GOOD" "${TMPROOT}"; do
