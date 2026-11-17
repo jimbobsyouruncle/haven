@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline selector and workflow safety regressions. No third-party modules."""
 import importlib.util
+import os
 import re
 from pathlib import Path
 import subprocess
@@ -148,6 +149,37 @@ class SelectionTests(unittest.TestCase):
                 self.assertIn("steps.components.outputs.full == 'true'", line)
         for component in COMPONENTS.COMPONENTS:
             self.assertIn(f"steps.components.outputs.{component} == 'true'", workflow)
+
+    def test_deployment_selection_always_runs_full(self):
+        # Execute the real workflow shell, without GitHub or a production host.
+        # Deploy does not opt into changed_only. Even accidental opt-in must
+        # remain full for non-PR events, independently of PR evidence/base.
+        workflow = (ROOT / '.github/workflows/validate.yml').read_text()
+        block = workflow.split('      - name: Select component tests\n', 1)[1]
+        body = block.split('        run: |\n', 1)[1].split('      - name:', 1)[0]
+        body = '\n'.join(line[10:] for line in body.splitlines())
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'output'
+            for event in ('push', 'workflow_dispatch'):
+                for changed_only in ('false', 'true'):
+                    with self.subTest(event=event, changed_only=changed_only):
+                        output.write_text('')
+                        result = subprocess.run(
+                            ['bash', '-euo', 'pipefail', '-c', body], cwd=ROOT,
+                            env=dict(os.environ, EVENT_NAME=event,
+                                     CHANGED_ONLY=changed_only, BASE_SHA='invalid',
+                                     GITHUB_OUTPUT=str(output)),
+                            capture_output=True, text=True, check=True)
+                        expected = {f'{key}=true' for key in ('full',) + COMPONENTS.COMPONENTS}
+                        self.assertEqual(set(result.stdout.splitlines()), expected)
+                        self.assertEqual(set(output.read_text().splitlines()), expected)
+        deploy = (ROOT / '.github/workflows/deploy.yml').read_text()
+        validate = deploy.split('  validate:\n', 1)[1].split('  deploy:\n', 1)[0]
+        self.assertIn('uses: ./.github/workflows/validate.yml', validate)
+        self.assertNotIn('with:', validate)
+        # No evidence-reuse input or secret may turn this gate into a bypass.
+        self.assertNotIn('secrets:', validate)
+        self.assertIn('needs: validate', deploy)
 
 
 if __name__ == '__main__':
