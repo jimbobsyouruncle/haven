@@ -889,6 +889,13 @@ class ConfigIdentityTests(unittest.TestCase):
             "scripts/test-install-auth-env-leak.sh",  # literal credential migration
             "scripts/test-install-root.sh",  # historical and coordinated recovery fixtures
         }
+        # These exact lines discard a stale installed log alias and exercise
+        # that refusal. Keep rejecting any other legacy use in these files.
+        reviewed_log_alias_lines = {
+            "scripts/deploy-forced-command.sh": "unset HAVEN_LOG_DIR HYBRID_AI_LOG_DIR",
+            "scripts/test-deploy-forced-command.sh":
+                '"${priv_pre[@]}" env HAVEN_LOG_DIR=/opt/haven HYBRID_AI_LOG_DIR=/opt/haven HAVEN_STACK_ENV_FILE=/unreadable/fixture ' + chr(92),
+        }
         files = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
         unexpected = []
         for name in files:
@@ -896,7 +903,9 @@ class ConfigIdentityTests(unittest.TestCase):
             if (not name or name in allowed or name.startswith("docs/") or
                     path.suffix not in (".sh", ".py", ".yml", ".tmpl", ".service", ".timer")):
                 continue
-            if re.search(r"HYBRID_AI_|hybrid_ai_|HYBRID_PROGRESS_|hybrid_progress_", path.read_text()):
+            content = "\n".join(line for line in path.read_text().splitlines()
+                                if line.strip() != reviewed_log_alias_lines.get(name))
+            if re.search(r"HYBRID_AI_|hybrid_ai_|HYBRID_PROGRESS_|hybrid_progress_", content):
                 unexpected.append(name)
         self.assertEqual(unexpected, [], "unreviewed legacy namespace in active source")
 

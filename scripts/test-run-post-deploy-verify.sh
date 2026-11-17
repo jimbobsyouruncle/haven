@@ -796,6 +796,12 @@ else fail "missing mandatory installation receipt did not block"; fi
 cat > "$TREE_A/scripts/deploy-provenance.py" <<'PYFIXTURE'
 import os
 import sys
+from pathlib import Path
+marker = os.environ.get('FIXTURE_PROVENANCE_RETRY_MARKER')
+if marker and (os.environ.get('FIXTURE_PROVENANCE_ALWAYS_RETRY') == '1' or not Path(marker).exists()):
+    Path(marker).touch()
+    print('PROVENANCE_INCOMPLETE', file=sys.stderr)
+    sys.exit(75)
 if os.environ.get('FIXTURE_PROVENANCE_FAIL') == '1':
     sys.exit(1)
 print('{"workflow_runs":[{"id":1,"status":"completed","conclusion":"success"}]}')
@@ -805,6 +811,23 @@ run_verify "$TREE_A" "__absent__"
 if [[ "$RC" == 0 ]] && "$REAL_JQ" -e '.gates.workflow_runs.state == "PASS"' "$VDIR_FILE" >/dev/null; then
   pass "unit verifier accepts successful validation without waiting for its own deploy job"
 else fail "unit verifier did not accept validated own-job projection"; fi
+# Keep retry tests offline and instantaneous without changing production timing.
+cat > "$BINDIR/sleep" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$BINDIR/sleep"
+export FIXTURE_PROVENANCE_RETRY_MARKER="$WORKDIR/provenance-retry"
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 0 && -e "$FIXTURE_PROVENANCE_RETRY_MARKER" ]]; then
+  pass "temporary provenance uncertainty retries then accepts coherent evidence"
+else fail "temporary provenance uncertainty did not retry: $OUT"; fi
+export FIXTURE_PROVENANCE_ALWAYS_RETRY=1 VERIFY_FAKE_CLOCK=1
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 1 ]] && grep -q '^TIMEOUT:' <<< "$OUT_STDOUT"; then
+  pass "persistent provenance uncertainty times out without acceptance"
+else fail "persistent provenance uncertainty did not time out: $OUT"; fi
+unset FIXTURE_PROVENANCE_RETRY_MARKER FIXTURE_PROVENANCE_ALWAYS_RETRY VERIFY_FAKE_CLOCK
 export FIXTURE_PROVENANCE_FAIL=1
 run_verify "$TREE_A" "__absent__"
 if [[ "$RC" == 1 ]] && grep -q '^FAIL: trusted deployment validation unavailable or unsuccessful' <<< "$OUT_STDOUT"; then
