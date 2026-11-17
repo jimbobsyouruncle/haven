@@ -329,6 +329,9 @@ has_git_ls_files() {
 
 ci_owned_reason() {
   case "$1" in
+    "Select component tests")
+      printf '%s' "CI event metadata; local parity conservatively replays full validation"
+      ;;
     "Install test dependency (httpx)")
       printf '%s' "pip install from the network"
       ;;

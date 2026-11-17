@@ -17,7 +17,13 @@
 
 name: Validate sources
 
-on: workflow_call
+on:
+  workflow_call:
+    inputs:
+      changed_only:
+        description: Select component tests for a pull request; all other callers stay full
+        type: boolean
+        default: false
 
 permissions:
   contents: read          # least privilege: the job only needs to read code
@@ -35,6 +41,24 @@ jobs:
           # The backup fixture suite reads the pre-fix backup.sh from the base
           # commit; a depth-1 checkout does not contain it.
           fetch-depth: 0
+
+      - name: Select component tests
+        id: components
+        env:
+          CHANGED_ONLY: ${{ inputs.changed_only }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANGED_ONLY" = true ] && [ "$EVENT_NAME" = pull_request ]; then
+            # Missing PR metadata must fail, never silently select no tests.
+            python3 scripts/ci-components.py --base "$BASE_SHA" | tee -a "$GITHUB_OUTPUT"
+          else
+            python3 scripts/ci-components.py | tee -a "$GITHUB_OUTPUT"
+          fi
+
+      - name: Component selection regression tests
+        run: python3 scripts/test-ci-components.py
 
       - name: Shell syntax check
         # "bash -n" parses a script without running it. Catches typos and
@@ -64,35 +88,42 @@ jobs:
           exit $fail
 
       - name: Identity inventory safety tests
+        if: steps.components.outputs.full == 'true'
         # Offline Git fixtures: immutable objects only, no local config reads.
         run: python3 docs/haven/identity/test_inventory.py
 
       - name: Generated pipe is in sync with its sources
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.inference == 'true'
         # runpod_pipe.py is concatenated from runpod_core.py and
         # pipe_wrapper.py. A forgotten rebuild means the file you paste into
         # Open WebUI is not the code that was reviewed.
         run: python3 openwebui/build_pipe.py --check
 
       - name: Install test dependency (httpx)
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.inference == 'true'
         # Behavioural tests import httpx, which this job does not otherwise install.
         run: python -m pip install "httpx==0.28.1"
 
       - name: Pipe behavioural tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.inference == 'true'
         # Mesh-address enforcement, credential scrubbing and stream-truncation
         # detection are security properties, not conveniences.
         run: python3 openwebui/test_refactor.py
 
       - name: Install auth test dependency (bcrypt)
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.auth == 'true'
         # The auth service checks bcrypt hashes, so its tests need the same
         # exact pin the image ships. See auth/requirements-test.txt.
         run: python3 -m pip install "bcrypt==4.2.1"
 
       - name: Auth service tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.auth == 'true'
         # Offline. Covers open-redirect rejection, the single generic login
         # error, per-IP rate limiting and fail-closed start-up.
         run: python3 -m unittest discover -s auth -p 'test_*.py' -v
 
       - name: Backup script fixture tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true'
         # backup.sh must never build SQL text or a SQLite URI from a file name
         # found in container-written data, must verify captured databases, and
         # must report a run that missed durable state as incomplete. Fully
@@ -100,22 +131,26 @@ jobs:
         run: bash scripts/test-backup.sh
 
       - name: Repository identity tests
+        if: steps.components.outputs.full == 'true'
         # Offline selector validation and standalone verifier consistency.
         run: bash scripts/test-repository-identity.sh
 
       - name: Shared path helper tests
+        if: steps.components.outputs.full == 'true'
         # Offline. Proves defaults equal today's paths, that an env-file value
         # is parsed and never executed, that every refused value is refused,
         # and that every isolation case is refused.
         run: bash scripts/test-haven-env.sh
 
       - name: Readability probe tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true' || steps.components.outputs.status == 'true'
         # Offline. Proves the open(2)-based readability probe used in system
         # mode succeeds where access(2)-based `[[ -r ]]`/`find -readable` would
         # misreport a CAP_DAC_READ_SEARCH-readable file as unreadable.
         run: bash scripts/test-read-probe.sh
 
       - name: Backup system-unit static tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true'
         # Offline. Asserts every directive of the privilege split: the capture
         # unit's capability and no-network/no-credential shape, the upload
         # unit's credentials and no-read-privilege shape, and the fixed
@@ -124,18 +159,21 @@ jobs:
         run: bash scripts/test-backup-system-units.sh
 
       - name: Backup mode / timer tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true'
         # Offline. Proves HAVEN_BACKUP_MODE steers doctor.sh,
         # collect-diagnostics.sh, scripts/deploy-remote.sh and backup.sh to the
         # right timer and systemctl scope in both modes.
         run: bash scripts/test-backup-mode-timers.sh
 
       - name: Backup container-control helper tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true'
         # Offline. Proves backup/backup-containers.sh is root-only, uses a fixed
         # container list, writes only under /run/haven-backup, is idempotent
         # on unpause and never starts or stops a container.
         run: bash scripts/test-backup-containers.sh
 
       - name: Doctor backup-probe tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
         # Offline, grep-level. Proves doctor.sh's repository probe exports
         # RESTIC_PASSWORD_FILE, resolves repo-password with backup.sh's
         # CREDENTIALS_DIRECTORY precedence, and never invokes restic before the
@@ -144,6 +182,7 @@ jobs:
         run: bash scripts/test-doctor-backup-probe.sh
 
       - name: Doctor startup-grace tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
         # Offline. RUNS doctor.sh (stubbed docker/curl/jq/getfacl, fixture JSON on
         # disk) to prove the new warning-only startup-grace check: a healthy
         # fixture passes, an in-window ERROR row warns with the remedy and exits 1
@@ -154,6 +193,7 @@ jobs:
         run: bash scripts/test-doctor-startup-grace.sh
 
       - name: Doctor post-deploy-log tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
         # Offline. RUNS doctor.sh (stubbed host commands, fixture log files) to
         # prove the new warning-only post-deploy verification-log check: a fresh
         # non-empty log passes at the base exit code, a 0-byte log warns and exits
@@ -164,6 +204,7 @@ jobs:
         run: bash scripts/test-doctor-post-deploy-log.sh
 
       - name: Doctor RunPod key tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
         # Offline. RUNS doctor.sh (stubbed curl/getent/tailscale/docker and
         # fixture .env files) to prove two things. A GPU pod that is merely
         # asleep no longer fails the deploy gate: a well-formed
@@ -180,6 +221,7 @@ jobs:
         run: bash scripts/test-doctor-runpod-key.sh
 
       - name: Status deploy-verification tile tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.status == 'true'
         # Offline, no Docker, no network. Proves status/app.py's Deploy
         # verification tile parses the LAST `waiting for <sha> at <ts>` line and
         # the verdict after it: PASS -> ok naming the short sha and timestamp,
@@ -193,11 +235,13 @@ jobs:
         run: python3 status/test_deploy_verification.py
 
       - name: Private Backups socket tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.backup == 'true'
         # Real local Unix socket, no Docker or external network. Tests least
         # privilege, endpoint scope, stale socket recovery and verifier curl.
         run: python3 status/test_backup_socket.py
 
       - name: GPU pod wake-readiness tile tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.inference == 'true'
         # Offline, no Docker, no network. Proves status/app.py's GPU pod tile
         # reports WAKE READINESS, not pod reachability: an unresolved MagicDNS
         # name (a stopped pod, normal most of the time) is info when a RunPod
@@ -209,6 +253,7 @@ jobs:
         run: python3 status/test_pod_probe.py
 
       - name: Doctor resolv.conf ownership tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
         # Offline. RUNS doctor.sh (stubbed tailscale/docker/systemctl and
         # fixture resolv.conf files, named through the internal
         # DOCTOR_RESOLV_CONF seam) to prove the new warn-only resolv.conf
@@ -228,6 +273,7 @@ jobs:
         run: bash scripts/test-doctor-resolv-conf.sh
 
       - name: Doctor backup-count tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
         # Offline. RUNS doctor.sh (stubbed host commands, fixture backup logs)
         # to prove the failure count is DISTINCT run(s), not lines: one failed
         # run writes TWO event=backup_failed lines (die() plus the ERR trap),
@@ -238,6 +284,7 @@ jobs:
         run: bash scripts/test-doctor-backup-counts.sh
 
       - name: Doctor sandbox-firewall tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
         # Offline. RUNS doctor.sh (stubbed iptables and a recorded DOCKER-USER
         # chain) to prove the new warning-only sandbox-firewall check: a chain
         # applied by the REAL scripts/sandbox-firewall.sh passes, a missing rule
@@ -249,6 +296,7 @@ jobs:
         run: bash scripts/test-doctor-sandbox-firewall.sh
 
       - name: Doctor sandbox-image tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
         # Offline. RUNS doctor.sh (a fixture-driven docker stub on PATH) to prove
         # the new warning-only sandbox-image drift probe: the app-server's
         # AGENT_SERVER_IMAGE_* pair is compared with the resolved pin, and every
@@ -264,6 +312,7 @@ jobs:
         run: bash scripts/test-doctor-sandbox-image.sh
 
       - name: Sandbox firewall tests
+        if: steps.components.outputs.full == 'true'
         # Offline. RUNS scripts/sandbox-firewall.sh against stubbed docker and
         # iptables to prove the bridge-scoped rule set: the stateful conntrack
         # ACCEPT above every owned DROP, app->sandbox control ports and
@@ -275,20 +324,24 @@ jobs:
         run: bash scripts/test-sandbox-firewall.sh
 
       - name: Deploy-remote tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true' || steps.components.outputs.doctor == 'true'
         # Offline. Proves scripts/deploy-remote.sh refuses a wrong revision
         # before running install.sh, and maps doctor.sh's exit code correctly.
         run: bash scripts/test-deploy-remote.sh
 
       - name: Post-deploy verifier tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.doctor == 'true'
         # Offline. Proves scripts/run-post-deploy-verify.sh resolves APP_DIR from
         # the environment, then the layout file, then /workspace, and that the
         # tree check verdicts PASS / FAIL against a throwaway checkout.
         run: bash scripts/test-run-post-deploy-verify.sh
 
       - name: Deployment provenance tests
+        if: steps.components.outputs.full == 'true'
         run: bash scripts/test-deploy-provenance.sh
 
       - name: Headless deploy forced-command tests
+        if: steps.components.outputs.full == 'true'
         # Offline. Proves the forced-command entrypoint accepts only
         # `deploy <40-lowercase-hex>`, refuses every other form with exit 2 and
         # nothing run, uses the SYSTEM manager, gives a non-zero exit on unit
@@ -297,9 +350,11 @@ jobs:
         run: bash scripts/test-deploy-forced-command.sh
 
       - name: Installation root migration tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true'
         run: bash scripts/test-install-root.sh
 
       - name: Headless deploy instance tests
+        if: steps.components.outputs.full == 'true'
         # Offline. Proves scripts/deploy-instance.sh re-validates the sha, takes
         # the lock, refuses a credential-bearing origin, fetches the public
         # https remote with hooks disabled, refuses a non-ancestor sha and a
@@ -308,6 +363,7 @@ jobs:
         run: bash scripts/test-deploy-instance.sh
 
       - name: Headless deploy trigger tests
+        if: steps.components.outputs.full == 'true'
         # Offline. Proves scripts/deploy-trigger.sh sends exactly one command
         # string (`deploy <sha>`) to the literal `haven-deploy` account,
         # refuses a malformed sha without invoking ssh, refuses a host-key
@@ -318,6 +374,7 @@ jobs:
         run: bash scripts/test-deploy-trigger.sh
 
       - name: Deploy image gate tests
+        if: steps.components.outputs.full == 'true'
         # Offline, with no root, network or Docker. Proves
         # scripts/deploy-image-gate.sh resolves the pin from install.sh's STEP 8
         # defaults, probes the GHCR manifest anonymously, exits 0 on HTTP 200,
@@ -328,6 +385,7 @@ jobs:
         run: bash scripts/test-deploy-image-gate.sh
 
       - name: Host bootstrap / migration tests
+        if: steps.components.outputs.full == 'true'
         # Offline, with no root, Docker or network. Proves scripts/bootstrap.sh
         # refuses a non-root caller and every bad input with its own exit code,
         # creates the three system accounts and the FHS layout idempotently,
@@ -338,6 +396,7 @@ jobs:
         run: bash scripts/test-bootstrap.sh
 
       - name: Install health-gate tests
+        if: steps.components.outputs.full == 'true'
         # Offline. Proves install.sh exits non-zero and withholds install_success
         # when the hermes-agent health wait fails, so the bootstrap's hand-off
         # cannot cut over an unhealthy Hermes. Docker, curl and friends are
@@ -345,6 +404,7 @@ jobs:
         run: bash scripts/test-install-health.sh
 
       - name: Deploy wiring install tests
+        if: steps.components.outputs.full == 'true'
         # Offline, no root, no Docker, no network. Proves install.sh re-applies
         # deploy/haven-deploy@.service and deploy/50-haven-deploy.rules
         # on every deploy (including --no-start), so a fix to either file
@@ -356,6 +416,7 @@ jobs:
         run: bash scripts/test-deploy-wiring-install.sh
 
       - name: Install auth env-leak tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.auth == 'true'
         # Offline, no root, no Docker, no network. Proves install.sh's compose
         # phase cannot leak the Compose-escaped HAVEN_AUTH_HASH and
         # HAVEN_AUTH_USER that STEP 2 exported: `docker compose up` reads
@@ -368,6 +429,7 @@ jobs:
         run: bash scripts/test-install-auth-env-leak.sh
 
       - name: Conversation prune lease-guard tests
+        if: steps.components.outputs.full == 'true'
         # Offline, no root, no Docker, no network. RUNS
         # scripts/prune-conversations.sh against throwaway fixture trees under
         # mktemp -d to prove the lease guard in BOTH directions: a live lease
@@ -380,6 +442,7 @@ jobs:
         run: bash scripts/test-prune-conversations.sh
 
       - name: Doctor lease-less conversation tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
         # Offline, no root, no Docker, no network. RUNS doctor.sh against
         # fixture conversation trees to prove the lease-less check in BOTH
         # directions: a lease-complete root passes, a root with lease-less
@@ -392,6 +455,7 @@ jobs:
         run: bash scripts/test-doctor-lease-less.sh
 
       - name: Docker build-cache prune tests
+        if: steps.components.outputs.full == 'true'
         # Offline, no root, no Docker, no network. Proves
         # scripts/prune-docker-cache.sh caps the build cache and degrades
         # safely: docker absent -> exit 0, daemon down -> exit 0, success ->
@@ -404,6 +468,7 @@ jobs:
         run: bash scripts/test-prune-docker-cache.sh
 
       - name: Uninstall teardown tests
+        if: steps.components.outputs.full == 'true'
         # Offline, no root, no Docker, no network. Proves scripts/uninstall.sh
         # removes the right things and nothing else: a full install invokes the
         # compose `down --remove-orphans` with the three -f files (exact argv),
@@ -418,6 +483,7 @@ jobs:
         run: bash scripts/test-uninstall.sh
 
       - name: Env pin migration tests
+        if: steps.components.outputs.full == 'true'
         # Offline. Proves install.sh's STEP 2b migration moves a stale
         # :1.8 / 1.26.0-python pin in an existing .env to the current defaults,
         # preserves an owner-chosen pin untouched, writes the new defaults when
@@ -426,6 +492,7 @@ jobs:
         run: bash scripts/test-env-pin-migration.sh
 
       - name: Post-deploy verify-log env tests
+        if: steps.components.outputs.full == 'true'
         # Offline. Proves install.sh's STEP 8 template writes
         # HAVEN_POST_DEPLOY_VERIFY_LOG as ${VAR:-default}: with nothing set
         # it writes the default path; an owner override loaded from the existing
@@ -435,6 +502,7 @@ jobs:
         run: bash scripts/test-post-deploy-verify-log-env.sh
 
       - name: Status backup-log env tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.backup == 'true'
         # Offline. Proves install.sh's STEP 8 template writes the RESOLVED
         # BACKUP_LOG that docker-compose.yml now uses as the status service's
         # backup-log mount source: user mode yields <log dir>/backup.log (the
@@ -451,6 +519,7 @@ jobs:
         run: bash scripts/test-status-backup-log-env.sh
 
       - name: Status backup-log probe tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.backup == 'true'
         # Offline. Pins the reader half of the contract in status/app.py:
         # absent, unreadable and empty are three DISTINCT warn messages (the
         # unreadable one names permission denied, the reader's uid and the
@@ -463,6 +532,7 @@ jobs:
         run: bash scripts/test-status-backup-probe.sh
 
       - name: Status hub URL / domain-cutover tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.proxy == 'true'
         # Offline, no Docker, no network, no third-party dependency. Imports
         # status/app.py fresh with a known env for each case and renders both
         # the hub page and the status page from a fixture data dict. With TLS
@@ -475,6 +545,7 @@ jobs:
         run: python3 status/test_hub_urls.py
 
       - name: Agent-server image repository tests
+        if: steps.components.outputs.full == 'true'
         # Offline. Proves install.sh's STEP 2b migration moves the canonical
         # ghcr.io/openhands/agent-server repository in an existing .env to the
         # CDN default that does not trigger the app server's silent re-pin,
@@ -484,6 +555,7 @@ jobs:
         run: bash scripts/test-agent-image-repo-migration.sh
 
       - name: Tailscale address retirement tests
+        if: steps.components.outputs.full == 'true'
         # Offline. Proves install.sh's STEP 2b retirement of the stored
         # TAILSCALE_IP: a legacy value that matches the address RUNPOD_HOST
         # resolves to today is dropped and the MagicDNS name takes over; any
@@ -494,6 +566,7 @@ jobs:
         run: bash scripts/test-install-tailscale-migration.sh
 
       - name: Agent-server hybrid cutover tests
+        if: steps.components.outputs.full == 'true'
         # Offline. Proves install.sh's STEP 2b pair-exact migration cuts a
         # previously deployed host over from the OLD default pair
         # (docker.openhands.dev/openhands/agent-server AND 1.37.1-python) to the
@@ -504,6 +577,7 @@ jobs:
         run: bash scripts/test-agent-image-hybrid-cutover.sh
 
       - name: Secret-guard hook tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.hermes == 'true'
         # Offline. Proves hermes/agent-hooks/secret-guard.py blocks secret-file
         # arguments, environment dumps and secret-harvest shell commands,
         # allows a benign payload, and FAILS CLOSED (exit 2) on unrecognised
@@ -517,6 +591,7 @@ jobs:
         run: bash scripts/test-secret-guard.sh
 
       - name: TLS compose render tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true' || steps.components.outputs.auth == 'true'
         # Offline. Renders the TLS-off and TLS-on compose/Caddyfile variants in
         # a throwaway tree. Beyond the existing byte-identity, allowlist and
         # hardening checks, it asserts the TLS-on render's proxy `build:`
@@ -526,6 +601,7 @@ jobs:
         run: bash scripts/test-tls-installer-render.sh
 
       - name: B77 port-80 redirect-only dynamic tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true' || steps.components.outputs.auth == 'true'
         # Needs Docker (ubuntu-latest). Renders the REAL production variants
         # through scripts/lib/tls.sh, builds the repo's own ./caddy image, and
         # asserts with a live Caddy that, with TLS on, every http://LOCAL_DOMAIN,
@@ -538,6 +614,7 @@ jobs:
         # DNS token, stubbed upstreams, and --network none for validation runs.
         run: bash scripts/test-b77-port80-dynamic.sh
       - name: TLS Caddyfile validation tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true' || steps.components.outputs.auth == 'true'
         # Offline; docker and caddy are stubbed as shell functions. Proves
         # tls_validate_caddyfile hands the validator the same runtime values
         # the proxy's compose `environment:` block supplies (ACME_EMAIL,
@@ -550,6 +627,7 @@ jobs:
         run: bash scripts/test-tls-caddy-validation.sh
 
       - name: TLS check harness tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true' || steps.components.outputs.auth == 'true'
         # Offline/loopback: a throwaway openssl CA and `openssl s_server` on
         # [IP_ADDRESS], no Docker, no root, no network. Runs the REAL
         # scripts/tls-check.sh against real handshakes, including that a
@@ -557,6 +635,7 @@ jobs:
         run: bash scripts/test-tls-check.sh
 
       - name: Auth render tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true' || steps.components.outputs.auth == 'true'
         # Offline. Renders the managed Caddyfile template in a throwaway tree
         # with AUTH_ENABLED off and on. Proves the login gate is emitted ONLY
         # when AUTH_ENABLED=on: the off render is byte-identical to the tracked
@@ -573,6 +652,7 @@ jobs:
         run: bash scripts/test-auth-render.sh
 
       - name: Password reset script tests
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.auth == 'true' || steps.components.outputs.hermes == 'true'
         # Offline. NO Docker, NO network. `docker` is a stub on PATH and the
         # in-container Python packages (bcrypt, yaml,
         # plugins.dashboard_auth.basic, open_webui.*) are fixtures, so the REAL
@@ -592,6 +672,7 @@ jobs:
         run: bash scripts/test-reset-passwords.sh
 
       - name: Validate rendered Caddyfiles with real Caddy (TLS x auth matrix)
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true' || steps.components.outputs.auth == 'true'
         # The only guard that runs a REAL Caddy over the RENDERED file: every
         # other suite stubs `caddy` textually, so none of them can catch a
         # snippet that is imported but never defined. It renders each supported
@@ -720,6 +801,7 @@ jobs:
           echo "case (d) render is byte-identical to case (a)"
 
       - name: Compose schema check
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true' || steps.components.outputs.auth == 'true' || steps.components.outputs.hermes == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.backup == 'true'
         # Dummy values just so the file can be parsed. "config --quiet"
         # validates structure without starting anything. HAVEN_DATA_DIR and
         # HAVEN_LOG_DIR must be set because the compose bind sources are
@@ -843,6 +925,7 @@ jobs:
           rm -rf "$(dirname "$HAVEN_LOG_DIR")"
 
       - name: Validate status/Caddyfile parses
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true' || steps.components.outputs.auth == 'true'
         # The allowlist assertion below reads the Caddyfile as text, so it
         # cannot catch a syntax error. Let Caddy itself parse the file with the
         # same image the stack pins.
@@ -852,6 +935,7 @@ jobs:
             caddy:2.11-alpine caddy validate --config /etc/caddy/Caddyfile
 
       - name: Validate TLS-on render with real Caddy
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true' || steps.components.outputs.auth == 'true'
         # The only guard that would have caught the TLS walls that shipped
         # (walls 1-3): every other suite stubs caddy textually, so a rendered
         # file that real Caddy rejects still passed CI. This renders the DNS-01
@@ -907,6 +991,7 @@ jobs:
             haven-caddy:ci validate --adapter caddyfile --config /etc/caddy/Caddyfile
 
       - name: Assert proxy allowlist is intact
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true'
         # A future edit could remove `import trusted_only` from a sensitive
         # route and silently expose the status page or the unauthenticated
         # Ollama API. This fails the build if that happens. The same pass also
@@ -938,6 +1023,7 @@ jobs:
           EOF
 
       - name: Assert secure_headers coverage
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true'
         # The (secure_headers) snippet was dropped once before, taking the
         # uniform response headers and the Server suppression with it. This
         # reads status/Caddyfile as text and fails if the snippet is missing or
@@ -1034,6 +1120,7 @@ jobs:
           EOF
 
       - name: Assert Hermes gateway autostart is pinned to the default profile
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.hermes == 'true'
         # The gateway runs as the default profile. A sticky named active profile
         # (e.g. ciso) in the bind-mounted hermes_data/ would otherwise capture a
         # bare `hermes gateway run` and be refused a gateway, leaving the kanban
@@ -1049,6 +1136,7 @@ jobs:
           echo "Hermes gateway autostart is pinned to the default profile."
 
       - name: Assert the WebUI is pinned to the /opt agent and fails closed
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.hermes == 'true'
         # The WebUI (PID 1) must load code and Python from /opt/hermes-agent, not
         # from the data-volume copy a production volume still holds. These four
         # strings are what make that true; a future edit that drops one would
