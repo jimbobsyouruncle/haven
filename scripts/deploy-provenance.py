@@ -11,6 +11,8 @@ import urllib.error
 
 REPO = 'jimbobsyouruncle/haven'
 API = 'https://api.github.com/repos/' + REPO
+RECOVERY_SHA = '5c2df63a73c81ddfbad868dbfe617ee383242ff4'
+RECOVERY_RUN = 44123963304
 
 
 class Refused(ValueError):
@@ -94,7 +96,7 @@ def evidence_list(data, key):
     return entries
 
 
-def deployment_jobs(run, sha):
+def deployment_jobs(run, sha, historical=False):
     run_id, attempt = run['id'], run['run_attempt']
     require(type(run_id) is int and run_id > 0 and type(attempt) is int
             and attempt > 0, 'PROVENANCE_ATTEMPT')
@@ -138,7 +140,8 @@ def deployment_jobs(run, sha):
     if not deploy:
         pending('PROVENANCE_DEPLOY_MISSING')
     require(len(deploy) == 1, 'PROVENANCE_DEPLOY_AMBIGUOUS')
-    require(deploy[0]['status'] == 'in_progress' and deploy[0]['conclusion'] is None,
+    require((deploy[0]['status'], deploy[0]['conclusion']) ==
+            (('completed', 'failure') if historical else ('in_progress', None)),
             'PROVENANCE_DEPLOY_STATE')
 
 
@@ -187,6 +190,8 @@ def emit_evidence(data):
         for run in data['workflow_runs']])
     if 'manual_cutover' in data:
         evidence['manual_cutover'] = data['manual_cutover']
+    if 'historical_failure' in data:
+        evidence['historical_failure'] = data['historical_failure']
     print(json.dumps(evidence))
 
 
@@ -203,7 +208,7 @@ def trusted_run(run, sha):
     require(run['head_repository']['full_name'] == REPO, 'PROVENANCE_REPOSITORY')
 
 
-def manual_runs(sha):
+def manual_runs(sha, historical=False):
     """Explicit root manual-identity acceptance; never used by automatic deploys.
 
     Reuse checks from the PR that produced this exact main merge. Main push
@@ -240,6 +245,20 @@ def manual_runs(sha):
         gates = [j for j in jobs if j.get('name') == gate]
         require(len(gates) == 1 and gates[0]['status'] == 'completed'
                 and gates[0]['conclusion'] == 'success')
+        if historical:
+            attempt = run['run_attempt']
+            require(type(attempt) is int and attempt > 0)
+            require(gates[0]['run_id'] == run['id'] and gates[0]['head_sha'] == head
+                    and gates[0]['run_attempt'] == attempt)
+            specific = complete_list(get('/actions/runs/' + str(run['id']) + '/attempts/'
+                                         + str(attempt) + '/jobs?per_page=100'), 'jobs')
+            selected = [j for j in specific if j.get('name') == gate]
+            require(len(selected) == 1 and all(selected[0].get(k) == gates[0].get(k)
+                    for k in ('id', 'run_id', 'head_sha', 'run_attempt', 'name', 'status', 'conclusion')))
+            refreshed = get('/actions/runs/' + str(run['id']))
+            trusted_run(refreshed, head)
+            require(all(refreshed.get(k) == run.get(k) for k in
+                        ('id', 'path', 'event', 'status', 'conclusion', 'run_attempt')))
         evidence.append(run)
     data = get('/actions/runs?head_sha=' + sha + '&per_page=100')
     entries = complete_list(data, 'workflow_runs')
@@ -248,6 +267,18 @@ def manual_runs(sha):
         trusted_run(run, sha)
         require(run['status'] == 'completed')
         if run.get('path') == '.github/workflows/deploy.yml':
+            if historical:
+                require(sha == RECOVERY_SHA)
+                require(run['id'] == RECOVERY_RUN and run['head_branch'] == 'main'
+                        and run['event'] == 'push' and run['conclusion'] == 'failure')
+                deployment_jobs(run, sha, historical=True)
+                refreshed = get('/actions/runs/' + str(run['id']))
+                trusted_run(refreshed, sha)
+                require(all(refreshed.get(k) == run.get(k) for k in
+                            ('id', 'path', 'head_branch', 'event', 'status',
+                             'conclusion', 'run_attempt')))
+                excluded.append(run['id'])
+                continue
             # Only the disabled push entrypoint with BOTH jobs skipped is
             # inapplicable. Failed/manual/active/partially executed runs refuse.
             require(run['head_branch'] == 'main' and run['event'] == 'push')
@@ -260,20 +291,28 @@ def manual_runs(sha):
             require(run['conclusion'] == 'success')
             retained.append(run)
     require(excluded)
+    if historical:
+        require(len(excluded) == 1)
     # Preserve raw skipped observations separately; never rewrite them as PASS.
     data.update(workflow_runs=retained + evidence, total_count=len(retained) + len(evidence),
                 manual_cutover=dict(merge_sha=sha, pr=matches[0]['number'], head_sha=head,
                                     intentionally_skipped_deploy_runs=excluded))
+    if historical:
+        data['historical_failure'] = dict(merge_sha=sha, pr=matches[0]['number'],
+                                          head_sha=head, failed_deploy_run=excluded[0])
+        del data['manual_cutover']
     emit_evidence(data)
 
 
 def main():
     require(len(sys.argv) == 3 and re.fullmatch('[0-9a-f]{40}', sys.argv[2]))
-    require(sys.argv[1] in ('authorize', 'runs', 'manual-runs'))
+    require(sys.argv[1] in ('authorize', 'runs', 'manual-runs', 'recovery-runs'))
     if sys.argv[1] == 'authorize':
         authorize(sys.argv[2])
     elif sys.argv[1] == 'manual-runs':
         manual_runs(sys.argv[2])
+    elif sys.argv[1] == 'recovery-runs':
+        manual_runs(sys.argv[2], historical=True)
     else:
         runs(sys.argv[2])
 

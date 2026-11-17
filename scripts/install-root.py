@@ -21,6 +21,8 @@ import tarfile
 import time
 import uuid
 
+RECOVERY_SHA = '5c2df63a73c81ddfbad868dbfe617ee383242ff4'
+
 
 class Refusal(RuntimeError):
     """A fixed, non-sensitive diagnostic safe for deployment logs."""
@@ -1069,6 +1071,71 @@ class Transaction:
                 raise Refusal('mandatory manual acceptance backup or receipt evidence missing')
             self.accept(sha, result, allow_accepted=True)
 
+    def reverify_recovery(self, sha, journal_hash):
+        """Verify and accept the specific pending transaction, without deployment."""
+        if sha != RECOVERY_SHA:
+            raise Refusal('unsupported recovery revision')
+        if not re.fullmatch(r'[0-9a-f]{64}', journal_hash):
+            raise Refusal('invalid transaction identity')
+        self.trusted(self.journal)
+        if stat.S_IMODE(self.state.stat().st_mode) != 0o700:
+            raise Refusal('recovery storage is not private')
+        def matching():
+            self.trusted(self.journal)
+            if hashlib.sha256(self.journal.read_bytes()).hexdigest() != journal_hash:
+                raise Refusal('transaction identity changed')
+            journal = self.load()
+            if not journal or journal['sha'] != sha or journal['phase'] != 'awaiting_verifier':
+                raise Refusal('no matching pending transaction')
+            return journal
+        journal = matching()
+        self.wiring(sha)
+        self.git(self.app, 'diff', '--quiet', 'HEAD', '--')
+        self.verify_identity(journal)
+        previous = Path(journal['legacy_previous'] if journal['source'] == str(self.legacy)
+                        else journal['previous'])
+        self.trusted(previous, tree=True)
+        if not previous.is_dir() or self.git(previous, 'rev-parse', 'HEAD') != journal['previous_sha']:
+            raise Refusal('previous checkout unavailable or mismatched')
+        if not isinstance(journal['files'], list) or not journal['files']:
+            raise Refusal('control snapshots unavailable')
+        for item in journal['files']:
+            if item['data'] is not None:
+                base64.b64decode(item['data'], validate=True)
+                for key in ('mode', 'uid', 'gid'):
+                    if type(item[key]) is not int:
+                        raise Refusal('invalid control snapshot')
+        recovery = journal['proxy_recovery']
+        archive = Path(recovery['archive'])
+        self.trusted(archive)
+        if (not archive.is_file() or archive.stat().st_size == 0
+                or stat.S_IMODE(archive.stat().st_mode) != 0o600):
+            raise Refusal('recovery archive unavailable')
+        checksum = hashlib.sha256()
+        with archive.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                checksum.update(chunk)
+        if checksum.hexdigest() != recovery['archive_sha256']:
+            raise Refusal('recovery archive checksum mismatch')
+        driver = Path(__file__).absolute().parent
+        self.trusted(driver, tree=True)
+        env = dict(PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                   HAVEN_APP_DIR=str(self.app), HAVEN_ENV_FILE_FALLBACK=str(self.layout),
+                   HAVEN_VERIFY_INSTALL_ROOT='1', HAVEN_VERIFY_BACKUP_GATES='required',
+                   HAVEN_VERIFY_RECOVERY='1', HAVEN_REPOSITORY_SLUG='jimbobsyouruncle/haven')
+        with tempfile.TemporaryFile() as evidence:
+            env['HAVEN_VERIFY_EVIDENCE_FD'] = str(evidence.fileno())
+            self.run(['/usr/bin/timeout', '--kill-after=30s', '10m', 'bash',
+                      str(driver / 'run-post-deploy-verify.sh'), '--wait-for', sha],
+                     cwd=self.app, env=env, check=True, pass_fds=(evidence.fileno(),))
+            evidence.seek(0)
+            result = json.load(evidence)
+            if not all(result.get('gates', {}).get(k, {}).get('state') == 'PASS' for k in
+                       ('backup_log', 'backup_readability', 'backup_tile', 'verdict_file')):
+                raise Refusal('mandatory recovery backup or receipt evidence missing')
+            matching()
+            self.accept(sha, result)
+
     def accept(self, sha, evidence, allow_accepted=False):
         journal = self.load()
         phases = ('awaiting_verifier', 'accepted') if allow_accepted else ('awaiting_verifier',)
@@ -1276,13 +1343,14 @@ class Transaction:
 
 def main():
     os.umask(0o022)
-    actions = ('deploy', 'migrate', 'recover', 'accept', 'verify', 'rollback', 'reverify-manual')
-    if len(sys.argv) != 3 or sys.argv[1] not in actions \
+    actions = ('deploy', 'migrate', 'recover', 'accept', 'verify', 'rollback', 'reverify-manual', 'reverify-recovery')
+    if len(sys.argv) not in (3, 4) or sys.argv[1] not in actions \
+            or (len(sys.argv) == 4) != (sys.argv[1] == 'reverify-recovery') \
             or not re.fullmatch(r'[0-9a-f]{40}', sys.argv[2]):
         raise Refusal('usage: install-root.py deploy|migrate|recover|accept|verify|rollback|reverify-manual <full SHA>')
     if os.geteuid() != 0:
         raise Refusal('installation handoff requires root')
-    action, sha = sys.argv[1:]
+    action, sha = sys.argv[1:3]
     # Fixed order, unchanged old lock inode. Open without truncation or symlink
     # following; /run/lock can be shared. Never trust inherited fd numbers.
     transaction = Transaction()
@@ -1327,6 +1395,8 @@ def main():
         transaction.verify_identity(transaction.load())
     elif action == 'reverify-manual':
         transaction.reverify_manual(sha)
+    elif action == 'reverify-recovery':
+        transaction.reverify_recovery(sha, sys.argv[3])
     elif action == 'accept':
         transaction.accept(sha, json.load(sys.stdin))
     else:
