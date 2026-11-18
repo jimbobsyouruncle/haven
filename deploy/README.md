@@ -762,13 +762,26 @@ and all recovery artifacts; do not edit the journal or replay installation.
 In an administrator shell, replace the placeholder with the full SHA of the
 reviewed, merged recovery driver; it is distinct from the installed SHA. The
 checkout must be a new root-owned path, with trusted parents and no symlinks or
-group/other-writable files. Do not replace the installed checkout.
+group/other-writable files. Use the merged driver that includes the generated
+configuration preflight correction. The original #224 driver rejects legitimate
+installer output. Do not replace the installed checkout.
+
+The corrected driver checks all other tracked paths against the installed
+revision. It reproduces `docker-compose.yml` and `status/Caddyfile` from that
+revision's templates and renderer using allowlisted settings from the protected
+stack environment file. Both installed files must match their renders byte for
+byte. The driver does not source the stack file, read token files, show a diff,
+or write to the installed checkout. Review the approved TLS and auth settings
+privately before execution. Stop on a mismatch and investigate it without
+resetting the checkout, editing installed settings, or rerunning the installer.
 
 ```sh
 set -eu
 reviewed_sha=REPLACE_WITH_REVIEWED_MERGED_DRIVER_SHA
 production_sha=5c2df63a73c81ddfbad868dbfe617ee383242ff4
-reviewed_checkout=/root/haven-acceptance-recovery
+reviewed_checkout=/root/haven-acceptance-recovery-corrected
+sudo test ! -e "$reviewed_checkout"
+sudo test ! -L "$reviewed_checkout"
 sudo git clone --no-checkout https://github.com/jimbobsyouruncle/haven.git "$reviewed_checkout"
 sudo git -C "$reviewed_checkout" checkout --detach "$reviewed_sha"
 test "$(sudo git -C "$reviewed_checkout" rev-parse HEAD)" = "$reviewed_sha"

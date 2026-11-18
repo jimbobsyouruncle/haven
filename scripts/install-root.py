@@ -1071,6 +1071,70 @@ class Transaction:
                 raise Refusal('mandatory manual acceptance backup or receipt evidence missing')
             self.accept(sha, result, allow_accepted=True)
 
+    def verify_recovery_render(self, sha):
+        generated = ('docker-compose.yml', 'status/Caddyfile')
+        # The installer renders these two tracked outputs. Keep Git's check on
+        # every other tracked path, including the templates and renderer.
+        tracked = self.git(self.app, 'ls-files', '-v', '-z').removesuffix('\0').split('\0')
+        if any(not entry.startswith('H ') for entry in tracked):
+            raise Refusal('recovery checkout has hidden or unresolved tracked paths')
+        self.git(self.app, 'diff', '--cached', '--quiet', '--no-ext-diff', '--no-textconv', sha, '--')
+        self.git(self.app, 'diff', '--quiet', '--no-ext-diff', '--no-textconv',
+                 sha, '--', '.', *(f':(exclude,literal){name}' for name in generated))
+        renderer = 'scripts/lib/tls.sh'
+        templates = [name + '.tmpl' for name in generated]
+        for name in [renderer, *templates]:
+            path = self.app / name
+            if (not path.is_file() or self.git(self.app, 'hash-object', '--no-filters', str(path))
+                    != self.git(self.app, 'rev-parse', f'{sha}:{name}')):
+                raise Refusal('recovery render source differs from installed revision')
+
+        layout = self.values(self.layout.read_text())
+        stack = Path(layout.get('HYBRID_AI_STACK_ENV_FILE', ''))
+        self.trusted(stack)
+        if (not stack.is_absolute() or not stack.is_file()
+                or stat.S_IMODE(stack.stat().st_mode) != 0o600):
+            raise Refusal('recovery render requires the private installed stack settings')
+        allowed = {'TLS_ENABLED', 'AUTH_ENABLED', 'TLS_VALIDATION', 'ACME_DNS_PROVIDER',
+                   'TLS_DOMAIN', 'RFC2136_KEY_NAME', 'RFC2136_SERVER'}
+        settings = {}
+        for line in stack.read_text().split('\n'):
+            key, _, value = line.partition('=')
+            if key in allowed:
+                if key in settings:
+                    raise Refusal('duplicate recovery render setting')
+                settings[key] = value.removesuffix('"').removeprefix('"').removesuffix("'").removeprefix("'")
+        switches = {'0', '1', 'no', 'NO', 'No', 'yes', 'YES', 'Yes',
+                    'false', 'FALSE', 'False', 'true', 'TRUE', 'True'}
+        if (settings.get('TLS_ENABLED') not in switches
+                or settings.get('AUTH_ENABLED') not in switches | {'on', 'ON', 'On', 'off', 'OFF', 'Off'}
+                or settings.get('TLS_VALIDATION') not in ('dns', 'http', 'tlsalpn')
+                or settings.get('ACME_DNS_PROVIDER') not in ('cloudflare', 'rfc2136')):
+            raise Refusal('invalid installed recovery render settings')
+
+        # Run only the pure rendering functions from the installed revision.
+        # No stack file is sourced, and no token or other credential is passed.
+        with tempfile.TemporaryDirectory(prefix='haven-recovery-render-') as tmp:
+            result = self.run(
+                ['/bin/bash', '-c', '''
+set -euo pipefail
+source scripts/lib/tls.sh
+if tls_is_on; then tls_validate_domain "$TLS_DOMAIN"; fi
+variants="$(tls_variants)"
+tls_prepare_render_values "$variants"
+tls_render_to_file docker-compose.yml.tmpl "$variants" "$1/compose"
+tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
+''', 'verify-recovery-render', tmp],
+                cwd=self.app, env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', **settings},
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result.returncode:
+                raise Refusal('could not reproduce the installed recovery render')
+            for name, output in zip(generated, ('compose', 'caddy')):
+                path = self.app / name
+                if (not path.is_file() or stat.S_IMODE(path.stat().st_mode) != 0o644
+                        or path.read_bytes() != (Path(tmp) / output).read_bytes()):
+                    raise Refusal(f'installed generated configuration differs from expected render: {name}')
+
     def reverify_recovery(self, sha, journal_hash):
         """Verify and accept the specific pending transaction, without deployment."""
         if sha != RECOVERY_SHA:
@@ -1090,7 +1154,7 @@ class Transaction:
             return journal
         journal = matching()
         self.wiring(sha)
-        self.git(self.app, 'diff', '--quiet', 'HEAD', '--')
+        self.verify_recovery_render(sha)
         self.verify_identity(journal)
         previous = Path(journal['legacy_previous'] if journal['source'] == str(self.legacy)
                         else journal['previous'])
