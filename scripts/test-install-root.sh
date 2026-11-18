@@ -128,6 +128,8 @@ class MigrationTests(unittest.TestCase):
 
     def runner(self, args, **kwargs):
         self.calls.append(args)
+        if args[0] == '/bin/bash':
+            return subprocess.run(args, **kwargs)
         if args[0] == 'git':
             args = list(args)
             if 'fetch' in args:
@@ -202,7 +204,29 @@ class MigrationTests(unittest.TestCase):
         self.tx.wiring(self.sha)
 
     def test_acceptance_only_recovery_gates_and_retry(self):
+        repo = Path(__file__).resolve().parents[1]
+        for name in ('scripts/lib/tls.sh', 'docker-compose.yml.tmpl', 'status/Caddyfile.tmpl'):
+            path = self.remote / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(repo / name, path)
+        self.git(self.remote, 'add', '.')
+        self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-qm', 'recovery render fixture')
+        self.sha = self.git(self.remote, 'rev-parse', 'HEAD')
         self.tx.deploy(self.sha)
+        with self.secret.open('a') as stack:
+            stack.write('TLS_ENABLED=yes\nAUTH_ENABLED=on\nTLS_VALIDATION=dns\n'
+                        'ACME_DNS_PROVIDER=cloudflare\nTLS_DOMAIN=fixture.example\n'
+                        'UNRELATED=$(touch unexpected-execution)\n')
+        subprocess.run(['/bin/bash', '-ec', '''
+source scripts/lib/tls.sh
+tls_prepare_render_values "on dns auth"
+tls_render_to_file docker-compose.yml.tmpl "on dns auth" docker-compose.yml
+tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
+'''], cwd=self.tx.app, env={'PATH': '/usr/bin:/bin', 'TLS_VALIDATION': 'dns',
+                           'ACME_DNS_PROVIDER': 'cloudflare'}, check=True)
+        self.assertEqual(set(self.git(self.tx.app, 'diff', '--name-only', 'HEAD').splitlines()),
+                         {'docker-compose.yml', 'status/Caddyfile'})
         original = self.tx.journal.read_bytes()
         digest = hashlib.sha256(original).hexdigest()
         runner = self.tx.run
@@ -218,6 +242,32 @@ class MigrationTests(unittest.TestCase):
         with patch.object(MODULE, 'RECOVERY_SHA', self.sha), patch.object(self.tx, 'trusted'):
             with self.assertRaises(MODULE.Refusal):
                 self.tx.reverify_recovery(self.sha, 'f' * 64)
+            for name, extra in (
+                ('docker-compose.yml', b'    privileged: true\n'),
+                ('status/Caddyfile', b'admin :2019\n'),
+                ('status/Caddyfile.tmpl', b'# unexpected template change\n'),
+                ('install.sh', b'echo unexpected-source-change\n'),
+            ):
+                with self.subTest(tampered=name):
+                    path = self.tx.app / name
+                    expected = path.read_bytes()
+                    path.write_bytes(expected + extra)
+                    with patch.object(self.tx, 'run', side_effect=verifier) as run:
+                        with self.assertRaises((MODULE.Refusal, subprocess.CalledProcessError)):
+                            self.tx.reverify_recovery(self.sha, digest)
+                        self.assertFalse(any(args[0] == '/usr/bin/timeout'
+                                             for (args,), _ in run.call_args_list))
+                    self.assertEqual(self.tx.journal.read_bytes(), original)
+                    path.write_bytes(expected)
+            stack = self.secret.read_bytes()
+            self.secret.write_bytes(stack.replace(b'AUTH_ENABLED=on', b'AUTH_ENABLED=off'))
+            with self.assertRaisesRegex(MODULE.Refusal, 'differs from expected render'):
+                self.tx.reverify_recovery(self.sha, digest)
+            self.secret.write_bytes(stack)
+            self.git(self.tx.app, 'update-index', '--assume-unchanged', 'install.sh')
+            with self.assertRaisesRegex(MODULE.Refusal, 'hidden or unresolved tracked paths'):
+                self.tx.reverify_recovery(self.sha, digest)
+            self.git(self.tx.app, 'update-index', '--no-assume-unchanged', 'install.sh')
             archive = Path(self.tx.load()['proxy_recovery']['archive'])
             saved = archive.read_bytes()
             archive.write_bytes(b'corrupt')
@@ -253,6 +303,7 @@ class MigrationTests(unittest.TestCase):
                 with self.assertRaises(MODULE.Refusal): self.tx.reverify_recovery(self.sha, digest)
             self.assertEqual(self.tx.journal.read_bytes(), accepted)
             self.assertEqual(self.tx.load()['phase'], 'accepted')
+            self.assertFalse((self.tx.app / 'unexpected-execution').exists())
 
     def test_legacy_and_repeated_deployment(self):
         self.tx.deploy(self.sha)

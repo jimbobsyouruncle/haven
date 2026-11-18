@@ -513,6 +513,7 @@
   - def restore(self, journal)
   - def wiring(self, sha)
   - def reverify_manual(self, sha)
+  - def verify_recovery_render(self, sha)
   - def reverify_recovery(self, sha, journal_hash)
   - def accept(self, sha, evidence, allow_accepted)
   - def deploy(self, sha)
