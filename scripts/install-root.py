@@ -20,8 +20,11 @@ import tempfile
 import tarfile
 import time
 import uuid
+import zlib
 
 RECOVERY_SHA = '5c2df63a73c81ddfbad868dbfe617ee383242ff4'
+DOCKER_UNAVAILABLE = ('RECOVERY_DOCKER: Docker unavailable; '
+                      'check the daemon and deployment account access')
 
 
 class Refusal(RuntimeError):
@@ -742,11 +745,35 @@ class Transaction:
             raise Refusal('conflicting canonical directory; manual reconciliation required')
         return source, values
 
-    def gate_command(self, gate, args):
+    def gate_command(self, refusal, args, *, inspect_image=False):
         try:
             return self.command(args, timeout=180)
-        except (OSError, subprocess.SubprocessError):
-            raise Refusal(gate + ': inspection or artifact operation failed') from None
+        except (OSError, subprocess.SubprocessError) as error:
+            stderr = getattr(error, 'stderr', None) or ''
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode(errors='replace')
+            try:
+                # Never record argv or stdout (container inspect returns its environment).
+                self.atomic(self.state / 'proxy-preflight.log',
+                            (refusal + '\n' + stderr[-65536:]).encode(), mode=0o600)
+            except OSError:
+                pass  # A full filesystem must not hide the original refusal.
+            if (isinstance(error, (FileNotFoundError, PermissionError))
+                    or 'cannot connect to the docker daemon' in stderr.lower()
+                    or 'permission denied while trying to connect' in stderr.lower()):
+                raise Refusal(DOCKER_UNAVAILABLE) from None
+            if inspect_image:
+                self.docker_architecture()
+                if re.search(r'\bno such image\b', stderr, re.IGNORECASE):
+                    refusal = ('RECOVERY_IMAGE: selected immutable image is missing; restore the '
+                               'checked archive or select a locally verified immutable alternative '
+                               'using the deployment runbook')
+            raise Refusal(refusal) from None
+
+    def docker_architecture(self):
+        return self.gate_command(
+            DOCKER_UNAVAILABLE,
+            ['docker', 'info', '--format', '{{.Architecture}}'])
 
     def recovery_image(self, running):
         # Optional durable selection for a validated alternative. No per-SHA
@@ -814,17 +841,15 @@ class Transaction:
                     if 'sha256:' + digest.hexdigest() != expected:
                         raise ValueError
                 return config_id
-        except (OSError, EOFError, ValueError, KeyError, TypeError, tarfile.TarError):
-            raise Refusal('RECOVERY_ARTIFACT: archive configuration or layer integrity mismatch') from None
+        except (OSError, EOFError, ValueError, KeyError, TypeError, AttributeError,
+                tarfile.TarError, zlib.error):
+            raise Refusal('RECOVERY_ARTIFACT: archive configuration or layer integrity mismatch; '
+                          'preserve the previous checked archive and verify local image storage') from None
 
-    def compatible_proxy(self, recovery, source, metadata):
-        running = json.loads(self.gate_command('PROXY_IDENTITY',
+    def compatible_proxy(self, recovery, source):
+        running = json.loads(self.gate_command('PROXY_IDENTITY: inspect the installed proxy container',
                             ['docker', 'container', 'inspect', '--format', '{{json .}}',
                              self.project + '-proxy']))
-        if (metadata['Os'] != 'linux' or metadata['Architecture'] !=
-                self.gate_command('RECOVERY_IMAGE', ['docker', 'info', '--format', '{{.Architecture}}'])
-                .replace('aarch64', 'arm64').replace('x86_64', 'amd64')):
-            raise Refusal('RECOVERY_IMAGE: incompatible host platform')
         caddyfile = source / 'status/Caddyfile'
         self.trusted(caddyfile)
         if not caddyfile.is_file():
@@ -860,41 +885,56 @@ class Transaction:
                     '--env-file', name, '--mount',
                     'type=bind,src=' + str(caddyfile) + ',dst=/etc/caddy/Caddyfile,readonly',
                     *mounts, '--entrypoint', '/usr/bin/caddy', recovery]
-            version = self.gate_command('RECOVERY_COMPATIBILITY', base + ['version'])
-            current = self.gate_command('RECOVERY_COMPATIBILITY',
+            compatibility = ('RECOVERY_COMPATIBILITY: Caddy probe failed; check the local image '
+                             'and protected preflight log')
+            version = self.gate_command(compatibility, base + ['version'])
+            current = self.gate_command(compatibility,
                        ['docker', 'exec', self.project + '-proxy', '/usr/bin/caddy', 'version'])
             if not version or not current or version.split()[0] != current.split()[0]:
-                raise Refusal('RECOVERY_COMPATIBILITY: Caddy version mismatch')
-            modules = self.gate_command('RECOVERY_COMPATIBILITY', base + ['list-modules']).splitlines()
+                raise Refusal('RECOVERY_COMPATIBILITY: select an image matching the running Caddy version')
+            modules = self.gate_command(compatibility, base + ['list-modules']).splitlines()
             if not {'dns.providers.cloudflare', 'dns.providers.rfc2136'} <= set(modules):
-                raise Refusal('RECOVERY_COMPATIBILITY: required DNS modules unavailable')
-            self.gate_command('RECOVERY_CONFIGURATION', base + [
+                raise Refusal('RECOVERY_COMPATIBILITY: select an image with both required DNS modules')
+            self.gate_command('RECOVERY_CONFIGURATION: installed Caddyfile validation failed; '
+                              'check the protected preflight log', base + [
                 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'])
         finally:
             os.unlink(name)
 
     def proxy_preflight(self, source):
-        project = self.gate_command('PROXY_IDENTITY', ['docker', 'container', 'inspect', '--format',
+        architecture = self.docker_architecture()
+        identity = 'PROXY_IDENTITY: inspect the installed proxy container'
+        project = self.gate_command(identity, ['docker', 'container', 'inspect', '--format',
                                 '{{index .Config.Labels "com.docker.compose.project"}}',
                                 self.project + '-proxy'])
         if project != self.project:
             raise Refusal('PROXY_IDENTITY: existing Compose project requires owner reconciliation')
-        image = self.gate_command('PROXY_IDENTITY', ['docker', 'container', 'inspect', '--format',
+        image = self.gate_command(identity, ['docker', 'container', 'inspect', '--format',
                               '{{.Image}}', self.project + '-proxy'])
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
             raise Refusal('PROXY_IDENTITY: cannot establish current exact proxy image')
         recovery = self.recovery_image(image)
-        metadata = json.loads(self.gate_command('RECOVERY_IMAGE', ['docker', 'image', 'inspect',
-                                     '--format', '{{json .}}', recovery]))
+        inspection = self.gate_command(
+            'RECOVERY_IMAGE: selected image inspection failed; check the protected preflight log',
+            ['docker', 'image', 'inspect', '--format', '{{json .}}', recovery], inspect_image=True)
         # Inspect by immutable reference; its returned Id may be an index or
         # configuration digest. Bind the exported content via Config + RootFS.
-        if not re.fullmatch(r'sha256:[0-9a-f]{64}', metadata.get('Id', '')):
-            raise Refusal('RECOVERY_IMAGE: invalid local immutable identity')
+        try:
+            metadata = json.loads(inspection)
+            if not re.fullmatch(r'sha256:[0-9a-f]{64}', metadata['Id']):
+                raise ValueError
+            platform = metadata['Os'] + '/' + metadata['Architecture']
+        except (ValueError, KeyError, TypeError):
+            raise Refusal('RECOVERY_IMAGE: invalid local image metadata; '
+                          'check the exact digest in the local image store') from None
+        if (metadata['Os'] != 'linux' or metadata['Architecture'] !=
+                {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(architecture, architecture)):
+            raise Refusal('RECOVERY_COMPATIBILITY: select a Linux image matching the Docker host architecture')
         archive, digest = self.retain_recovery(recovery)
         config_id = self.verify_archive(archive, metadata)
-        self.compatible_proxy(recovery, source, metadata)
+        self.compatible_proxy(recovery, source)
         return dict(running_image_id=image, recovery_image_id=recovery,
-                    configuration_id=config_id, platform=metadata['Os'] + '/' + metadata['Architecture'],
+                    configuration_id=config_id, platform=platform,
                     archive=str(archive), archive_sha256=digest)
 
     def retain_recovery(self, recovery):
@@ -902,10 +942,12 @@ class Transaction:
         try:
             fd = os.open(archive, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             os.close(fd)
-            self.gate_command('RECOVERY_ARTIFACT', ['docker', 'image', 'save',
+            self.gate_command('RECOVERY_ARTIFACT: image export failed; check storage and the '
+                              'protected preflight log', ['docker', 'image', 'save',
                                                  '--output', str(archive), recovery])
             if not archive.is_file() or archive.stat().st_size == 0:
-                raise Refusal('RECOVERY_ARTIFACT: recovery export is empty or unavailable')
+                raise Refusal('RECOVERY_ARTIFACT: recovery export is empty or unavailable; '
+                              'check local image storage and free space')
             archive.chmod(0o600)
             with archive.open('rb') as stream:
                 os.fsync(stream.fileno())
@@ -915,7 +957,8 @@ class Transaction:
             self.sync(self.state)
             return archive, checksum.hexdigest()
         except OSError:
-            raise Refusal('RECOVERY_ARTIFACT: cannot retain durable recovery export') from None
+            raise Refusal('RECOVERY_ARTIFACT: cannot retain recovery export; '
+                          'check checkpoint storage and free space') from None
 
     def snapshots(self, extra=()):
         files = [self.layout, self.keys, self.layout.parent / 'stack.env',

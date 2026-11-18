@@ -63,6 +63,7 @@ class MigrationTests(unittest.TestCase):
         self.image_metadata = None
         self.proxy_mounts = []
         self.export_missing = False
+        self.missing_images = set()
         self.export_empty = False
         self.tx = MODULE.Transaction(self.root, self.runner, os.getuid())
         self.tx.legacy.parent.mkdir()
@@ -138,8 +139,10 @@ class MigrationTests(unittest.TestCase):
         if args[0] == 'docker':
             if any('com.docker.compose.project' in arg for arg in args):
                 return subprocess.CompletedProcess(args, 0, self.project, '')
-            if self.proxy_missing and args[1] == 'image':
-                raise subprocess.CalledProcessError(1, args)
+            if (args[1:3] == ['image', 'inspect']
+                    and (self.proxy_missing or args[-1] in self.missing_images)):
+                raise subprocess.CalledProcessError(1, args,
+                    stderr='Error response from daemon: No such image: SYNTHETIC_PRIVATE_DETAIL')
             if args[1:3] == ['image', 'save']:
                 if self.export_missing:
                     raise subprocess.CalledProcessError(1, args, stderr='SYNTHETIC_PRIVATE_DETAIL')
@@ -381,7 +384,7 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
 
     def test_proxy_gate_precedes_activation(self):
         self.proxy_missing = True
-        with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_IMAGE'):
+        with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_IMAGE: selected immutable image is missing'):
             self.tx.deploy(self.sha)
         self.assertFalse(self.tx.app.exists())
         self.assertEqual(self.tx.layout.read_bytes(), self.layout_before)
@@ -415,7 +418,7 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
 
     def test_unexportable_and_empty_archive(self):
         self.export_missing = True
-        self.assert_recovery_refused('RECOVERY_ARTIFACT')
+        self.assert_recovery_refused('RECOVERY_ARTIFACT: image export failed')
         self.export_missing = False
         self.export_empty = True
         self.assert_recovery_refused('RECOVERY_ARTIFACT')
@@ -438,20 +441,24 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
     def test_incompatible_platform_config_and_layers_are_refused(self):
         base = dict(Id=self.recovery_image, Os='linux', Architecture='arm64',
                     Config=self.config['config'], RootFS={'Layers': self.config['rootfs']['diff_ids']})
-        for field, value in [('Architecture', 'amd64'), ('Config', {}),
-                             ('RootFS', {'Layers': ['sha256:' + 'f' * 64]})]:
+        for field, value, gate in [
+            ('Architecture', 'amd64', 'RECOVERY_COMPATIBILITY'),
+            ('Config', {}, 'RECOVERY_ARTIFACT'),
+            ('RootFS', {'Layers': ['sha256:' + 'f' * 64]}, 'RECOVERY_ARTIFACT'),
+        ]:
             self.image_metadata = dict(base, **{field: value})
-            self.assert_recovery_refused('RECOVERY_ARTIFACT')
+            self.assert_recovery_refused(gate)
 
     def test_compatibility_failures_precede_activation_and_remove_private_env(self):
         original = self.runner
         for failure in ('version', 'list-modules', 'caddyfile'):
             def runner(args, **kwargs):
-                if args[0:2] == ['docker', 'run'] and args[-1] == failure:
+                if args[:2] == ['docker', 'run'] and failure in args:
                     raise subprocess.CalledProcessError(1, args, stderr='SYNTHETIC_PRIVATE_DETAIL')
                 return original(args, **kwargs)
             self.tx.run = runner
-            self.assert_recovery_refused('RECOVERY_')
+            self.assert_recovery_refused('RECOVERY_CONFIGURATION' if failure == 'caddyfile'
+                                         else 'RECOVERY_COMPATIBILITY')
             self.assertEqual(list(self.tx.state.glob('proxy-env-*')), [])
 
     def test_compressed_oci_layer_and_config_members(self):
@@ -556,11 +563,34 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
 
     def test_inspected_configuration_id_may_differ_from_selected_index(self):
         self.approve_recovery('sha256:' + 'd' * 64)
+        self.missing_images.update((self.running_image, self.recovery_image, self.config_id))
+        self.assert_recovery_refused('RECOVERY_IMAGE: selected immutable image is missing')
+        # Stand in for the operator re-importing a checked archive. The selected
+        # index resolves, while the config ID and running image still do not.
+        self.missing_images.remove(self.recovery_image)
         self.image_metadata = dict(Id=self.config_id, Os='linux', Architecture='arm64',
                                    Config=self.config['config'],
                                    RootFS={'Layers': self.config['rootfs']['diff_ids']})
         self.tx.deploy(self.sha)
         self.assertEqual(self.tx.load()['proxy_recovery']['configuration_id'], self.config_id)
+        inspected = [c[-1] for c in self.calls if c[:3] == ['docker', 'image', 'inspect']]
+        self.assertEqual(inspected, [self.recovery_image, self.recovery_image])
+
+    def test_docker_unavailable_and_other_inspection_failure(self):
+        for command, gate in [
+            (['docker', 'info'], 'RECOVERY_DOCKER: Docker unavailable'),
+            (['docker', 'image', 'inspect'], 'RECOVERY_IMAGE: selected image inspection failed'),
+            (['docker', 'image', 'save'], 'RECOVERY_DOCKER: Docker unavailable'),
+        ]:
+            def runner(args, **kwargs):
+                if args[:len(command)] == command:
+                    stderr = 'SYNTHETIC_PRIVATE_DETAIL'
+                    if command[-1] == 'save':
+                        stderr = 'permission denied while trying to connect: ' + stderr
+                    raise subprocess.CalledProcessError(1, args, stderr=stderr)
+                return self.runner(args, **kwargs)
+            self.tx.run = runner
+            self.assert_recovery_refused(gate)
 
     def test_production_workflow_is_inert_until_explicit_activation(self):
         workflow = (Path(__file__).resolve().parent.parent /
@@ -578,10 +608,16 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         self.assertIn('          ref: ${{ github.sha }}', workflow)
 
     def test_cli_gate_annotation_never_contains_subprocess_output(self):
+        self.tx.state.mkdir(mode=0o700)
         with self.assertRaises(MODULE.Refusal) as caught:
             with patch.object(self.tx, 'command', side_effect=subprocess.CalledProcessError(
-                    1, ['docker'], output='PRIVATE_STDOUT', stderr='PRIVATE_STDERR')):
-                self.tx.gate_command('RECOVERY_IMAGE', ['docker'])
+                    1, ['PRIVATE_ARG'], output='PRIVATE_STDOUT', stderr='PRIVATE_STDERR')):
+                self.tx.gate_command('RECOVERY_IMAGE: inspect failed', ['docker'])
+        protected = self.tx.state / 'proxy-preflight.log'
+        self.assertEqual(protected.stat().st_mode & 0o777, 0o600)
+        self.assertIn('PRIVATE_STDERR', protected.read_text())
+        self.assertNotIn('PRIVATE_STDOUT', protected.read_text())
+        self.assertNotIn('PRIVATE_ARG', protected.read_text())
         for error in (caught.exception, OSError('PRIVATE_HOST_PATH'),
                       subprocess.CalledProcessError(1, ['PRIVATE_ARG'], output='PRIVATE_STDOUT')):
             output = io.StringIO()

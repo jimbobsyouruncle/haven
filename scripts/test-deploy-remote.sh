@@ -32,6 +32,7 @@ BINDIR="$WORKDIR/bin"      # shims that go on PATH
 REPO="$WORKDIR/repo"       # throwaway git working tree
 MARKER="$WORKDIR/install-ran"
 export INSTALL_MARKER="$MARKER"
+export DOCKER_CALLS="$WORKDIR/docker.calls"
 
 mkdir -p "$BINDIR" "$REPO"
 
@@ -43,6 +44,7 @@ fail() { printf 'FAIL: %s\n' "$1"; failures=$((failures + 1)); }
 make_shims() {
   cat > "$BINDIR/docker" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_CALLS"
 exit 0
 EOF
 
@@ -199,6 +201,11 @@ if DOCTOR_EXIT=0 run_deploy "$WORKDIR/c4.out" "$SHA"; then
   fi
 else
   fail "doctor exit 0 should keep the deploy green"
+fi
+if [[ -f "$DOCKER_CALLS" ]] && has_line "$DOCKER_CALLS" "image prune"; then
+  fail "deployment must retain local recovery images"
+else
+  pass "deployment leaves local recovery images available for rollback"
 fi
 
 # Case 5: doctor exit 1 -> exit 0 plus ::warning:: line.

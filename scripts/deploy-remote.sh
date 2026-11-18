@@ -175,12 +175,6 @@ else
   echo "::warning::Backup timer is not active on this host."
 fi
 
-# Reclaim SD card space from superseded images.
-# A staged deployment retains the previous immutable images for recovery.
-if [[ "${HAVEN_INSTALL_ROOT_HANDOFF:-0}" != 1 ]]; then
-  docker image prune -f >/dev/null 2>&1 || true
-fi
-
 # --- Doctor verdict last, after the report and informational steps ----------
 case "$doctor_rc" in
   0)

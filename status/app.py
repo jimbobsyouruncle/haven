@@ -380,9 +380,9 @@ def probe_resources() -> List[Dict[str, Any]]:
         pct = int((1 - free / total) * 100) if total else 0
         gb_free = free / (1024 ** 3)
         if pct >= 90:
-            lvl, hint = "fail", "docker system prune -a --volumes=false"
+            lvl, hint = "fail", "Review disk cleanup in deploy/README.md."
         elif pct >= 75:
-            lvl, hint = "warn", "Consider pruning images and unused models."
+            lvl, hint = "warn", "Review disk cleanup in deploy/README.md and remove unused models."
         else:
             lvl, hint = "ok", ""
         out.append({"name": "Disk", "state": lvl,

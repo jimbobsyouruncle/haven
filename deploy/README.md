@@ -49,10 +49,53 @@ occurs. Index and configuration digests are distinct identities, not an equality
 test. Missing/incompatible/corrupt/unexportable images refuse before activation.
 There are no per-deployment approval/evidence files or expiration window.
 
-Production workflow execution is manual-only, with explicit assent and the exact
-current main SHA. Merge/push is not production authorization. The procedure below
-is for the owner after reviewing and merging the implementation; it has not been
-executed by repository development.
+### Recover a missing local proxy image
+
+Read the fixed refusal category first. Docker command failures can leave the
+latest stderr in the root-only `proxy-preflight.log` in the installation
+checkpoint directory (normally `/var/lib/haven-install-root`). Keep it and the
+journal on the host.
+
+- `RECOVERY_DOCKER` calls for checking daemon health and access in the root deployment context.
+- A missing `RECOVERY_IMAGE` calls for restoring the last checked archive or
+  choosing an already-local, approved immutable alternative.
+- `RECOVERY_ARTIFACT` calls for checking free space and the local image store.
+  Preserve the last checked archive if a new export fails integrity checks.
+- `RECOVERY_COMPATIBILITY` or `RECOVERY_CONFIGURATION` calls for checking the
+  host platform, running Caddy version, DNS modules and installed configuration
+  before retrying with a compatible candidate.
+
+Perform recovery as root under the existing deployment lock. Use the archive
+path and SHA-256 from the protected journal. Verify the archive is a root-owned
+mode-0600 regular file at its recorded path and check its SHA-256 before
+`docker image load --input "$ARCHIVE"`. Inspect the **exact selected digest**
+after loading and compare platform and layers with the checked archive. An
+indexed image can resolve by the selected reference even if Docker cannot
+inspect the configuration digest separately. Leave the selection in place when
+that reference resolves. Investigate a checksum or identity mismatch before
+retrying. Loading the archive requires separate operator authorization.
+
+To select a different approved local image under the same lock, first inspect
+its full `sha256:…` reference and verify its platform, Caddy version and both DNS
+modules. Preserve the previous selection with the rollback evidence. Write
+only the verified digest and newline to a root-owned mode-0600 temporary file
+in `/etc/haven`, then atomically rename it to `proxy-recovery-image`. Release
+the lock before retrying the authorized normal deployment, which checks the
+archive and validates the installed Caddy configuration in isolation.
+
+For disk cleanup on an active Haven host, keep the running proxy image, the
+selected recovery image and the checked archive for every transaction still
+needed for rollback. Remove images by reviewed exact reference only. Retire a
+superseded recovery image or archive only after its replacement passes preflight,
+the replacement deployment is accepted, and the older transaction is cleared
+for rollback cleanup. Keep build-cache cleanup cache-only. The legacy remote
+deploy path previously pruned dangling images, while canonical transactions
+skipped that step. The incident evidence does not establish which operation
+removed the local references.
+
+Automatic production deployment on a push to main requires prior owner
+activation. A manual workflow run requires explicit assent and the exact
+current main SHA.
 
 ### Complete the existing installation-root migration
 
@@ -97,19 +140,13 @@ is missing or incompatible. Preserve existing backups and recovery archives.
    mv /opt/haven/scripts/.install-root.py.new /opt/haven/scripts/install-root.py
    install -o root -g root -m 0755 "$PREP/scripts/deploy-instance.sh" /opt/haven/scripts/.deploy-instance.sh.new
    mv /opt/haven/scripts/.deploy-instance.sh.new /opt/haven/scripts/deploy-instance.sh
-   printf '%s\n' 'sha256:ada3a3b23ed20ce8d870404809d22ac4355e6aba58a133f2cece875abad27538'      > /etc/haven/.proxy-recovery-image.new
-   chmod 0600 /etc/haven/.proxy-recovery-image.new
-   mv /etc/haven/.proxy-recovery-image.new /etc/haven/proxy-recovery-image
    printf 'Prepared driver revision %s; undo files: %s/previous-driver\n' "$SHA" "$PREP"
    exec 9>&-
    ```
 
-   This durable candidate selection is the already validated retained alternative
-   for this installation. Its index differs legitimately from the loaded
-   configuration digest. It is checked again automatically, without publishing
-   private receipts. For another installation, omit the selection file to use its
-   running image, or select its own compatible immutable digest. Existing obsolete
-   approval JSON files are ignored and need not be regenerated.
+   Keep an existing validated selection, or follow the recovery instructions above
+   if its digest is unavailable. With no selection file, preflight checks the
+   running image reference. Existing obsolete approval JSON files are ignored.
 
 2. In GitHub Actions, run the **deploy** workflow from main with `deployment_sha`
    set to that same full SHA and `authorize_production` checked. This is the
