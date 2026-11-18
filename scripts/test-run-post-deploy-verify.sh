@@ -413,6 +413,15 @@ else
   fail "WARN log did not identify the optional backup log gate"
 fi
 
+WAIT_HEADER="$(sed -n '/^waiting for /p' <<<"$OUT_STDOUT")"
+OPTIONAL_COUNT="$("$REAL_JQ" '[.gates[] | select(.required == false and .state != "PASS")] | length' "$VDIR_FILE")"
+if [[ -n "$WAIT_HEADER" ]] && grep -Fxq \
+    "Optional verification gates complete for ${WAIT_HEADER#waiting for }: $OPTIONAL_COUNT" <<<"$OUT_STDOUT"; then
+  pass "WARN log binds the complete optional gate count to its own run header"
+else
+  fail "WARN log completion did not match the run header and receipt gate count"
+fi
+
 # Case 12: a FAIL path writes verdict FAIL with the SAME detail as the line, and
 # rc stays 1. The tree is on SHA_B while SHA_A is verified.
 rm -rf "$VDIR"
@@ -775,6 +784,15 @@ if [[ "$RC" == 0 ]] && "$REAL_JQ" -e '
     and .gates.verdict_file.required' "$VDIR_FILE" >/dev/null; then
   pass "installation acceptance requires wiring, runtime health and receipt publication"
 else fail "installation acceptance lacked mandatory evidence: $OUT"; fi
+export FIXTURE_DOCTOR_RC=1
+run_verify "$TREE_A" "__absent__"
+if [[ "$RC" == 0 ]] && grep -Fxq 'Optional verification gate: doctor_report WARN' <<<"$OUT_STDOUT" \
+   && "$REAL_JQ" -e '.verdict == "WARN" and .gates.runtime_health.state == "PASS"
+     and (.gates.doctor_report == {required: false, state: "WARN", reason: "doctor reported optional warnings (exit 1)"})' \
+     "$VDIR_FILE" >/dev/null; then
+  pass "Doctor exit 1 retains optional WARN and accepts the healthy transaction"
+else fail "Doctor exit 1 did not preserve optional WARN and successful acceptance"; fi
+unset FIXTURE_DOCTOR_RC
 export FIXTURE_WIRING_RC=1
 run_verify "$TREE_A" "__absent__"
 if [[ "$RC" == 1 ]] && grep -q '^FAIL: installation wiring failed' <<< "$OUT_STDOUT"; then

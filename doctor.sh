@@ -1931,12 +1931,13 @@ unset TLS_ENABLED_VAL TLS_IS_ON
 #   exists, 0 bytes               -> warn: the verifier never wrote anything
 #   no parseable waiting line     -> warn
 #   verdict PASS                  -> pass, naming the short sha and timestamp
-#   verdict WARN / FAIL / TIMEOUT -> warn, quoting the verdict and short sha
+#   verdict WARN solely from Doctor -> info when the run evidence is complete
+#   other WARN / FAIL / TIMEOUT  -> warn, naming the short sha
 #   no verdict, wait > 65 minutes -> warn: the run was abandoned
 #   no verdict, wait within 65 min-> skip note (still running)
 #   unparseable wait timestamp    -> skip note, exit unchanged
 #
-# This is a smoke detector, never a gate: it calls warn()/pass() only, so the
+# This is a smoke detector, never a gate: it can add a warning, so the
 # worst it can do is raise the exit code to 1, never 2.
 # ---------------------------------------------------------------------------
 PDV_LOG="$HAVEN_POST_DEPLOY_VERIFY_LOG"
@@ -1945,6 +1946,10 @@ PDV_SEEN_WAITING=0
 PDV_WAITING_SHA=""
 PDV_WAITING_TS=""
 PDV_VERDICT=""
+PDV_OPTIONAL_COUNT=0
+PDV_COMPLETION=""
+PDV_OPTIONAL_GATES=""
+PDV_INCOMPLETE=0
 PDV_WAIT_EPOCH=""
 PDV_NOW=""
 PDV_SHA12=""
@@ -1962,9 +1967,35 @@ elif [[ -s "$PDV_LOG" ]]; then
       PDV_WAITING_TS="${BASH_REMATCH[2]}"
       PDV_VERDICT=""
       PDV_SEEN_WAITING=1
-    elif (( PDV_SEEN_WAITING )) && [[ -z "$PDV_VERDICT" ]]; then
+      PDV_OPTIONAL_COUNT=0
+      PDV_COMPLETION=""
+      PDV_OPTIONAL_GATES=""
+      PDV_INCOMPLETE=0
+    elif (( PDV_SEEN_WAITING )); then
       case "$PDV_LINE" in
-        PASS|WARN:*|FAIL:*|TIMEOUT:*) PDV_VERDICT="${PDV_LINE//[[:cntrl:]]/}" ;;
+        'waiting for '*) PDV_INCOMPLETE=1 ;;
+        'Optional verification gates complete for '*)
+          if [[ -n "$PDV_COMPLETION" || -n "$PDV_VERDICT" ]]; then
+            PDV_INCOMPLETE=1
+          fi
+          PDV_COMPLETION="$PDV_LINE" ;;
+        'Optional verification gate'*)
+          if [[ -n "$PDV_COMPLETION" || -n "$PDV_VERDICT" ]]; then
+            PDV_INCOMPLETE=1
+          fi
+          PDV_OPTIONAL_COUNT=$(( PDV_OPTIONAL_COUNT + 1 ))
+          if [[ "$PDV_LINE" =~ ^Optional\ verification\ gate:\ (backup_log|backup_readability|backup_tile|doctor_report|historical_deployment|manual_deployment|verdict_file)\ (WARN|FAIL|SKIPPED)$ ]]; then
+            PDV_OPTIONAL_GATES+=" ${BASH_REMATCH[1]} (${BASH_REMATCH[2]})"
+          else
+            PDV_INCOMPLETE=1
+          fi ;;
+        PASS|WARN:*|FAIL:*|TIMEOUT:*)
+          if [[ -z "$PDV_VERDICT" ]]; then
+            PDV_VERDICT="${PDV_LINE//[[:cntrl:]]/}"
+            [[ "$PDV_VERDICT" == "$PDV_LINE" ]] || PDV_INCOMPLETE=1
+          else
+            PDV_INCOMPLETE=1
+          fi ;;
       esac
     fi
   done < "$PDV_LOG"
@@ -1984,8 +2015,22 @@ else
     if [[ "$PDV_VERDICT" == "PASS" ]]; then
       pass "post-deploy verification passed for ${PDV_SHA12} (verdict written ${PDV_WAITING_TS})"
     elif [[ "$PDV_VERDICT" == WARN:* ]]; then
-      warn "post-deploy verification for ${PDV_SHA12}: optional evidence incomplete; mandatory gates passed" \
-           "Inspect the latest run block in the append-only verifier log at ${PDV_LOG} for optional gate results. For older runs, consult the matching SHA verdict receipt."
+      if [[ "$PDV_COMPLETION" != "Optional verification gates complete for $PDV_WAITING_SHA at $PDV_WAITING_TS: $PDV_OPTIONAL_COUNT" ]]; then
+        PDV_INCOMPLETE=1
+      fi
+      if (( ! PDV_INCOMPLETE && PDV_OPTIONAL_COUNT == 1 )) \
+         && [[ "$PDV_OPTIONAL_GATES" == " doctor_report (WARN)" \
+            && "$PDV_VERDICT" == "WARN: optional verification evidence missing or warning" ]] \
+         && date -u -d "$PDV_WAITING_TS" +%s >/dev/null 2>&1; then
+        info "post-deploy verification for ${PDV_SHA12}: mandatory gates passed; prior Doctor warnings were the only optional WARN"
+      else
+        PDV_DETAIL=""
+        if (( ! PDV_INCOMPLETE )) && [[ -n "$PDV_OPTIONAL_GATES" ]]; then
+          PDV_DETAIL=":${PDV_OPTIONAL_GATES}"
+        fi
+        warn "post-deploy verification for ${PDV_SHA12}: optional evidence incomplete; mandatory gates passed${PDV_DETAIL}" \
+             "Inspect the latest run block in the append-only verifier log at ${PDV_LOG} for optional gate results. For older runs, consult the matching SHA verdict receipt."
+      fi
     else
       warn "post-deploy verification reported '${PDV_VERDICT}' for ${PDV_SHA12}" \
            "Inspect the latest run block in the append-only verifier log at ${PDV_LOG}."
@@ -2006,7 +2051,8 @@ else
   fi
 fi
 unset PDV_LOG PDV_SKIP PDV_SEEN_WAITING PDV_WAITING_SHA PDV_WAITING_TS PDV_VERDICT \
-      PDV_WAIT_EPOCH PDV_NOW PDV_SHA12 PDV_LINE
+      PDV_WAIT_EPOCH PDV_NOW PDV_SHA12 PDV_LINE PDV_OPTIONAL_COUNT PDV_COMPLETION \
+      PDV_OPTIONAL_GATES PDV_INCOMPLETE PDV_DETAIL
 
 # ---------------------------------------------------------------------------
 # Summary
