@@ -313,9 +313,9 @@ DISK_PCT="$(df --output=pcent / 2>/dev/null | tail -1 | tr -dc '0-9')"
 if [[ -n "$DISK_PCT" ]]; then
   if (( DISK_PCT >= 90 )); then
     fail "Disk ${DISK_PCT}% full" \
-         "Free space now: 'docker system prune -a --volumes=false' and remove unused Ollama models."
+         "Review disk cleanup in deploy/README.md and remove unused Ollama models."
   elif (( DISK_PCT >= 75 )); then
-    warn "Disk ${DISK_PCT}% full" "Consider pruning Docker images and unused models."
+    warn "Disk ${DISK_PCT}% full" "Review disk cleanup in deploy/README.md and remove unused models."
   else
     pass "Disk ${DISK_PCT}% used"
   fi

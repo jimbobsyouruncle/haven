@@ -800,12 +800,12 @@ Most common causes: the disk is full, or `.env` is missing a required value.
 
 ```bash
 df -h /
-docker system prune -a --volumes=false   # safe: does not touch bind mounts
 du -sh webui_data ollama_data
 docker exec -it ollama ollama list       # unused models are usually the culprit
 ```
 
-Note `--volumes=false`. Your data is in bind mounts, not Docker volumes, so this is safe — but get in the habit of being explicit.
+Follow the [Haven recovery image retention rule](../deploy/README.md#recover-a-missing-local-proxy-image)
+before removing images from an active host.
 
 **Full reset without losing data**
 
@@ -2328,9 +2328,11 @@ sudo apt-get update && sudo apt-get upgrade -y
 
 ```bash
 ./install.sh                         # pulls current images and restarts
-docker image prune -f
 docker exec -it ollama ollama list   # remove models you no longer use
 ```
+
+Review the [Haven recovery image retention rule](../deploy/README.md#recover-a-missing-local-proxy-image)
+before removing images.
 
 **Quarterly**
 
