@@ -196,6 +196,7 @@ finish() { # <PASS|FAIL|TIMEOUT> <rc> [detail]
       verdict=FAIL; rc=1; detail="mandatory installation receipt could not be published"
     elif [[ "$verdict" == PASS || "$verdict" == WARN ]]; then
       verdict=WARN; detail="optional verdict receipt could not be published"
+      record_gate verdict_file false FAIL "$detail"
     fi
   elif [[ "$receipt_required" == true && "$rc" == 0 ]]; then
     # Pass the root verifier's own evidence, not the service-owned receipt.
@@ -207,6 +208,10 @@ finish() { # <PASS|FAIL|TIMEOUT> <rc> [detail]
       record_gate installation_root true FAIL "$detail"
       write_verdict "$verdict" "$rc" "$detail" || true
     fi
+  fi
+  if [[ "$verdict" == WARN ]]; then
+    jq -r 'to_entries[] | select(.value.required == false and .value.state != "PASS")
+      | "Optional verification gate: \(.key) \(.value.state)"' <<<"$GATES" || true
   fi
   if [[ -n "$detail" ]]; then
     printf '%s: %s\n' "$verdict" "$detail"

@@ -524,7 +524,7 @@ write_layout
 prove_readable() {
   local acct="$1"
   runuser -u "$acct" -- test -r "$LAYOUT_ENV" \
-    || die 1 "${acct} cannot read ${LAYOUT_ENV}; the backup/deploy pieces would fall back to the wrong paths"
+    || die 1 "${acct} cannot access the installed paths-only layout. Verify directory traversal and layout readability as ${acct}. Keep stack.env private."
 }
 prove_readable "$BACKUP_ACCOUNT"
 prove_readable "$DEPLOY_ACCOUNT"

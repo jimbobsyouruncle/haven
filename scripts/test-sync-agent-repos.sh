@@ -314,7 +314,7 @@ fi
 STALE="$ARCH/inv-stale.md"
 sed -E 's/^- Generated \(UTC\): .*/- Generated (UTC): 2000-01-01T00:00:00Z/' "$INV1" > "$STALE"
 run_check "$STALE"
-if (( SYNC_RC == 1 )); then
+if (( SYNC_RC == 1 )) && grep -q 'inventory is stale: generated' "$ARCH/out.txt"; then
   pass "--check: stale inventory -> rc 1"
 else
   fail "--check stale: expected rc 1, got $SYNC_RC: $(cat "$ARCH/out.txt")"
@@ -324,10 +324,19 @@ fi
 SKIPINV="$ARCH/inv-skip.md"
 sed -E 's/\| up-to-date \|/| skipped:dirty |/' "$INV1" > "$SKIPINV"
 run_check "$SKIPINV"
-if (( SYNC_RC == 1 )); then
+if (( SYNC_RC == 1 )) && grep -q '1 skipped row(s)' "$ARCH/out.txt"; then
   pass "--check: skipped row -> rc 1"
 else
   fail "--check skipped-row: expected rc 1, got $SYNC_RC: $(cat "$ARCH/out.txt")"
+fi
+
+ERROR_INV="$ARCH/inv-error.md"
+sed -E 's/(\| foo \| [^|]+\|) [^|]+\| [^|]+\|/\1 - | error |/' "$INV1" > "$ERROR_INV"
+run_check "$ERROR_INV"
+if (( SYNC_RC == 1 )) && grep -q '1 error row(s), 1 missing HEAD(s)' "$ARCH/out.txt"; then
+  pass "--check: error and missing HEAD reported separately"
+else
+  fail "--check error row: expected error and missing HEAD counts, got $SYNC_RC: $(cat "$ARCH/out.txt")"
 fi
 
 # --- --check: missing dir -> rc 2 -----------------------------------------
@@ -388,7 +397,7 @@ fi
 STALEROW="$ARCH/inv-stalerow.md"
 sed -E 's/\| up-to-date \|/| stale |/' "$INV1" > "$STALEROW"
 run_check "$STALEROW"
-if (( SYNC_RC == 1 )) && grep -q 'skipped/stale/errored row(s)' "$ARCH/out.txt"; then
+if (( SYNC_RC == 1 )) && grep -q '1 stale row(s)' "$ARCH/out.txt"; then
   pass "--check: stale row -> rc 1"
 else
   fail "--check stale-row: expected rc 1 with the skipped/stale/errored warning, got $SYNC_RC: $(cat "$ARCH/out.txt")"

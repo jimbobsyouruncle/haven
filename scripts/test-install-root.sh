@@ -1433,9 +1433,11 @@ class IdentityTests(MigrationTests):
         def changed_before_activation(journal):
             secret.write_bytes(b'SYNTHETIC_SECRET=rotated\n')
             raise RuntimeError('synthetic failure before activation')
-        with patch.object(self.tx, 'identity_activate', changed_before_activation):
+        log = io.StringIO()
+        with patch.object(self.tx, 'identity_activate', changed_before_activation), redirect_stderr(log):
             with self.assertRaisesRegex(MODULE.Refusal, 'controls changed'):
                 self.tx.deploy(self.sha)
+        self.assertIn('::error::install-root: pre-activation rollback incomplete', log.getvalue())
         self.assertEqual(secret.read_bytes(), b'SYNTHETIC_SECRET=rotated\n')
         self.assertEqual(self.tx.load()['phase'], 'awaiting_verifier')
         self.assertNotIn('writers_possible', self.tx.load())

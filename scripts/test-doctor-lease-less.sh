@@ -6,26 +6,15 @@
 #   against fixture conversation trees -- it does not grep the text of
 #   doctor.sh.
 #
-#   The defect: a conversation directory with no owner_lease.json is refused by
-#   scripts/prune-conversations.sh forever (the fail-safe keeps an absent
-#   lease) and is invisible to the app. Sweeping it reports success while
-#   moving nothing, and doctor.sh said nothing at all, so the state was silent.
-#
-#   The check counts lease-less directories at depth 1 under the conversations
-#   root and warns with the count plus the command that fixes it, naming the
-#   opt-in knob HAVEN_PRUNE_ALLOW_LEASE_LESS and the prune unit. It is
-#   WARNING-ONLY: it must never call fail(), so it can never raise the exit
-#   code to 2.
+#   The check reports lease-less directories retained by the default prune
+#   policy. The count is informational and leaves the health verdict unchanged.
 #
 #   Proven here:
-#     (1) every directory carries a lease -> a pass line, exit code exactly the
-#         baseline of the same host with no lease-less directory;
-#     (2) three lease-less directories   -> a warn naming the count, exactly one
-#         extra warning, no new failures, exit 1 and NEVER 2;
-#     (3) conversations root absent      -> one dim skip note, no warning, exit
-#         code and failure count unchanged from the clean run;
-#     (4) a lease-less directory whose name is odd, a symlink and a plain file
-#         at depth 1 are never counted (symlinks are not followed).
+#     (1) every directory carries a lease -> a pass line;
+#     (2) three lease-less directories -> an informational count with safe
+#         guidance and no change to the verdict;
+#     (3) absent or unreadable root -> a skip note with no new warning;
+#     (4) symlinks and plain files are excluded from the count.
 #
 #   Fully OFFLINE. No Docker, no network, no root. The host commands doctor.sh
 #   probes are stubbed on PATH so unrelated checks cannot move the verdict.
@@ -253,57 +242,34 @@ RC_LL=$RC; WARNED_LL=$WARNED; FAILED_LL=$FAILED
 LL_OUT="$OUT"
 
 if grep -q "3 conversation director(ies) have no owner_lease.json" "$LL_OUT"; then
-  pass "lease-less: the warn names the count (3), not the total directory count"
+  pass "lease-less: the informational line counts only the three lease-less directories"
 else
-  fail "lease-less: no warn naming the count 3"
+  fail "lease-less: no informational line naming the count 3"
 fi
-if grep -q "HAVEN_PRUNE_ALLOW_LEASE_LESS" "$LL_OUT"; then
-  pass "lease-less: the remedy names the opt-in knob HAVEN_PRUNE_ALLOW_LEASE_LESS"
+if grep -Eq 'HAVEN_PRUNE_ALLOW_LEASE_LESS|systemctl start haven-prune' "$LL_OUT"; then
+  fail "lease-less: suggested changing prune policy or invoking the prune unit"
 else
-  fail "lease-less: the remedy does not name HAVEN_PRUNE_ALLOW_LEASE_LESS"
+  pass "lease-less: advice preserves the default retention policy"
 fi
-if grep -q "systemctl start haven-prune" "$LL_OUT"; then
-  pass "lease-less: the remedy names the prune unit"
+if [[ "$WARNED_LL" == "$BASE_WARNED" && "$FAILED_LL" == "$BASE_FAILED" && "$RC_LL" == "$BASE_RC" ]]; then
+  pass "lease-less: informational count leaves the verdict unchanged"
 else
-  fail "lease-less: the remedy does not name 'systemctl start haven-prune'"
-fi
-if grep -q "prune-conversations.sh" "$LL_OUT"; then
-  pass "lease-less: the remedy names the prune script"
-else
-  fail "lease-less: the remedy does not name the prune script"
-fi
-if [[ "$WARNED_LL" == "$((BASE_WARNED + 1))" ]]; then
-  pass "lease-less: exactly one extra warning over the clean run"
-else
-  fail "lease-less: warnings ${WARNED_LL}, clean ${BASE_WARNED} (want exactly one more)"
-fi
-if [[ "$FAILED_LL" == "$BASE_FAILED" ]]; then
-  pass "lease-less: no new failures in the summary"
-else
-  fail "lease-less: summary failures ${FAILED_LL}, clean ${BASE_FAILED}"
-fi
-if [[ "$RC_LL" != "2" ]]; then
-  pass "lease-less: exit code ${RC_LL} is never 2 (warning-only check)"
-else
-  fail "lease-less: exit code is 2 -- the check must never call fail()"
-fi
-if (( BASE_RC == 0 )); then
-  if [[ "$RC_LL" == "1" ]]; then
-    pass "lease-less: exit code is 1 over a clean baseline of 0"
-  else
-    fail "lease-less: exit code ${RC_LL} is not 1 over a clean baseline of 0"
-  fi
-else
-  if [[ "$RC_LL" == "$BASE_RC" ]]; then
-    pass "lease-less: exit code matches the clean baseline (${BASE_RC})"
-  else
-    fail "lease-less: exit code ${RC_LL} differs from the clean baseline (${BASE_RC})"
-  fi
+  fail "lease-less: count changed the verdict"
 fi
 if grep -q "lease-less conversation check skipped" "$LL_OUT"; then
   fail "lease-less: the check skipped despite a readable conversations root"
 else
   pass "lease-less: the check ran rather than skipping"
+fi
+
+mkdir -p "$APPD/webui_data.pre-restore-fixture" "$APPD/.restore-test-fixture"
+run_doctor restore-residue "$WS_CLEAN"
+if grep -Fq "1 rollback candidate(s), 1 test scratch candidate(s). See cleanup epic #215" "$OUT" \
+   && grep -Fq "get owner authorization before any cleanup" "$OUT" \
+   && [[ "$WARNED" == "$BASE_WARNED" && "$FAILED" == "$BASE_FAILED" && "$RC" == "$BASE_RC" ]]; then
+  pass "restore residue distinguishes rollback and scratch without changing the verdict"
+else
+  fail "restore residue changed the verdict or omitted safe guidance"
 fi
 
 # --- (3) unreachable: the conversations root is absent ---------------------

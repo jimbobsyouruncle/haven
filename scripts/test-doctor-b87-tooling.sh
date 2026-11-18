@@ -373,10 +373,10 @@ if [[ "$RC_A_FAIL" == "2" ]]; then
 else
   fail "A fail: doctor.sh exited ${RC_A_FAIL}, expected 2"
 fi
-if grep -q 'rebuild and recreate it' "$OUT"; then
-  pass "A fail: the remedy names an image rebuild"
+if grep -q 'Check the running image against the approved digest' "$OUT"; then
+  pass "A fail: the remedy calls for checking the approved image digest"
 else
-  fail "A fail: the remedy does not name an image rebuild"
+  fail "A fail: the remedy omits the image digest check"
 fi
 
 # --- B pass -----------------------------------------------------------------
