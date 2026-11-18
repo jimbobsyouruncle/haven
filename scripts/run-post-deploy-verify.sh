@@ -210,8 +210,11 @@ finish() { # <PASS|FAIL|TIMEOUT> <rc> [detail]
     fi
   fi
   if [[ "$verdict" == WARN ]]; then
-    jq -r 'to_entries[] | select(.value.required == false and .value.state != "PASS")
-      | "Optional verification gate: \(.key) \(.value.state)"' <<<"$GATES" || true
+    jq -r --arg run "$SHA at $WAIT_STARTED" '
+      [to_entries[] | select(.value.required == false and .value.state != "PASS")] as $optional
+      | ($optional[] | "Optional verification gate: \(.key) \(.value.state)"),
+        "Optional verification gates complete for \($run): \($optional | length)"
+      ' <<<"$GATES" || true
   fi
   if [[ -n "$detail" ]]; then
     printf '%s: %s\n' "$verdict" "$detail"
@@ -227,7 +230,9 @@ SHA="$2"
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
   || usage_refuse "--wait-for needs a 40-character lowercase hex commit SHA"
 
-printf 'waiting for %s at %s\n' "$SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Distinguish concurrent or retried runs of the same revision in the log.
+WAIT_STARTED="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+printf 'waiting for %s at %s\n' "$SHA" "$WAIT_STARTED"
 
 # Resolve APP_DIR in three steps. The layout file is read as DATA, one KEY=VALUE
 # line at a time -- it is NEVER sourced, and no value read from it is printed.

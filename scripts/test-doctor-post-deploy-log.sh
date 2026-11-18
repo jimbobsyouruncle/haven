@@ -235,7 +235,7 @@ SHA12_ABANDONED="${SHA_ABANDONED:0:12}"
 SHA12_RUNNING="${SHA_RUNNING:0:12}"
 
 TS_OLD="$(date -u -d '90 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
-TS_NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+TS_NOW="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
 
 printf 'waiting for %s at %s\nPASS\n' "$SHA_PASS" "$TS_OLD" > "$LOG_PASS"
 printf 'waiting for %s at %s\nFAIL: run 123 conclusion failure\n' "$SHA_FAIL" "$TS_NOW" > "$LOG_FAIL"
@@ -256,10 +256,11 @@ summary_count() { # <outfile> <passed|warning|failure>
   sed -n "s/.*[^0-9]\\([0-9][0-9]*\\) $2(s).*/\\1/p" "$1" | tail -1
 }
 
-# run_doctor <tag> <log path> [app dir]
+# run_doctor <tag> <log path> [app dir] [doctor flags...]
 # Sets RC, OUT, PASSED, WARNED, FAILED.
 run_doctor() {
   local tag="$1" log="$2" appdir="${3:-$TREE}"
+  local -a flags=("${@:4}")
   OUT="$WORK/out.$tag"
   (
     cd "$APPD" || exit 1
@@ -269,7 +270,7 @@ run_doctor() {
     HAVEN_DATA_DIR="$APPD" HAVEN_LOG_DIR="$APPD" HAVEN_WORK_DIR="$APPD" \
     HAVEN_POST_DEPLOY_VERIFY_LOG="$log" \
     HAVEN_HERMES_DATA_DIR="$APPD/hermes_data" \
-    timeout 120 bash "$APPD/doctor.sh" --no-cloud
+    timeout 120 bash "$APPD/doctor.sh" --no-cloud "${flags[@]}"
   ) > "$OUT" 2>&1
   RC=$?
   PASSED="$(summary_count "$OUT" passed)"; PASSED="${PASSED:-0}"
@@ -329,6 +330,80 @@ if grep -q "optional evidence incomplete; mandatory gates passed" "$OUT" \
    && [[ "$WARNED" -eq $(( BASE_WARNED + 1 )) ]]; then
   pass "WARN verdict is complete and adds one warning without a failure"
 else fail "WARN verdict was not recognized"; fi
+
+# A verdict can suppress the feedback warning only with a complete gate
+# list from the same block. The identical SHA may have several run blocks.
+WARN_LOG="$LOGDIR/optional-gates.log"
+DOCTOR_GATE='Optional verification gate: doctor_report WARN'
+BACKUP_GATE='Optional verification gate: backup_log SKIPPED'
+WARN_VERDICT='WARN: optional verification evidence missing or warning'
+COMPLETE="Optional verification gates complete for $SHA_PASS at $TS_OLD:"
+HEADER="waiting for $SHA_PASS at $TS_OLD"
+INFO_MESSAGE='prior Doctor warnings were the only optional WARN'
+
+printf '%s\n' "$HEADER" "$DOCTOR_GATE" "$COMPLETE 1" "$WARN_VERDICT" > "$WARN_LOG"
+run_doctor doctor-only "$WARN_LOG"
+if grep -Fq "$INFO_MESSAGE" "$OUT" && [[ "$WARNED" == "$BASE_WARNED" && "$FAILED" == "$BASE_FAILED" && "$RC" == "$BASE_RC" ]]; then
+  pass "complete Doctor-only WARN is informational and leaves the verdict unchanged"
+else fail "Doctor-only WARN changed the verdict or omitted the informational line"; fi
+run_doctor doctor-only-quiet "$WARN_LOG" "$TREE" --quiet
+if ! grep -Fq "$INFO_MESSAGE" "$OUT" && [[ "$WARNED" == "$BASE_WARNED" && "$FAILED" == "$BASE_FAILED" && "$RC" == "$BASE_RC" ]]; then
+  pass "quiet mode omits the Doctor-only informational line"
+else fail "quiet mode printed the informational line or changed the verdict"; fi
+
+for optional in "$BACKUP_GATE" "$DOCTOR_GATE"$'\n'"$BACKUP_GATE"; do
+  count=1
+  [[ "$optional" != *$'\n'* ]] || count=2
+  printf '%s\n' "$HEADER" "$optional" "$COMPLETE $count" "$WARN_VERDICT" > "$WARN_LOG"
+  run_doctor "other-gates-$count" "$WARN_LOG"
+  if grep -Fq 'backup_log (SKIPPED)' "$OUT" && [[ "$WARNED" == "$((BASE_WARNED + 1))" && "$FAILED" == "$BASE_FAILED" ]]; then
+    pass "independent optional warning with $count gate(s) remains actionable"
+  else fail "independent optional warning with $count gate(s) was lost"; fi
+done
+
+INCOMPLETE_EVIDENCE=(
+  "$DOCTOR_GATE"
+  "$COMPLETE 1"
+  "$DOCTOR_GATE"$'\n'"$COMPLETE 2"
+  "$DOCTOR_GATE"$'\n'"$COMPLETE 1"$'\n'"$BACKUP_GATE"
+  "$DOCTOR_GATE"$'\n'"$COMPLETE 1"$'\n'"$COMPLETE 1"
+  "Optional verification gate: doctor_report UNKNOWN"$'\n'"$COMPLETE 1"
+  "$DOCTOR_GATE"$'\n'"Optional verification gates complete for $SHA_FAIL at $TS_OLD: 1"
+  "$DOCTOR_GATE"$'\n'"Optional verification gates complete for $SHA_PASS at $TS_NOW: 1"
+  "$DOCTOR_GATE"$'\n'"$COMPLETE 1"$'\n'"waiting for malformed at $TS_OLD"
+)
+for evidence in "${INCOMPLETE_EVIDENCE[@]}"; do
+  printf '%s\n' "$HEADER" "$evidence" "$WARN_VERDICT" > "$WARN_LOG"
+  run_doctor incomplete-gates "$WARN_LOG"
+  if [[ "$WARNED" == "$((BASE_WARNED + 1))" && "$FAILED" == "$BASE_FAILED" ]]; then
+    pass "missing, malformed or mismatched evidence leaves the WARN visible"
+  else fail "incomplete evidence suppressed the WARN: $evidence"; fi
+done
+
+for latest_sha in "$SHA_FAIL" "$SHA_PASS"; do
+  printf '%s\n' "$HEADER" "$DOCTOR_GATE" "$COMPLETE 1" "$WARN_VERDICT" \
+    "waiting for $latest_sha at $TS_NOW" "$WARN_VERDICT" "$DOCTOR_GATE" "$COMPLETE 1" > "$WARN_LOG"
+  run_doctor historical-gates "$WARN_LOG"
+  if grep -Fq "post-deploy verification for ${latest_sha:0:12}: optional evidence incomplete" "$OUT" \
+     && [[ "$WARNED" == "$((BASE_WARNED + 1))" && "$FAILED" == "$BASE_FAILED" ]]; then
+    pass "historical and post-verdict details cannot suppress the latest WARN"
+  else fail "historical evidence suppressed the latest WARN"; fi
+done
+
+printf '%s\n' "waiting for $SHA_PASS at not-a-timestamp" "$DOCTOR_GATE" \
+  "Optional verification gates complete for $SHA_PASS at not-a-timestamp: 1" "$WARN_VERDICT" > "$WARN_LOG"
+run_doctor bad-gate-timestamp "$WARN_LOG"
+if [[ "$WARNED" == "$((BASE_WARNED + 1))" && "$FAILED" == "$BASE_FAILED" ]]; then
+  pass "a malformed run timestamp leaves the WARN visible"
+else fail "malformed run timestamp suppressed the WARN"; fi
+
+printf '%s\n' "$HEADER" "$BACKUP_GATE" "$COMPLETE 1" "$WARN_VERDICT" \
+  "waiting for $SHA_FAIL at $TS_NOW" "$DOCTOR_GATE" \
+  "Optional verification gates complete for $SHA_FAIL at $TS_NOW: 1" "$WARN_VERDICT" > "$WARN_LOG"
+run_doctor latest-doctor-only "$WARN_LOG"
+if grep -Fq "$INFO_MESSAGE" "$OUT" && [[ "$WARNED" == "$BASE_WARNED" && "$FAILED" == "$BASE_FAILED" ]]; then
+  pass "earlier independent optional warnings do not contaminate the latest run"
+else fail "earlier gate evidence contaminated the latest run"; fi
 
 # --- (2) FAIL verdict -----------------------------------------------------
 run_doctor fail "$LOG_FAIL"
