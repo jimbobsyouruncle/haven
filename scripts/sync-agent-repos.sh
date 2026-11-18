@@ -78,7 +78,7 @@
 # `--check` still fails on it.
 # EXIT CODES (--check):
 #   0  ok
-#   1  the inventory is older than the max age, or a skipped/stale row exists
+#   1  the inventory is older than the max age, or rows are skipped, stale, errored or missing a HEAD
 #   2  a listed dir is missing, a HEAD does not match, or the inventory is
 #      missing or unreadable
 #
@@ -285,7 +285,7 @@ valid_branch() {
 # --check : offline verification against INVENTORY.md
 # ===========================================================================
 run_check() {
-  local inv="$1" ts dir epoch now age_h bad skip name head status dirpath cur
+  local inv="$1" ts dir epoch now age_h bad skip stale errors missing_head name head status dirpath cur
 
   [[ -f "$inv" ]] || die "Inventory not found: ${inv}. Run the sync first."
   [[ -r "$inv" ]] || die "Inventory is not readable: ${inv}."
@@ -302,6 +302,9 @@ run_check() {
 
   bad=0
   skip=0
+  stale=0
+  errors=0
+  missing_head=0
   # Each data row is "| name | branch | head | status | last-sync |". The fields
   # we do not need are read into the throwaway variable `_`. grep keeps only the
   # rows that start with a pipe; the header and separator rows fall through the
@@ -319,28 +322,30 @@ run_check() {
       bad=$((bad + 1))
       continue
     fi
-    if [[ "$head" != "-" && -n "$head" ]]; then
-      cur="$(sha_short "$dirpath")"
-      if [[ "$cur" != "$head" ]]; then
-        warn "check: HEAD mismatch for ${name}: inventory ${head}, on disk ${cur}"
-        bad=$((bad + 1))
-        continue
-      fi
+    cur="$(sha_short "$dirpath")"
+    if [[ "$head" == "-" || -z "$head" || "$cur" == "-" ]]; then
+      missing_head=$((missing_head + 1))
+    elif [[ "$cur" != "$head" ]]; then
+      warn "check: HEAD mismatch for ${name}: inventory ${head}, on disk ${cur}"
+      bad=$((bad + 1))
     fi
     case "$status" in
-      skipped:*|stale|error) skip=$((skip + 1)) ;;
+      skipped:*) skip=$((skip + 1)) ;;
+      stale) stale=$((stale + 1)) ;;
+      error) errors=$((errors + 1)) ;;
     esac
   done < <(grep '^|' "$inv" 2>/dev/null || true)
 
-  if (( bad > 0 )); then
-    die "check: ${bad} problem(s) found; see the lines above."
-  fi
   if (( age_h > MAX_AGE_HOURS )); then
-    warn "check: inventory is stale: generated ${age_h}h ago (max ${MAX_AGE_HOURS}h). Re-run the sync."
-    exit 1
+    warn "check: inventory is stale: generated ${age_h}h ago (max ${MAX_AGE_HOURS}h)."
   fi
-  if (( skip > 0 )); then
-    warn "check: ${skip} skipped/stale/errored row(s) in the inventory."
+  if (( skip + stale + errors + missing_head > 0 )); then
+    warn "check: ${skip} skipped row(s), ${stale} stale row(s), ${errors} error row(s), ${missing_head} missing HEAD(s)."
+  fi
+  if (( bad > 0 )); then
+    die "check: ${bad} directory or HEAD mismatch problem(s); see the lines above."
+  fi
+  if (( age_h > MAX_AGE_HOURS || skip + stale + errors + missing_head > 0 )); then
     exit 1
   fi
   ok "check: inventory is fresh (${age_h}h) and every listed repo matches."

@@ -211,6 +211,7 @@
 
 ## doctor.sh
 - section()
+- info()
 - pass()
 - warn()
 - fail()
@@ -874,6 +875,7 @@
 - has_line()
 - hasnt_regex()
 - run()
+- run_split()
 
 ## scripts/test-deploy-image-gate.sh
 - ok()

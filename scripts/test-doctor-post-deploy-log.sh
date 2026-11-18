@@ -95,11 +95,23 @@ me="$(basename "$0")"
 case "$me" in
   docker)
     for a in "$@"; do [[ "$a" == "info" ]] && exit 0; done
+    if [[ "$*" == "inspect hermes-agent" ]]; then exit 0; fi
+    if [[ "$*" == "network inspect haven-coder -f "* && -n "${CODER_INTERNAL:-}" ]]; then
+      case "${*: -1}" in
+        *Internal*) printf '%s\n' "$CODER_INTERNAL" ;;
+        *Containers*) printf '%s\n' "$CODER_MEMBERS" ;;
+      esac
+      exit 0
+    fi
     for a in "$@"; do [[ "$a" == "network" ]] && exit 1; done
     tmpl=""; prev=""
     for a in "$@"; do [[ "$prev" == "-f" ]] && tmpl="$a"; prev="$a"; done
     case "$*" in
       *"top hermes-agent"*)  echo '7 hermes gateway run'; exit 0 ;;
+      *"cat /proc/1/maps"*)
+        [[ -n "${HERMES_MAP_PATH:-}" ]] || exit 1
+        printf '1000-2000 r-xp 0 00:00 0 %s (deleted)\n' "$HERMES_MAP_PATH"
+        exit 0 ;;
       *"exec hermes-agent"*) exit 1 ;;
     esac
     case "$tmpl" in
@@ -312,7 +324,7 @@ fi
 # WARN is a completed verdict, never a running/abandoned run or a clean PASS.
 printf 'waiting for %s at %s\nWARN: optional evidence missing\n' "$SHA_PASS" "$TS_OLD" > "$LOGDIR/warn.log"
 run_doctor warn "$LOGDIR/warn.log"
-if grep -q "post-deploy verification reported 'WARN: optional evidence missing'" "$OUT" \
+if grep -q "optional evidence incomplete; mandatory gates passed" "$OUT" \
    && [[ "$FAILED" == "$BASE_FAILED" ]] \
    && [[ "$WARNED" -eq $(( BASE_WARNED + 1 )) ]]; then
   pass "WARN verdict is complete and adds one warning without a failure"
@@ -326,10 +338,10 @@ if grep -q "post-deploy verification reported 'FAIL: run 123 conclusion failure'
 else
   fail "fail verdict: no warn quoting the FAIL verdict for ${SHA12_FAIL}"
 fi
-if grep -q "journalctl -u 'haven-post-deploy-verify-\*'" "$OUT"; then
-  pass "fail verdict: the remedy names journalctl for the verifier units"
+if grep -Fq "append-only verifier log at " "$OUT"; then
+  pass "fail verdict: the remedy names the authoritative append-only verifier log"
 else
-  fail "fail verdict: the remedy does not name journalctl -u 'haven-post-deploy-verify-*'"
+  fail "fail verdict: the remedy does not name the authoritative append-only verifier log"
 fi
 if [[ "$RC_FAIL" == "1" ]]; then
   pass "fail verdict: exit code is 1"
@@ -379,10 +391,10 @@ if grep -q "post-deploy verification for ${SHA12_ABANDONED} has no verdict and i
 else
   fail "abandoned wait: no warn about the abandoned verification for ${SHA12_ABANDONED}"
 fi
-if grep -q "journalctl -u 'haven-post-deploy-verify-\*'" "$OUT"; then
-  pass "abandoned wait: the remedy names journalctl for the verifier units"
+if grep -Fq "append-only verifier log at " "$OUT"; then
+  pass "abandoned wait: the remedy names the authoritative append-only verifier log"
 else
-  fail "abandoned wait: the remedy does not name journalctl -u 'haven-post-deploy-verify-*'"
+  fail "abandoned wait: the remedy does not name the authoritative append-only verifier log"
 fi
 if [[ "$RC_ABANDONED" == "1" ]]; then
   pass "abandoned wait: exit code is 1, never 2"
@@ -427,10 +439,10 @@ if grep -q "has no parseable 'waiting for <sha> at <ts>' line" "$OUT"; then
 else
   fail "no waiting line: no warn about the missing waiting line (silent pass?)"
 fi
-if grep -q "journalctl -u 'haven-post-deploy-verify-\*'" "$OUT"; then
-  pass "no waiting line: the remedy names journalctl for the verifier units"
+if grep -Fq "append-only verifier log at " "$OUT"; then
+  pass "no waiting line: the remedy names the authoritative append-only verifier log"
 else
-  fail "no waiting line: the remedy does not name journalctl -u 'haven-post-deploy-verify-*'"
+  fail "no waiting line: the remedy does not name the authoritative append-only verifier log"
 fi
 if [[ "$RC_GARBAGE" == "1" ]]; then
   pass "no waiting line: exit code is 1"
@@ -470,10 +482,10 @@ if grep -q "is empty: the post-deploy verifier never wrote anything" "$OUT"; the
 else
   fail "0-byte log: no warn about the empty log"
 fi
-if grep -q "journalctl -u 'haven-post-deploy-verify-\*'" "$OUT"; then
-  pass "0-byte log: the remedy names journalctl for the verifier units"
+if grep -Fq "append-only log at ${LOG_EMPTY}" "$OUT"; then
+  pass "0-byte log: the remedy names the authoritative append-only verifier log"
 else
-  fail "0-byte log: the remedy does not name journalctl -u 'haven-post-deploy-verify-*'"
+  fail "0-byte log: the remedy does not name the authoritative append-only verifier log"
 fi
 if [[ "$RC_EMPTY" == "1" ]]; then
   pass "0-byte log: exit code is 1"
@@ -536,6 +548,43 @@ if [[ "$WARNED" == "$BASE_WARNED" ]]; then
   pass "unreadable git dir: no extra warning"
 else
   fail "unreadable git dir: warnings ${WARNED}, baseline ${BASE_WARNED}"
+fi
+
+HERMES_MAP_PATH=/root/.hermes/installs/fixture/venv/lib/python/site-packages/native.so \
+  run_doctor volume-code "$LOG_ABSENT"
+if grep -Fq "Hermes WebUI (PID 1) is running code from the data volume" "$OUT" \
+   && ! grep -Fq "/installs/fixture" "$OUT" \
+   && ! grep -Eq 'chown -R|up -d --build hermes' "$OUT"; then
+  pass "Hermes warns about mapped data-volume code without exposing the file or prescribing a rebuild"
+else
+  fail "Hermes data-volume code diagnostic missing or unsafe"
+fi
+
+# Exercise Docker's unordered member listing and the isolation failure paths.
+for order in "hermes-agent haven-openhands" "haven-openhands hermes-agent"; do
+  CODER_INTERNAL=true CODER_MEMBERS="$order" run_doctor coder "$LOG_ABSENT"
+  if grep -Fq "haven-coder has exactly hermes and openhands attached" "$OUT" \
+     && [[ "$FAILED" == "$BASE_FAILED" ]]; then
+    pass "coder network accepts $order"
+  else fail "coder network rejected $order"; fi
+done
+CODER_INTERNAL=true CODER_MEMBERS="hermes-agent" run_doctor coder-missing "$LOG_ABSENT"
+if grep -Fq "haven-coder members: hermes-agent" "$OUT" && [[ "$FAILED" == "$BASE_FAILED" ]]; then
+  pass "missing member warns"
+else
+  fail "missing member did not warn"
+fi
+CODER_INTERNAL=true CODER_MEMBERS="hermes-agent haven-openhands extra" run_doctor coder-extra "$LOG_ABSENT"
+if grep -Fq "haven-coder has unexpected member(s): extra" "$OUT" && [[ "$RC" == 2 ]]; then
+  pass "unexpected member fails"
+else
+  fail "unexpected member did not fail"
+fi
+CODER_INTERNAL=false CODER_MEMBERS="hermes-agent haven-openhands" run_doctor coder-external "$LOG_ABSENT"
+if grep -Fq "haven-coder is NOT internal" "$OUT" && [[ "$RC" == 2 ]]; then
+  pass "external coder network fails"
+else
+  fail "external coder network did not fail"
 fi
 
 echo "---"

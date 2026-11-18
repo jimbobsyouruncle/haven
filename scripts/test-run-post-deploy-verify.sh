@@ -407,6 +407,12 @@ else
   fail "a WARN run did not write $VDIR_FILE: rc $RC, out '$OUT'"
 fi
 
+if grep -Fxq 'Optional verification gate: backup_log SKIPPED' <<<"$OUT_STDOUT"; then
+  pass "WARN log identifies the missing optional backup evidence"
+else
+  fail "WARN log did not identify the optional backup log gate"
+fi
+
 # Case 12: a FAIL path writes verdict FAIL with the SAME detail as the line, and
 # rc stays 1. The tree is on SHA_B while SHA_A is verified.
 rm -rf "$VDIR"

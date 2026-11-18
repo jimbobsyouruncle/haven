@@ -59,6 +59,7 @@ PASS=0; WARN=0; FAIL=0
 declare -a REMEDIES=()
 
 section() { (( QUIET )) || printf '\n%s%s%s\n' "$C_HDR" "$1" "$C_RST"; }
+info() { (( QUIET )) || printf '  %s-%s %s\n' "$C_DIM" "$C_RST" "$1"; }
 pass() { PASS=$(( PASS + 1 )); (( QUIET )) || printf '  %s✓%s %s\n' "$C_OK" "$C_RST" "$1"; }
 warn() {
   WARN=$(( WARN + 1 ))
@@ -489,8 +490,7 @@ if [[ -f "$ENV_FILE" ]]; then
         # on-demand state. Any other shape cannot be a pod record at all, so it
         # is a configuration error.
         if [[ "$POD_NAME" =~ ^[^.]+\.[^.]+\.ts\.net$ ]]; then
-          warn "RUNPOD_HOST does not resolve right now: the GPU pod may be asleep or not yet registered on this tailnet (normal for an on-demand pod - it wakes when the pipe sends work)" \
-               "To verify end-to-end that a pod can start and join the tailnet: sudo ./install.sh --wake-runpod"
+          info "GPU pod DNS is unresolved, which is expected while an on-demand pod sleeps."
         else
           fail "RUNPOD_HOST does not resolve to an address and is not shaped like a pod MagicDNS name (expected <pod>.<tailnet>.ts.net, e.g. runpod-worker.example-tailnet.ts.net)" \
                "Re-run ./install.sh to record the pod's MagicDNS name."
@@ -634,7 +634,7 @@ else
   HERMES_RUNNING="$(docker inspect -f '{{.State.Running}}' hermes-agent 2>/dev/null || true)"
   if [[ "$HERMES_RUNNING" == "true" ]]; then
     fail "shellcheck is NOT present in the hermes-agent container" \
-         "The image is stale: rebuild and recreate it, e.g. ${COMPOSE_CMD} up -d --build hermes"
+         "Check the running image against the approved digest and confirm shellcheck is installed there. Use the reviewed deployment procedure if replacement is needed."
   else
     warn "shellcheck presence in the hermes-agent container could not be checked" \
          "The container is absent or not running. Start it with ./install.sh, then re-run this check."
@@ -667,27 +667,25 @@ if docker info >/dev/null 2>&1; then
       pass "Hermes gateway process is running inside hermes-agent"
     else
       warn "Hermes gateway process NOT running inside hermes-agent" \
-           "The kanban dispatcher will not run. Fix: ${COMPOSE_CMD} up -d --force-recreate hermes"
+           "Inspect the gateway process and service startup logs locally before restarting Hermes."
     fi
 
     # --- Hermes code location (WARN only) ---------------------------------
-    # The WebUI is PID 1 and hosts every chat and tool. It must load Hermes code
-    # and Python from the pinned, root-owned /opt/hermes-agent -- never from the
-    # data-volume copy at /root/.hermes. Until the migration removes that old copy
-    # (kept for rollback), a volume that still holds it wins unless the image pins
-    # the agent dir and interpreter. This reads PID 1's mapped files read-only. It
-    # WARNS and never fails: a legacy image on an older host legitimately maps
-    # /root/.hermes today, and the remedy is an image rebuild, not a live edit.
+    # Mapped paths show where PID 1 loaded native code. A path alone
+    # cannot establish the integrity of the image or the backing mount.
     PID1_CODE_PATHS="$(docker exec hermes-agent sh -c 'cat /proc/1/maps' 2>/dev/null \
-                       | awk '{print $NF}' | grep -E '/venv/|/site-packages/' || true)"
+                       | awk '{print $6}' | grep -E '/venv/|/site-packages/' || true)"
     if [[ -z "$PID1_CODE_PATHS" ]]; then
       warn "Hermes WebUI code location could not be read" \
            "Could not read PID 1's mapped Python paths (container not running or no shell). Re-run when Hermes is up."
     elif printf '%s\n' "$PID1_CODE_PATHS" | grep -q '/root/\.hermes'; then
       warn "Hermes WebUI (PID 1) is running code from the data volume (/root/.hermes)" \
-           "It must load only the pinned /opt/hermes-agent. Rebuild and recreate: ${COMPOSE_CMD} up -d --build hermes"
+           "Inspect the running image digest, interpreter and backing mounts privately. If they differ from the approved pinned install, plan a controlled rebuild and recreate with rollback before changing the service."
+    elif printf '%s\n' "$PID1_CODE_PATHS" | grep -qvE '^/opt/hermes-agent/'; then
+      warn "Hermes WebUI (PID 1) maps Python code outside the pinned install" \
+           "Inspect the running image digest, interpreter and backing mounts privately."
     else
-      pass "Hermes WebUI (PID 1) maps code from the pinned install, not the data volume"
+      pass "Hermes WebUI (PID 1) mapped Python paths are under /opt/hermes-agent"
     fi
 
     # --- Hermes effective uid ---------------------------------------------
@@ -698,7 +696,7 @@ if docker info >/dev/null 2>&1; then
     case "$HERMES_RUN_UID" in
       ""|"0"|"0:0"|"root"|"root:root")
         warn "Hermes runs as root (uid 0)" \
-             "Legacy default. Set HAVEN_UID/HAVEN_GID in .env to the dedicated non-root service uid, then: ${COMPOSE_CMD} up -d --build hermes"
+             "Check the installed identity configuration and use the reviewed identity migration procedure before changing the runtime UID or GID."
         ;;
       *)
         pass "Hermes runs as a non-root uid (${HERMES_RUN_UID})"
@@ -711,8 +709,8 @@ if docker info >/dev/null 2>&1; then
     if [[ -n "$CFG_UID" && "$CFG_UID" != "0" && "$CFG_UID" =~ ^[0-9]+$ && -d "$HERMES_DATA_DIR" ]]; then
       FOREIGN="$(find "$HERMES_DATA_DIR" ! -uid "$CFG_UID" 2>/dev/null | wc -l | tr -d ' ')"
       if [[ "${FOREIGN:-0}" -gt 0 ]]; then
-        warn "hermes_data has ${FOREIGN} entr(ies) not owned by HAVEN_UID=${CFG_UID}" \
-             "Fix ownership before Hermes starts as that uid, e.g.: sudo chown -R ${CFG_UID}:${CFG_UID} ${HERMES_DATA_DIR}"
+        warn "hermes_data has ${FOREIGN} entries owned by a UID other than HAVEN_UID=${CFG_UID}" \
+             "Privately verify the intended owner, group, mount and read requirements for each affected entry, including credentials. Use the reviewed identity procedure for any targeted correction."
       else
         pass "hermes_data is owned by HAVEN_UID=${CFG_UID}"
       fi
@@ -795,16 +793,16 @@ if docker info >/dev/null 2>&1; then
   CNET_INTERNAL="$(docker network inspect haven-coder -f '{{.Internal}}' 2>/dev/null)"
   if [[ -z "$CNET_INTERNAL" ]]; then
     warn "haven-coder network not found" \
-         "Hermes cannot reach the OpenHands API by service name. Recreate: ${COMPOSE_CMD} up -d"
+         "Confirm the installed Compose project and whether the expected services are running."
   else
     if [[ "$CNET_INTERNAL" == "true" ]]; then
       pass "haven-coder is internal (no route off the host)"
     else
       fail "haven-coder is NOT internal" \
-           "Set 'internal: true' for haven-coder in docker-compose.yml, then: ${COMPOSE_CMD} up -d"
+           "Compare the installed Compose configuration with the expected internal network and plan a controlled correction."
     fi
 
-    CNET_MEMBERS="$(docker network inspect haven-coder -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' ' | sed 's/ *$//')"
+    CNET_MEMBERS="$(docker network inspect haven-coder -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ *$//')"
     CNET_UNEXPECTED=""
     for m in $CNET_MEMBERS; do
       case "$m" in
@@ -814,12 +812,12 @@ if docker info >/dev/null 2>&1; then
     done
     if [[ -n "$CNET_UNEXPECTED" ]]; then
       fail "haven-coder has unexpected member(s): ${CNET_UNEXPECTED% }" \
-           "Only hermes and openhands may attach. Recreate: ${COMPOSE_CMD} up -d"
-    elif [[ "$CNET_MEMBERS" == "hermes-agent haven-openhands" ]]; then
+           "Inspect the unexpected attachment and its owning service before making a targeted correction."
+    elif [[ "$CNET_MEMBERS" == "haven-openhands hermes-agent" ]]; then
       pass "haven-coder has exactly hermes and openhands attached"
     else
       warn "haven-coder members: ${CNET_MEMBERS:-none} (expected hermes-agent + haven-openhands)" \
-           "A container is stopped or not yet attached. Recreate: ${COMPOSE_CMD} up -d"
+           "Check the expected containers and their network attachments before restarting any service."
     fi
   fi
 fi
@@ -1479,7 +1477,7 @@ if [[ -z "$AR_SET" ]]; then
   : # Reference tree not configured; nothing to check.
 elif [[ ! -d "$AR_SET" ]]; then
   warn "Agent repo reference tree directory is missing: ${AR_SET}" \
-       "The tree is built by scripts/sync-agent-repos.sh; run it to create it."
+       "Verify the configured reference tree path and inventory before provisioning or syncing."
 elif [[ ! -x "$SYNC_CHECK" ]]; then
   warn "Agent repo sync check is missing or not executable" \
        "Restore scripts/sync-agent-repos.sh from the repository."
@@ -1490,7 +1488,7 @@ else
     pass "Agent repo reference tree inventory is fresh and matches"
   else
     warn "Agent repo reference tree check reported a problem (exit ${SYNC_RC})" \
-         "Run ./scripts/sync-agent-repos.sh to refresh the tree, then re-run ./doctor.sh. See docs/TROUBLESHOOTING.md."
+         "Run scripts/sync-agent-repos.sh --check locally to inspect inventory age, skipped or stale rows, missing or mismatched HEADs and errors. Review ownership and working trees before authorizing a sync."
   fi
 fi
 
@@ -1522,11 +1520,8 @@ if command -v tailscale >/dev/null 2>&1; then
         pass "GPU pod '${PEER_NAME}' known but stopped (normal - it wakes on demand)"
       fi
     else
-      # A stopped pod leaves the tailnet, so no peer matches right now. That is
-      # the normal on-demand state, not a fault -- but it is worth saying,
-      # because a pod that was recreated under a new name looks the same.
-      warn "No tailnet peer matching runpod-worker/runpod-vllm right now (the pod may be stopped or may have been recreated)" \
-           "Start it: sudo ./install.sh --wake-runpod (resumes the pod and waits up to 3 minutes for it to join the tailnet), then re-run ./doctor.sh"
+      info "No GPU pod peer is visible, which is expected while an on-demand pod sleeps."
+      info "If end-to-end GPU validation is required and a billable wake is authorized, use sudo ./install.sh --wake-runpod."
     fi
   else
     fail "Tailscale backend state: ${TS_STATE}" "Run: sudo tailscale up"
@@ -1775,11 +1770,12 @@ if [[ -d "$HAVEN_WEBUI_DATA_DIR" ]] && command -v sqlite3 >/dev/null 2>&1; then
   fi
 fi
 
-# Leftover safety copies from a previous restore waste a lot of space.
-LEFTOVER="$(find "$HAVEN_DATA_DIR" "$HAVEN_WORK_DIR" -maxdepth 1 \( -name 'webui_data.pre-restore-*' -o -name 'hermes_data.pre-restore-*' -o -name '.restore-test-*' \) 2>/dev/null | wc -l | tr -d ' ')"
-if [[ "${LEFTOVER:-0}" -gt 0 ]]; then
-  warn "${LEFTOVER} leftover restore director(ies) taking up space" \
-       "Remove when you are confident: rm -rf \"${HAVEN_DATA_DIR}\"/*.pre-restore-* \"${HAVEN_WORK_DIR}\"/*.restore-test-*"
+# Distinguish recovery copies from test scratch. Host capacity is checked separately.
+RESTORE_ROLLBACK="$(find "$HAVEN_DATA_DIR" -maxdepth 1 -type d \( -name 'webui_data.pre-restore-*' -o -name 'hermes_data.pre-restore-*' \) 2>/dev/null | wc -l)"
+RESTORE_SCRATCH="$(find "$HAVEN_WORK_DIR" -maxdepth 1 -type d -name '.restore-test-*' 2>/dev/null | wc -l)"
+if (( RESTORE_ROLLBACK > 0 || RESTORE_SCRATCH > 0 )); then
+  info "Retained restore data: ${RESTORE_ROLLBACK} rollback candidate(s), ${RESTORE_SCRATCH} test scratch candidate(s). See cleanup epic #215."
+  info "Verify recovery and retention requirements and get owner authorization before any cleanup."
 fi
 
 # ---------------------------------------------------------------------------
@@ -1788,7 +1784,7 @@ fi
 # Every conversation leaves its own directory under the conversations root, so
 # an old install can quietly grow past what the disk can hold. A doctor run is
 # a health report, not a cleanup, so this check only reports the measured size
-# and count and suggests the prune sweep: it never calls fail() and therefore
+# and count and suggests reviewing retention: it never calls fail() and therefore
 # adds no path to exit 2.
 #
 # THE SKIP PATH EXISTS because the root lives on the host deployment: it may be
@@ -1830,31 +1826,17 @@ else
     printf (i == 1 ? "%d %s" : "%.1f %s"), k, u[i]
     exit
   }' </dev/null)"
-  if (( CONV_KIB > 1024 * 1024 || CONV_DIRS > 10 )); then
+  if (( CONV_KIB > 1024 * 1024 )); then
     warn "conversations root holds ${CONV_DIRS} director(ies), ${CONV_HUMAN} (${CONV_ROOT})" \
-         "Consider the conversation prune sweep or the quarantine path to reclaim space."
+         "Review conversation ownership and retention requirements before reclaiming space."
   else
     pass "conversations root is ${CONV_HUMAN} across ${CONV_DIRS} director(ies)"
   fi
 fi
 
 # ---------------------------------------------------------------------------
-# Lease-less conversation directories (WARNING ONLY)
-#
-# A conversation directory with no owner_lease.json is refused by
-# scripts/prune-conversations.sh forever: the fail-safe keeps an absent lease,
-# so the sweep reports success while moving nothing and the directory is
-# invisible to the app as well. That state is silent on a healthy-looking host,
-# so surface it with a count.
-#
-# Read-only: find with a per-entry test, no writes. Depth 1 only, symlinks are
-# neither counted nor followed. Same skip discipline as the growth check above:
-# a non-Linux host, an unset workspace or an absent/unreadable root prints one
-# dim "skipped" line and leaves the exit code exactly as it was.
-#
-# WARNING-ONLY BY DESIGN: an owner may prefer to keep those directories, so this
-# never calls fail() and adds no path to exit 2.
-# ---------------------------------------------------------------------------
+# Lease-less conversation directories are retained by default. Count
+# them without following symlinks or recommending a change to prune policy.
 LL_SKIP="$CONV_SKIP"
 if [[ -z "$LL_SKIP" && ! -d "$CONV_ROOT" ]]; then
   LL_SKIP="conversations root not present"
@@ -1872,8 +1854,8 @@ else
   done < <(find "$CONV_ROOT" -mindepth 1 -maxdepth 1 -print0 2>/dev/null)
   unset _ll_entry
   if (( LEASELESS > 0 )); then
-    warn "${LEASELESS} conversation director(ies) have no owner_lease.json (${CONV_ROOT}): the prune sweep refuses them forever, so it moves nothing" \
-         "These are invisible to the app. Sweep the ones past the age limit with: sudo systemctl start haven-prune (or sudo ${HAVEN_APP_DIR:-/opt/hybrid-ai}/scripts/prune-conversations.sh) after setting HAVEN_PRUNE_ALLOW_LEASE_LESS=1 in .env and re-running ./install.sh. Leave it unset to keep the fail-safe."
+    info "${LEASELESS} conversation director(ies) have no owner_lease.json and are retained by default."
+    info "Verify lifecycle ownership, quarantine and retention requirements before considering cleanup."
   else
     pass "every conversation directory carries an owner lease"
   fi
@@ -1992,18 +1974,21 @@ if [[ -n "$PDV_SKIP" ]]; then
   (( QUIET )) || printf '  %s-%s post-deploy verification log skipped (%s)\n' "$C_DIM" "$C_RST" "$PDV_SKIP"
 elif [[ ! -s "$PDV_LOG" ]]; then
   warn "post-deploy verification log ${PDV_LOG} is empty: the post-deploy verifier never wrote anything" \
-       "Either the verifier is not installed (check ${HAVEN_POST_DEPLOY_VERIFY_CMD}) or it was killed before it wrote. Inspect it with: journalctl -u 'haven-post-deploy-verify-*'"
+       "Check the installed verifier and inspect its append-only log at ${PDV_LOG}."
 elif (( ! PDV_SEEN_WAITING )); then
   warn "post-deploy verification log ${PDV_LOG} has no parseable 'waiting for <sha> at <ts>' line" \
-       "Inspect the run with: journalctl -u 'haven-post-deploy-verify-*'"
+       "Inspect the latest run block in the append-only verifier log at ${PDV_LOG}."
 else
   PDV_SHA12="${PDV_WAITING_SHA:0:12}"
   if [[ -n "$PDV_VERDICT" ]]; then
     if [[ "$PDV_VERDICT" == "PASS" ]]; then
       pass "post-deploy verification passed for ${PDV_SHA12} (verdict written ${PDV_WAITING_TS})"
+    elif [[ "$PDV_VERDICT" == WARN:* ]]; then
+      warn "post-deploy verification for ${PDV_SHA12}: optional evidence incomplete; mandatory gates passed" \
+           "Inspect the latest run block in the append-only verifier log at ${PDV_LOG} for optional gate results. For older runs, consult the matching SHA verdict receipt."
     else
       warn "post-deploy verification reported '${PDV_VERDICT}' for ${PDV_SHA12}" \
-           "Inspect the run with: journalctl -u 'haven-post-deploy-verify-*'"
+           "Inspect the latest run block in the append-only verifier log at ${PDV_LOG}."
     fi
   else
     PDV_WAIT_EPOCH="$(date -u -d "$PDV_WAITING_TS" +%s 2>/dev/null)"
@@ -2013,7 +1998,7 @@ else
         "$C_DIM" "$C_RST" "${PDV_WAITING_TS//[[:cntrl:]]/}"
     elif (( PDV_WAIT_EPOCH + 3900 < PDV_NOW )); then
       warn "post-deploy verification for ${PDV_SHA12} has no verdict and its wait started at ${PDV_WAITING_TS}, more than 65 minutes ago" \
-           "Inspect the run with: journalctl -u 'haven-post-deploy-verify-*'"
+           "Inspect the latest run block in the append-only verifier log at ${PDV_LOG}."
     else
       (( QUIET )) || printf '  %s-%s post-deploy verification log skipped (verification for %s still running since %s)\n' \
         "$C_DIM" "$C_RST" "$PDV_SHA12" "${PDV_WAITING_TS//[[:cntrl:]]/}"

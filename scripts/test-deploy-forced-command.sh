@@ -192,7 +192,7 @@ else
   priv_pre=()
 fi
 
-if (( ${#priv_pre[@]} > 0 )) && ! "${priv_pre[@]}" true >/dev/null 2>&1; then
+if (( EUID == 0 )) && { (( ${#priv_pre[@]} == 0 )) || ! "${priv_pre[@]}" true >/dev/null 2>&1; }; then
   # Running as root and cannot drop to an unprivileged uid. Be explicit, do not
   # count a pass, and do not fail: the GitHub runner is never root.
   skip "layout-only split case (cannot drop privileges to an unprivileged uid)"
@@ -213,23 +213,26 @@ EOF
   if (( EUID == 0 )); then
     # The unprivileged uid needs to reach the temp dirs on the path.
     chmod 0755 "$WORKDIR" "$SPLIT"
-    chmod -R a+rX "$SPLIT_LOG" "$BIN"
-    chmod 0644 "${BIN}/systemctl" "${SPLIT}/layout.env"
+    chmod 0755 "$SPLIT_LOG" "$SPLIT_LOG/deploy" "$BIN" "${BIN}/systemctl"
   fi
 
-  if [[ -r "$SPLIT_STACK" ]]; then
+  if "${priv_pre[@]}" test -r "$SPLIT_STACK"; then
     # Honesty guard: if the file is readable here, the case does not reproduce
     # the split and must not claim a pass.
     bad "layout-only split case: ${SPLIT_STACK} is readable, so the split is not exercised"
   else
     : > "$SYSCTL_LOG"
     if (( EUID == 0 )); then chmod 0666 "$SYSCTL_LOG"; fi
-    split_rc=0
-    "${priv_pre[@]}" env HAVEN_LOG_DIR=/opt/haven HYBRID_AI_LOG_DIR=/opt/haven HAVEN_STACK_ENV_FILE=/unreadable/fixture \
-      SSH_ORIGINAL_COMMAND="deploy $SHA" \
-      HAVEN_ENV_FILE="${SPLIT}/layout.env" \
-      PATH="$BIN:$PATH" SYSCTL_LOG="$SYSCTL_LOG" \
-      "$SCRIPT" >"$WORKDIR/out" 2>&1 || split_rc=$?
+    run_split() {
+      : > "$SYSCTL_LOG"
+      split_rc=0
+      "${priv_pre[@]}" env HAVEN_LOG_DIR=/opt/haven HYBRID_AI_LOG_DIR=/opt/haven HAVEN_STACK_ENV_FILE=/unreadable/fixture \
+        SSH_ORIGINAL_COMMAND="deploy $SHA" \
+        HAVEN_ENV_FILE="${SPLIT}/layout.env" \
+        PATH="$BIN:$PATH" SYSCTL_LOG="$SYSCTL_LOG" \
+        "$SCRIPT" >"$WORKDIR/out" 2>&1 || split_rc=$?
+    }
+    run_split
     if [[ "$split_rc" == "0" ]]; then
       ok "layout-only split: exit 0 (stack file unreadable, layout file read)"
     else
@@ -247,6 +250,18 @@ EOF
       bad "layout-only split: did not print the run log from the layout's log dir"
       sed 's/^/      /' "$WORKDIR/out" >&2 || true
     fi
+    for blocked in "$SPLIT" "$SPLIT/layout.env"; do
+      chmod 000 "$blocked"
+      run_split
+      if [[ "$split_rc" == 2 && ! -s "$SYSCTL_LOG" ]] \
+         && has_line "$WORKDIR/out" "haven-deploy cannot access the installed paths-only layout" \
+         && ! has_line "$WORKDIR/out" "$SPLIT"; then
+        ok "layout permission refusal before systemctl (${blocked##*/})"
+      else
+        bad "layout permission refusal lacked a sanitized diagnostic (${blocked##*/})"
+      fi
+      if [[ "$blocked" == "$SPLIT" ]]; then chmod 0755 "$blocked"; else chmod 0644 "$blocked"; fi
+    done
   fi
 fi
 

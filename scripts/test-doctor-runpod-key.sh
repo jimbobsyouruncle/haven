@@ -8,7 +8,7 @@
 #
 #   1. A GPU pod that is merely ASLEEP must not fail the deploy gate. A stopped
 #      on-demand pod leaves the tailnet, so its MagicDNS name stops resolving.
-#      That is the normal money-saving state: it is a warning, never a failure.
+#      That is the normal money-saving state: it is informational.
 #      A name that is not shaped like a pod MagicDNS record is a configuration
 #      error and still fails.
 #   2. RUNPOD_API_KEY is validated with ONE read-only RunPod GraphQL query, so a
@@ -21,7 +21,7 @@
 #   stubs, so the only thing that moves the exit code is the fixture under test.
 #
 #   Proven here:
-#     (a) well-formed 3-label .ts.net name that does not resolve -> warn, and
+#     (a) well-formed 3-label .ts.net name that does not resolve -> information, and
 #         the exit code is never 2 (the unpatched doctor.sh exits 2 here);
 #     (b) bare two-label .ts.net suffix -> fail;
 #     (c) single label and foreign domain -> fail;
@@ -78,7 +78,7 @@ FIXTURE_POD='pod-fixture-1234'
 # --- stubs ------------------------------------------------------------------
 # docker: answers just enough that doctor's container, binding and sandbox
 # checks pass, so they never move the exit code. hermes-agent is reported absent
-# (a warning, never a failure).
+# (informational).
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 for a in "$@"; do [[ "$a" == "info" ]] && exit 0; done
@@ -351,7 +351,7 @@ EOF
 POD_TS_NAME='runpod-worker.example-tailnet.ts.net'
 
 SKIP_RE='RunPod API-key check skipped'
-WARN_RE='the GPU pod may be asleep or not yet registered on this tailnet'
+INFO_RE='GPU pod DNS is unresolved, which is expected while an on-demand pod sleeps'
 FAIL_RE='is not shaped like a pod MagicDNS name'
 PASS_RE='RunPod API key accepted for pod'
 
@@ -421,18 +421,18 @@ else
   fail "the API key leaked into curl's argv or the report"
 fi
 
-# --- (a) a well-formed pod name that does not resolve -> warn, never 2 ------
+# --- (a) a well-formed pod name that does not resolve -> informational ------
 # This is the sleeping pod: it left the tailnet, so MagicDNS stopped answering.
 # The unpatched doctor.sh hard-fails this case with exit 2.
 run_doctor unresolved "$POD_TS_NAME" valid
 RC_UNRESOLVED=$RC
 OUT_UNRESOLVED="$WORK/out.unresolved"
-if grep -q "$WARN_RE" "$OUT_UNRESOLVED"; then
-  pass "unresolved pod name: a warn says the pod may be asleep or not yet registered"
+if grep -q "^  - $INFO_RE" "$OUT_UNRESOLVED"; then
+  pass "unresolved pod name: an informational line explains sleeping pod DNS"
 else
-  fail "unresolved pod name: no warn about a sleeping/unregistered pod"
+  fail "unresolved pod name: no informational line about sleeping pod DNS"
 fi
-if grep -q 'sudo ./install.sh --wake-runpod' "$OUT_UNRESOLVED"; then
+if grep -q 'If end-to-end GPU validation is required and a billable wake is authorized, use sudo ./install.sh --wake-runpod' "$OUT_UNRESOLVED"; then
   pass "unresolved pod name: the remedy names the manual end-to-end verification"
 else
   fail "unresolved pod name: no remedy naming sudo ./install.sh --wake-runpod"
@@ -441,11 +441,6 @@ if [[ "$RC_UNRESOLVED" != "2" ]]; then
   pass "unresolved pod name: the exit code is never 2 (got ${RC_UNRESOLVED})"
 else
   fail "unresolved pod name: exit code is 2 -- a sleeping pod must never fail the gate"
-fi
-if [[ "$RC_UNRESOLVED" == "1" ]]; then
-  pass "unresolved pod name: the exit code is 1 (warnings only)"
-else
-  fail "unresolved pod name: exit code is ${RC_UNRESOLVED}, expected 1"
 fi
 
 # --- (b) bare two-label tailnet suffix -> configuration error --------------

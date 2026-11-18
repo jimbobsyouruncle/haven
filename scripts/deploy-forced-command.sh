@@ -53,6 +53,12 @@ set -Eeuo pipefail
 #   3  the unit was started but did not finish successfully
 # ---------------------------------------------------------------------------
 
+# Refuse everything that is not the one accepted command. Nothing is run.
+refuse() {
+  printf 'deploy-forced-command: %s\n' "$*" >&2
+  exit 2
+}
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # Resolve host paths the SAME way the unit does: point at the same system env
 # file the unit names, unless the account's environment already sets one. This
@@ -66,20 +72,15 @@ export HAVEN_ENV_FILE="${HAVEN_ENV_FILE:-/etc/haven/haven.env}"
 export HAVEN_STACK_ENV_FILE="$HAVEN_ENV_FILE"
 # Reporting must follow canonical layout, never an inherited workspace log
 # override. Missing layout/log configuration must not fall back to /opt/haven.
-[[ -f "$HAVEN_ENV_FILE" && -r "$HAVEN_ENV_FILE" ]] || exit 2
+[[ -x "$(dirname -- "$HAVEN_ENV_FILE")" && -f "$HAVEN_ENV_FILE" && -r "$HAVEN_ENV_FILE" ]] \
+  || refuse "haven-deploy cannot access the installed paths-only layout. Verify directory traversal and layout readability as haven-deploy. Keep stack.env private."
 unset HAVEN_LOG_DIR HYBRID_AI_LOG_DIR
 # shellcheck source=scripts/lib/haven-env.sh
 source "${SCRIPT_DIR}/lib/haven-env.sh"
 
 layout_log="$(_haven_file_get "$HAVEN_ENV_FILE" HAVEN_LOG_DIR)"
-[[ -n "$layout_log" ]] || { printf 'deploy-forced-command: layout log directory missing\n' >&2; exit 2; }
+[[ -n "$layout_log" ]] || refuse "installed layout log directory missing. Verify the paths-only layout configuration."
 LOG_DIR="${HAVEN_LOG_DIR}/deploy"
-
-# Refuse everything that is not the one accepted command. Nothing is run.
-refuse() {
-  printf 'deploy-forced-command: %s\n' "$*" >&2
-  exit 2
-}
 
 COMMAND="${SSH_ORIGINAL_COMMAND:-}"
 
