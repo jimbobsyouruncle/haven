@@ -17,6 +17,7 @@
 - agent-context
 
 ## .github/workflows/deploy.yml
+- pr-evidence
 - validate
 - deploy
 
@@ -454,6 +455,11 @@
 - def get(path, authenticated)
 - def merged(sha)
 - def authorize(sha)
+- def pr_runs(head, branch)
+- def required_pr_jobs(run, names)
+- def checkout_step(job, receipt)
+- def git(*args)
+- def pr_validation(sha)
 - def evidence_list(data, key)
 - def deployment_jobs(run, sha, historical)
 - def runs(sha)
@@ -854,6 +860,7 @@
   - def test_aggregate_gate_fails_closed(self)
   - def test_workflow_contract(self)
   - def test_deployment_selection_always_runs_full(self)
+  - def test_reuse_is_bound_to_push_attempt_and_guards_every_test(self)
 
 ## scripts/test-ci-parity.sh
 - record()

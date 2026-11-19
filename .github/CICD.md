@@ -106,68 +106,57 @@ is what removes the admin-account login from the deploy path.
 
 **One gate.** Branch protection needs one check, not several. `gate` depends on all six jobs with `if: always()`, so it runs even when an earlier job fails or is cancelled. It prints each result and exits non-zero unless every result is `success`. The single exception is the Hermes non-root smoke, which may be `skipped` — and only because the `changes` job, itself required to succeed, proved the pull request cannot change the image the smoke builds. A failure or a cancellation anywhere, and a skip by any job other than `hermes-nonroot-smoke`, all fail the gate.
 
-### Deployment validation reuse decision (#219)
+### Deployment validation reuse (#219)
 
-**Retain full predeployment source validation.** This is the conservative
-implementation choice permitted by #219; it delivers **zero deployment runtime
-reduction**. PR component selection from #218 remains useful independently.
+PR #222 kept full validation for every deployment. The superseding owner
+decision permits reusing approved scoped PR validation for an equivalent
+tested tree. The historical full-suite baselines are
+[11m40s for #218](https://github.com/jimbobsyouruncle/haven/actions/runs/44108638958/job/134143913958),
+[11m20s on manual dispatch](https://github.com/jimbobsyouruncle/haven/actions/runs/44331207325),
+and [10m59s on an automatic deployment retry](https://github.com/jimbobsyouruncle/haven/actions/runs/44347052427/attempts/2).
+The latter two host-deploy jobs took 2m12s and 2m04s respectively.
 
-Measured baseline on 2026-11-17: [PR #218 validation](https://github.com/jimbobsyouruncle/haven/actions/runs/44106521125)
-at head `eab3e524387891b0f89e0029b5b088491628110c` took 9m54s;
-[deployment validation](https://github.com/jimbobsyouruncle/haven/actions/runs/44108638958/job/134143913958)
-at merged SHA `7a898c6d3666f0dc30ffd742480728680b3a9084` took 11m40s
-(14:56:33–15:08:13 UTC). The trees are equal. Combined source-job time was
-21m34s; eliminating the second job could save at most its observed 700s,
-about 54% of combined source-job time. These are job durations, not deployment
-critical-path or future latency guarantees; queue, image wait and host work differ.
+On a same-repository PR merge into main, `pr-evidence` checks the exact push
+and merged PR, then reads the latest PR-triggered SAST and agent-context runs
+and their attempt-specific jobs. GitHub's workflow metadata identifies the
+synthetic merge commit used by the SAST workflow. The source and context jobs
+also record the PR number, base and checked-out commit in a successful step.
+The verifier requires the tested tree to match the deployed tree and the
+tested base to be the previous main tip. It recomputes the approved component
+selection with the existing selector. The required SAST aggregate, both
+CodeQL jobs, Semgrep, ShellCheck and agent-context must all succeed. The job
+logs the run attempts, tree, selected components and successful PR source
+steps. The stable `validate / Validate sources` job confirms the proof for
+the current deployment attempt and reports that it ran no fresh source tests.
 
-| Choice | Benefit on this baseline | Added maintenance / safety boundary |
-| --- | --- | --- |
-| Keep full deploy validation | 0s saved; exact deployed tree checked independently | No new API queries, permissions, inputs or trust decisions |
-| Minimal trusted reuse with full fallback | At most 700s minus evidence lookup overhead when eligible | Must establish full coverage, exact merge/head trees, trusted workflow/check identity and completion, evidence freshness and unchanged CI/security boundaries |
-
-A green PR aggregate alone is insufficient: #218 permits docs/component-only
-validation. Even equal trees do not establish that the full suite ran. A reuse
-gate would need to prove full selection from the tested base and workflow,
-authenticate the supplying run and PR association, reject incomplete/ambiguous
-results, define freshness, and conservatively exclude CI/security changes.
-The existing `manual-runs` provenance path serves explicit manual identity
-acceptance; it is not proof of full deploy-suite coverage and is not reused here.
-This baseline itself changes CI selection/security configuration and would be
-ineligible under the issue's conservative cross-cutting-change constraint.
-Ordinary component PRs also lack full-suite coverage, so their savings under
-this minimal reuse design would be zero. No frequency estimate exists to justify
-the added gate with an aggregate runtime-saving claim.
-
-The retained policy avoids a new trust boundary for a conditional saving:
-
-| Evidence / source case | Deployment source-validation disposition |
+| Case | Result |
 | --- | --- |
-| Successful trusted PR, including equal-tree merge/squash/rebase | Run full suite; merge strategy supplies no bypass |
-| Modified merge tree, mismatched SHA, direct push or untrusted source | Run full suite if entrypoint is authorized; existing automatic provenance separately rejects unmerged pushes |
-| Missing, failed, cancelled, stale, incomplete or ambiguous PR evidence | Run full suite; never reinterpret those observations as PASS |
-| CI/security/shared changes or uncertain provenance | Run full suite; retain independent authorization/provenance gates |
+| Trusted merge or squash with exact base, checkout and tree and approved component coverage | Reuse scoped PR validation |
+| Trusted security evidence and equivalent tree, but cross-cutting change, unrelated CI change, or missing source checkout record | Run full source validation |
+| Authorized manual dispatch | Run full source validation |
+| Missing, failed, cancelled or ambiguous required security evidence; a fork, direct push, unproven merge base or tree, or changes to trusted check policy | Refuse automatic deployment |
 
-`test-ci-components.py` executes the actual workflow selection shell for push
-and dispatch, including accidental changed-only opt-in and invalid PR metadata,
-and asserts every component is enabled. Existing provenance fixtures reject
-untrusted/mismatched runs and missing/failed/cancelled/skipped validation, and
-exercise modified merge trees in the separate manual-acceptance path. Since
-there is no reuse path, synthetic trusted-evidence mapping is not introduced.
-Positive evidence is the baseline successful full deploy job; negative evidence
-is the offline selection/provenance/gate regressions. No optimized deployment
-or reduction is claimed or needs a live production test.
+The evidence job uses a read-only Actions token without production secrets.
+The same policy files must exist in both the deployed and previous main trees.
+A partial PR rerun that leaves required jobs on older attempts does not qualify.
+For a deployment retry that inherited fast-path evidence, rerun all jobs to
+collect fresh evidence. The exact-main checks before and after the image wait,
+host transaction, immutable image checks, rollback and verifier still apply.
 
-The verifier still requires exactly `validate / Validate sources` success before
-allowing the waiting deploy job to proceed. `Security & SAST gate` and
-`Check agent context maps`, CodeQL, Semgrep and secret checks stay intact.
-Exact-main authorization and reauthorization after image wait, host SHA/ancestry,
-image/recovery integrity, systemd transaction/rollback, doctor and post-deploy
-verification are unchanged. No credentials or production access are added.
-Operational rollback requires no action because deployment behavior is unchanged;
-the documentation/regression change can be reverted through a reviewed PR.
-Reconsider reuse only with measured eligible-deployment frequency and a small
-design that proves full coverage and all required trust properties offline.
+The introducing PR changes validation policy and therefore cannot exercise the
+automatic fast path. The next normal eligible PR merge can demonstrate reuse.
+A map refresh PR with only manually dispatched check runs also lacks the
+required PR-triggered evidence for automatic deployment. If an excluded
+revision needs deployment, use the existing explicitly authorized
+`workflow_dispatch` procedure on the current main SHA. To roll back the
+workflow change, revert through a reviewed PR and use that same procedure if
+a deployment is needed.
+
+For acceptance, record the full merged SHA, automatic run URL and attempt,
+the reused PR attempts, source gate timings and total deploy duration. Aim for
+under two minutes for evidence and compare against the recorded full-suite
+baseline. Separate queue and image-wait time from validation savings. Keep
+#219 open until a fresh automatic deployment proves the savings.
 
 ### Component validation policy
 

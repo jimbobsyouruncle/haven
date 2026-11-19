@@ -329,7 +329,7 @@ has_git_ls_files() {
 
 ci_owned_reason() {
   case "$1" in
-    "Select component tests")
+    "Select component tests"|"Confirm reuse for this deployment attempt"|"PR checkout "*)
       printf '%s' "CI event metadata; local parity conservatively replays full validation"
       ;;
     "Install test dependency (httpx)")

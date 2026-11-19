@@ -33,15 +33,38 @@ permissions:
 
 jobs:
 
-  # =========================================================================
-  # JOB 1: validate -- catch mistakes before they reach the Pi
-  # =========================================================================
-  # Reuses the same validation the pull-request gate runs, so nothing
-  # reaches the Pi that has not already passed on a pull request. No
-  # secrets are passed in.
+  pr-evidence:
+    if: github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      reuse_attempt: ${{ steps.verify.outputs.reuse_attempt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify PR evidence
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
+        run: python3 scripts/deploy-provenance.py pr-validation "$GITHUB_SHA"
+
+  # Keep the positive validation job consumed by deployment and its verifier.
   validate:
-    if: github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha))
+    if: >-
+      !cancelled() && github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled' && needs.pr-evidence.result == 'success') ||
+       (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha))
+    needs: pr-evidence
     uses: ./.github/workflows/validate.yml
+    with:
+      reuse_attempt: ${{ needs.pr-evidence.outputs.reuse_attempt }}
 
   # =========================================================================
   # JOB 2: deploy -- only runs if validate passed
@@ -50,8 +73,11 @@ jobs:
     name: Deploy over Tailscale
     # Automatic access requires separate owner activation; manual access
     # requires assent for this exact main SHA. Validation has no secrets.
-    if: github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha))
-    needs: validate          # gate: do not start until validation succeeds
+    if: >-
+      !cancelled() && needs.validate.result == 'success' && github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled' && needs.pr-evidence.result == 'success') ||
+       (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha))
+    needs: [pr-evidence, validate] # both gates must succeed
     runs-on: ubuntu-latest
     timeout-minutes: 105
     permissions:
@@ -73,6 +99,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
+          REUSE_ATTEMPT: ${{ needs.pr-evidence.outputs.reuse_attempt }}
         run: python3 scripts/deploy-provenance.py authorize "$GITHUB_SHA"
 
       - name: Wait for the sandbox image
@@ -91,6 +118,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
+          REUSE_ATTEMPT: ${{ needs.pr-evidence.outputs.reuse_attempt }}
         run: python3 scripts/deploy-provenance.py authorize "$GITHUB_SHA"
 
       - name: Connect to tailnet
