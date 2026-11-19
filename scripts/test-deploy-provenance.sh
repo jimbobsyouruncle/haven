@@ -456,13 +456,185 @@ class Provenance(unittest.TestCase):
         workflow = Path('.github/workflows/deploy.yml').read_text()
         self.assertIn('group: deploy-control-plane\n  cancel-in-progress: false', workflow)
         self.assertLess(workflow.index('Verify exact-main deployment provenance'), workflow.index('Connect to tailnet'))
-        self.assertIn('needs: validate', workflow)
+        self.assertIn('needs: [pr-evidence, validate]', workflow)
         unit = Path('deploy/haven-deploy@.service').read_text()
         self.assertIn('ExecStartPost=/bin/bash /opt/haven/scripts/deploy-verify.sh %i', unit)
         self.assertIn('/usr/bin/timeout --kill-after=30s 10m', Path('scripts/deploy-verify.sh').read_text())
         self.assertIn('Environment=HAVEN_VERIFY_INSTALL_ROOT=1', unit)
         self.assertIn('Environment=HAVEN_VERIFY_DEPLOY_JOB=1', unit)
         self.assertNotIn('Restart=', '\n'.join(l for l in unit.splitlines() if not l.startswith('#')))
+
+class PRValidation(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.output = root / 'output'
+        self.event_path = root / 'event'
+        self.base, self.head, self.tested, self.tree = (key * 40 for key in 'bcde')
+        self.event = dict(repository=REPO, ref='refs/heads/main', before=self.base, after=SHA,
+                          deleted=False, forced=False)
+        self.env = dict(GH_TOKEN='fixture', GITHUB_REPOSITORY=m.REPO, GITHUB_REF='refs/heads/main',
+                        GITHUB_EVENT_NAME='push', AUTOMATIC_DEPLOYMENT='enabled',
+                        GITHUB_EVENT_PATH=str(self.event_path), GITHUB_OUTPUT=str(self.output),
+                        GITHUB_RUN_ATTEMPT='2')
+        self.runs = []
+        self.api = {}
+        self.pr = dict(number=15, merged_at='synthetic', merge_commit_sha=SHA,
+                       base=dict(ref='main', repo=REPO),
+                       head=dict(ref='feature', sha=self.head, repo=dict(REPO)))
+        self.api[f'/commits/{SHA}/pulls?per_page=100'] = [self.pr]
+        self.commit = dict(sha=self.tested, tree=dict(sha=self.tree),
+                           parents=[dict(sha=self.base), dict(sha=self.head)])
+        self.api[f'/git/commits/{self.tested}'] = self.commit
+        receipt = dict(name=f'PR checkout 15 {self.base} {self.tested}',
+                       status='completed', conclusion='success')
+        self.jobs = {}
+        for run_id, (path, names) in enumerate(m.PR_WORKFLOWS.items(), 20):
+            run = dict(path=path, id=run_id, run_number=1, run_attempt=1, head_sha=self.head,
+                       repository=REPO, head_repository=REPO, head_branch='feature',
+                       event='pull_request', status='completed', conclusion='success')
+            self.runs.append(run)
+            jobs = [dict(run_id=run_id, run_attempt=1, head_sha=self.head, name=name,
+                         status='completed', conclusion='success', steps=[dict(receipt)])
+                    for name in names]
+            self.jobs.update((job['name'], job) for job in jobs)
+            self.api[f'/actions/runs/{run_id}/attempts/1/jobs?per_page=100'] = dict(
+                jobs=jobs, total_count=len(jobs))
+        source = self.jobs['Validate sources / Validate sources']
+        self.source_steps = source['steps']
+        self.source_steps.extend(dict(receipt, name=name) for name in (
+            'Select component tests', 'Shell syntax check', 'Python syntax check',
+            'Assert no secrets are tracked'))
+        self.runs[0]['referenced_workflows'] = [
+            dict(ref='refs/pull/15/merge', sha=self.tested,
+                 path=f'{m.REPO}/.github/workflows/validate.yml@{self.tested}')]
+        self.list_path = f'/actions/runs?head_sha={self.head}&per_page=100'
+        self.api[self.list_path] = dict(workflow_runs=self.runs, total_count=len(self.runs))
+        self.paths = b'auth/app.py\0'
+        self.checked_out = f'{SHA}\n{self.base}\n'.encode()
+        self.flags = 'full=false\nauth=true\nproxy=true\n'
+
+    def verify(self):
+        self.event_path.write_text(json.dumps(self.event))
+        def get(path, authenticated=False):
+            self.assertEqual(authenticated, '/pulls?' not in path)
+            return copy.deepcopy(self.api[path])
+        with patch.dict(os.environ, self.env, clear=True), patch.object(m, 'get', side_effect=get), \
+                patch.object(m, 'git', side_effect=[self.checked_out, self.paths, self.tree.encode()]), \
+                patch.object(m.subprocess, 'check_output', return_value=self.flags), \
+                redirect_stdout(io.StringIO()) as log:
+            m.pr_validation(SHA)
+            return log.getvalue()
+
+    def test_reuses_exact_checked_tree_and_reports_coverage(self):
+        log = self.verify()
+        self.assertIn('Reusing PR #15', log)
+        self.assertIn('auth=true', log)
+        self.assertEqual(self.output.read_text(), 'reuse_attempt=2\n')
+
+    def test_missing_source_receipt_or_full_selection_runs_full(self):
+        self.jobs['Validate sources / Validate sources']['steps'] = []
+        self.assertIn('Full deployment validation', self.verify())
+        self.assertFalse(self.output.exists())
+        self.jobs['Validate sources / Validate sources']['steps'] = self.source_steps
+        self.flags = 'full=true\n'
+        self.assertIn('cross-cutting', self.verify())
+        self.assertFalse(self.output.exists())
+
+    def test_missing_required_source_step_does_not_reuse(self):
+        self.source_steps[-1]['conclusion'] = 'skipped'
+        with self.assertRaisesRegex(ValueError, 'SOURCE_COVERAGE'):
+            self.verify()
+
+    def test_latest_failed_or_cancelled_run_cannot_use_older_green(self):
+        for failure in ('failure', 'cancelled'):
+            latest = dict(self.runs[0], id=32, run_number=2, conclusion=failure)
+            self.api[self.list_path] = dict(workflow_runs=self.runs + [latest], total_count=3)
+            with self.subTest(failure=failure), self.assertRaisesRegex(ValueError, 'UNSUCCESSFUL'):
+                self.verify()
+        self.assertFalse(self.output.exists())
+
+    def test_missing_context_and_failed_security_jobs_refuse(self):
+        context = self.jobs['Check agent context maps']
+        receipt = context['steps'].pop()
+        with self.assertRaisesRegex(ValueError, 'CONTEXT_CHECKOUT_MISSING'):
+            self.verify()
+        context['steps'].append(receipt)
+        for name in ('CodeQL (python)', 'CodeQL (actions)', 'ShellCheck (Bash)', 'Semgrep (SAST)'):
+            with self.subTest(job=name), self.assertRaisesRegex(ValueError, 'REQUIRED_JOB_UNSUCCESSFUL'):
+                job = self.jobs[name]
+                job['conclusion'] = 'failure'
+                try:
+                    self.verify()
+                finally:
+                    job['conclusion'] = 'success'
+        self.assertFalse(self.output.exists())
+
+    def test_different_checkout_tree_base_and_pr_ref_refused(self):
+        for obj, field, value, reason in (
+            (self.commit, 'tree', dict(sha='f'*40), 'TESTED_TREE'),
+            (self.commit, 'parents', [dict(sha=self.head), dict(sha=self.base)], 'TESTED_PARENTS'),
+            (self.runs[0]['referenced_workflows'][0], 'ref', 'refs/pull/16/merge', 'WORKFLOW_REFERENCE'),
+            (self.jobs['Check agent context maps']['steps'][0], 'name',
+             f'PR checkout 15 {self.base} {self.head}', 'CHECKOUT_MISMATCH'),
+        ):
+            old = obj[field]
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, reason):
+                obj[field] = value
+                try:
+                    self.verify()
+                finally:
+                    obj[field] = old
+
+    def test_push_modes_and_workflow_policy(self):
+        self.env['GITHUB_EVENT_NAME'] = 'workflow_dispatch'
+        with self.assertRaises(ValueError):
+            self.verify()
+        self.env['GITHUB_EVENT_NAME'] = 'push'
+        # Merge and squash have the same admissible first parent. A multi-
+        # commit rebase or batched push lacks this exact push-base binding.
+        self.checked_out = f'{SHA}\n{self.head}\n'.encode()
+        with self.assertRaisesRegex(ValueError, 'MAIN_PARENT'):
+            self.verify()
+        self.checked_out = f'{SHA}\n{self.base}\n'.encode()
+        self.api[f'/commits/{SHA}/pulls?per_page=100'] = []
+        with self.assertRaisesRegex(ValueError, 'MERGED_PULL'):
+            self.verify()
+        self.api[f'/commits/{SHA}/pulls?per_page=100'] = [self.pr]
+        self.pr['head']['repo']['fork'] = True
+        with self.assertRaisesRegex(ValueError, 'UNTRUSTED_PULL'):
+            self.verify()
+        self.pr['head']['repo']['fork'] = False
+        self.paths = b'.github/workflows/deploy.yml\0'
+        self.assertIn('Full deployment validation', self.verify())
+        self.paths = b'.github/workflows/sast-checks.yml\0'
+        with self.assertRaisesRegex(ValueError, 'SECURITY_POLICY_CHANGED'):
+            self.verify()
+        self.assertFalse(self.output.exists())
+
+    def test_reruns_require_complete_current_attempt_and_consistent_jobs(self):
+        path = '/actions/runs/20/attempts/1/jobs?per_page=100'
+        jobs = self.api[path]['jobs']
+        self.runs[0]['run_attempt'] = 2
+        current = '/actions/runs/20/attempts/2/jobs?per_page=100'
+        self.api[current] = dict(jobs=[], total_count=0)
+        with self.assertRaisesRegex(ValueError, 'INCOMPLETE_ATTEMPT'):
+            self.verify()
+        self.api[current] = dict(jobs=jobs, total_count=len(jobs))
+        with self.assertRaisesRegex(ValueError, 'JOB_IDENTITY'):
+            self.verify()
+        for job in jobs:
+            job['run_attempt'] = 2
+        self.assertIn('SAST run 20 attempt 2', self.verify())
+
+    def test_incomplete_and_malformed_api_results_refuse(self):
+        data = self.api[self.list_path]
+        for count, reason in ((101, 'INCOMPLETE'), ('2', 'SHAPE')):
+            with self.subTest(count=count), self.assertRaisesRegex(ValueError, reason):
+                data['total_count'] = count
+                self.verify()
+
 
 unittest.main()
 PY

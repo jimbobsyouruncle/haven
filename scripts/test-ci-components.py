@@ -80,8 +80,9 @@ class SelectionTests(unittest.TestCase):
             names = set()
             for block in blocks:
                 condition = re.search(r'^        if: (.+)$', block, re.M)
-                if condition is None or any(flags[key] for key in re.findall(
-                        r"steps.components.outputs.(\w+) == 'true'", condition[1])):
+                components = re.findall(
+                    r"steps.components.outputs.(\w+) == 'true'", condition[1]) if condition else []
+                if not components or any(flags[key] for key in components):
                     names.add(block.splitlines()[0])
             return names
 
@@ -145,7 +146,7 @@ class SelectionTests(unittest.TestCase):
         # Every narrowed step includes the conservative full fallback. Each
         # component has actual executable consumers, not just detector outputs.
         for line in workflow.splitlines():
-            if line.strip().startswith('if:'):
+            if line.strip().startswith('if:') and 'steps.components.outputs' in line:
                 self.assertIn("steps.components.outputs.full == 'true'", line)
         for component in COMPONENTS.COMPONENTS:
             self.assertIn(f"steps.components.outputs.{component} == 'true'", workflow)
@@ -176,10 +177,32 @@ class SelectionTests(unittest.TestCase):
         deploy = (ROOT / '.github/workflows/deploy.yml').read_text()
         validate = deploy.split('  validate:\n', 1)[1].split('  deploy:\n', 1)[0]
         self.assertIn('uses: ./.github/workflows/validate.yml', validate)
-        self.assertNotIn('with:', validate)
-        # No evidence-reuse input or secret may turn this gate into a bypass.
+        self.assertIn('needs: pr-evidence', validate)
+        self.assertIn('reuse_attempt: ${{ needs.pr-evidence.outputs.reuse_attempt }}', validate)
         self.assertNotIn('secrets:', validate)
-        self.assertIn('needs: validate', deploy)
+        self.assertIn('needs: [pr-evidence, validate]', deploy)
+
+    def test_reuse_is_bound_to_push_attempt_and_guards_every_test(self):
+        workflow = (ROOT / '.github/workflows/validate.yml').read_text()
+        gate, tests = workflow.split('      - name: Checkout\n', 1)
+        body = gate.split('        run: |\n', 1)[1]
+        body = '\n'.join(line[10:] for line in body.splitlines())
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'output'
+            for event, proof, expected in (
+                ('push', '2', True), ('push', '1', False),
+                ('workflow_dispatch', '2', False), ('pull_request', '2', False),
+            ):
+                output.write_text('')
+                result = subprocess.run(['bash', '-c', body],
+                                        env=dict(os.environ, GITHUB_EVENT_NAME=event,
+                                                 REUSE_ATTEMPT=proof, GITHUB_RUN_ATTEMPT='2',
+                                                 GITHUB_OUTPUT=str(output)), capture_output=True)
+                self.assertEqual(result.returncode == 0, expected)
+                self.assertEqual(output.read_text(), 'verified=true\n' if expected else '')
+        for step in tests.split('      - name: '):
+            self.assertRegex(step, r"(?m)^        if: .*(steps.reuse.outputs.verified != 'true'|"
+                                   r"steps.components.outputs.full == 'true')")
 
 
 if __name__ == '__main__':
