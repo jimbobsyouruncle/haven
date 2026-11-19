@@ -1,6 +1,6 @@
 # Haven — Architecture Design
 
-**Status:** Proposed implementation architecture; `HAVEN-PROJECT-001` approved by product owner on 2026-11-07. Other design elements are recommendations pending PoC and acceptance tests.  
+**Status:** Proposed implementation architecture. The owner approved `HAVEN-PROJECT-001` (2026-11-07) and `HAVEN-SEC-012` (2026-11-19). See the [decision register](DECISIONS.md) for approval and verification status.
 **Baseline:** `jimbobsyouruncle/hybrid-ai`, inspected read-only on 2026-11-07. No runtime security claims or deployments are implied.  
 **Primary platform:** Raspberry Pi 5, 16 GB, 64-bit Raspberry Pi OS, NVMe; cloud inference; eight configured personas across three human accounts.
 
@@ -13,7 +13,7 @@ multi-user authorization, isolation or inference policy. See the
 
 ## 1. Decisions and objectives
 
-1. One reusable **Coder persona** can work across many projects; **project and task session**, not persona, enforce repository and inference authorization.
+1. One reusable **Coder persona definition** can work across many projects. The trusted control plane enforces repository and inference authorization per project and task. See [ADR-0001](adr/0001-project-scoped-coder.md).
 2. A **project** is a security and collaboration boundary with one or more authorized repositories. A **task** has a narrower explicit repository allowlist. A group is an authorization ceiling, not implicit access.
 3. **Private repository** is an explicit repository classification. Any task touching private-restricted content must use its approved dedicated **RunPod-only inference** for *every* model operation (planning, coding, review, summarization, embeddings, delegated agents); fail closed. A GitHub `private` visibility flag can trigger this default but must not be the only classification signal.
 4. Agent processes never receive host container-management sockets, unrestricted GitHub credentials, or arbitrary access to other project files, services, memories, and secrets.
@@ -62,13 +62,14 @@ Human clients (LAN / Tailscale)        Matrix mobile clients (restricted public 
 
 ## 3. Resource model
 
-- **User:** human identity via OIDC, roles, sessions and personal private memory.
-- **Persona:** reusable behavioral profile, engine capabilities, approved tools, non-secret instructions, and optional non-sensitive general skills. Persona is *not* a security boundary.
+- **Human user:** independently authorized identity, roles, sessions, private data and conversations. Sharing a persona grants no access to another user's private data.
+- **Persona definition:** reusable behavior, instructions, skills and configuration. Authorization is enforced by Haven independently of the definition.
+- **Persona runtime environment:** dedicated application containers, per-persona host UID/GID, private storage and secrets. This boundary enforces isolation between personas. Applications within a persona may share its identity and designated storage. See [ADR-0008](adr/0008-persona-runtime-isolation.md).
 - **Project:** tenant-like boundary with membership, policy, repositories, encryption key, project memory and budget.
 - **Repository:** immutable provider identity (`github:<installation-id>:<repo-id>`), visibility/classification, allowed refs, optional write policies, and one primary project membership. Cross-project sharing must be explicit and versioned.
 - **Repository group:** named subset of a project's repositories; its members are an authorization ceiling, never automatic mounts.
 - **Task:** initiating user, persona, project, approved repository IDs, read/write levels, branch constraints, inference policy, expiry, budget and approval receipt.
-- **Worker:** ephemeral sandbox bound to a single task and short-lived credential leases; one worker per repo is the default. Multi-repo worker requires a separate explicit approval and is discouraged.
+- **Development worker:** ephemeral sandbox scoped to a single authorized task with short-lived credential leases. Persistent Developer applications and workers must comply with ADR-0001. Workers receive explicit task grants and do not inherit the persistent runtime's filesystem access. The default is one worker per repository. Multi-repo workers require separate explicit approval.
 - **Execution session:** user+persona+project+task context; independent across users even when sharing a persona.
 - **Inference deployment:** dedicated RunPod pod, endpoint, model identity, owner, cost ceiling, network policy and lifecycle state.
 
@@ -186,7 +187,8 @@ Never place two independent agents on the same writable branch/worktree. An opti
 
 - Local IdP (Authentik or Kanidm, selected by PoC), OIDC; passkeys preferred, password + TOTP fallback, hardware-key admin recovery; invite-only accounts. Stable `auth.daemonhub.dev` hostname and TLS.
 - Haven local interface `haven.daemonhub.dev` through existing Caddy wildcard DNS-01 ACME and Tailscale/LAN restrictions; show effective project, repo allowlist, classification, inference backend, engine compatibility, cost estimate, tool approvals and worker state. UI cannot weaken server-side policy.
-- Matrix Synapse + Matrix Authentication Service as optional remote chat surface; non-federated, E2EE where applicable, explicit bridge as authorized decrypting endpoint. Matrix room membership does not replace Haven project authorization. Public-facing Matrix/OIDC routes must be minimized and reviewed.
+- Native persona-service WebUIs may use flat hostnames behind the existing Caddy proxy. Require persona/service authentication and authorization and prevent direct backend bypass. See [ADR-0008](adr/0008-persona-runtime-isolation.md).
+- Use shared Matrix Synapse and Matrix Authentication Service for optional remote chat. Keep the homeserver non-federated, use E2EE where applicable, and treat the explicit bridge as an authorized decrypting endpoint. Scope each Hermes persona to its own bot account, credentials, device/encryption state and authorized private rooms. Enforce Haven authorization independently of room membership. Minimize and review public-facing Matrix/OIDC routes.
 - Roles: platform admin, security admin, project owner/editor/member/viewer, persona owner/editor/member/viewer. Admin privileges do not imply private content read. Shared persona members have review at 90 days and revocation at 180 days inactivity, owner exempt, subject to approved policy.
 
 ## 8. Data, keys, backup, deletion
@@ -213,6 +215,7 @@ Never place two independent agents on the same writable branch/worktree. An opti
 | `auth/app.py` | Single-user password/session forward auth | Replace with OIDC and project-aware authorization |
 | `openhands/docker-compose.openhands.yml` | OpenHands image default `1.10`; host Docker socket mounted; separate workspace clone documented | Upgrade compatibility-tested image, remove agent-adjacent host socket, isolate controller and workers |
 | `docker-compose.yml` | Docker Compose, Open WebUI/Ollama, Docker networks, host-facing services | Parallel Haven control plane, restrict ports, cloud-first inference, migrate isolation |
+| [Hermes Compose overlay](../../hermes/docker-compose.hermes.yml) | One service definition, a configurable UID/GID and a Hermes data bind tree | Provision and verify persona runtimes under ADR-0008 |
 | `openwebui/runpod_core.py` | Tailscale-validated vLLM wake/readiness/streaming abstraction | Adapt to dedicated per-project deployment and strict inference broker |
 | `status/Caddyfile.tmpl` | Existing Caddy routing, LAN/Tailscale allowlist and forward-auth | Add explicit OIDC/Haven/Matrix routes; preserve existing DNS-01 ACME |
 | `backup/README.md` | Restic/R2; nightly backup | Add per-project encryption keys and <=4h RPO with restore testing |
