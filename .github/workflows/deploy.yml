@@ -57,10 +57,7 @@ jobs:
 
   # Keep the positive validation job consumed by deployment and its verifier.
   validate:
-    if: >-
-      !cancelled() && github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' &&
-      ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled' && needs.pr-evidence.result == 'success') ||
-       (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha))
+    if: ${{ !cancelled() && github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled' && needs.pr-evidence.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha)) }}
     needs: pr-evidence
     uses: ./.github/workflows/validate.yml
     with:
@@ -73,10 +70,7 @@ jobs:
     name: Deploy over Tailscale
     # Automatic access requires separate owner activation; manual access
     # requires assent for this exact main SHA. Validation has no secrets.
-    if: >-
-      !cancelled() && needs.validate.result == 'success' && github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' &&
-      ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled' && needs.pr-evidence.result == 'success') ||
-       (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha))
+    if: ${{ !cancelled() && needs.validate.result == 'success' && github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled' && needs.pr-evidence.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha)) }}
     needs: [pr-evidence, validate] # both gates must succeed
     runs-on: ubuntu-latest
     timeout-minutes: 105
