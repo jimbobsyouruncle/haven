@@ -99,6 +99,7 @@
 - docs/haven/adr/0005-evidence-based-completion.md - ADR-0005 — Evidence-based issue completion
 - docs/haven/adr/0006-installation-root.md - ADR-0006 — Transactional installation root migration
 - docs/haven/adr/0007-complete-platform-identity.md - ADR-0007 — Complete Haven identity and restore automatic deployment
+- docs/haven/adr/0008-persona-runtime-isolation.md - ADR-0008 — Persona runtime, host filesystem, and secret isolation
 ## docs/haven/identity
 
 - docs/haven/identity/CONFIGURATION.md - Canonical source and configuration handoff
