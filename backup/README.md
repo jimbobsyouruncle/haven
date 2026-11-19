@@ -95,11 +95,13 @@ Chroma keeps document metadata in `chroma.sqlite3` but keeps the actual vector i
 
 Snapshotting the SQLite half at 03:15:00 and copying the binary half at 03:15:04 means that if a document was embedded in between, **the two halves disagree**. You would restore a knowledge base whose metadata references vectors that are not in the index.
 
-So the backup briefly **pauses** the Open WebUI container for the capture. `docker pause` freezes the process with `SIGSTOP` — no shutdown, no restart, no dropped connections, typically 2–10 seconds. Everything is then captured from a single frozen point in time. The container is unpaused before the slow upload begins, and also from the EXIT trap, so a crash mid-run cannot leave it frozen.
+For a manual backup, point-in-time capture requires both `open-webui` and `hermes-agent` to be running and successfully paused. The script resumes the containers before upload or before switching to online capture after a partial pause. Its exit handler also attempts to resume them on capture errors and on HUP, INT, or TERM. If Docker cannot confirm that a container resumed, follow the `docker unpause` command in the warning.
 
 A `--dry-run` never pauses: it measures the capture and reports, and pauses nothing.
 
 Set `BACKUP_NO_PAUSE=1` to skip this. Zero downtime, but only safe if you are certain nothing is being embedded during the backup window.
+
+The manual backup output distinguishes this opt-out, an unavailable writer, and a failed Docker pause. No migration or configuration change is required for the SQLite header and manual capture fixes. After installing the fix through the normal deployment process, the owner can run the usual backup and repository check separately and confirm the capture mode, absence of SQLite NUL warnings, and check result.
 
 If a consistent online snapshot cannot be taken at all, the script **stops Open WebUI, copies cold, and restarts it**. A brief outage is strictly better than a backup you cannot restore. It never silently falls back to a hot copy.
 
@@ -454,8 +456,15 @@ ONLY manual step; everything after it runs from the units. Card F must create:
 
 1. **The account** — a no-login system account `haven-backup`
    (`User=`/`Group=` in the units). It is NOT added to the `docker` group.
-2. **The runtime directory** — `/run/haven-backup`, owned by that account
-   (`RuntimeDirectory=haven-backup` recreates it per run).
+2. **The service runtime directory** — systemd manages `/run/haven-backup`
+   for account-owned runtime data. The root helper creates its separate
+   `/run/haven-backup-control` directory with owner `root`, group
+   `haven-backup`, and mode `2750`. Capture can read the non-secret records
+   there. The helper clears them after capture, and reboot clears the runtime
+   directory. The helper and capture script use the new path together, so
+   deploy them from the same revision through the normal installer. Existing
+   systemd units and credentials need no edits, and existing backups require
+   no migration.
 3. **The credential store** — `/etc/credstore/haven-backup/` (root, mode
    `0700`), holding:
    - `/etc/credstore/haven-backup/r2.env` (root, mode `0600`)
