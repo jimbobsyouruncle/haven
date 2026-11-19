@@ -33,7 +33,8 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(self.selected(*paths), expected)
 
     def test_shared_unknown_security_and_ci_are_full(self):
-        for path in ('scripts/lib/haven-env.sh', 'scripts/lib/tls.sh', 'install.sh', 'docker-compose.yml',
+        for path in ('scripts/lib/haven-env.sh', 'scripts/lib/tls.sh', 'scripts/lib/installer-env-render.sh',
+                     'install.sh', 'docker-compose.yml',
                      'scripts/sandbox-firewall.sh', '.github/workflows/validate.yml',
                      'scripts/ci-components.py', 'scripts/test-ci-components.py',
                      'deploy/haven-deploy@.service', '.env.example',

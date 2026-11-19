@@ -89,6 +89,7 @@ fi
 # tracked templates, so the scratch app tree must carry them too.
 mkdir -p "$APP/status"
 cp "$REPO/scripts/lib/tls.sh" "$APP/scripts/lib/"
+cp "$REPO/scripts/lib/installer-env-render.sh" "$APP/scripts/lib/"
 cp "$REPO/status/Caddyfile.tmpl" "$APP/status/Caddyfile.tmpl"
 cp "$REPO/docker-compose.yml.tmpl" "$APP/docker-compose.yml.tmpl"
 cp "$UNIT_SRC" "$RULE_SRC" "$APP/deploy/"

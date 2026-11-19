@@ -38,6 +38,21 @@ FAILED=0
 pass() { printf '[ OK ] %s\n' "$*"; }
 fail() { printf '[FAIL] %s\n' "$*" >&2; FAILED=1; }
 
+# Probe classification takes only curl's status, redirect URL, and the apex.
+if tls_https_login_gate 200 '' example.test &&
+   tls_https_login_gate 302 'https://example.test/auth/login?next=%2F' example.test; then
+  pass "HTTPS health accepts a successful response or the apex login redirect"
+else
+  fail "HTTPS health refused a successful response or the apex login redirect"
+fi
+if tls_https_login_gate 308 'https://example.test/auth/login' example.test ||
+   tls_https_login_gate 302 'https://example.test.invalid/auth/login' example.test ||
+   tls_https_login_gate 302 'https://example.test/auth/login/extra' example.test; then
+  fail "HTTPS health accepted an unexpected redirect"
+else
+  pass "HTTPS health refuses other redirect codes, hosts and paths"
+fi
+
 render() {  # VARIANTS OUTDIR
   local variants="$1" out="$2"
   mkdir -p "$out"

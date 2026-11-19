@@ -473,37 +473,24 @@ case_end "(k3) retention deletion is confined to dated run directories in the qu
 
 # --- (l) install.sh STEP 8 writes and preserves both new knobs -------------
 case_begin
-STEP8_TMPL="${WORK_ROOT}/step8.tmpl"
-awk '/^cat > "\$TMP_ENV" <<EOF$/{f=1;next} f&&/^EOF$/{exit} f' \
-  "$(cd -- "${SCRIPT_DIR}/.." && pwd)/install.sh" > "$STEP8_TMPL"
-if [[ -s "$STEP8_TMPL" ]]; then ok "(l) extracted the STEP 8 heredoc template"; else bad "(l) extracted the STEP 8 heredoc template"; fi
+# shellcheck source=scripts/lib/installer-env-render.sh
+source "${SCRIPT_DIR}/lib/installer-env-render.sh"
 
-render_step8() { # optional_extra_shell
-  (
-    unset HAVEN_PRUNE_ALLOW_LEASE_LESS HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS
-    [[ -n "${1:-}" ]] && eval "$1"
-    # Only the prune block is rendered: every other ${...} line is skipped, so
-    # this fixture never needs the rest of install.sh's environment.
-    grep -E '^HAVEN_PRUNE_(ALLOW_LEASE_LESS|QUARANTINE_RETENTION_DAYS)=' "$STEP8_TMPL" \
-      | while IFS= read -r line; do eval "printf '%s\n' \"${line}\""; done
-  )
-}
-
-R_UNSET="$(render_step8 "")"
+R_UNSET="$(installer_render_prune_settings '')"
 check "(l) ALLOW_LEASE_LESS defaults to empty when unset" \
   "$(printf '%s\n' "$R_UNSET" | grep -E '^HAVEN_PRUNE_ALLOW_LEASE_LESS=' || true)" \
   "HAVEN_PRUNE_ALLOW_LEASE_LESS="
 check "(l) RETENTION_DAYS defaults to 90 when unset" \
   "$(printf '%s\n' "$R_UNSET" | grep -E '^HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=' || true)" \
   "HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=90"
-R_SET="$(render_step8 'export HAVEN_PRUNE_ALLOW_LEASE_LESS=1 HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=30')"
+R_SET="$(installer_render_prune_settings 1 30)"
 check "(l) an owner-set ALLOW_LEASE_LESS is preserved" \
   "$(printf '%s\n' "$R_SET" | grep -E '^HAVEN_PRUNE_ALLOW_LEASE_LESS=' || true)" \
   "HAVEN_PRUNE_ALLOW_LEASE_LESS=1"
 check "(l) an owner-set RETENTION_DAYS is preserved" \
   "$(printf '%s\n' "$R_SET" | grep -E '^HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=' || true)" \
   "HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=30"
-R_OFF="$(render_step8 'export HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=')"
+R_OFF="$(installer_render_prune_settings '' '')"
 check "(l) an explicit empty RETENTION_DAYS (opt-out) survives a reinstall" \
   "$(printf '%s\n' "$R_OFF" | grep -E '^HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=' || true)" \
   "HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS="

@@ -259,6 +259,7 @@
 - scripts/lib/build-gate.sh - FILE: scripts/lib/build-gate.sh
 - scripts/lib/haven-env.sh - FILE: scripts/lib/haven-env.sh
 - scripts/lib/hybrid-ai-env.sh - Transitional import for installed legacy callers; no independent defaults.
+- scripts/lib/installer-env-render.sh - Render installer-owned settings to stdout. The installer owns the private
 - scripts/lib/read-probe.sh - FILE: scripts/lib/read-probe.sh
 - scripts/lib/repository-identity.sh - Source-only repository identity selection. Process environment only: never
 - scripts/lib/tailscale-resolve.sh - FILE: scripts/lib/tailscale-resolve.sh

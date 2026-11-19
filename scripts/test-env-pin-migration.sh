@@ -75,6 +75,7 @@ cp "$REPO/scripts/lib/build-gate.sh" "$APP/scripts/lib/"
 # tracked templates, so the scratch app tree must carry them too.
 mkdir -p "$APP/status"
 cp "$REPO/scripts/lib/tls.sh" "$APP/scripts/lib/"
+cp "$REPO/scripts/lib/installer-env-render.sh" "$APP/scripts/lib/"
 cp "$REPO/status/Caddyfile.tmpl" "$APP/status/Caddyfile.tmpl"
 cp "$REPO/docker-compose.yml.tmpl" "$APP/docker-compose.yml.tmpl"
 # The agent scripts are not under test here; stub them so the run is quiet.
@@ -190,6 +191,8 @@ run_install "$LOG" || rc=$?
 check "install.sh exits 0 with --no-start" "0" "$rc"
 check "OPENHANDS_IMAGE is the new pin" "$NEW_IMAGE" "$(env_value "$STACK" OPENHANDS_IMAGE)"
 check "OPENHANDS_AGENT_IMAGE_TAG is the new pin" "$NEW_TAG" "$(env_value "$STACK" OPENHANDS_AGENT_IMAGE_TAG)"
+check "installer writes the default startup grace" "120" "$(env_value "$STACK" OPENHANDS_STARTUP_GRACE_SECONDS)"
+check "installer writes the default prune retention" "90" "$(env_value "$STACK" HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS)"
 if grep -q 'Migrating OPENHANDS_IMAGE' "$LOG" \
    && grep -q 'Migrating OPENHANDS_AGENT_IMAGE_TAG' "$LOG"; then
   ok "one migration line per stale pin was logged"
@@ -207,6 +210,7 @@ CUSTOM_TAG="custom"
 {
   printf 'OPENHANDS_IMAGE=%s\n' "$CUSTOM_IMAGE"
   printf 'OPENHANDS_AGENT_IMAGE_TAG=%s\n' "$CUSTOM_TAG"
+  printf '%s\n' 'OPENHANDS_STARTUP_GRACE_SECONDS=180' 'HAVEN_PRUNE_ALLOW_LEASE_LESS=1' 'HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS='
 } > "$STACK"
 chmod 600 "$STACK"
 rc=0
@@ -214,6 +218,10 @@ run_install "$LOG" || rc=$?
 check "install.sh exits 0 with custom pins" "0" "$rc"
 check "custom OPENHANDS_IMAGE is preserved" "$CUSTOM_IMAGE" "$(env_value "$STACK" OPENHANDS_IMAGE)"
 check "custom OPENHANDS_AGENT_IMAGE_TAG is preserved" "$CUSTOM_TAG" "$(env_value "$STACK" OPENHANDS_AGENT_IMAGE_TAG)"
+check "installer preserves custom startup grace" "180" "$(env_value "$STACK" OPENHANDS_STARTUP_GRACE_SECONDS)"
+check "installer preserves explicit lease-less opt-in" "1" "$(env_value "$STACK" HAVEN_PRUNE_ALLOW_LEASE_LESS)"
+check "installer preserves an explicit empty prune retention" "HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=" \
+  "$(grep '^HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=' "$STACK")"
 if grep -q 'Migrating OPENHANDS_IMAGE\|Migrating OPENHANDS_AGENT_IMAGE_TAG' "$LOG"; then
   bad "a custom value was wrongly migrated"
 else
