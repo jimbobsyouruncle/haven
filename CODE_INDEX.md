@@ -266,7 +266,6 @@
 - install_secret_guard_hook()
 - print_phase_summary()
 - wait_for()
-- tls_https_login_gate()
 - wait_for_https()
 - reconcile_backup_cache_ownership()
 - install_backup_scheduler_system()
@@ -558,6 +557,10 @@
 ## scripts/lib/hybrid-ai-env.sh
 - (no symbols)
 
+## scripts/lib/installer-env-render.sh
+- installer_render_openhands_grace()
+- installer_render_prune_settings()
+
 ## scripts/lib/read-probe.sh
 - probe_can_read()
 - find_unreadable()
@@ -570,6 +573,8 @@
 - resolve_mesh_address()
 
 ## scripts/lib/tls.sh
+- tls_render_acme_ca()
+- tls_https_login_gate()
 - tls__warn()
 - tls__ok()
 - tls__note()
@@ -1022,7 +1027,6 @@
 - resolve_rc()
 - fb_resolve()
 - fb_rc()
-- render_step8()
 
 ## scripts/test-hermes-nonroot-preflight.sh
 - run_check()
@@ -1075,7 +1079,6 @@
 - run_prune()
 - counter()
 - refusals_of()
-- render_step8()
 
 ## scripts/test-prune-docker-cache.sh
 - ok()

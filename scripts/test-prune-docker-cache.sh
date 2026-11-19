@@ -334,6 +334,7 @@ cp "$REPO/scripts/lib/build-gate.sh" "$I_APP/scripts/lib/"
 # tracked templates, so the scratch app tree must carry them too.
 mkdir -p "$I_APP/status"
 cp "$REPO/scripts/lib/tls.sh" "$I_APP/scripts/lib/"
+cp "$REPO/scripts/lib/installer-env-render.sh" "$I_APP/scripts/lib/"
 cp "$REPO/status/Caddyfile.tmpl" "$I_APP/status/Caddyfile.tmpl"
 cp "$REPO/docker-compose.yml.tmpl" "$I_APP/docker-compose.yml.tmpl"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$I_APP/scripts/setup-agent-workspace.sh"

@@ -29,6 +29,30 @@ TLS_DEFAULT_DOMAIN="daemonhub.dev"
 TLS_STOCK_VALIDATE_IMAGE="caddy:2.11-alpine"
 TLS_DNS_VALIDATE_IMAGE_DEFAULT="haven-caddy:2.11.7-dns"
 
+# Emit the validated CA URL for the installer's stack env.
+tls_render_acme_ca() {  # CA_URL
+  printf 'ACME_CA=%s\n' "${1:-$TLS_CA_STAGING_URL}"
+}
+
+# tls_https_login_gate CODE LOCATION APEX_DOMAIN
+#
+# The one redirect that counts as healthy on a certificate-bearing name (B86):
+# a 302 to exactly /auth/login on the configured TLS apex domain, with the
+# ?next= query ignored. forward_auth sends every vhost -- apex and subdomains
+# alike -- to the apex login, so a status.<apex> probe that lands on
+# https://<apex>/auth/login is correct behaviour. The host must match the apex
+# exactly, so an unrelated or lookalike host still fails. Every other 3xx stays
+# refused, so the redirect-only bypass B77 closed stays closed. LOCATION is
+# curl's %{redirect_url}, i.e. what a follow WOULD visit.
+tls_https_login_gate() {  # CODE LOCATION APEX_DOMAIN
+  local code="$1" loc="$2" apex="$3"
+  case "$code" in
+    2*) return 0 ;;
+    302) [[ "${loc%%\?*}" == "https://${apex}/auth/login" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
 # --- Output helpers: reuse install.sh's, fall back when sourced alone ------
 tls__warn() {
   if declare -F warn >/dev/null 2>&1; then warn "$*"; else printf '[ ! ] %s\n' "$*" >&2; fi

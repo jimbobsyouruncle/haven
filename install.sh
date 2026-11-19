@@ -95,6 +95,8 @@ fi
 source "${SCRIPT_DIR}/scripts/lib/haven-env.sh"
 # shellcheck source=scripts/lib/build-gate.sh
 source "${SCRIPT_DIR}/scripts/lib/build-gate.sh"
+# shellcheck source=scripts/lib/installer-env-render.sh
+source "${SCRIPT_DIR}/scripts/lib/installer-env-render.sh"
 
 APP_DIR="$HAVEN_APP_DIR"
 # The stack's env file: the one handed to `docker compose --env-file` and the
@@ -1029,7 +1031,7 @@ OPENHANDS_STATE_DIR=${OPENHANDS_STATE_DIR}
 OPENHANDS_IMAGE=${OPENHANDS_IMAGE:-docker.openhands.dev/openhands/openhands:1.10}
 OPENHANDS_AGENT_IMAGE_REPOSITORY=${OPENHANDS_AGENT_IMAGE_REPOSITORY:-ghcr.io/jimbobsyouruncle/openhands-agent-server-hybrid}
 OPENHANDS_AGENT_IMAGE_TAG=${OPENHANDS_AGENT_IMAGE_TAG:-1.37.1-python-hybrid.3}
-OPENHANDS_STARTUP_GRACE_SECONDS=${OPENHANDS_STARTUP_GRACE_SECONDS:-120}
+$(installer_render_openhands_grace "${OPENHANDS_STARTUP_GRACE_SECONDS:-}")
 OPENHANDS_LOG_ALL_EVENTS=${OPENHANDS_LOG_ALL_EVENTS:-false}
 OPENHANDS_MEM_LIMIT=${OPENHANDS_MEM_LIMIT:-3g}
 OPENHANDS_CPUS=${OPENHANDS_CPUS:-2.5}
@@ -1052,8 +1054,7 @@ HAVEN_BUILD_CACHE_CAP=${HAVEN_BUILD_CACHE_CAP:-15GB}
 # a reinstall must preserve it rather than silently re-enable deletion. Unset
 # still yields 90. The script resolves the same way at run time, and it also
 # reads 0 as an opt-out.
-HAVEN_PRUNE_ALLOW_LEASE_LESS=${HAVEN_PRUNE_ALLOW_LEASE_LESS:-}
-HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=${HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS-90}
+$(installer_render_prune_settings "${HAVEN_PRUNE_ALLOW_LEASE_LESS:-}" ${HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS+"$HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS"})
 
 # --- Opt-in TLS / ACME (docs/tls-acme-design.md section 8.3) ---------------
 # Paths, names and public values only. The DNS token itself is NOT here and
@@ -1061,7 +1062,7 @@ HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS=${HAVEN_PRUNE_QUARANTINE_RETENTION_DAYS-90
 TLS_ENABLED=${TLS_ENABLED:-no}
 TLS_DOMAIN=${TLS_DOMAIN:-}
 ACME_EMAIL=${ACME_EMAIL:-}
-ACME_CA=${ACME_CA:-https://acme-staging-v02.api.letsencrypt.org/directory}
+$(tls_render_acme_ca "${ACME_CA:-}")
 TLS_VALIDATION=${TLS_VALIDATION:-dns}
 ACME_DNS_PROVIDER=${ACME_DNS_PROVIDER:-cloudflare}
 HAVEN_TLS_TOKEN_FILE=${HAVEN_TLS_TOKEN_FILE:-}
@@ -1993,25 +1994,6 @@ wait_for() {
   warn "${label} did not become healthy within ${max}s."
   event "healthcheck_fail" "service=${label}" "seconds=${max}"
   return 1
-}
-
-# tls_https_login_gate CODE LOCATION APEX_DOMAIN
-#
-# The one redirect that counts as healthy on a certificate-bearing name (B86):
-# a 302 to exactly /auth/login on the configured TLS apex domain, with the
-# ?next= query ignored. forward_auth sends every vhost -- apex and subdomains
-# alike -- to the apex login, so a status.<apex> probe that lands on
-# https://<apex>/auth/login is correct behaviour. The host must match the apex
-# exactly, so an unrelated or lookalike host still fails. Every other 3xx stays
-# refused, so the redirect-only bypass B77 closed stays closed. LOCATION is
-# curl's %{redirect_url}, i.e. what a follow WOULD visit.
-tls_https_login_gate() {  # CODE LOCATION APEX_DOMAIN
-  local code="$1" loc="$2" apex="$3"
-  case "$code" in
-    2*) return 0 ;;
-    302) [[ "${loc%%\?*}" == "https://${apex}/auth/login" ]] ;;
-    *) return 1 ;;
-  esac
 }
 
 # wait_for_https LABEL URL RESOLVE_HOST RESOLVE_IP MAX APEX_DOMAIN

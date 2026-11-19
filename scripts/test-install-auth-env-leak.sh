@@ -83,6 +83,7 @@ cp "$REPO/scripts/lib/haven-env.sh" "$APP/scripts/lib/"
 [ -f "$REPO/scripts/lib/build-gate.sh" ] || { echo "FATAL: scripts/lib/build-gate.sh is missing" >&2; exit 2; }
 cp "$REPO/scripts/lib/build-gate.sh" "$APP/scripts/lib/"
 cp "$REPO/scripts/lib/tls.sh" "$APP/scripts/lib/"
+cp "$REPO/scripts/lib/installer-env-render.sh" "$APP/scripts/lib/"
 cp "$REPO/status/Caddyfile.tmpl" "$APP/status/Caddyfile.tmpl"
 cp "$REPO/docker-compose.yml.tmpl" "$APP/docker-compose.yml.tmpl"
 cp "$REPO/deploy/haven-firewall.service" "$APP/deploy/" 2>/dev/null || true

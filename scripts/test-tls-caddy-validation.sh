@@ -546,35 +546,19 @@ normalized_ca() {  # FLAG_VALUE
 }
 
 # (a) flag input: --tls-acme-ca staging
-ca_a="$(normalized_ca staging)"
-if [[ "$ca_a" == "$TLS_CA_STAGING_URL" ]]; then
-  pass "fixture 3a: ACME_CA=staging (flag) normalizes to the staging URL"
-else
-  fail "fixture 3a: ACME_CA=staging (flag) did NOT normalize (got '${ca_a}')"
-fi
-
-# (a1) the STEP 8 env write itself: install.sh expands this exact template
-# line inside an unquoted heredoc, so the normalized value is what lands in
-# the file. The label must not survive to the write.
-env_line_template="$(grep -m1 '^ACME_CA=' "${HAVEN_APP_DIR}/install.sh" || true)"
-if [[ "$env_line_template" == *"\${ACME_CA:-"* ]]; then
-  pass "install.sh STEP 8 still writes ACME_CA from the shell variable"
-else
-  fail "install.sh STEP 8 no longer writes ACME_CA from the shell variable"
-fi
-written_ca="$(ACME_CA="$ca_a" bash -c 'printf "%s\n" "$ACME_CA"' | sed 's/^/ACME_CA=/' | cut -d= -f2-)"
-if [[ "$written_ca" == "$TLS_CA_STAGING_URL" ]]; then
-  pass "fixture 3a: the stack .env write carries the staging URL, not the label"
-else
-  fail "fixture 3a: the stack .env write does not carry the staging URL (got '${written_ca}')"
-fi
-# (a2) the same for production
-ca_p="$(normalized_ca production)"
-if [[ "$ca_p" == "$TLS_CA_PRODUCTION_URL" ]]; then
-  pass "fixture 3a: ACME_CA=production (flag) normalizes to the production URL"
-else
-  fail "fixture 3a: ACME_CA=production (flag) did NOT normalize (got '${ca_p}')"
-fi
+# The installer calls this renderer after validation and writes the URL.
+for mode in staging production; do
+  if [[ "$mode" == staging ]]; then
+    expected_ca="$TLS_CA_STAGING_URL"
+  else
+    expected_ca="$TLS_CA_PRODUCTION_URL"
+  fi
+  if [[ "$(tls_render_acme_ca "$(normalized_ca "$mode")")" == "ACME_CA=$expected_ca" ]]; then
+    pass "fixture 3a: stack env renders the $mode CA URL"
+  else
+    fail "fixture 3a: stack env did not render the $mode CA URL"
+  fi
+done
 
 # (b) label loaded from an env file: the variable is already set, so the
 # interactive prompt is skipped and only the seam can resolve it.
