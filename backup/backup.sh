@@ -84,8 +84,8 @@
 #   BACKUP_CONTAINER_CONTROL=external means a root helper owns container
 #   control, so this script must call NO docker command at all -- no pause,
 #   inspect, exec, compose, version or stop. It reads which containers the
-#   helper paused from /run/haven-backup/paused and the host facts the
-#   helper collected under /run/haven-backup/host-info/, and the cold copy
+#   helper paused from /run/haven-backup-control/paused and the host facts the
+#   helper collected under /run/haven-backup-control/host-info/, and the cold copy
 #   is declined. That is the "system" half of the privilege split: the capture
 #   unit has read privilege (a capability) but no docker socket, and the upload
 #   unit has the credentials but no read privilege.
@@ -164,11 +164,11 @@ KEEP_WEEKLY="${KEEP_WEEKLY:-4}"
 KEEP_MONTHLY="${KEEP_MONTHLY:-6}"
 
 # When container control is external, this process must not call docker at all.
-# It learns what the root helper paused from /run/haven-backup/paused and
-# copies the host facts the helper collected from /run/haven-backup/host-info.
+# It learns what the root helper paused from /run/haven-backup-control/paused and
+# copies the host facts the helper collected from /run/haven-backup-control/host-info.
 EXTERNAL_CONTROL=0
 [[ "${BACKUP_CONTAINER_CONTROL:-self}" == "external" ]] && EXTERNAL_CONTROL=1
-CONTROL_RUN_DIR="${BACKUP_CONTROL_RUN_DIR:-/run/haven-backup}"
+CONTROL_RUN_DIR="${BACKUP_CONTROL_RUN_DIR:-/run/haven-backup-control}"
 
 # Every compose file, so 'config --images' reports the full stack. The
 # resolved env file and the app directory are passed explicitly, so the stack
@@ -316,7 +316,7 @@ read_paused_containers() {
       [[ "$line" == "$c" ]] && known=1
     done
     if (( known )); then
-      PAUSED_CONTAINERS+=("$line")
+      [[ " ${PAUSED_CONTAINERS[*]} " == *" $line "* ]] || PAUSED_CONTAINERS+=("$line")
     else
       name="$(printf '%s' "$line" | tr -cd 'A-Za-z0-9_.-')"
       [[ -n "$name" ]] && warn "Ignoring unrecognised entry in ${CONTROL_RUN_DIR}/paused."
@@ -325,7 +325,8 @@ read_paused_containers() {
 }
 
 unpause_webui() {
-  local c
+  local c state
+  local -a remaining=()
   if (( EXTERNAL_CONTROL )); then
     # The root helper's ExecStopPost does the unpause. This process holds no
     # docker socket, so it has nothing to resume.
@@ -333,9 +334,16 @@ unpause_webui() {
     return 0
   fi
   for c in "${PAUSED_CONTAINERS[@]}"; do
-    docker unpause "$c" >/dev/null 2>&1 || warn "Could not unpause ${c}. Run: docker unpause ${c}"
+    if ! docker unpause "$c" >/dev/null 2>&1; then
+      state="$(docker inspect -f '{{.State.Paused}}' "$c" 2>/dev/null)" || state=""
+      if [[ "$state" != "false" ]]; then
+        warn "Could not confirm ${c} resumed. Run: docker unpause ${c}"
+        remaining+=("$c")
+      fi
+    fi
   done
-  PAUSED_CONTAINERS=()
+  PAUSED_CONTAINERS=("${remaining[@]}")
+  (( ${#PAUSED_CONTAINERS[@]} == 0 ))
 }
 
 restart_stopped() {
@@ -355,25 +363,37 @@ restart_stopped() {
 pause_webui() {
   if (( EXTERNAL_CONTROL )); then
     read_paused_containers
-    if (( ${#PAUSED_CONTAINERS[@]} > 0 )); then return 0; fi
+    if (( ${#PAUSED_CONTAINERS[@]} == ${#APP_CONTAINERS[@]} )); then return 0; fi
     return 1
   fi
-  [[ "${BACKUP_NO_PAUSE:-0}" == "1" ]] && return 1
-  command -v docker >/dev/null 2>&1 || return 1
-  local c all_running=1
+  if [[ "${BACKUP_NO_PAUSE:-0}" == "1" ]]; then
+    ok "Container pause disabled by BACKUP_NO_PAUSE=1."
+    return 1
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    warn "Docker command unavailable; cannot pause app containers."
+    return 1
+  fi
+  local c
   for c in "${APP_CONTAINERS[@]}"; do
-    if ! is_running "$c"; then all_running=0; fi
-  done
-  for c in "${APP_CONTAINERS[@]}"; do
-    is_running "$c" || continue
-    if docker pause "$c" >/dev/null 2>&1; then
-      PAUSED_CONTAINERS+=("$c")
-    else
-      unpause_webui   # never leave a half-paused stack behind
+    if ! is_running "$c"; then
+      warn "Cannot confirm ${c} is running (missing, stopped, or Docker inspection failed)."
       return 1
     fi
   done
-  (( all_running ))
+  for c in "${APP_CONTAINERS[@]}"; do
+    if ! is_running "$c"; then
+      warn "Cannot confirm ${c} is still running."
+      return 1
+    fi
+    # Register before asking Docker so the EXIT trap can undo an interrupted pause.
+    PAUSED_CONTAINERS+=("$c")
+    if ! docker pause "$c" >/dev/null 2>&1; then
+      warn "Docker pause failed for ${c}."
+      return 1
+    fi
+  done
+  return 0
 }
 
 # SQLite helpers -------------------------------------------------------------
@@ -383,18 +403,18 @@ pause_webui() {
 # its destination could only be supplied by splicing the path into SQL.
 
 # The exact bytes every SQLite database file starts with.
-SQLITE_MAGIC='SQLite format 3'
+SQLITE_MAGIC='53514c69746520666f726d6174203300'
 
 # Classify a file by its 16-byte header (not its name). Fills DB_IS_SQLITE.
-# Reads at most 17 bytes so a file whose header is exactly this string plus
-# more content still compares as SQLite (the cut drops the 17th byte).
+# Encode the bytes before storing them in Bash, including the terminal NUL.
 DB_IS_SQLITE=0
 classify_db_file() {
   DB_IS_SQLITE=0
   [[ -f "$1" && ! -L "$1" ]] || return 1
   readable_path "$1" || return 1
   local head16
-  head16="$(head -c 16 "$1" 2>/dev/null)" || return 1
+  head16="$(od -An -v -tx1 -N16 -- "$1" 2>/dev/null)" || return 1
+  head16="${head16//[[:space:]]/}"
   [[ "$head16" == "$SQLITE_MAGIC" ]] && DB_IS_SQLITE=1
   return 0
 }
@@ -470,14 +490,17 @@ cold_copy_db() {
 # successful upload removes it explicitly in the run block below.
 cleanup() {
   local rc=$?
-  unpause_webui
+  unpause_webui || rc=1
   restart_stopped
   if [[ "$RUN_PHASE" == "both" ]] && [[ -d "$STAGING_DIR" ]]; then
     rm -rf "$STAGING_DIR" 2>/dev/null || true
   fi
-  return $rc
+  exit "$rc"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 trap 'die "Failed at line ${LINENO}: ${BASH_COMMAND}"' ERR
 
 # The log's mode follows the mode. In system mode the status container reads
@@ -859,7 +882,7 @@ chmod 700 "$STAGING_DIR"
 if [[ "$MODE" == "dryrun" ]]; then
   if (( EXTERNAL_CONTROL )); then
     read_paused_containers
-    if (( ${#PAUSED_CONTAINERS[@]} > 0 )); then CONSISTENCY="paused"; else CONSISTENCY="online"; fi
+    if (( ${#PAUSED_CONTAINERS[@]} == ${#APP_CONTAINERS[@]} )); then CONSISTENCY="paused"; else CONSISTENCY="online"; fi
   else
     CONSISTENCY="online"
   fi
@@ -867,8 +890,9 @@ elif pause_webui; then
   CONSISTENCY="paused"
   ok "Paused for point-in-time capture: ${PAUSED_CONTAINERS[*]}"
 else
+  unpause_webui || die "Could not resume app containers before online capture."
   CONSISTENCY="online"
-  warn "Could not pause containers; capturing live (see BACKUP_NO_PAUSE)."
+  ok "Capturing SQLite databases online."
 fi
 
 # ---------------------------------------------------------------------------
@@ -1147,7 +1171,7 @@ if [[ -d "${OPENHANDS_STATE_DIR}" ]]; then
   rsync_classify "$rc" "OpenHands state" "openhands"
 fi
 
-unpause_webui
+unpause_webui || die "Could not resume app containers after capture."
 [[ "$MODE" == "dryrun" ]] || ok "Capture complete; application services resumed."
 
 # --- Cold-copy fallback ----------------------------------------------------

@@ -11,7 +11,7 @@
 #   a) non-root -> exit 1 (root-only gate)
 #   b) an unknown verb, and a verb plus an extra argument -> exit 2
 #   c) pause    -> pauses exactly the fixed APP_CONTAINERS that are running,
-#                  records them under the runtime dir, never stops/starts one
+#                  records only a complete pause, never stops/starts a container
 #   d) unpause  -> is idempotent and succeeds (exit 0) when nothing was paused
 #   e) the helper takes NO container name from its arguments: `pause open-webui`
 #      is a usage error, not a pause of open-webui
@@ -53,6 +53,16 @@ DOCKER_LOG="$WORK/docker.log"
 RUN_DIR="$WORK/run"
 export DOCKER_LOG
 
+# Use a private stand-in for /run and the tester's UID/GID for the trusted owner
+# and reader group. The production helper has a fixed path and no override.
+mkdir -p "$WORK/backup"
+ln -s "$REPO_SRC/scripts" "$WORK/scripts"
+sed -e "s|^CONTROL_RUN_DIR=.*|CONTROL_RUN_DIR='$RUN_DIR'|" \
+    -e "s|^CONTROL_GROUP=.*|CONTROL_GROUP=$(id -g)|" \
+    -e "s/0:700/$(id -u):700/; s/0:2750/$(id -u):2750/" \
+    "$HELPER" > "$WORK/backup/backup-containers.sh"
+HELPER="$WORK/backup/backup-containers.sh"
+
 # Stub docker: record argv; report a running status for the containers we want
 # "up"; return 0 for pause/unpause. It never actually touches a container.
 cat > "$BIN/docker" <<'EOF'
@@ -67,6 +77,9 @@ case "$1" in
       *) echo exited ;;
     esac
     exit 0 ;;
+  pause) [[ "${2:-}" != "${FAIL_PAUSE:-}" ]] ;;
+  unpause) [[ "${2:-}" != "${FAIL_UNPAUSE:-}" ]] ;;
+  ps) printf '%s\n' "${STILL_PAUSED:-}" ;;
   exec)
     # ollama list -> a header plus one model name
     printf 'NAME\tSIZE\nllama3:latest\t4GB\n'
@@ -90,12 +103,6 @@ case " ${ID_USERS:-} " in
 esac
 EOF
 
-# Stub chown so handing files to the service account never needs root.
-cat > "$BIN/chown" <<'EOF'
-#!/usr/bin/env bash
-exit 0
-EOF
-
 chmod +x "$BIN"/*
 
 run_helper() { # env... -- verb...
@@ -112,16 +119,14 @@ run_helper() { # env... -- verb...
 
 BASE_ENV=(
   "PATH=$BIN:$PATH"
-  "BACKUP_CONTROL_RUN_DIR=$RUN_DIR"
   "RUNNING_NAMES=open-webui hermes-agent ollama"
   "ID_UID_OVERRIDE=0"
-  "ID_USERS=haven-backup"
 )
 
 echo "== backup-containers.sh tests =="
 
 # a) root-only gate: a non-root caller is refused with exit 1.
-run_helper "PATH=$BIN:$PATH" "BACKUP_CONTROL_RUN_DIR=$RUN_DIR" "ID_UID_OVERRIDE=1000" -- pause
+run_helper "PATH=$BIN:$PATH" "ID_UID_OVERRIDE=1000" -- pause
 assert "non-root is refused" test "$HELPER_RC" -eq 1
 
 # b) usage errors: no verb, and an unknown verb -> exit 2.
@@ -148,12 +153,31 @@ assert "pause never starts a container" bash -c "! grep -q '^start ' '$DOCKER_LO
 
 # c2) a container that is not running is skipped, never started.
 rm -rf "$RUN_DIR"
-run_helper "PATH=$BIN:$PATH" "BACKUP_CONTROL_RUN_DIR=$RUN_DIR" \
-  "RUNNING_NAMES=open-webui" "ID_UID_OVERRIDE=0" "ID_USERS=haven-backup" -- pause
+run_helper "PATH=$BIN:$PATH" \
+  "RUNNING_NAMES=open-webui" "ID_UID_OVERRIDE=0" -- pause
 assert "pause skips a container that is not running" \
   bash -c "! grep -qx 'pause hermes-agent' '$DOCKER_LOG'"
-assert "pause records only the running container" \
-  bash -c "[[ \"\$(cat '$RUN_DIR/paused')\" == 'open-webui' ]]"
+assert "pause avoids freezing either writer if one is down" \
+  bash -c "! grep -q '^pause ' '$DOCKER_LOG'"
+assert "stopped writer leaves an empty record for online capture" test ! -s "$RUN_DIR/paused"
+
+run_helper "${BASE_ENV[@]}" "BACKUP_NO_PAUSE=1" -- pause
+assert "policy opt-out leaves an empty record" test ! -s "$RUN_DIR/paused"
+assert "policy opt-out makes no Docker call" test ! -s "$DOCKER_LOG"
+run_helper "${BASE_ENV[@]}" -- unpause
+assert "cleanup after online fallback makes no Docker call" test ! -s "$DOCKER_LOG"
+
+run_helper "${BASE_ENV[@]}" "FAIL_PAUSE=hermes-agent" -- pause
+assert "partial pause recovers and permits online capture" test "$HELPER_RC" -eq 0
+assert "partial pause resumes the first writer" grep -qx 'unpause open-webui' "$DOCKER_LOG"
+assert "partial pause leaves an empty record" test ! -s "$RUN_DIR/paused"
+
+run_helper "${BASE_ENV[@]}" "FAIL_PAUSE=hermes-agent" "FAIL_UNPAUSE=open-webui" "STILL_PAUSED=open-webui" -- pause
+assert "unconfirmed rollback fails capture" test "$HELPER_RC" -eq 1
+assert "unconfirmed rollback retains the recovery record" test -s "$RUN_DIR/paused"
+run_helper "${BASE_ENV[@]}" "BACKUP_NO_PAUSE=1" -- pause
+assert "next capture resumes writers before replacing a recovery record" grep -qx 'unpause open-webui' "$DOCKER_LOG"
+assert "recovered run can use online capture" test ! -s "$RUN_DIR/paused"
 
 # d) unpause is idempotent and succeeds when nothing is paused.
 rm -rf "$RUN_DIR"
@@ -176,16 +200,38 @@ assert "host-info records the model names" \
 assert "host-info never stops or starts a container" \
   bash -c "! grep -Eq '^(stop|start|kill|rm) ' '$DOCKER_LOG'"
 
-# g) the helper never writes outside its runtime directory. The only paths that
-# may hold files are the runtime dir, the stub bin, the docker-argv log and the
-# scratch output file the test itself writes. Anything else is a violation.
-OUTSIDE="$(mktemp)"
-find "$WORK" -type f \
-  ! -path "$RUN_DIR/*" ! -path "$BIN/*" ! -path "$DOCKER_LOG" ! -path "$WORK/out" \
-  > "$OUTSIDE" 2>/dev/null || true
-assert "the helper wrote only under its runtime directory" \
-  bash -c "[[ ! -s '$OUTSIDE' ]]"
-rm -f "$OUTSIDE"
+# Protect the real output modes and reject unsafe filesystem layouts.
+assert "control directory is owner-writable and group-readable" test "$(stat -c %a "$RUN_DIR")" = 2750
+assert "host facts are group-readable and owner-writable only" test "$(stat -c %a "$RUN_DIR/host-info/platform-docker.txt")" = 640
+assert "host-info directory inherits the read-only group" test "$(stat -c %a "$RUN_DIR/host-info")" = 2750
+
+OUTSIDE="$WORK/outside"
+mkdir "$OUTSIDE"
+printf 'sentinel\n' > "$OUTSIDE/record"
+chmod 2770 "$RUN_DIR"
+run_helper "${BASE_ENV[@]}" -- host-info
+assert "rejects group-writable control directory" test "$HELPER_RC" -eq 1
+assert "does not repair or claim an unsafe directory" test "$(stat -c %a "$RUN_DIR")" = 2770
+
+rm -rf "$RUN_DIR"
+ln -s "$OUTSIDE" "$RUN_DIR"
+run_helper "${BASE_ENV[@]}" -- host-info
+assert "rejects a substituted control directory" test "$HELPER_RC" -eq 1
+assert "substitution creates no files outside control path" test ! -e "$OUTSIDE/host-info"
+run_helper "${BASE_ENV[@]}" -- unpause
+assert "unsafe control path does not prevent container recovery" grep -qx 'unpause open-webui' "$DOCKER_LOG"
+
+rm "$RUN_DIR"
+run_helper "${BASE_ENV[@]}" -- pause
+rm "$RUN_DIR/paused"
+ln -s "$OUTSIDE/record" "$RUN_DIR/paused"
+ln -s "$OUTSIDE" "$RUN_DIR/host-info"
+run_helper "${BASE_ENV[@]}" "BACKUP_CONTROL_RUN_DIR=$OUTSIDE" -- host-info
+assert "host-info replaces a stale link within the trusted directory" test ! -L "$RUN_DIR/host-info"
+assert "privileged writer ignores a control path environment override" test ! -e "$OUTSIDE/host-info"
+run_helper "${BASE_ENV[@]}" -- pause
+assert "pause replaces a stale link within the trusted directory" test ! -L "$RUN_DIR/paused"
+assert "outside record is untouched" grep -qx sentinel "$OUTSIDE/record"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

@@ -122,13 +122,22 @@ cat > "$STUB/docker" <<EOF
 # were stopped. When DOCKER_FAIL_STOP names a container, a 'stop' of it fails.
 printf '%s\n' "\$*" >> '${DOCKER_LOG}'
 case "\$1" in
-  inspect) echo running; exit 0 ;;   # every container reports "running"
+  inspect)
+    if [[ "\${4:-}" == "\${DOCKER_STOPPED:-}" ]]; then echo exited; else echo running; fi
+    exit 0 ;;
+  pause)
+    if [[ "\${2:-}" == "\${DOCKER_INTERRUPT_PAUSE:-}" ]]; then kill -TERM "\$PPID"; fi
+    if [[ "\${2:-}" == "\${DOCKER_FAIL_PAUSE:-}" ]]; then
+      echo 'sensitive daemon error' >&2
+      exit 1
+    fi
+    exit 0 ;;
   stop)
     if [[ -n "\${DOCKER_FAIL_STOP:-}" && "\${2:-}" == "\$DOCKER_FAIL_STOP" ]]; then
       exit 1
     fi
     exit 0 ;;
-  pause|unpause|start|exec|version) exit 0 ;;
+  unpause|start|exec|version) exit 0 ;;
   compose) exit 0 ;;
   *) exit 0 ;;
 esac
@@ -302,6 +311,22 @@ STAGED="$CAPTURE/databases/hermes_data/wal.db"
 assert "case b: staged database exists"          test -f "$STAGED"
 assert "case b: all rows kept through the copy"  bash -c "[[ \"\$( '$REAL_SQLITE3' '$STAGED' 'select count(*) from t;' 2>/dev/null )\" == 5 ]]"
 assert "case b: backup_success emitted"          log_has 'backup_success'
+assert "case b: paused capture reported"         grep -qF 'Paused for point-in-time capture' "$TMPROOT/out"
+assert "case b: no NUL warning"                  bash -c "! grep -q 'ignored null byte' '$TMPROOT/out'"
+DOCKER_STOPPED=hermes-agent run_backup "case-b-stopped"
+check "case b: stopped writer permits online backup" 0 "$RUN_RC"
+assert "case b: stopped writer diagnosed" grep -qF 'Cannot confirm hermes-agent is running' "$TMPROOT/out"
+assert "case b: no pause with a stopped writer" bash -c "! grep -q '^pause ' '$DOCKER_LOG'"
+DOCKER_FAIL_PAUSE=hermes-agent run_backup "case-b-pause-failure"
+check "case b: failed pause permits online backup" 0 "$RUN_RC"
+assert "case b: failed pause diagnosed" grep -qF 'Docker pause failed for hermes-agent' "$TMPROOT/out"
+assert "case b: first writer resumed on partial pause" grep -qx 'unpause open-webui' "$DOCKER_LOG"
+assert "case b: fallback uses online capture" grep -qF 'Capturing SQLite databases online' "$TMPROOT/out"
+assert "case b: daemon output is suppressed" bash -c "! grep -q 'sensitive daemon error' '$TMPROOT/out'"
+DOCKER_INTERRUPT_PAUSE=hermes-agent run_backup "case-b-interrupt"
+check "case b: TERM interrupts the backup" 143 "$RUN_RC"
+assert "case b: TERM resumes first writer" grep -qx 'unpause open-webui' "$DOCKER_LOG"
+assert "case b: TERM resumes in-flight pause" grep -qx 'unpause hermes-agent' "$DOCKER_LOG"
 export BACKUP_NO_PAUSE=1
 
 # ---------------------------------------------------------------------------
@@ -328,12 +353,19 @@ fi
 # ---------------------------------------------------------------------------
 rm -rf "$REPO/hermes_data"; mkdir -p "$REPO/hermes_data"
 printf 'this is not a database\n' > "$REPO/hermes_data/notes.db"
+printf 'SQLite format 3' > "$REPO/hermes_data/truncated.db"
+printf 'SQLite format 3\377\0' > "$REPO/hermes_data/binary.db"
+sqlite3 "$TMPROOT/outside.db" 'CREATE TABLE t(a);'
+ln -s "$TMPROOT/outside.db" "$REPO/hermes_data/link.db"
+: > "$SQLITE_LOG"
 run_backup "case-d"
 check "case d: success exit code" 0 "$RUN_RC"
 assert "case d: non_sqlite_db_skipped emitted"  log_has 'non_sqlite_db_skipped'
 assert "case d: backup_success emitted"         log_has 'backup_success'
 assert "case d: notes.db not staged"            bash -c "[[ ! -e '$CAPTURE/databases/hermes_data/notes.db' ]]"
-rm -f "$REPO/hermes_data/notes.db"
+assert "case d: near-magic files not staged"     bash -c "[[ ! -e '$CAPTURE/databases/hermes_data/truncated.db' && ! -e '$CAPTURE/databases/hermes_data/binary.db' ]]"
+assert "case d: database symlink never reaches SQLite" sqlite_log_lacks 'link.db'
+assert "case d: database symlink not staged"     test ! -e "$CAPTURE/databases/hermes_data/link.db"
 
 # ---------------------------------------------------------------------------
 # Case e: a clean fixture gives backup_success
@@ -341,11 +373,14 @@ rm -f "$REPO/hermes_data/notes.db"
 rm -rf "$REPO/hermes_data"; mkdir -p "$REPO/hermes_data"
 sqlite3 "$REPO/webui_data/webui.db" 'CREATE TABLE chat(id); INSERT INTO chat VALUES (1);'
 sqlite3 "$REPO/hermes_data/state.db" 'CREATE TABLE s(k); INSERT INTO s VALUES (1);'
+for n in {1..20}; do cp "$REPO/hermes_data/state.db" "$REPO/hermes_data/state-$n.db"; done
 run_backup "case-e"
 check "case e: success exit code" 0 "$RUN_RC"
 assert "case e: backup_success emitted"       log_has 'backup_success'
 assert "case e: backup_incomplete NOT emitted" log_lacks 'backup_incomplete'
-assert "case e: both databases staged"       bash -c "[[ -f '$CAPTURE/databases/webui_data/webui.db' && -f '$CAPTURE/databases/hermes_data/state.db' ]]"
+check "case e: all 22 databases staged" 22 "$(find "$CAPTURE/databases" -type f | wc -l)"
+assert "case e: no NUL warning"               bash -c "! grep -q 'ignored null byte' '$TMPROOT/out'"
+assert "case e: intentional opt-out diagnosed" grep -qF 'Container pause disabled by BACKUP_NO_PAUSE=1' "$TMPROOT/out"
 
 # ---------------------------------------------------------------------------
 # Case f: online capture (pause impossible / BACKUP_NO_PAUSE=1) uses SQLite's
@@ -699,6 +734,11 @@ assert "case r: NO docker command was called in external mode" bash -c "[[ ! -s 
 assert "case r: CONSISTENCY is paused from the runtime file" bash -c "grep -qx 'consistency=paused' '$STAGE/STATUS'"
 assert "case r: host facts copied into staging/host" bash -c "[[ -f '$STAGE/host/platform-docker.txt' ]]"
 assert "case r: docker version came from the helper file" bash -c "grep -qx 'docker=27.0.0' '$STAGE/host/platform.txt'"
+printf 'open-webui\nopen-webui\n' > "$CONTROL_RUN/paused"
+run_backup_env BACKUP_CONF_DIR="$EMPTYCONF" HAVEN_WORK_DIR="$STAGE_WORK" BACKUP_CONTAINER_CONTROL=external BACKUP_CONTROL_RUN_DIR="$CONTROL_RUN" -- --non-interactive --stage-only
+check "case r: external backup with an incomplete pause record succeeds" 0 "$RUN_RC"
+assert "case r: duplicate entries cannot count as a full pause" grep -qx 'consistency=online' "$STAGE/STATUS"
+assert "case r: external online backup issues no Docker command" test ! -s "$DOCKER_LOG"
 
 # ---------------------------------------------------------------------------
 # Cases s1-s3: the capture guard regression. On a bootstrapped host the

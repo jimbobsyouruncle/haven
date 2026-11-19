@@ -102,9 +102,10 @@
 - log()
 - die()
 - is_running()
-- hand_to_service()
+- trusted_run_dir()
 - ensure_run_dir()
 - cmd_pause()
+- resume_apps()
 - cmd_unpause()
 - cmd_host_info()
 

@@ -30,7 +30,7 @@
 #   * It takes NO path and NO container name from its arguments. The only
 #     argument it accepts is the verb above; the container list is the fixed
 #     APP_CONTAINERS set below.
-#   * It writes ONLY under /run/haven-backup (a root-owned runtime dir).
+#   * It writes ONLY under /run/haven-backup-control (a root-owned runtime dir).
 #   * It refuses to run as a non-root account.
 #
 # USAGE:
@@ -50,15 +50,11 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/haven-env.sh
 source "${SCRIPT_DIR}/../scripts/lib/haven-env.sh"
 
-# The one directory this helper writes to. It matches the units'
-# RuntimeDirectory=haven-backup (systemd sets that to /run/haven-backup).
-CONTROL_RUN_DIR="${BACKUP_CONTROL_RUN_DIR:-/run/haven-backup}"
-
-# The unprivileged account the capture unit runs as. This helper is root, but
-# the files it leaves behind (the paused list, the host facts) are READ by the
-# capture unit, so they are made readable by that account. Only names and paths
-# here -- never a credential.
-SERVICE_USER="haven-backup"
+# A direct child of the root-owned /run. The systemd RuntimeDirectory is
+# writable by the service account and must never be used for root output.
+CONTROL_RUN_DIR=/run/haven-backup-control
+CONTROL_GROUP=haven-backup
+umask 027
 
 # The FIXED list of containers that write durable state. It is the same
 # APP_CONTAINERS set backup.sh uses; nothing here is ever taken from an argument.
@@ -78,50 +74,86 @@ die() { printf '[ X ] %s\n' "$*" >&2; exit 1; }
 
 is_running() { [[ "$(docker inspect -f '{{.State.Status}}' "$1" 2>/dev/null)" == "running" ]]; }
 
-# Make a path readable by the capture account, when that account exists. The
-# helper is root, so it can hand over the paused list and host facts the capture
-# unit must read; nothing here is a secret.
-hand_to_service() {
-  id "$SERVICE_USER" >/dev/null 2>&1 || return 0
-  chown -R "${SERVICE_USER}:${SERVICE_USER}" "$1" 2>/dev/null || true
+# Only accept a directory whose owner alone can write. Validate before making
+# any changes, and never follow a symlink or re-own an existing directory.
+trusted_run_dir() {
+  [[ ! -L "$CONTROL_RUN_DIR" && -d "$CONTROL_RUN_DIR" ]] || return 1
+  case "$(stat -c '%u:%a' -- "$CONTROL_RUN_DIR")" in
+    0:700|0:2750) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 ensure_run_dir() {
-  mkdir -p "$CONTROL_RUN_DIR" || die "Could not create ${CONTROL_RUN_DIR}."
-  chmod 700 "$CONTROL_RUN_DIR" 2>/dev/null || true
-  hand_to_service "$CONTROL_RUN_DIR"
+  if [[ ! -e "$CONTROL_RUN_DIR" && ! -L "$CONTROL_RUN_DIR" ]]; then
+    mkdir -m 0700 -- "$CONTROL_RUN_DIR"
+  fi
+  trusted_run_dir || die "Unsafe backup control directory."
+  chgrp --no-dereference -- "$CONTROL_GROUP" "$CONTROL_RUN_DIR"
+  chmod 2750 -- "$CONTROL_RUN_DIR"
 }
 
-# pause: pause each durable-state container that is running and record it. The
-# recording file is written under the runtime dir and read by the capture unit
-# to set CONSISTENCY. A container that is already down is skipped, never started.
+# An empty record tells capture to use SQLite's online backup. During this
+# pre-start command the record also tells ExecStopPost whether a pause was
+# attempted, including when systemd interrupts an in-flight Docker command.
 cmd_pause() {
   ensure_run_dir
-  local paused_file="${CONTROL_RUN_DIR}/paused"
+  local paused_file="${CONTROL_RUN_DIR}/paused" c
+  if [[ ! -L "$paused_file" && -f "$paused_file" && -s "$paused_file" ]]; then
+    resume_apps
+  fi
+  rm -f -- "$paused_file"
   : > "$paused_file"
-  chmod 600 "$paused_file" 2>/dev/null || true
-  local c
+  if [[ "${BACKUP_NO_PAUSE:-0}" == "1" ]]; then
+    log "Container pause disabled by BACKUP_NO_PAUSE=1."
+    return 0
+  fi
   for c in "${APP_CONTAINERS[@]}"; do
-    is_running "$c" || continue
-    if docker pause "$c" >/dev/null 2>&1; then
-      printf '%s\n' "$c" >> "$paused_file"
+    if ! is_running "$c"; then
+      log "Cannot confirm ${c} is running (missing, stopped, or Docker inspection failed)."
+      return 0
     fi
   done
-  hand_to_service "$paused_file"
-  return 0
+  for c in "${APP_CONTAINERS[@]}"; do
+    printf '%s\n' "$c" >> "$paused_file"
+    if ! docker pause "$c" >/dev/null 2>&1; then
+      log "Docker pause failed for ${c}."
+      resume_apps
+      : > "$paused_file"
+      return 0
+    fi
+  done
 }
 
-# unpause: resume the fixed container set and clear the recording. It is
-# idempotent -- unpausing a container that is not paused (or not running) is a
-# harmless no-op, so it also succeeds when nothing was paused at all.
-cmd_unpause() {
-  ensure_run_dir
-  local c
+# A failed unpause is normal for a stopped or missing container. If Docker
+# reports an error, confirm that no app container is still paused.
+resume_apps() {
+  local c paused failed=0
   for c in "${APP_CONTAINERS[@]}"; do
-    docker unpause "$c" >/dev/null 2>&1 || true
+    docker unpause "$c" >/dev/null 2>&1 || failed=1
   done
-  rm -f "${CONTROL_RUN_DIR}/paused" 2>/dev/null || true
-  return 0
+  (( failed )) || return 0
+  paused="$(docker ps --filter status=paused --format '{{.Names}}' 2>/dev/null)" \
+    || die "Could not verify that app containers resumed."
+  for c in "${APP_CONTAINERS[@]}"; do
+    if grep -qxF -- "$c" <<< "$paused"; then
+      die "Could not resume ${c}. Run: docker unpause ${c}"
+    fi
+  done
+}
+
+cmd_unpause() {
+  local paused_file="${CONTROL_RUN_DIR}/paused"
+  # An empty, trusted record means there was no pause to undo. In particular,
+  # a Docker outage that prevented pausing must still permit online upload.
+  # With no usable record, attempt recovery directly through Docker.
+  if ! trusted_run_dir || [[ -L "$paused_file" || ! -f "$paused_file" || -s "$paused_file" ]]; then
+    resume_apps
+  fi
+  if trusted_run_dir; then
+    rm -f -- "$paused_file"
+    rm -rf -- "${CONTROL_RUN_DIR}/host-info"
+  fi
 }
 
 # host-info: collect the facts the capture unit cannot gather without docker.
@@ -130,8 +162,10 @@ cmd_unpause() {
 cmd_host_info() {
   ensure_run_dir
   local out="${CONTROL_RUN_DIR}/host-info"
-  mkdir -p "$out"
-  chmod 700 "$out" 2>/dev/null || true
+  # Start with fresh entries under a directory the service account cannot
+  # modify. rm removes a symlink itself, and mkdir creates a new directory.
+  rm -rf -- "$out"
+  mkdir -- "$out"
 
   if command -v docker >/dev/null 2>&1; then
     printf '%s\n' "$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo n/a)" \
@@ -156,7 +190,6 @@ cmd_host_info() {
   if [[ -f "${HAVEN_ENV_FILE}" ]]; then
     "${COMPOSE[@]}" config --images > "${out}/container-images.txt" 2>/dev/null || true
   fi
-  hand_to_service "$out"
   return 0
 }
 
