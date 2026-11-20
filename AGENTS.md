@@ -81,6 +81,14 @@ The default outcome is actual code changes (or documentation changes for a docum
 - **Continue through in-scope problems:** When a problem is discovered, first determine whether it can be safely resolved within scope and, if so, implement the solution. Example: an authorized feature exposes a parser edge case in the same input path; fix it, add a focused regression test and continue to the PR rather than ending with an analysis report.
 - **Genuine blockers only:** Stop for missing authorization or mandatory access; material scope expansion; an unresolved consequential architecture decision; a genuine security or data-loss blocker; production, deployment, credential or infrastructure actions requiring distinct approval; or an external dependency/tool limitation that prevents progress. Provide evidence, the narrow decision required and the minimum owner action. Otherwise continue implementation. Apply the mandatory security escalation below before PR creation.
 
+### Incremental implementation progress
+
+For explicitly authorized implementation issues, deliver the smallest independently useful, testable change before expanding documentation or planning. Do not substitute plans, risk inventories or blocker reports for implementation when safe, authorized work remains.
+
+Missing local test infrastructure does not automatically block implementation: implement relevant tests, use available authorized CI environments, and create a draft PR with outstanding qualification clearly identified when the mandatory pre-PR security escalation permits it. An unrun test is not a pass, and an unverified change is not merge- or deployment-ready.
+
+If one workstream is blocked, continue independent in-scope work. Distinguish blockers to implementation, PR creation, merge, deployment and operational verification; escalate only the boundary actually affected. Apply the mandatory security and authorization controls below without exception. Documentation-only completion is appropriate when documentation, architecture or investigation is the explicitly authorized deliverable.
+
 Implementation Cards remain appropriate for read-only recommendations or missing implementation authorization, not as an extra gate for explicit implementation requests. A card identifies the objective, scope/files, dependencies, risks, validation, branch/PR deliverables, exclusions and separate approvals; end with **"Awaiting approval to implement #ISSUE."** In the same active conversation, **"Approve"** authorizes only the most recent unambiguously identified card. Ask for identification or renewed approval if that scope is ambiguous or materially expands. Never infer operational, cross-repository, closure or policy-exception approval from implementation authorization.
 
 ### Mandatory pre-PR security escalation
