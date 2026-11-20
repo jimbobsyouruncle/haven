@@ -525,9 +525,10 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         original = self.tx.command
         recovered = False
         loaded = False
+        removed = False
 
         def command(args, **kwargs):
-            nonlocal recovered, loaded
+            nonlocal recovered, loaded, removed
             commands.append(args)
             if args[:3] == ['docker', 'image', 'inspect'] and not loaded:
                 raise subprocess.CalledProcessError(1, args, stderr='No such image')
@@ -536,10 +537,14 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                 self.assertEqual(self.tx.load()['phase'], 'proxy_recovery_required')
                 loaded = True
                 return ''
+            if args[:3] == ['docker', 'container', 'rm']:
+                self.assertEqual(args, ['docker', 'container', 'rm', dead['Id']])
+                removed = True
+                return ''
             if args[:2] == ['docker', 'compose']:
-                self.assertTrue(loaded)
+                self.assertTrue(loaded and removed)
                 self.assertEqual(args[-8:], ['up', '-d', '--no-deps', '--no-build',
-                                              '--pull', 'never', '--force-recreate', 'proxy'])
+                                              '--pull', 'never', '--no-recreate', 'proxy'])
                 recovered = True
                 return ''
             if args[:2] == ['docker', 'exec']:
@@ -579,6 +584,22 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                     self.tx.verify_proxy(self.sha)
             self.assertEqual(self.tx.load()['phase'], 'proxy_recovery_required')
         self.assertFalse(any(args[:2] == ['docker', 'compose'] for args in self.calls))
+
+    def test_proxy_recovery_leaves_restarted_candidate_alone(self):
+        _, dead, _ = self.proxy_runtime_fixture()
+        original = self.tx.command
+
+        def command(args, **kwargs):
+            if args[:3] == ['docker', 'container', 'rm']:
+                raise subprocess.CalledProcessError(1, args, stderr='container is running')
+            self.assertNotEqual(args[:2], ['docker', 'compose'])
+            return original(args, **kwargs)
+
+        with (patch.object(self.tx, 'proxy_container', return_value=dead),
+              patch.object(self.tx, 'command', side_effect=command)):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.tx.verify_proxy(self.sha)
+        self.assertEqual(self.tx.load()['phase'], 'proxy_recovery_required')
 
     def test_mutable_selection_and_symlink_refused(self):
         self.selection.write_text('caddy:latest')

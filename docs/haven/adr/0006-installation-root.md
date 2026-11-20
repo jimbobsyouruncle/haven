@@ -113,6 +113,9 @@ restart races, missing evidence and changes to recovery inputs require
 operator diagnosis. A previously healthy proxy with unchanged inputs is
 retained. If the candidate has already recovered or identification changes,
 leave it in place.
+Remove an exited candidate by its exact container ID without force. If it
+has restarted, Docker refuses removal. Compose is instructed to leave any
+concurrent replacement alone.
 
 Recovery uses the checked archive configuration ID and retained rendered
 Compose/Caddy configuration, without pulls, builds, dependent service starts

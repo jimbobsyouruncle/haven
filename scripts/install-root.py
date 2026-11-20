@@ -1231,10 +1231,15 @@ class Transaction:
                 'labels': {PROXY_TRANSACTION_LABEL: 'recovered-' + runtime['token']},
             }}}).encode())
             compose = self.proxy_compose(previous, env, previous_overlay) + ['-f', str(override)]
-            if not self.failed_proxy(self.identify_candidate(runtime)):
+            failed = self.identify_candidate(runtime)
+            if not self.failed_proxy(failed):
                 raise Refusal('PROXY_CANDIDATE: candidate recovered before replacement')
+            # Docker rejects a non-forced removal if this exact container has
+            # started running again. Compose must also leave any replacement
+            # created in the meantime alone.
+            self.command(['docker', 'container', 'rm', failed['Id']], timeout=15)
             self.command(compose + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never',
-                                    '--force-recreate', 'proxy'], timeout=90)
+                                    '--no-recreate', 'proxy'], timeout=90)
         deadline = time.monotonic() + 60
         while True:
             restored = self.proxy_container()
