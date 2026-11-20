@@ -1,0 +1,40 @@
+name: Caddy ARM64 qualification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'caddy/**'
+      - '.github/workflows/caddy-arm64.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and run Caddy on ARM64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the DNS image and check both modules
+        shell: bash
+        run: |
+          test "$(uname -m)" = aarch64
+          docker build --tag haven-caddy:arm64-test ./caddy
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' haven-caddy:arm64-test)" = linux/arm64
+
+          probe=(docker run --rm --network none --read-only --cap-drop ALL
+                 --cap-add NET_BIND_SERVICE --security-opt no-new-privileges
+                 --entrypoint /usr/bin/caddy haven-caddy:arm64-test)
+          version="$("${probe[@]}" version)"
+          expected="$(sed -n 's/^ARG CADDY_VERSION=//p' caddy/Dockerfile)"
+          test -n "$expected"
+          test "${version%% *}" = "v$expected"
+          printf '%s\n' "$version"
+          modules="$("${probe[@]}" list-modules)"
+          grep -Fx 'dns.providers.cloudflare' <<< "$modules"
+          grep -Fx 'dns.providers.rfc2136' <<< "$modules"

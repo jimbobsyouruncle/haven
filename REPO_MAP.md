@@ -30,6 +30,7 @@
 
 - .github/workflows/agent-context-committer.yml
 - .github/workflows/agent-context.yml
+- .github/workflows/caddy-arm64.yml
 - .github/workflows/deploy.yml
 - .github/workflows/sandbox-image.yml
 - .github/workflows/sast-checks.yml
