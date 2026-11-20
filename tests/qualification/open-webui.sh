@@ -22,6 +22,10 @@ test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$candidate")"
 docker network create --internal "$network"
 
 start_webui() {
+  local identity
+  identity="$(docker run --rm --network none --entrypoint sh "$2" -ec 'printf "%s:%s\n" "$(id -u)" "$(id -g)"')"
+  sudo chown -R "$identity" "$1"
+  sudo chmod 0700 "$1"
   docker run -d --name "$container" --network "$network" --cap-drop ALL \
     --security-opt no-new-privileges --memory 3g --cpus 2 \
     --mount "type=bind,source=$1,target=/app/backend/data" \
@@ -50,11 +54,11 @@ start_webui "$fixtures/live" "$baseline"
 probe seed
 docker stop "$container"
 docker rm "$container"
-cp -a "$fixtures/live/." "$fixtures/backup/"
+sudo cp -a "$fixtures/live/." "$fixtures/backup/"
 start_webui "$fixtures/live" "$candidate"
 probe migrate
 docker stop "$container"
 docker rm "$container"
-cp -a "$fixtures/backup/." "$fixtures/restore/"
+sudo cp -a "$fixtures/backup/." "$fixtures/restore/"
 start_webui "$fixtures/restore" "$baseline"
 probe restore
