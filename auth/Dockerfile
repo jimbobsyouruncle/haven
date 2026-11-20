@@ -3,7 +3,7 @@
 # bcrypt is pinned exactly and to the same version as auth/requirements-test.txt.
 # The hash format and the timing behaviour matter here, so a silent minor bump
 # is not acceptable.
-FROM python:3.12-alpine
+FROM python:3.12.16-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
 
 RUN addgroup -S auth && adduser -S -G auth -H -s /sbin/nologin auth
 
