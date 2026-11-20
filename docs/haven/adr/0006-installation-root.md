@@ -88,7 +88,7 @@ runtime recovery requires an owner-selected bounded procedure with retained code
 configuration and checksum-verified immutable images. Never infer that restoring
 code restored running services. See the [deployment procedure](../../../deploy/README.md).
 
-## Proposed amendment for #249 (owner review pending)
+## Approved amendment for #249
 
 For canonical upgrades, checkpoint the running proxy's immutable image and
 retain its rendered configuration in the previous checkout. Keep the verified
@@ -97,16 +97,32 @@ optional local selection for explicit root or identity migrations and leave
 existing selections and archives in place. A missing running image blocks a
 routine upgrade until the owner restores and verifies the exact image.
 
-Before replacing the proxy, validate the exact locally resolved candidate and
-its rendered configuration in isolation, with read-only inputs, limited
-capabilities and no network or persistent-data mounts. Check the running
-replacement before acceptance. A proposed automatic recovery step would
-recreate only the previous proxy from the checked local archive and retained
-configuration. It needs owner approval because it changes the rollback
-authority above. It must stop if the previous configuration cannot be bound to
-the runtime, secrets changed, archive integrity or identity fails, or the live
-proxy is no longer the expected candidate. Disaster recovery remains an
-explicit operator procedure.
+The owner approved bounded automatic proxy recovery for #249. Before replacing
+the proxy, validate the exact locally resolved candidate and rendered
+configuration with read-only inputs, restricted capabilities and no network
+or persistent-data mounts. A separate isolated HTTP startup probe uses
+synthetic configuration without credential mounts. Require the deployed proxy
+to answer a local status request before transaction acceptance.
+
+The canonical verifier may recreate only the proxy after it confirms a
+nonzero process exit in the candidate it identifies by transaction label,
+container ID, image ID and Compose identity. It holds the deployment locks
+and journals recovery intent before acting. Route failures in a running
+proxy can originate in DNS, certificates or a backend, so those failures,
+restart races, missing evidence and changes to recovery inputs require
+operator diagnosis. A previously healthy proxy with unchanged inputs is
+retained. If the candidate has already recovered or identification changes,
+leave it in place.
+
+Recovery uses the checked archive configuration ID and retained rendered
+Compose/Caddy configuration, without pulls, builds, dependent service starts
+or changes to live secrets and persistent storage. A missing local image may
+be reloaded from the checked archive. A dead candidate can remain unavailable
+if archive load, recreation or health verification fails. Even verified
+recovery leaves the deployment failed and fenced for owner reconciliation
+because other services and the installed code may still be at the candidate
+revision. Interrupted recovery is never retried automatically. The explicit
+control rollback and disaster recovery procedures above still apply.
 
 ## Rationale and accepted residual risks
 

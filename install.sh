@@ -1915,7 +1915,16 @@ PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 # The fail-closed empty-value check already ran in STEP 5 (tls_auth_fail_closed).
 unset HAVEN_AUTH_HASH HAVEN_AUTH_USER
 
-if ! "${COMPOSE[@]}" up -d --remove-orphans; then
+UP_ARGS=(-d --remove-orphans)
+if [[ -n "${HAVEN_PROXY_TRANSACTION:-}" ]]; then
+  proxy_overlay="$(python3 "${APP_DIR}/scripts/install-root.py" proxy-preflight "$HAVEN_PROXY_TRANSACTION")" \
+    || die "Caddy candidate preflight refused activation."
+  if [[ -n "$proxy_overlay" ]]; then
+    COMPOSE+=(-f "$proxy_overlay")
+  fi
+  UP_ARGS+=(--no-build)
+fi
+if ! "${COMPOSE[@]}" up "${UP_ARGS[@]}"; then
   PHASE_UP=$(( SECONDS - _phase_mark ))
   event "stack_start_failed"
   warn "docker compose up failed. Recent logs:"

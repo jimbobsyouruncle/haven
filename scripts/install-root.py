@@ -25,6 +25,12 @@ import zlib
 RECOVERY_SHA = '5c2df63a73c81ddfbad868dbfe617ee383242ff4'
 DOCKER_UNAVAILABLE = ('RECOVERY_DOCKER: Docker unavailable; '
                       'check the daemon and deployment account access')
+COMPOSE_FILES = ('docker-compose.yml', 'openhands/docker-compose.openhands.yml',
+                 'hermes/docker-compose.hermes.yml')
+PROXY_TRANSACTION_LABEL = 'dev.haven.proxy-transaction'
+PROXY_CONFIG = 'status/Caddyfile'
+PROXY_DEST = '/etc/caddy/Caddyfile'
+PROXY_CREDENTIALS = {'/run/secrets/cloudflare_dns_token', '/run/secrets/rfc2136_key_secret'}
 
 
 class Refusal(RuntimeError):
@@ -846,10 +852,13 @@ class Transaction:
             raise Refusal('RECOVERY_ARTIFACT: archive configuration or layer integrity mismatch; '
                           'preserve the previous checked archive and verify local image storage') from None
 
-    def compatible_proxy(self, recovery, source):
+    def compatible_proxy(self, recovery, source, migration=False):
         running = json.loads(self.gate_command('PROXY_IDENTITY: inspect the installed proxy container',
                             ['docker', 'container', 'inspect', '--format', '{{json .}}',
                              self.project + '-proxy']))
+        return self.probe_proxy(recovery, source, running, compare_running=True, require_dns=migration)
+
+    def probe_proxy(self, image, source, runtime, compare_running=False, require_dns=False):
         caddyfile = source / 'status/Caddyfile'
         self.trusted(caddyfile)
         if not caddyfile.is_file():
@@ -860,7 +869,7 @@ class Transaction:
         secrets = set(re.findall(r'\{file\.(/run/secrets/(?:cloudflare_dns_token|rfc2136_key_secret))\}',
                                  caddyfile.read_text()))
         for destination in sorted(secrets):
-            candidates = [m for m in running.get('Mounts', [])
+            candidates = [m for m in runtime.get('Mounts', [])
                           if m.get('Destination') == destination and m.get('Type') == 'bind']
             if len(candidates) != 1:
                 raise Refusal('RECOVERY_CONFIGURATION: DNS credential bind unavailable')
@@ -874,30 +883,47 @@ class Transaction:
         fd, name = tempfile.mkstemp(prefix='proxy-env-', dir=self.state)
         try:
             with os.fdopen(fd, 'w') as stream:
-                for entry in running['Config']['Env']:
+                for entry in runtime['Config']['Env']:
                     if '\n' in entry or '\r' in entry or '=' not in entry:
                         raise Refusal('RECOVERY_CONFIGURATION: unsupported proxy environment')
                     stream.write(entry + '\n')
             base = ['docker', 'run', '--rm', '--pull=never', '--network=none',
                     '--read-only', '--cap-drop=ALL', '--cap-add=NET_BIND_SERVICE',
                     '--security-opt=no-new-privileges',
-                    '--memory=128m', '--cpus=0.5', '--tmpfs', '/data', '--tmpfs', '/config',
-                    '--env-file', name, '--mount',
+                    '--memory=128m', '--cpus=0.5', '--tmpfs', '/data', '--tmpfs', '/config']
+            probe = base + ['--env-file', name, '--mount',
                     'type=bind,src=' + str(caddyfile) + ',dst=/etc/caddy/Caddyfile,readonly',
-                    *mounts, '--entrypoint', '/usr/bin/caddy', recovery]
+                    *mounts, '--entrypoint', '/usr/bin/caddy', image]
             compatibility = ('RECOVERY_COMPATIBILITY: Caddy probe failed; check the local image '
                              'and protected preflight log')
-            version = self.gate_command(compatibility, base + ['version'])
-            current = self.gate_command(compatibility,
-                       ['docker', 'exec', self.project + '-proxy', '/usr/bin/caddy', 'version'])
-            if not version or not current or version.split()[0] != current.split()[0]:
-                raise Refusal('RECOVERY_COMPATIBILITY: select an image matching the running Caddy version')
-            modules = self.gate_command(compatibility, base + ['list-modules']).splitlines()
-            if not {'dns.providers.cloudflare', 'dns.providers.rfc2136'} <= set(modules):
+            version = self.gate_command(compatibility, probe + ['version'])
+            if not version:
+                raise Refusal(compatibility)
+            if compare_running:
+                current = self.gate_command(compatibility,
+                           ['docker', 'exec', self.project + '-proxy', '/usr/bin/caddy', 'version'])
+                if not current or version.split()[0] != current.split()[0]:
+                    raise Refusal('RECOVERY_COMPATIBILITY: select an image matching the running Caddy version')
+            modules = self.gate_command(compatibility, probe + ['list-modules']).splitlines()
+            if (require_dns or secrets) and not {
+                    'dns.providers.cloudflare', 'dns.providers.rfc2136'} <= set(modules):
                 raise Refusal('RECOVERY_COMPATIBILITY: select an image with both required DNS modules')
             self.gate_command('RECOVERY_CONFIGURATION: installed Caddyfile validation failed; '
-                              'check the protected preflight log', base + [
+                              'check the protected preflight log', probe + [
                 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'])
+            if not compare_running:
+                self.gate_command('PROXY_CANDIDATE: isolated Caddy startup failed',
+                                  base + ['--entrypoint', '/bin/sh', image, '-ec', '''
+                    printf ':8080 {\n respond ok\n}\n' >/config/smoke
+                    /usr/bin/caddy run --config /config/smoke --adapter caddyfile &
+                    pid=$!
+                    trap 'kill "$pid" 2>/dev/null || true' EXIT
+                    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                        kill -0 "$pid" && wget -q -T 1 -O /dev/null http://127.0.0.1:8080/ && exit 0
+                        sleep 1
+                    done
+                    exit 1
+                    '''])
         finally:
             os.unlink(name)
 
@@ -933,7 +959,7 @@ class Transaction:
             raise Refusal('RECOVERY_COMPATIBILITY: select a Linux image matching the Docker host architecture')
         archive, digest = self.retain_recovery(recovery)
         config_id = self.verify_archive(archive, metadata)
-        self.compatible_proxy(recovery, source)
+        self.compatible_proxy(recovery, source, migration)
         return dict(running_image_id=image, recovery_image_id=recovery,
                     configuration_id=config_id, platform=platform,
                     archive=str(archive), archive_sha256=digest)
@@ -960,6 +986,273 @@ class Transaction:
         except OSError:
             raise Refusal('RECOVERY_ARTIFACT: cannot retain recovery export; '
                           'check checkpoint storage and free space') from None
+
+    def proxy_container(self):
+        return json.loads(self.command(['docker', 'container', 'inspect', '--format', '{{json .}}',
+                                        self.project + '-proxy'], timeout=15))
+
+    def proxy_compose(self, root, env_file, overlay=None):
+        args = ['docker', 'compose', '-p', self.project, '--env-file', str(env_file),
+                '--project-directory', str(root)]
+        for name in COMPOSE_FILES:
+            args += ['-f', str(root / name)]
+        if overlay:
+            args += ['-f', str(overlay)]
+        return args
+
+    def file_digest(self, path, private=False):
+        path = Path(path)
+        self.trusted(path)
+        if not path.is_file() or (private and path.stat().st_mode & 0o077):
+            raise Refusal('PROXY_CONFIGURATION: required checkpoint input is unavailable')
+        with path.open('rb') as stream:
+            return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+    def proxy_inputs(self, container):
+        mounts = container['Mounts']
+        protected = {}
+        data = []
+        for mount in mounts:
+            destination = mount['Destination']
+            if destination == '/data':
+                if mount['Type'] != 'bind' or not mount['RW']:
+                    raise Refusal('PROXY_CONFIGURATION: unsupported proxy data bind')
+                data.append(mount['Source'])
+            if destination in PROXY_CREDENTIALS:
+                if (mount['Type'] != 'bind' or mount['RW'] or destination in protected):
+                    raise Refusal('PROXY_CONFIGURATION: ambiguous proxy credential bind')
+                path = mount['Source']
+                protected[destination] = [path, self.file_digest(path, private=True)]
+        if len(data) != 1:
+            raise Refusal('PROXY_CONFIGURATION: ambiguous proxy data bind')
+        return data[0], protected
+
+    def proxy_data_identity(self, path):
+        path = Path(path)
+        self.trusted(path)
+        info = path.stat()
+        if not stat.S_ISDIR(info.st_mode):
+            raise Refusal('PROXY_CONFIGURATION: proxy data bind is not a directory')
+        return [info.st_dev, info.st_ino]
+
+    def snapshot_proxy(self, values, recovery):
+        running = self.proxy_container()
+        labels = running['Config']['Labels']
+        inputs = [self.app / name for name in COMPOSE_FILES]
+        overlay = labels.get(PROXY_TRANSACTION_LABEL)
+        old_overlay = None
+        if overlay:
+            if not re.fullmatch(r'[0-9a-f]{32}', overlay):
+                raise Refusal('PROXY_IDENTITY: invalid previous proxy transaction label')
+            old_overlay = self.state / ('proxy-candidate-' + overlay + '.json')
+            self.trusted(old_overlay)
+            inputs.append(old_overlay)
+        if (running['Image'] != recovery['running_image_id']
+                or not running['State']['Running']
+                or labels.get('com.docker.compose.service') != 'proxy'
+                or labels.get('com.docker.compose.project') != self.project):
+            raise Refusal('PROXY_IDENTITY: previous proxy changed during checkpoint')
+        env_file = values['HYBRID_AI_STACK_ENV_FILE']
+        config_hash = self.command(self.proxy_compose(self.app, env_file, old_overlay)
+                                   + ['config', '--hash', 'proxy'], timeout=30)
+        digest = self.file_digest(self.app / PROXY_CONFIG)
+        mounted = self.command(['docker', 'exec', running['Id'], 'sha256sum', PROXY_DEST], timeout=15)
+        if (config_hash.split() != ['proxy', labels.get('com.docker.compose.config-hash')]
+                or mounted.split()[:1] != [digest]):
+            raise Refusal('PROXY_CONFIGURATION: live proxy differs from retained rendered inputs')
+        data, credentials = self.proxy_inputs(running)
+        tls_domain = next((entry.partition('=')[2] for entry in running['Config']['Env']
+                           if entry.startswith('TLS_DOMAIN=')), '')
+        if not self.proxy_answers(tls_domain):
+            raise Refusal('PROXY_CONFIGURATION: previous proxy health is unverified')
+        return dict(previous_id=running['Id'], previous_image=running['Image'],
+                    previous_compose_hash=config_hash, env_file=env_file, previous_tls_domain=tls_domain,
+                    env_digest=self.file_digest(env_file, private=True),
+                    compose_digests=[self.file_digest(path) for path in inputs],
+                    previous_overlay=str(old_overlay) if old_overlay else None,
+                    caddyfile_digest=digest, data=data, data_identity=self.proxy_data_identity(data),
+                    credentials=credentials)
+
+    def candidate_proxy(self, token):
+        journal = self.load()
+        if (not journal or journal['phase'] != 'awaiting_verifier'
+                or journal.get('proxy_runtime', {}).get('token') != token):
+            raise Refusal('PROXY_IDENTITY: no matching candidate preparation')
+        self.wiring(journal['sha'])
+        runtime = journal['proxy_runtime']
+        compose = self.proxy_compose(self.app, runtime['env_file'])
+        spec = json.loads(self.command(compose + ['config', '--format', 'json'], timeout=30))
+        proxy = spec['services']['proxy']
+        metadata = json.loads(self.gate_command('PROXY_CANDIDATE: local image inspection failed',
+                              ['docker', 'image', 'inspect', '--format', '{{json .}}', proxy['image']]))
+        image = metadata['Id']
+        arch = self.docker_architecture()
+        if (not re.fullmatch(r'sha256:[0-9a-f]{64}', image) or metadata['Os'] != 'linux'
+                or metadata['Architecture'] != {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(arch, arch)):
+            raise Refusal('PROXY_CANDIDATE: image platform or identity mismatch')
+        mounts = [dict(Type=v['type'], Source=v.get('source'), Destination=v['target'],
+                       RW=not v.get('read_only', False)) for v in proxy['volumes']]
+        for entry in proxy.get('secrets', []):
+            name = entry['source']
+            mounts.append(dict(Type='bind', Source=spec['secrets'][name]['file'], RW=False,
+                               Destination='/run/secrets/' + entry.get('target', name)))
+        data, credentials = self.proxy_inputs({'Mounts': mounts})
+        if data != runtime['data'] or self.proxy_data_identity(data) != runtime['data_identity']:
+            raise Refusal('PROXY_CONFIGURATION: candidate changes the proxy data bind')
+        if not any(m['Destination'] == PROXY_DEST and m['Type'] == 'bind' and not m['RW']
+                   and m['Source'] == str(self.app / PROXY_CONFIG) for m in mounts):
+            raise Refusal('PROXY_CONFIGURATION: candidate Caddyfile bind mismatch')
+        self.probe_proxy(image, self.app, dict(Mounts=mounts, Config={'Env': [
+            f'{key}={value}' for key, value in proxy['environment'].items()]}))
+        config_digest = self.file_digest(self.app / PROXY_CONFIG)
+        previous_compose = self.proxy_compose(self.app, runtime['env_file'], runtime['previous_overlay'])
+        unchanged = (image == runtime['previous_image'] and config_digest == runtime['caddyfile_digest']
+                     and credentials == runtime['credentials']
+                     and self.command(previous_compose + ['config', '--hash', 'proxy'], timeout=30)
+                     == runtime['previous_compose_hash'])
+        overlay = runtime['previous_overlay'] or ''
+        if not unchanged:
+            overlay = self.state / ('proxy-candidate-' + token + '.json')
+            self.atomic(overlay, json.dumps({'services': {'proxy': {
+                'image': image, 'pull_policy': 'never', 'labels': {PROXY_TRANSACTION_LABEL: token},
+            }}}).encode())
+        runtime.update(candidate_image=image, candidate_credentials=credentials,
+                       candidate_config=config_digest, unchanged=unchanged,
+                       candidate_env=self.file_digest(runtime['env_file'], private=True),
+                       tls_domain=proxy['environment'].get('TLS_DOMAIN', ''))
+        self.save(journal)
+        return overlay
+
+    def identify_candidate(self, runtime):
+        running = self.proxy_container()
+        labels = running['Config']['Labels']
+        if (not re.fullmatch(r'[0-9a-f]{64}', running['Id'])
+                or running['Id'] != runtime.get('candidate_id', running['Id'])
+                or running['Image'] != runtime['candidate_image']
+                or (running['Id'] == runtime['previous_id']) != runtime['unchanged']
+                or (not runtime['unchanged'] and labels.get(PROXY_TRANSACTION_LABEL) != runtime['token'])
+                or labels.get('com.docker.compose.project') != self.project
+                or labels.get('com.docker.compose.service') != 'proxy'):
+            raise Refusal('PROXY_IDENTITY: live proxy is not the recorded deployment candidate')
+        return running
+
+    def proxy_answers(self, domain):
+        args = ['curl', '--disable', '--noproxy', '*', '-sS', '-o', '/dev/null',
+                '-w', '%{http_code} %{redirect_url}', '--max-time', '5']
+        if domain:
+            if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9.-]*', domain):
+                raise Refusal('PROXY_CONFIGURATION: invalid proxy health domain')
+            host = 'status.' + domain
+            args += ['--resolve', host + ':443:127.0.0.1', 'https://' + host + '/status/healthz']
+        else:
+            args += ['http://127.0.0.1:80/status/healthz']
+        try:
+            result = self.command(args, timeout=8)
+        except subprocess.SubprocessError:
+            return False
+        return result == '200' or (domain and result.partition('?')[0] ==
+                                   '302 https://' + domain + '/auth/login')
+
+    @staticmethod
+    def failed_proxy(container):
+        # A running or restarting proxy may still be healthy. A route failure
+        # alone cannot distinguish Caddy from dependencies or certificate issues.
+        state = container['State']
+        return not state['Running'] and state['Status'] in ('exited', 'dead') and state['ExitCode'] != 0
+
+    def verify_proxy(self, sha):
+        journal = self.load()
+        if not journal or journal['sha'] != sha or journal['phase'] != 'awaiting_verifier':
+            raise Refusal('PROXY_IDENTITY: no matching pending deployment')
+        runtime = journal.get('proxy_runtime')
+        if runtime is None:
+            return  # Transactions created by the old driver or a migration.
+        self.wiring(sha)
+        deadline = time.monotonic() + 60
+        while True:
+            candidate = self.identify_candidate(runtime)
+            if not runtime['unchanged'] and self.failed_proxy(candidate):
+                self.recover_proxy(journal)
+                raise Refusal('PROXY_CANDIDATE: verification failed; previous proxy restored, owner review required')
+            if candidate['State']['Running'] and self.proxy_answers(runtime['tls_domain']):
+                return
+            if time.monotonic() >= deadline:
+                raise Refusal('PROXY_CANDIDATE: proxy health is unverified; owner review required')
+            time.sleep(2)
+
+    def recover_proxy(self, journal):
+        runtime = journal['proxy_runtime']
+        if runtime['unchanged'] or not self.failed_proxy(self.identify_candidate(runtime)):
+            raise Refusal('PROXY_CANDIDATE: candidate no longer has a confirmed process failure')
+        journal['phase'] = 'proxy_recovery_required'
+        self.save(journal)  # Durable fence, including when recovery is interrupted.
+        previous = Path(journal['previous'])
+        self.trusted(previous, tree=True)
+        previous_overlay = runtime['previous_overlay']
+        inputs = [previous / name for name in COMPOSE_FILES]
+        if previous_overlay:
+            inputs.append(Path(previous_overlay))
+        if (self.git(previous, 'rev-parse', 'HEAD') != journal['previous_sha']
+                or [self.file_digest(path) for path in inputs] != runtime['compose_digests']
+                or self.file_digest(previous / PROXY_CONFIG) != runtime['caddyfile_digest']
+                or self.file_digest(self.app / PROXY_CONFIG) != runtime['candidate_config']
+                or self.file_digest(runtime['env_file'], private=True) != runtime['candidate_env']):
+            raise Refusal('PROXY_CONFIGURATION: recovery inputs changed; owner review required')
+        candidate = self.identify_candidate(runtime)
+        if (self.proxy_inputs(candidate) != (runtime['data'], runtime['candidate_credentials'])
+                or self.proxy_data_identity(runtime['data']) != runtime['data_identity']
+                or runtime['candidate_credentials'] != runtime['credentials']):
+            raise Refusal('PROXY_CONFIGURATION: proxy binds or credentials changed; owner review required')
+        recovery = journal['proxy_recovery']
+        archive = recovery['archive']
+        if self.file_digest(archive, private=True) != recovery['archive_sha256']:
+            raise Refusal('RECOVERY_ARTIFACT: proxy archive checksum mismatch')
+        image = recovery['configuration_id']
+        inspect = ['docker', 'image', 'inspect', '--format', '{{json .}}', image]
+        try:
+            metadata = json.loads(self.command(inspect, timeout=15))
+        except subprocess.CalledProcessError as error:
+            if not re.search(r'\bno such image\b', error.stderr or '', re.IGNORECASE):
+                raise
+            self.command(['docker', 'image', 'load', '--input', archive], timeout=120)
+            metadata = json.loads(self.command(inspect, timeout=15))
+        if self.verify_archive(archive, metadata) != image:
+            raise Refusal('RECOVERY_ARTIFACT: recovered image identity mismatch')
+        snapshot = next((item for item in journal['files'] if item['path'] == runtime['env_file']), {})
+        old_env = base64.b64decode(snapshot.get('data', ''), validate=True)
+        if hashlib.sha256(old_env).hexdigest() != runtime['env_digest']:
+            raise Refusal('PROXY_CONFIGURATION: previous stack environment mismatch')
+        with tempfile.TemporaryDirectory(prefix='proxy-restore-', dir=self.state) as scratch:
+            env = Path(scratch) / 'stack.env'
+            self.atomic(env, old_env)
+            override = Path(scratch) / 'compose.json'
+            self.atomic(override, json.dumps({'services': {'proxy': {
+                'image': image, 'pull_policy': 'never',
+                'labels': {PROXY_TRANSACTION_LABEL: 'recovered-' + runtime['token']},
+            }}}).encode())
+            compose = self.proxy_compose(previous, env, previous_overlay) + ['-f', str(override)]
+            if not self.failed_proxy(self.identify_candidate(runtime)):
+                raise Refusal('PROXY_CANDIDATE: candidate recovered before replacement')
+            self.command(compose + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never',
+                                    '--force-recreate', 'proxy'], timeout=90)
+        deadline = time.monotonic() + 60
+        while True:
+            restored = self.proxy_container()
+            if (restored['Image'] != image
+                    or restored['Config']['Labels'].get(PROXY_TRANSACTION_LABEL) != 'recovered-' + runtime['token']
+                    or self.proxy_inputs(restored) != (runtime['data'], runtime['credentials'])
+                    or self.proxy_data_identity(runtime['data']) != runtime['data_identity']):
+                raise Refusal('PROXY_IDENTITY: restored proxy identity or binds differ')
+            if restored['State']['Running'] and self.proxy_answers(runtime['previous_tls_domain']):
+                mounted = self.command(['docker', 'exec', restored['Id'], 'sha256sum', PROXY_DEST], timeout=15)
+                if mounted.split()[:1] != [runtime['caddyfile_digest']]:
+                    raise Refusal('PROXY_CONFIGURATION: restored Caddyfile checksum mismatch')
+                journal['phase'] = 'proxy_recovered'
+                self.save(journal)
+                return
+            if time.monotonic() >= deadline:
+                raise Refusal('PROXY_CANDIDATE: restored proxy health unverified; owner review required')
+            time.sleep(2)
 
     def snapshots(self, extra=()):
         files = [self.layout, self.keys, self.layout.parent / 'stack.env',
@@ -1001,7 +1294,7 @@ class Transaction:
             raise Refusal('writers may have started; retain current data and controls for forward recovery')
         if 'identity' in journal:
             self.identity_restore(journal)
-        if journal['phase'] == 'accepted':
+        if journal['phase'] in ('accepted', 'proxy_recovery_required', 'proxy_recovered'):
             # Later owner edits/rotations must never be overwritten by a stale
             # checkpoint. A different active revision also needs reconciliation.
             self.wiring(journal['sha'])
@@ -1262,9 +1555,14 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                 or evidence.get('rc') != 0 or evidence.get('verdict') not in ('PASS', 'WARN')
                 or not all(gates.get(k, {}).get('state') == 'PASS' for k in
                            ('workflow_runs', 'deployed_head', 'installation_root', 'runtime_health'))
+                or (journal.get('proxy_runtime') and gates.get('proxy_runtime', {}).get('state') != 'PASS')
                 or any(g.get('state') != 'PASS' for g in gates.values() if g.get('required'))):
             raise Refusal('requested SHA or mandatory verification gates are unsuccessful')
         if journal['phase'] != 'accepted':
+            if journal.get('proxy_runtime'):
+                candidate = self.identify_candidate(journal['proxy_runtime'])
+                if not candidate['State']['Running']:
+                    raise Refusal('PROXY_CANDIDATE: proxy stopped before acceptance')
             journal['phase'] = 'accepted'
             self.save(journal)
 
@@ -1279,6 +1577,8 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
         journal = self.load()
         if journal and journal.get('writers_possible') and journal['phase'] != 'accepted':
             raise Refusal('identity transaction requires current-data recover action')
+        if journal and journal['phase'] in ('proxy_recovery_required', 'proxy_recovered'):
+            raise Refusal('proxy recovery requires owner reconciliation before another deployment')
         if journal and journal['phase'] == 'activating':
             self.restore(journal)
         elif journal and journal['phase'] == 'awaiting_verifier':
@@ -1286,6 +1586,10 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
         source, values = self.source()
         identity = self.identity_preflight(values) if self.identity_cutover else None
         proxy_recovery = self.proxy_preflight(source)
+        proxy_runtime = None
+        if (self.project == 'haven' and source == self.app and identity is None
+                and os.environ.get('HAVEN_DEPLOY_SYNCHRONOUS_VERIFY') == '1'):
+            proxy_runtime = self.snapshot_proxy(values, proxy_recovery)
         sha_before = self.git(source, 'rev-parse', 'HEAD')
         token = uuid.uuid4().hex
         stage = self.app.parent / ('.haven-stage-' + token)
@@ -1318,6 +1622,8 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                 candidate_controls.add(self.units / unit.name)
                 if identity is not None:
                     candidate_controls.add(self.units / unit.name.replace('haven-', 'hybrid-ai-', 1))
+        if proxy_runtime:
+            candidate_controls.add(Path(proxy_runtime['env_file']))
         files = self.snapshots(candidate_controls)
         journal = dict(phase='activating', sha=sha, started_ns=time.time_ns(),
                        proxy_recovery=proxy_recovery,
@@ -1328,6 +1634,9 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                                    'hermes_data/deploy-verdicts' / (sha + '.json')))
         if identity is not None:
             journal['identity'] = identity
+        if proxy_runtime:
+            proxy_runtime['token'] = token
+            journal['proxy_runtime'] = proxy_runtime
         if source == self.legacy:
             if sha_before == sha:
                 try:
@@ -1412,9 +1721,17 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                        HYBRID_AI_APP_DIR=str(self.app), HYBRID_AI_ENV_FILE=str(self.layout),
                        HYBRID_AI_INSTALL_ROOT_HANDOFF='1', HYBRID_AI_VERIFY_INSTALL_ROOT='1',
                        HYBRID_AI_REPOSITORY_SLUG='jimbobsyouruncle/haven')
+            if proxy_runtime:
+                env['HAVEN_PROXY_TRANSACTION'] = token
             self.operation(journal, 'run-installer')
             self.run(['bash', str(self.app / 'scripts/deploy-remote.sh'), sha],
                      cwd=self.app, env=env, check=True, pass_fds=((9, 8) if self.identity_cutover or self.project == 'haven' else (9,)))
+            if proxy_runtime:
+                # The installer wrote the preflight evidence while we held
+                # both locks. Reload it before recording the activated ID.
+                prepared = self.load()['proxy_runtime']
+                proxy_runtime.update(prepared)
+                proxy_runtime['candidate_id'] = self.identify_candidate(proxy_runtime)['Id']
             journal['active_files'] = {
                 entry['path']: (hashlib.sha256(Path(entry['path']).read_bytes()).hexdigest()
                                 if Path(entry['path']).exists() else None)
@@ -1451,7 +1768,26 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
 
 def main():
     os.umask(0o022)
-    actions = ('deploy', 'migrate', 'recover', 'accept', 'verify', 'rollback', 'reverify-manual', 'reverify-recovery')
+    if len(sys.argv) == 3 and sys.argv[1] == 'proxy-preflight':
+        token = sys.argv[2]
+        if (os.geteuid() != 0 or token != os.environ.get('HAVEN_PROXY_TRANSACTION')
+                or not re.fullmatch(r'[0-9a-f]{32}', token)):
+            raise Refusal('PROXY_IDENTITY: invalid transaction preflight handoff')
+        transaction = Transaction()
+        # The installer inherits the parent's open file descriptions. Verify
+        # the expected lock inodes and hold both through the preflight.
+        for fd, name in ((9, 'hybrid-ai-deploy.lock'), (8, 'haven-deploy.lock')):
+            path = transaction.path('/run/lock/' + name)
+            info = path.lstat()
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+                    or info.st_nlink != 1 or info.st_mode & 0o022
+                    or not os.path.samestat(os.fstat(fd), info)):
+                raise Refusal('PROXY_IDENTITY: deployment lock handoff mismatch')
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        print(transaction.candidate_proxy(token))
+        return
+    actions = ('deploy', 'migrate', 'recover', 'accept', 'verify', 'verify-proxy',
+               'rollback', 'reverify-manual', 'reverify-recovery')
     if len(sys.argv) not in (3, 4) or sys.argv[1] not in actions \
             or (len(sys.argv) == 4) != (sys.argv[1] == 'reverify-recovery') \
             or not re.fullmatch(r'[0-9a-f]{40}', sys.argv[2]):
@@ -1495,12 +1831,15 @@ def main():
         transaction.deploy(sha)
     elif action == 'rollback':
         journal = transaction.load()
-        if not journal or journal['sha'] != sha or journal['phase'] not in ('activating', 'awaiting_verifier', 'accepted'):
+        if not journal or journal['sha'] != sha or journal['phase'] not in (
+                'activating', 'awaiting_verifier', 'accepted', 'proxy_recovery_required', 'proxy_recovered'):
             raise Refusal('no matching recoverable transaction')
         transaction.restore(journal)
     elif action == 'verify':
         transaction.wiring(sha)
         transaction.verify_identity(transaction.load())
+    elif action == 'verify-proxy':
+        transaction.verify_proxy(sha)
     elif action == 'reverify-manual':
         transaction.reverify_manual(sha)
     elif action == 'reverify-recovery':
