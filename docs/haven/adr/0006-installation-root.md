@@ -88,6 +88,26 @@ runtime recovery requires an owner-selected bounded procedure with retained code
 configuration and checksum-verified immutable images. Never infer that restoring
 code restored running services. See the [deployment procedure](../../../deploy/README.md).
 
+## Proposed amendment for #249 (owner review pending)
+
+For canonical upgrades, checkpoint the running proxy's immutable image and
+retain its rendered configuration in the previous checkout. Keep the verified
+archive through activation, acceptance and any rollback window. Preserve the
+optional local selection for explicit root or identity migrations and leave
+existing selections and archives in place. A missing running image blocks a
+routine upgrade until the owner restores and verifies the exact image.
+
+Before replacing the proxy, validate the exact locally resolved candidate and
+its rendered configuration in isolation, with read-only inputs, limited
+capabilities and no network or persistent-data mounts. Check the running
+replacement before acceptance. A proposed automatic recovery step would
+recreate only the previous proxy from the checked local archive and retained
+configuration. It needs owner approval because it changes the rollback
+authority above. It must stop if the previous configuration cannot be bound to
+the runtime, secrets changed, archive integrity or identity fails, or the live
+proxy is no longer the expected candidate. Disaster recovery remains an
+explicit operator procedure.
+
 ## Rationale and accepted residual risks
 
 Root already controls deployment code and Docker; extra root-written attestations

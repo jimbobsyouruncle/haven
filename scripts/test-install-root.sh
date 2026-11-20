@@ -156,7 +156,7 @@ class MigrationTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, 'aarch64', '')
             if args[1] in ('run', 'exec'):
                 if args[-1] == 'version':
-                    output = 'v2.11.7 fixture'
+                    output = 'v2.11.9 fixture'
                 elif args[-1] == 'list-modules':
                     output = 'dns.providers.cloudflare\ndns.providers.rfc2136'
                 else:
@@ -166,7 +166,7 @@ class MigrationTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, json.dumps({
                     'Config': {'Env': ['LOCAL_DOMAIN=fixture']}, 'Mounts': self.proxy_mounts}), '')
             if args[1] == 'image':
-                metadata = self.image_metadata or dict(Id=self.recovery_image, Os='linux',
+                metadata = self.image_metadata or dict(Id=args[-1], Os='linux',
                                                        Architecture='arm64', Variant='', Config=self.config['config'],
                                                        RootFS={'Layers': self.config['rootfs']['diff_ids']})
                 return subprocess.CompletedProcess(args, 0, json.dumps(metadata), '')
@@ -407,6 +407,36 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         self.tx.accept(self.sha, self.receipt())
         self.tx.deploy(self.sha)
         self.tx.accept(self.sha, self.receipt())
+        self.assert_preserved()
+
+    def test_canonical_deploy_retains_running_image_despite_stale_selection(self):
+        self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
+        old_archive = Path(self.tx.load()['proxy_recovery']['archive'])
+        self.approve_recovery('sha256:' + 'd' * 64)
+        selection = self.selection.read_bytes()
+        def runner(args, **kwargs):
+            result = self.runner(args, **kwargs)
+            if args[:2] == ['docker', 'run'] and args[-2:] == [self.recovery_image, 'version']:
+                result.stdout = 'v2.11.7 fixture'
+            return result
+
+        self.tx.run = runner
+        self.calls.clear()
+        self.fail_install = True
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.tx.deploy(self.sha)
+        journal = self.tx.load()
+        recovery = journal['proxy_recovery']
+        self.assertEqual(recovery['recovery_image_id'], self.running_image)
+        archive = Path(recovery['archive'])
+        self.assertNotEqual(archive, old_archive)
+        self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(),
+                         recovery['archive_sha256'])
+        self.assertTrue(old_archive.is_file())
+        self.assertEqual(self.selection.read_bytes(), selection)
+        self.assertFalse(any(self.recovery_image in command for command in self.calls))
+        self.tx.wiring(self.sha)
         self.assert_preserved()
 
     def test_mutable_selection_and_symlink_refused(self):

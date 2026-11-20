@@ -775,9 +775,9 @@ class Transaction:
             DOCKER_UNAVAILABLE,
             ['docker', 'info', '--format', '{{.Architecture}}'])
 
-    def recovery_image(self, running):
-        # Optional durable selection for a validated alternative. No per-SHA
-        # approval, expiration or manual receipts. Never resolve a mutable tag.
+    def migration_recovery_image(self, running):
+        # Keep the historical selection available during a root or identity
+        # migration. Routine upgrades checkpoint the actual running image.
         path = self.layout.parent / 'proxy-recovery-image'
         if path.exists() or path.is_symlink():
             self.trusted(path)
@@ -913,7 +913,8 @@ class Transaction:
                               '{{.Image}}', self.project + '-proxy'])
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
             raise Refusal('PROXY_IDENTITY: cannot establish current exact proxy image')
-        recovery = self.recovery_image(image)
+        migration = self.identity_cutover or source == self.legacy
+        recovery = self.migration_recovery_image(image) if migration else image
         inspection = self.gate_command(
             'RECOVERY_IMAGE: selected image inspection failed; check the protected preflight log',
             ['docker', 'image', 'inspect', '--format', '{{json .}}', recovery], inspect_image=True)

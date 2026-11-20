@@ -49,6 +49,34 @@ occurs. Index and configuration digests are distinct identities, not an equality
 test. Missing/incompatible/corrupt/unexportable images refuse before activation.
 There are no per-deployment approval/evidence files or expiration window.
 
+### Proposed #249 cutover (owner review pending)
+
+The proposed canonical driver checkpoints the running image regardless of
+the optional selection. Preserve the selection for explicit migrations, and
+keep older archives and journals. The scheduled Docker cleanup remains
+build-cache-only. Keep the current rollback archive and previous rendered
+checkout through acceptance and until the owner clears that checkpoint.
+
+After approval and merge, the owner must prepare the reviewed driver before
+dispatch: the installed driver runs preflight before it stages the new SHA.
+Use the locked preparation procedure below with the reviewed current main SHA,
+saving the installed driver and replacing only `scripts/install-root.py`.
+Keep the override unchanged. Release the lock, dispatch that same SHA with
+production authorization, and wait for the mandatory verifier.
+
+- Confirm the journal records the pre-deploy running image as both
+  `running_image_id` and `recovery_image_id`.
+- Confirm the private archive checksum matches the journal and the previous
+  checkout still contains the rendered Compose and Caddy configuration.
+- Confirm the requested SHA and runtime-health gates passed and the journal
+  reached `accepted`. Report outcomes without sharing protected file contents.
+- If preparation must be undone before dispatch, restore the saved driver
+  under the same lock. If deployment fails, use the existing control rollback
+  and separately authorized proxy-only recovery below.
+
+Automatic proxy recreation remains pending owner approval under the proposed
+[ADR amendment](../docs/haven/adr/0006-installation-root.md#proposed-amendment-for-249-owner-review-pending).
+
 ### Recover a missing local proxy image
 
 Read the fixed refusal category first. Docker command failures can leave the
