@@ -88,6 +88,47 @@ runtime recovery requires an owner-selected bounded procedure with retained code
 configuration and checksum-verified immutable images. Never infer that restoring
 code restored running services. See the [deployment procedure](../../../deploy/README.md).
 
+## Approved amendment for #249
+
+For canonical upgrades, checkpoint the running proxy's immutable image and
+retain its rendered configuration in the previous checkout. Keep the verified
+archive through activation, acceptance and any rollback window. Preserve the
+optional local selection for explicit root or identity migrations and leave
+existing selections and archives in place. A missing running image blocks a
+routine upgrade until the owner restores and verifies the exact image.
+
+The owner approved bounded automatic proxy recovery for #249. Before replacing
+the proxy, validate the exact locally resolved candidate and rendered
+configuration with read-only inputs, restricted capabilities and no network
+or persistent-data mounts. A separate isolated HTTP startup probe uses
+synthetic configuration without credential mounts. Require the deployed proxy
+to answer a local status request before transaction acceptance.
+
+The canonical verifier may recreate only the proxy after it confirms a
+nonzero process exit in the candidate it identifies by transaction label,
+container ID, image ID and Compose identity. It holds the deployment locks
+and journals recovery intent before acting. Route failures in a running
+proxy can originate in DNS, certificates or a backend, so those failures,
+restart races, missing evidence and changes to recovery inputs require
+operator diagnosis. A previously healthy proxy with unchanged inputs is
+retained. If the candidate has already recovered or identification changes,
+leave it in place.
+Remove an exited candidate by its exact container ID without force. If it
+has restarted, Docker refuses removal. Compose is instructed to leave any
+concurrent replacement alone.
+
+Recovery uses the checked archive configuration ID and retained rendered
+Compose/Caddy configuration. It reattaches the existing Docker-managed
+`/config` volume when present, and preserves the persistent `/data` bind.
+It performs no pulls, builds, dependent service starts or changes to live
+secrets. A missing local image may
+be reloaded from the checked archive. A dead candidate can remain unavailable
+if archive load, recreation or health verification fails. Even verified
+recovery leaves the deployment failed and fenced for owner reconciliation
+because other services and the installed code may still be at the candidate
+revision. Interrupted recovery is never retried automatically. The explicit
+control rollback and disaster recovery procedures above still apply.
+
 ## Rationale and accepted residual risks
 
 Root already controls deployment code and Docker; extra root-written attestations

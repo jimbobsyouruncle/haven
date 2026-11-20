@@ -39,15 +39,56 @@ FHS storage keep their existing paths; repository-local persistent paths require
 separate preparation and cause a safe refusal. Symlinked/untrusted/foreign roots,
 conflicting directories and legacy-path systemd overrides also cause refusal.
 
-Before activation, automated preflight selects the running immutable proxy image
-or the digest in the optional root-controlled
-`/etc/haven/proxy-recovery-image`. It retains a private checksum-verified export,
+Before activation, preflight selects the running immutable proxy image.
+Explicit migrations can use the digest in the optional root-controlled
+`/etc/haven/proxy-recovery-image`. Preflight retains a private checksum-verified export,
 verifies configuration and all filesystem layers, checks host architecture,
 Caddy version and required DNS modules, and validates the installed configuration
 in isolated temporary containers. No pull/build/load or running-proxy replacement
 occurs. Index and configuration digests are distinct identities, not an equality
 test. Missing/incompatible/corrupt/unexportable images refuse before activation.
 There are no per-deployment approval/evidence files or expiration window.
+
+### #249 cutover and verification
+
+The canonical driver checkpoints the running image regardless of
+the optional selection. Preserve the selection for explicit migrations, and
+keep older archives and journals. The scheduled Docker cleanup remains
+build-cache-only. Keep the current rollback archive and previous rendered
+checkout through acceptance and until the owner clears that checkpoint.
+
+After approval and merge, the owner must prepare the reviewed driver before
+dispatch: the installed driver runs preflight before it stages the new SHA.
+Use the locked preparation procedure below with the reviewed current main SHA,
+saving the installed driver and replacing only `scripts/install-root.py`.
+Keep the override unchanged. Release the lock, dispatch that same SHA with
+production authorization, and wait for the mandatory verifier.
+
+- Confirm the journal records the pre-deploy running image as both
+  `running_image_id` and `recovery_image_id`.
+- Confirm the private archive checksum matches the journal and the previous
+  checkout still contains the rendered Compose and Caddy configuration.
+- Confirm the requested SHA and runtime-health gates passed and the journal
+  reached `accepted`. Report outcomes without sharing protected file contents.
+- If preparation must be undone before dispatch, restore the saved driver
+  under the same lock. If deployment fails, use the existing control rollback
+  and separately authorized proxy-only recovery below.
+
+The verifier requires the proxy to answer a local status request. If it
+identifies the activated candidate and confirms the process exited with an
+error, it may restore only the previous proxy using the checked archive and
+retained configuration. It uses the existing locks and verifies the restored
+proxy's image, binds, configuration checksum and health. No whole-stack
+recovery is attempted. If a running proxy fails a route probe, or identity or
+recovery evidence is ambiguous, inspect the failure on the host.
+
+Both `proxy_recovery_required` and `proxy_recovered` fence subsequent
+deployments. The latter means proxy health was verified after runtime recovery.
+The deployment remains failed. Inspect the protected journal and current
+service and data state. Use the separately authorized control rollback and
+targeted recovery procedure below as appropriate. Reconcile the proxy with
+the canonical Compose configuration before the next deploy. See the
+[approved ADR amendment](../docs/haven/adr/0006-installation-root.md#approved-amendment-for-249).
 
 ### Recover a missing local proxy image
 
@@ -57,8 +98,9 @@ checkpoint directory (normally `/var/lib/haven-install-root`). Keep it and the
 journal on the host.
 
 - `RECOVERY_DOCKER` calls for checking daemon health and access in the root deployment context.
-- A missing `RECOVERY_IMAGE` calls for restoring the last checked archive or
-  choosing an already-local, approved immutable alternative.
+- A missing `RECOVERY_IMAGE` in a routine deploy calls for restoring the exact
+  running image from its checked archive. Explicit migrations can also choose
+  an already-local, approved immutable alternative.
 - `RECOVERY_ARTIFACT` calls for checking free space and the local image store.
   Preserve the last checked archive if a new export fails integrity checks.
 - `RECOVERY_COMPATIBILITY` or `RECOVERY_CONFIGURATION` calls for checking the
@@ -75,12 +117,12 @@ inspect the configuration digest separately. Leave the selection in place when
 that reference resolves. Investigate a checksum or identity mismatch before
 retrying. Loading the archive requires separate operator authorization.
 
-To select a different approved local image under the same lock, first inspect
+For an explicit migration, to select a different approved local image under the same lock, first inspect
 its full `sha256:…` reference and verify its platform, Caddy version and both DNS
 modules. Preserve the previous selection with the rollback evidence. Write
 only the verified digest and newline to a root-owned mode-0600 temporary file
 in `/etc/haven`, then atomically rename it to `proxy-recovery-image`. Release
-the lock before retrying the authorized normal deployment, which checks the
+the lock before retrying the authorized migration, which checks the
 archive and validates the installed Caddy configuration in isolation.
 
 For disk cleanup on an active Haven host, keep the running proxy image, the

@@ -185,7 +185,12 @@ case "$doctor_rc" in
     ;;
   *)
     echo "::error::doctor.sh reported failures"
-    exit 4
+    if [[ -z "${HAVEN_PROXY_TRANSACTION:-}" || "${HAVEN_DEPLOY_SYNCHRONOUS_VERIFY:-0}" != 1 ]]; then
+      exit 4
+    fi
+    # The root unit verifier checks the recorded Caddy candidate first, then
+    # requires doctor and application health before accepting the transaction.
+    echo "Deferring the mandatory runtime verdict to the root verifier."
     ;;
 esac
 

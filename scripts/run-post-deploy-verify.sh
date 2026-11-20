@@ -662,6 +662,13 @@ while :; do
           finish FAIL 1 "installation wiring failed"
         fi
         record_gate installation_root true PASS "canonical root and installed control paths verified"
+        if [[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]]; then
+          record_gate proxy_runtime true FAIL "Caddy candidate verification unsuccessful"
+          if ! python3 "$DRIVER_DIR/install-root.py" verify-proxy "$SHA"; then
+            finish FAIL 1 "mandatory Caddy candidate verification failed"
+          fi
+          record_gate proxy_runtime true PASS "Caddy candidate verification complete"
+        fi
         health_rc=0
         "$APP_DIR/doctor.sh" --no-cloud >/dev/null 2>&1 || health_rc=$?
         if (( health_rc > 1 )) || ! curl -fsS --max-time 10 http://localhost:3000/health >/dev/null 2>&1; then
