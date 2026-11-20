@@ -235,7 +235,7 @@
 - resolv_skip()
 
 ## hermes/Dockerfile
-- FROM python:3.11-slim@sha256:cce12316475d7d56d605f76e1d811d0dc4e7227f2d4afd29951521264f504ff8
+- FROM python:3.11.18-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
 
 ## hermes/agent-hooks/secret-guard.py
 - def flatten(value, out)
