@@ -4,7 +4,7 @@ set -Eeuo pipefail
 python3 - <<'PY'
 import copy
 import io
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
 import json
 import os
@@ -43,6 +43,32 @@ class Provenance(unittest.TestCase):
         with patch.dict(os.environ, self.env, clear=True), patch.object(m, 'get', side_effect=[
                 [self.pr], {'object': {'sha': SHA}}]):
             m.authorize(SHA)
+
+    def test_pr_evidence_retries_transient_api_errors(self):
+        errors = [m.Refused('PROVENANCE_API_TRANSIENT', retry=True),
+                  m.Refused('PROVENANCE_API_TRANSPORT', retry=True)]
+        with patch.object(m, 'pr_validation', side_effect=[*errors, None]) as verify, \
+                patch.object(m.time, 'sleep') as sleep, redirect_stderr(io.StringIO()):
+            m.verify_pr_evidence(SHA)
+        self.assertEqual([call.args for call in verify.call_args_list], [(SHA,)] * 3)
+        self.assertEqual([call.args for call in sleep.call_args_list], [(1,), (2,)])
+
+    def test_pr_evidence_stops_after_transient_retry_budget(self):
+        error = m.Refused('PROVENANCE_API_TRANSIENT', retry=True)
+        with patch.object(m, 'pr_validation', side_effect=error) as verify, \
+                patch.object(m.time, 'sleep'), redirect_stderr(io.StringIO()):
+            with self.assertRaisesRegex(m.Refused, 'PROVENANCE_API_TRANSIENT'):
+                m.verify_pr_evidence(SHA)
+        self.assertEqual(verify.call_count, 3)
+
+    def test_pr_evidence_does_not_retry_policy_refusal(self):
+        error = m.Refused('PR_VALIDATION_TESTED_TREE')
+        with patch.object(m, 'pr_validation', side_effect=error) as verify, \
+                patch.object(m.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(m.Refused, 'PR_VALIDATION_TESTED_TREE'):
+                m.verify_pr_evidence(SHA)
+        verify.assert_called_once_with(SHA)
+        sleep.assert_not_called()
 
     def test_main_merge(self):
         self.authorize()

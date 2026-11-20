@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 import urllib.request
 import urllib.error
 
@@ -240,6 +241,20 @@ def pr_validation(sha):
         print(f'reuse_attempt={attempt}', file=output)
 
 
+def verify_pr_evidence(sha):
+    # Restart the entire evidence check so a retry cannot combine results
+    # from different GitHub snapshots. No reuse output is written on refusal.
+    for delay in (1, 2):
+        try:
+            return pr_validation(sha)
+        except Refused as error:
+            if not error.retry:
+                raise
+            print(f'{error.code}: retrying PR evidence in {delay}s', file=sys.stderr)
+            time.sleep(delay)
+    return pr_validation(sha)
+
+
 def evidence_list(data, key):
     require(isinstance(data, dict), 'PROVENANCE_API_SHAPE')
     if key not in data or 'total_count' not in data:
@@ -468,7 +483,7 @@ def main():
     if sys.argv[1] == 'authorize':
         authorize(sys.argv[2])
     elif sys.argv[1] == 'pr-validation':
-        pr_validation(sys.argv[2])
+        verify_pr_evidence(sys.argv[2])
     elif sys.argv[1] == 'manual-runs':
         manual_runs(sys.argv[2])
     elif sys.argv[1] == 'recovery-runs':
