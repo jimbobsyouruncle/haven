@@ -2628,3 +2628,25 @@ or unexpected payload fails closed rather than failing open. Confirm the intent
 by reading the block message: it names the failure class, never the payload and
 never a secret value. If a legitimate call is blocked, change the call to name
 the secret's consumer, not the secret. Do not weaken the rule.
+
+### Rehearse or roll back Open WebUI v0.13.4
+
+The ARM64 candidate is in `tests/qualification/open-webui.env`. The shared
+installation keeps its existing default. Selecting the candidate through
+`WEBUI_IMAGE` on an existing installation requires separate rollout
+authorization. Run the synthetic migration fixture on the isolated ARM64
+runner first. Never attach that runner to an existing Haven data directory.
+
+Before rollout, stop Open WebUI and preserve its exact image, prior Compose
+configuration, signing key and a consistent copy of the entire WebUI data tree.
+Review existing image backend permissions. Rehearse migration while isolated
+from users and network services, and verify that connections retain their
+intended grants before exposing the service. Check grants as an administrator
+and an ordinary user after restart. Enable Tether and external tools only
+behind an effective boundary that denies access to other personas and
+unapproved services.
+
+To roll back, stop Open WebUI, preserve the migrated tree separately, restore
+the pre-upgrade data and signing key, and recreate only `open-webui` with
+the retained image using `docker compose up -d --no-deps --pull never open-webui`.
+Verify login, private chats and the RunPod Function before reopening access.
