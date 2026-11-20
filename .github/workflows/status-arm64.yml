@@ -32,9 +32,10 @@ jobs:
           docker run --rm --network none --read-only --cap-drop ALL \
             --security-opt no-new-privileges --user 1000:999 --memory 256m --cpus .5 \
             --tmpfs /tmp:size=16m,mode=1777 \
-            -e STATUS_BACKUP_SOCKET=/tmp/backup.sock -e PYTHONDONTWRITEBYTECODE=1 \
+            -e STATUS_BACKUP_SOCKET=/tmp/verifier/backup.sock -e PYTHONDONTWRITEBYTECODE=1 \
             --mount "type=bind,source=$PWD/status/app.py,target=/app/app.py,readonly" \
             haven-status:qualification sh -ec '
+              mkdir -m 0700 /tmp/verifier
               python -u /app/app.py &
               python - << "PYCODE"
           import time
