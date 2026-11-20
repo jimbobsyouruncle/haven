@@ -121,6 +121,28 @@ This policy governs `haven next`, `haven issue`, epic/architecture assessment an
 - Correlate evidence with its source link, full tested SHA, environment, time, coverage and outcome where relevant. Distinguish PR head, synthetic merge, actual merge and deployed revisions; justify reuse where relevant behavior/configuration is unchanged. Current-head PR readiness still requires current-head checks. Unknown provenance limits the affected claim, not every completed criterion.
 - Passing CI proves only executed checks; deployment success proves only verified deployment scope. Interpret backup, sampled integrity, restore, asynchronous verifier and worker observations according to actual coverage. A skipped verifier probe does not invalidate a separately evidenced backup/restore. Do not request fresh RunPod testing without a specific affected contract or mandatory integration requirement.
 
+### Lifecycle ownership and scoped completion
+
+Before evaluating acceptance, identify the **current issue's deliverable and owning lifecycle stage**. The issue's stated scope governs; do not silently reinterpret an implementation issue as planning or vice versa. Apply each requirement at the earliest stage capable of producing meaningful evidence, without elevating downstream runtime tests into prerequisites for an upstream inventory or design deliverable:
+
+- **Discovery/inventory:** document observed state and provenance, screen candidates and support/ARM64 evidence, record known incompatibilities, risk and a concrete handoff. Candidate screening is not runtime qualification.
+- **Implementation:** implement and test changed components, including relevant security negatives and compatibility contracts.
+- **Integration:** demonstrate cross-component authorization, inference, isolation and functional behavior with representative environments.
+- **Deployment/operations:** verify approved production state, health, recovery and observed image identity.
+- **Closure:** reconcile the responsible stage's evidence, accepted exceptions and separately tracked obligations; do not certify later-stage behavior.
+
+A later-stage requirement can be recorded as **REQUIRED LATER** only when its owning issue, explicit pass/fail criteria, dependency and pre-deployment gate are identified. This is not a PASS, security waiver or permission to deploy. If a claimed future-stage dependency truly prevents safe progress now, identify the concrete unsafe action or decision it blocks.
+
+**Challenge misplaced or contradictory criteria rather than repeating impossible requests.** In read-only mode recommend a precise correction; only edit GitHub records when that reconciliation is expressly authorized. For a currently scoped issue, inability to prove a future-stage property is not by itself a blocker. An unresolved material risk at the stage where exposure would occur *is* a blocker.
+
+### Minimal sufficient action and reporting
+
+First use available authorized evidence, then perform the smallest action that resolves the current issue's deliverable. Ordinary engineering uncertainty is not an owner decision gate. Prefer existing components, CLI/tools and focused regression checks over new services, generic abstractions, approval phases or tracking structures. Consider operational load and ongoing maintenance as design costs.
+
+Treat `doctor.sh` as health/diagnostics evidence, **not a security check**. Select tests by changed component, affected contracts and trust boundaries, while preserving repository-required gates and mandatory security negatives. Do not weaken configured security checks or skip relevant integration tests merely to reduce CI.
+
+Report a short delta: what changed, what was verified (with provenance), what remains unverified, its owning stage, and only the current mandatory owner action. Do not restate unchanged accepted history or request a broad new inventory after adequate prior evidence. During CI monitoring use bounded polling; if interrupted, give a resumable handoff instead of claiming background work.
+
 ### Gates and decisions
 
 Classify every outstanding requirement as **VERIFIED**, **REQUIRED NOW**, **REQUIRED LATER**, **OPTIONAL** or **NOT APPLICABLE**, relative to its lifecycle stage. VERIFIED requires supporting evidence. Separately retain observations **PASS**, **FAILED** (including raw FAIL/failure), **WARN**, **SKIPPED**, **NOT VERIFIED**, **PENDING** and raw cancelled/timed_out/neutral conclusions. None of WARN, SKIPPED, NOT VERIFIED, cancelled, timed_out or neutral is automatically PASS. A mandatory unsuccessful/missing observation blocks its owning stage unless justified non-applicability or an explicitly approved, tracked deferral applies; failing mandatory security controls cannot be waived.
