@@ -143,14 +143,29 @@ For a deployment retry that inherited fast-path evidence, rerun all jobs to
 collect fresh evidence. The exact-main checks before and after the image wait,
 host transaction, immutable image checks, rollback and verifier still apply.
 
-The introducing PR changes validation policy and therefore cannot exercise the
-automatic fast path. The next normal eligible PR merge can demonstrate reuse.
-A map refresh PR with only manually dispatched check runs also lacks the
-required PR-triggered evidence for automatic deployment. If an excluded
-revision needs deployment, use the existing explicitly authorized
-`workflow_dispatch` procedure on the current main SHA. To roll back the
-workflow change, revert through a reviewed PR and use that same procedure if
-a deployment is needed.
+### Manual deployment after a protected policy change
+
+Before merging, compare the PR's changed paths against `PR_WORKFLOWS` and
+`security_paths` in [the deployment provenance verifier](../scripts/deploy-provenance.py).
+For any match, tell the owner in the PR description that automatic deployment
+will reject the merge and link this procedure. Complete the regular PR checks
+and coordinate the manual rollout before another merge advances `main`.
+
+1. After owner merge, verify that the full merge SHA is still the tip of
+   `main`. Obtain explicit production authorization for that exact SHA.
+2. In GitHub Actions, open **Deploy Control Plane**, choose **Run workflow**
+   from `main`, enter the full SHA in `deployment_sha`, and select
+   `authorize_production`. This creates a separate manual run.
+3. Verify that the new run is a `workflow_dispatch` for that SHA and that
+   **Validate sources** runs the full suite before the deployment job starts.
+   The existing exact-main checks, image gate, host recovery preflight, and
+   post-deployment verification apply. If main advances, stop and review the
+   new tip before seeking authorization for it.
+
+`PR_VALIDATION_SECURITY_POLICY_CHANGED` is a deterministic rejection. Use the
+manual procedure above for an approved rollout. A map refresh with only
+manually dispatched checks also lacks the PR-triggered evidence for automatic
+deployment.
 
 For acceptance, record the full merged SHA, automatic run URL and attempt,
 the reused PR attempts, source gate timings and total deploy duration. Aim for

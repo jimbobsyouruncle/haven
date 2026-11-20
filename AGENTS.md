@@ -115,6 +115,7 @@ Explicit bounded implementation authorization covers testing, commits, draft PR 
 3. **Implement:** Small coherent commits; no unrelated refactors, broad dependency updates, generated secrets or edits to deployment state.
 4. **Test:** Run relevant local validation before pushing, then use applicable CI unit, integration, repository validation/SAST and ARM64 checks as evidence. Include negative authorization tests and offline mocks where relevant. Follow the evidence and CI policies below; never claim a test ran if it did not.
 5. **Review:** Evaluate the mandatory pre-PR security escalation above, create a draft PR, complete the validation cycle below, then automatically mark it ready and provide the final report for independent human review. Do not merge.
+   If the PR touches a protected path in the deployment provenance verifier, flag the automatic deployment rejection in the PR description before review and link the [manual deployment procedure](.github/CICD.md#manual-deployment-after-a-protected-policy-change).
 6. **Report and stop:** End every implementation session at the human merge-review boundary (or report a genuine blocker). The owner performs merges; staged deployment requires separate authorization. Preserve prior image digest and rollback plan; never auto-deploy mutable `latest`.
 
 ## Evidence-based completion and epic continuation
