@@ -32,6 +32,7 @@ start_webui() {
     -e WEBUI_SECRET_KEY=fixture-only-signing-key-not-for-production \
     -e DEFAULT_USER_ROLE=user -e ENABLE_SIGNUP=true -e WEBUI_AUTH=true \
     -e OFFLINE_MODE=true -e HF_HUB_OFFLINE=1 \
+    -e RAG_EMBEDDING_ENGINE=openai \
     -e ENABLE_OLLAMA_API=false -e ENABLE_OPENAI_API=false \
     -e ENABLE_WEBSOCKET_SUPPORT=true -e ENABLE_TOOL_SERVERS=true \
     -e ENABLE_IMAGE_GENERATION=false -e IMAGE_GENERATION_ENGINE=openai \

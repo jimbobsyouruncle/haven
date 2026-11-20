@@ -4,7 +4,9 @@ import base64
 import json
 import os
 import socket
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -13,6 +15,27 @@ PHASE = os.environ["QUALIFICATION_PHASE"]
 PASSWORD = "Synthetic-Only-Password-A9!"
 CHAT_TITLE = "Haven synthetic private chat"
 FUNCTION = "haven_qualification_runpod"
+
+
+class ToolFixture(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/openapi.json":
+            self.send_error(404)
+            return
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Haven synthetic tool", "version": "1.0"},
+            "paths": {"/ping": {"get": {"operationId": "ping", "responses": {
+                "200": {"description": "Synthetic response"},
+            }}}},
+        }
+        payload = json.dumps(spec).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+        self.server.received_spec.set()
 
 
 def request(path, body=None, token=None, allowed=(200,)):
@@ -46,7 +69,11 @@ else:
     raise SystemExit("Open WebUI health did not come up")
 
 owner = account("owner", PHASE == "seed")
-member = account("member", PHASE == "seed")
+if PHASE == "seed":
+    request("/api/v1/auths/add", {
+        "email": "member@example.test", "password": PASSWORD, "name": "member", "role": "user",
+    }, owner["token"])
+member = account("member")
 assert owner["role"] == "admin" and member["role"] == "user"
 owner_token, member_token = owner["token"], member["token"]
 source = base64.b64decode(os.environ["QUALIFICATION_PIPE"]).decode()
@@ -66,6 +93,7 @@ if PHASE == "seed":
         "content": source,
         "meta": {"description": "Synthetic fixture using the Haven RunPod Function"},
     }, owner_token)
+    request(f"/api/v1/functions/id/{FUNCTION}/toggle", {}, owner_token)
 
 chats = request("/api/v1/chats/", token=owner_token)
 chat = next(row for row in chats if row["title"] == CHAT_TITLE)
@@ -73,13 +101,36 @@ request(f"/api/v1/chats/{chat['id']}", allowed=(401, 403))
 request(f"/api/v1/chats/{chat['id']}", token=member_token, allowed=(403, 404))
 assert CHAT_TITLE not in {row["title"] for row in request("/api/v1/chats/", token=member_token)}
 function = request(f"/api/v1/functions/id/{FUNCTION}", token=owner_token)
-assert function["content"] == source and function["type"] == "pipe"
+assert function["content"] == source and function["type"] == "pipe" and function["is_active"]
+models = request("/api/models", token=owner_token)
+assert any(row["id"].split(".", 1)[0] == FUNCTION for row in models["data"])
 
 if PHASE == "migrate":
     from websockets.sync.client import connect
 
     config = request("/api/config", token=member_token)
     assert config["features"]["enable_image_generation"] is False
+    request("/api/v1/images/generations", {"prompt": "fixture only"}, member_token,
+            allowed=(400, 403))
+    with ThreadingHTTPServer(("127.0.0.1", 0), ToolFixture) as tool:
+        tool.received_spec = threading.Event()
+        thread = threading.Thread(target=tool.serve_forever, daemon=True)
+        thread.start()
+        connection = {
+            "url": f"http://127.0.0.1:{tool.server_port}",
+            "path": "openapi.json",
+            "type": "openapi",
+            "auth_type": "none",
+            "key": "",
+        }
+        try:
+            request("/api/v1/configs/tool_servers/verify", connection, member_token, allowed=(403,))
+            assert not tool.received_spec.is_set()
+            request("/api/v1/configs/tool_servers/verify", connection, owner_token)
+            assert tool.received_spec.wait(timeout=3)
+        finally:
+            tool.shutdown()
+            thread.join()
     session = request("/api/v1/auths/sessions", {"name": "Haven synthetic Tether"}, owner_token)
     with connect(f"ws://127.0.0.1:8080/api/v1/tether/connect", open_timeout=10) as relay:
         relay.send(json.dumps({

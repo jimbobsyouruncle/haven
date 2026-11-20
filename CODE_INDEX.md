@@ -1429,6 +1429,8 @@
 - def no_leak(label, tile)
 
 ## tests/qualification/open-webui.py
+- class ToolFixture(BaseHTTPRequestHandler)
+  - def do_GET(self)
 - def request(path, body, token, allowed)
 - def account(name, seed)
 
