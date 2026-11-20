@@ -36,6 +36,8 @@ start_webui() {
     -e ENABLE_OLLAMA_API=false -e ENABLE_OPENAI_API=false \
     -e ENABLE_WEBSOCKET_SUPPORT=true -e ENABLE_TOOL_SERVERS=true \
     -e ENABLE_IMAGE_GENERATION=false -e IMAGE_GENERATION_ENGINE=openai \
+    -e USER_PERMISSIONS_FEATURES_IMAGE_GENERATION=true \
+    -e IMAGES_OPENAI_API_KEY=fixture-only-image-key \
     -e IMAGES_OPENAI_API_BASE_URL=http://fixture.invalid/v1 "$2" >/dev/null
   docker inspect "$container" | jq -e '
     .[0] | .HostConfig.Privileged == false and

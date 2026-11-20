@@ -1,6 +1,7 @@
 """Exercise only the loopback API of the disposable Open WebUI container."""
 
 import base64
+import io
 import json
 import os
 import socket
@@ -9,6 +10,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 BASE = "http://127.0.0.1:8080"
 PHASE = os.environ["QUALIFICATION_PHASE"]
@@ -18,6 +20,14 @@ FUNCTION = "haven_qualification_runpod"
 
 
 class ToolFixture(BaseHTTPRequestHandler):
+    def json_response(self, document):
+        payload = json.dumps(document).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
     def do_GET(self):
         if self.path != "/openapi.json":
             self.send_error(404)
@@ -29,13 +39,20 @@ class ToolFixture(BaseHTTPRequestHandler):
                 "200": {"description": "Synthetic response"},
             }}}},
         }
-        payload = json.dumps(spec).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
         self.server.received_spec.set()
+        self.json_response(spec)
+
+    def do_POST(self):
+        if self.path != "/v1/images/generations":
+            self.send_error(404)
+            return
+        from PIL import Image
+
+        self.rfile.read(int(self.headers["Content-Length"]))
+        payload = io.BytesIO()
+        Image.new("RGB", (1, 1)).save(payload, format="PNG")
+        self.server.generated.set()
+        self.json_response({"data": [{"b64_json": base64.b64encode(payload.getvalue()).decode()}]})
 
 
 def request(path, body=None, token=None, allowed=(200,)):
@@ -115,6 +132,7 @@ if PHASE == "migrate":
             allowed=(400, 403))
     with ThreadingHTTPServer(("127.0.0.1", 0), ToolFixture) as tool:
         tool.received_spec = threading.Event()
+        tool.generated = threading.Event()
         thread = threading.Thread(target=tool.serve_forever, daemon=True)
         thread.start()
         connection = {
@@ -123,20 +141,39 @@ if PHASE == "migrate":
             "type": "openapi",
             "auth_type": "none",
             "key": "",
+            "config": {},
         }
         try:
             request("/api/v1/configs/tool_servers/verify", connection, member_token, allowed=(401, 403))
             assert not tool.received_spec.is_set()
             request("/api/v1/configs/tool_servers/verify", connection, owner_token)
             assert tool.received_spec.wait(timeout=3)
+            request("/api/v1/images/config", token=member_token, allowed=(401, 403))
+            images = request("/api/v1/images/config", token=owner_token)
+            migrated = next(row for row in images["IMAGE_CONNECTIONS"]
+                            if row["url"] == "http://fixture.invalid/v1")
+            migrated["url"] = f"http://127.0.0.1:{tool.server_port}/v1"
+            migrated["config"].update(
+                model_ids=["gpt-image-1"],
+                access_grants=[{"principal_type": "user", "principal_id": owner["id"], "permission": "read"}],
+            )
+            images.update(ENABLE_IMAGE_GENERATION=True, IMAGE_CONNECTIONS=[migrated])
+            request("/api/v1/images/config/update", images, owner_token)
+            model = request("/api/v1/images/models", token=owner_token)[0]["id"]
+            assert request("/api/v1/images/models", token=member_token) == []
+            body = {"model": model, "prompt": "fixture only"}
+            request("/api/v1/images/generations", body, member_token, allowed=(400, 403))
+            assert not tool.generated.is_set()
+            request("/api/v1/images/generations", body, owner_token)
+            assert tool.generated.wait(timeout=3)
         finally:
             tool.shutdown()
             thread.join()
     session = request("/api/v1/auths/sessions", {"name": "Haven synthetic Tether"}, owner_token)
     with connect(f"ws://127.0.0.1:8080/api/v1/tether/connect", open_timeout=10) as relay:
         relay.send(json.dumps({
-            "type": "hello", "version": 2, "token": session["access_token"],
-            "connection_id": "haven-qualification", "name": "Synthetic Tether",
+            "type": "hello", "version": 2, "token": session["token"],
+            "connection_id": str(uuid4()), "name": "Synthetic Tether",
             "services": [],
         }))
         assert json.loads(relay.recv(timeout=10))["type"] == "ready"

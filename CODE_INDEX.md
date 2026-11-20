@@ -1430,7 +1430,9 @@
 
 ## tests/qualification/open-webui.py
 - class ToolFixture(BaseHTTPRequestHandler)
+  - def json_response(self, document)
   - def do_GET(self)
+  - def do_POST(self)
 - def request(path, body, token, allowed)
 - def account(name, seed)
 
