@@ -452,6 +452,8 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                 path.touch()
         data = str(self.data.parent)
         mounts = [dict(Destination='/data', Source=data, Type='bind', RW=True)]
+        config_volume = 'caddy-config-fixture'
+        mounts.append(dict(Destination='/config', Name=config_volume, Type='volume', RW=True))
         image = 'sha256:' + 'b' * 64
         token = 'c' * 32
         digest = self.tx.file_digest(previous / MODULE.PROXY_CONFIG)
@@ -460,6 +462,7 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                        previous_overlay=None, previous_compose_hash='proxy fixture',
                        candidate_id='b' * 64, candidate_image=image, unchanged=False,
                        data=data, data_identity=self.tx.proxy_data_identity(data),
+                       config_volume=config_volume,
                        credentials={}, candidate_credentials={},
                        caddyfile_digest=digest, candidate_config=digest,
                        env_file=str(self.secret), env_digest=env_digest, candidate_env=env_digest,
@@ -541,10 +544,17 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                 self.assertEqual(args, ['docker', 'container', 'rm', dead['Id']])
                 removed = True
                 return ''
+            if args[:3] == ['docker', 'volume', 'inspect']:
+                return journal['proxy_runtime']['config_volume']
             if args[:2] == ['docker', 'compose']:
                 self.assertTrue(loaded and removed)
                 self.assertEqual(args[-8:], ['up', '-d', '--no-deps', '--no-build',
                                               '--pull', 'never', '--no-recreate', 'proxy'])
+                override = json.loads(Path(args[-9]).read_text())
+                self.assertEqual(override['services']['proxy']['volumes'],
+                                 ['haven_proxy_checkpoint:/config'])
+                self.assertEqual(override['volumes']['haven_proxy_checkpoint'],
+                                 dict(external=True, name=journal['proxy_runtime']['config_volume']))
                 recovered = True
                 return ''
             if args[:2] == ['docker', 'exec']:
@@ -590,6 +600,8 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         original = self.tx.command
 
         def command(args, **kwargs):
+            if args[:3] == ['docker', 'volume', 'inspect']:
+                return args[-1]
             if args[:3] == ['docker', 'container', 'rm']:
                 raise subprocess.CalledProcessError(1, args, stderr='container is running')
             self.assertNotEqual(args[:2], ['docker', 'compose'])

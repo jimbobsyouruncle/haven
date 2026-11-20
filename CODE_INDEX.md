@@ -530,6 +530,7 @@
   - def file_digest(self, path, private)
   - def proxy_inputs(self, container)
   - def proxy_data_identity(self, path)
+  - def proxy_config_volume(container)
   - def snapshot_proxy(self, values, recovery)
   - def candidate_proxy(self, token)
   - def identify_candidate(self, runtime)

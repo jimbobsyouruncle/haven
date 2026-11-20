@@ -1035,6 +1035,16 @@ class Transaction:
             raise Refusal('PROXY_CONFIGURATION: proxy data bind is not a directory')
         return [info.st_dev, info.st_ino]
 
+    @staticmethod
+    def proxy_config_volume(container):
+        mounts = [mount for mount in container['Mounts'] if mount['Destination'] == '/config']
+        if not mounts:
+            return None
+        if (len(mounts) != 1 or mounts[0]['Type'] != 'volume' or not mounts[0]['RW']
+                or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]*', mounts[0].get('Name', ''))):
+            raise Refusal('PROXY_CONFIGURATION: unsupported proxy config volume')
+        return mounts[0]['Name']
+
     def snapshot_proxy(self, values, recovery):
         running = self.proxy_container()
         labels = running['Config']['Labels']
@@ -1071,7 +1081,7 @@ class Transaction:
                     compose_digests=[self.file_digest(path) for path in inputs],
                     previous_overlay=str(old_overlay) if old_overlay else None,
                     caddyfile_digest=digest, data=data, data_identity=self.proxy_data_identity(data),
-                    credentials=credentials)
+                    config_volume=self.proxy_config_volume(running), credentials=credentials)
 
     def candidate_proxy(self, token):
         journal = self.load()
@@ -1222,14 +1232,22 @@ class Transaction:
         old_env = base64.b64decode(snapshot.get('data', ''), validate=True)
         if hashlib.sha256(old_env).hexdigest() != runtime['env_digest']:
             raise Refusal('PROXY_CONFIGURATION: previous stack environment mismatch')
+        restore_spec = {'services': {'proxy': {
+            'image': image, 'pull_policy': 'never',
+            'labels': {PROXY_TRANSACTION_LABEL: 'recovered-' + runtime['token']},
+        }}}
+        volume = runtime['config_volume']
+        if volume:
+            if self.command(['docker', 'volume', 'inspect', '--format', '{{.Name}}', volume],
+                            timeout=15) != volume:
+                raise Refusal('PROXY_CONFIGURATION: retained config volume identity mismatch')
+            restore_spec['volumes'] = {'haven_proxy_checkpoint': {'external': True, 'name': volume}}
+            restore_spec['services']['proxy']['volumes'] = ['haven_proxy_checkpoint:/config']
         with tempfile.TemporaryDirectory(prefix='proxy-restore-', dir=self.state) as scratch:
             env = Path(scratch) / 'stack.env'
             self.atomic(env, old_env)
             override = Path(scratch) / 'compose.json'
-            self.atomic(override, json.dumps({'services': {'proxy': {
-                'image': image, 'pull_policy': 'never',
-                'labels': {PROXY_TRANSACTION_LABEL: 'recovered-' + runtime['token']},
-            }}}).encode())
+            self.atomic(override, json.dumps(restore_spec).encode())
             compose = self.proxy_compose(previous, env, previous_overlay) + ['-f', str(override)]
             failed = self.identify_candidate(runtime)
             if not self.failed_proxy(failed):
@@ -1246,6 +1264,7 @@ class Transaction:
             if (restored['Image'] != image
                     or restored['Config']['Labels'].get(PROXY_TRANSACTION_LABEL) != 'recovered-' + runtime['token']
                     or self.proxy_inputs(restored) != (runtime['data'], runtime['credentials'])
+                    or self.proxy_config_volume(restored) != volume
                     or self.proxy_data_identity(runtime['data']) != runtime['data_identity']):
                 raise Refusal('PROXY_IDENTITY: restored proxy identity or binds differ')
             if restored['State']['Running'] and self.proxy_answers(runtime['previous_tls_domain']):

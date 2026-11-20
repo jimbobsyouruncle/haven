@@ -118,8 +118,10 @@ has restarted, Docker refuses removal. Compose is instructed to leave any
 concurrent replacement alone.
 
 Recovery uses the checked archive configuration ID and retained rendered
-Compose/Caddy configuration, without pulls, builds, dependent service starts
-or changes to live secrets and persistent storage. A missing local image may
+Compose/Caddy configuration. It reattaches the existing Docker-managed
+`/config` volume when present, and preserves the persistent `/data` bind.
+It performs no pulls, builds, dependent service starts or changes to live
+secrets. A missing local image may
 be reloaded from the checked archive. A dead candidate can remain unavailable
 if archive load, recreation or health verification fails. Even verified
 recovery leaves the deployment failed and fenced for owner reconciliation
