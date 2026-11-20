@@ -64,6 +64,25 @@ saving the installed driver and replacing only `scripts/install-root.py`.
 Keep the override unchanged. Release the lock, dispatch that same SHA with
 production authorization, and wait for the mandatory verifier.
 
+For the Compose secret-target correction, enter the full reviewed merge SHA
+at the prompt in the [locked preparation procedure](#complete-the-existing-installation-root-migration).
+After checkout and SHA verification, create the private `previous-driver`
+directory and run only these backup and replacement commands while the lock
+is held. Skip the override copy and all `deploy-instance.sh` operations.
+
+```bash
+cp -a /opt/haven/scripts/install-root.py "$PREP/previous-driver/"
+install -o root -g root -m 0644 "$PREP/scripts/install-root.py" /opt/haven/scripts/.install-root.py.new
+mv /opt/haven/scripts/.install-root.py.new /opt/haven/scripts/install-root.py
+cmp "$PREP/scripts/install-root.py" /opt/haven/scripts/install-root.py
+exec 9>&-
+```
+
+Keep the backup for undo under the same lock. Driver preparation alone does
+not start services. In the separately authorized deployment, confirm that
+candidate preflight accepts the Compose-reported DNS credential mount and
+that the mandatory verifier accepts the same requested SHA.
+
 - Confirm the journal records the pre-deploy running image as both
   `running_image_id` and `recovery_image_id`.
 - Confirm the private archive checksum matches the journal and the previous

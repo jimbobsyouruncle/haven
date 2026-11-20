@@ -1104,8 +1104,11 @@ class Transaction:
                        RW=not v.get('read_only', False)) for v in proxy['volumes']]
         for entry in proxy.get('secrets', []):
             name = entry['source']
+            target = entry.get('target', name)
+            if not target.startswith('/'):
+                target = '/run/secrets/' + target
             mounts.append(dict(Type='bind', Source=spec['secrets'][name]['file'], RW=False,
-                               Destination='/run/secrets/' + entry.get('target', name)))
+                               Destination=target))
         data, credentials = self.proxy_inputs({'Mounts': mounts})
         if data != runtime['data'] or self.proxy_data_identity(data) != runtime['data_identity']:
             raise Refusal('PROXY_CONFIGURATION: candidate changes the proxy data bind')

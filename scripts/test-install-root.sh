@@ -487,10 +487,12 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         conf = dict(type='bind', source=str(self.tx.app / MODULE.PROXY_CONFIG),
                     target=MODULE.PROXY_DEST, read_only=True)
         secret = 'cloudflare_dns_token'
+        destination = '/run/secrets/' + secret
         (self.tx.app / MODULE.PROXY_CONFIG).write_text(
             'dns cloudflare {file./run/secrets/cloudflare_dns_token}')
         spec = {'services': {'proxy': {'image': 'candidate:fixture', 'volumes': [data, conf],
-                                       'secrets': [{'source': secret}], 'environment': {}}},
+                                       'secrets': [{'source': secret, 'target': destination}],
+                                       'environment': {}}},
                 'secrets': {secret: {'file': str(self.secret)}}}
         original = self.tx.command
 
@@ -516,7 +518,19 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                     self.assertFalse(list(self.tx.state.glob('proxy-candidate-*')))
                     self.assertFalse(list(self.tx.state.glob('proxy-env-*')))
             failure = None
-            overlay = json.loads(Path(self.tx.candidate_proxy(runtime['token'])).read_text())
+            for secret_spec in ({'source': secret, 'target': destination},
+                                {'source': secret, 'target': secret}, {'source': secret}):
+                with self.subTest(secret_spec=secret_spec):
+                    spec['services']['proxy']['secrets'] = [secret_spec]
+                    self.calls.clear()
+                    overlay = json.loads(Path(self.tx.candidate_proxy(runtime['token'])).read_text())
+                    expected = f'type=bind,src={self.secret},dst={destination},readonly'
+                    self.assertTrue(any(expected in args and 'validate' in args for args in self.calls))
+            for target in ('/tmp/' + secret, '../secrets/' + secret):
+                with self.subTest(target=target):
+                    spec['services']['proxy']['secrets'] = [{'source': secret, 'target': target}]
+                    with self.assertRaisesRegex(MODULE.Refusal, 'DNS credential bind unavailable'):
+                        self.tx.candidate_proxy(runtime['token'])
         self.assertEqual(overlay['services']['proxy']['image'], runtime['candidate_image'])
         self.assertEqual(overlay['services']['proxy']['pull_policy'], 'never')
         self.assertEqual(overlay['services']['proxy']['labels'][MODULE.PROXY_TRANSACTION_LABEL],
