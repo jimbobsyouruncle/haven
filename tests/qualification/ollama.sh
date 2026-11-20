@@ -2,7 +2,7 @@
 set -euo pipefail
 
 candidate="$(sed -n 's/.*image: [$]{OLLAMA_IMAGE:-\(.*\)}/\1/p' docker-compose.yml)"
-baseline=ollama/ollama:0.34.4
+baseline=ollama/ollama:0.34.4@sha256:8262851b2846b87c649eddf3e76beb270c52f4d1bc94559f47efde16b0841551
 container=haven-ollama-qualification
 store=haven-ollama-qualification-data
 cleanup() {
@@ -23,7 +23,8 @@ start() {
     if curl -fsS "$api/api/version" > "$RUNNER_TEMP/ollama-version"; then
       jq -e --arg version "$2" '.version == $version' "$RUNNER_TEMP/ollama-version"
       curl -fsS "$api/api/tags" | jq -e '.models | type == "array"'
-      curl -fsS "$api/v1/models" | jq -e '.data | type == "array"'
+      # Some releases serialize the empty model list as null.
+      curl -fsS "$api/v1/models" | jq -e '.object == "list" and (.data == null or (.data | type == "array"))'
       return
     fi
     sleep 1
