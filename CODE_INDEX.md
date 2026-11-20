@@ -460,6 +460,7 @@
 - def checkout_step(job, receipt)
 - def git(*args)
 - def pr_validation(sha)
+- def verify_pr_evidence(sha)
 - def evidence_list(data, key)
 - def deployment_jobs(run, sha, historical)
 - def runs(sha)
