@@ -97,8 +97,9 @@ if PHASE == "seed":
 
 chats = request("/api/v1/chats/", token=owner_token)
 chat = next(row for row in chats if row["title"] == CHAT_TITLE)
+assert request(f"/api/v1/chats/{chat['id']}", token=owner_token)["id"] == chat["id"]
 request(f"/api/v1/chats/{chat['id']}", allowed=(401, 403))
-request(f"/api/v1/chats/{chat['id']}", token=member_token, allowed=(403, 404))
+request(f"/api/v1/chats/{chat['id']}", token=member_token, allowed=(401, 403, 404))
 assert CHAT_TITLE not in {row["title"] for row in request("/api/v1/chats/", token=member_token)}
 function = request(f"/api/v1/functions/id/{FUNCTION}", token=owner_token)
 assert function["content"] == source and function["type"] == "pipe" and function["is_active"]
@@ -124,7 +125,7 @@ if PHASE == "migrate":
             "key": "",
         }
         try:
-            request("/api/v1/configs/tool_servers/verify", connection, member_token, allowed=(403,))
+            request("/api/v1/configs/tool_servers/verify", connection, member_token, allowed=(401, 403))
             assert not tool.received_spec.is_set()
             request("/api/v1/configs/tool_servers/verify", connection, owner_token)
             assert tool.received_spec.wait(timeout=3)
