@@ -26,8 +26,8 @@ TLS_DEFAULT_DOMAIN="daemonhub.dev"
 # CADDY_VALIDATE_IMAGE overrides both cases. Resolved at CALL time, not here:
 # install.sh sources this file before the stack .env is loaded, so a CADDY_IMAGE
 # from .env does not exist yet at source time.
-TLS_STOCK_VALIDATE_IMAGE="caddy:2.11-alpine"
-TLS_DNS_VALIDATE_IMAGE_DEFAULT="haven-caddy:2.11.7-dns"
+TLS_STOCK_VALIDATE_IMAGE="caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0"
+TLS_DNS_VALIDATE_IMAGE_DEFAULT="haven-caddy:2.11.9-dns"
 
 # Emit the validated CA URL for the installer's stack env.
 tls_render_acme_ca() {  # CA_URL

@@ -126,8 +126,8 @@ for d in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
   done
 done
 
-EXPECT_STOCK="caddy:2.11-alpine"
-EXPECT_DNS="haven-caddy:2.11.7-dns"
+EXPECT_STOCK="caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0"
+EXPECT_DNS="haven-caddy:2.11.9-dns"
 
 docker() {
   if [[ "${1:-}" == info ]]; then return 0; fi
@@ -178,7 +178,7 @@ if [[ -f "$WORK/docker.args" ]]; then
   # This render is the DNS-01 one, so the validator must use the DNS-capable
   # image: the stock tag has no dns.providers module and rejects the render at
   # adapt time.
-  if grep -Fxq -- "haven-caddy:2.11.7-dns" "$WORK/docker.args"; then
+  if grep -Fxq -- "haven-caddy:2.11.9-dns" "$WORK/docker.args"; then
     pass "docker branch validates the DNS-01 render with the DNS-capable image"
   else
     fail "docker branch did not use the DNS-capable image"
@@ -377,7 +377,7 @@ img_dns="$(image_for_render "$CADDYFILE")"
 if [[ "$img_dns" == "$EXPECT_DNS" ]]; then
   pass "dns render selects the DNS-capable image (${img_dns})"
 else
-  fail "dns render selected '${img_dns}' (expected haven-caddy:2.11.7-dns)"
+  fail "dns render selected '${img_dns}' (expected haven-caddy:2.11.9-dns)"
 fi
 
 # CADDY_IMAGE follows the resolver used everywhere else in the stack.
@@ -406,7 +406,7 @@ img_http="$(image_for_render "$HTTP_CADDYFILE")"
 if [[ "$img_http" == "$EXPECT_STOCK" ]]; then
   pass "http-01 render keeps the stock validation image (${img_http})"
 else
-  fail "http-01 render selected '${img_http}' (expected caddy:2.11-alpine)"
+  fail "http-01 render selected '${img_http}' (expected ${EXPECT_STOCK})"
 fi
 img_http_override="$( ( CADDY_VALIDATE_IMAGE=override/caddy:2; image_for_render "$HTTP_CADDYFILE" ) )"
 if [[ "$img_http_override" == "override/caddy:2" ]]; then
@@ -420,7 +420,7 @@ img_alpn="$(image_for_render "$HTTP_CADDYFILE")"
 if [[ "$img_alpn" == "$EXPECT_STOCK" ]]; then
   pass "tls-alpn render keeps the stock validation image (${img_alpn})"
 else
-  fail "tls-alpn render selected '${img_alpn}' (expected caddy:2.11-alpine)"
+  fail "tls-alpn render selected '${img_alpn}' (expected ${EXPECT_STOCK})"
 fi
 
 # --- The build runs BEFORE validation, and only on the dns path -----------
@@ -467,7 +467,7 @@ if grep -q -- "-t $EXPECT_DNS " "$WORK/docker.order" \
    && grep -q '^build .*caddy' "$WORK/docker.order"; then
   pass "dns path builds the DNS-capable image from ./caddy (docker build -t … <context>)"
 else
-  fail "dns path did not run 'docker build -t haven-caddy:2.11.7-dns <app>/caddy' (log: $(tr '\n' ';' < "$WORK/docker.order"))"
+  fail "dns path did not run 'docker build -t haven-caddy:2.11.9-dns <app>/caddy' (log: $(tr '\n' ';' < "$WORK/docker.order"))"
 fi
 first_build="$(grep -n '^build ' "$WORK/docker.order" | head -1 | cut -d: -f1)"
 first_run="$(grep -n '^run ' "$WORK/docker.order" | head -1 | cut -d: -f1)"

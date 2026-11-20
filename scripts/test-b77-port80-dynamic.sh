@@ -89,7 +89,7 @@ if docker build -q -f caddy/Dockerfile -t "$PROXY_IMAGE" caddy >"$SCRATCH/build.
   echo "built repo ./caddy image: $PROXY_IMAGE"
 else
   cat "$SCRATCH/build.log" >&2
-  PROXY_IMAGE="caddy:2.11-alpine"
+  PROXY_IMAGE="caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0"
   echo "WARN: ./caddy build failed; falling back to the pinned $PROXY_IMAGE"
   echo "WARN: the fallback has no DNS modules, so provisioning may differ."
   docker pull "$PROXY_IMAGE" >/dev/null 2>&1 || { echo "cannot pull $PROXY_IMAGE" >&2; exit 2; }

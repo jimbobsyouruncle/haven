@@ -61,7 +61,7 @@
 #                                                    ONE side effect: on the TLS
 #                                                    DNS-01 path it builds the
 #                                                    DNS-capable validation image
-#                                                    (haven-caddy:2.11.7-dns)
+#                                                    (haven-caddy:2.11.9-dns)
 #                                                    from ./caddy, so the render
 #                                                    can be validated at all. A
 #                                                    Docker image is build cache,
@@ -411,18 +411,14 @@ elif [[ -n "${OPENHANDS_AGENT_IMAGE_REPOSITORY:-}" || -n "${OPENHANDS_AGENT_IMAG
   log "Leaving the OpenHands agent-server image pin alone (not a known stale default pair)."
 fi
 
-# The Caddy image pin moves with caddy/Dockerfile. The retired default pinned
-# Caddy 2.8.4, which issues one certificate per site block and so leaks the
-# hermes./status. names to Certificate Transparency logs; 2.11.7 prefers the
-# wildcard. A deployed host carries the retired pin verbatim, and STEP 8 keeps
-# an explicit value as an owner pin, so without this branch the host would build
-# the old image forever. Unset it ONLY on an exact match: any other value (a
-# GHCR reference, a self-built tag, a digest pin) is an owner-chosen pin.
-# Idempotent: after one run the loaded value no longer matches.
-if [[ "${CADDY_IMAGE:-}" == "haven-caddy:2.8.4-dns" ]]; then
-  log "Migrating CADDY_IMAGE off the retired Caddy 2.8.4 pin to the current default."
-  unset CADDY_IMAGE
-fi
+# Advance only the former managed DNS image defaults. An explicit custom
+# tag or immutable recovery reference survives rendering.
+case "${CADDY_IMAGE:-}" in
+  haven-caddy:2.8.4-dns|haven-caddy:2.11.7-dns)
+    log "Migrating CADDY_IMAGE off a retired managed Caddy pin to the current default."
+    unset CADDY_IMAGE
+    ;;
+esac
 
 # The last migration retires the STORED pod mesh address. Older installs wrote
 # the GPU pod's Tailscale address into .env as TAILSCALE_IP, and every consumer
@@ -1068,7 +1064,7 @@ ACME_DNS_PROVIDER=${ACME_DNS_PROVIDER:-cloudflare}
 HAVEN_TLS_TOKEN_FILE=${HAVEN_TLS_TOKEN_FILE:-}
 TLS_HOSTS=${TLS_HOSTS:-}
 ACME_AUTO_HTTPS=${ACME_AUTO_HTTPS:-disable_redirects}
-CADDY_IMAGE=${CADDY_IMAGE:-haven-caddy:2.11.7-dns}
+CADDY_IMAGE=${CADDY_IMAGE:-haven-caddy:2.11.9-dns}
 # Login gate for the *.daemonhub.dev HTTPS sites. off by default: the rendered
 # Caddyfile is then byte-identical to the one without the gate. Turn it on with
 # AUTH_ENABLED=on plus HAVEN_AUTH_USER and a bcrypt HAVEN_AUTH_HASH.
