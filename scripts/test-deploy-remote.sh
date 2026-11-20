@@ -54,6 +54,12 @@ EOF
 exit 0
 EOF
 
+  cat > "$BINDIR/sleep" <<'EOF'
+#!/usr/bin/env bash
+# Stub the live container grace period in this offline health fixture.
+exit 0
+EOF
+
   cat > "$BINDIR/systemctl" <<'EOF'
 #!/usr/bin/env bash
 # Report the backup timer active so the deploy emits no stray warning.
@@ -70,7 +76,7 @@ printf '%s\n' "$@" >> "${SYSTEMD_RUN_LOG:-/dev/null}"
 exit "${SYSTEMD_RUN_EXIT:-0}"
 EOF
 
-  chmod +x "$BINDIR/docker" "$BINDIR/curl" "$BINDIR/systemctl" "$BINDIR/systemd-run"
+  chmod +x "$BINDIR/docker" "$BINDIR/curl" "$BINDIR/sleep" "$BINDIR/systemctl" "$BINDIR/systemd-run"
 }
 make_shims
 export PATH="$BINDIR:$PATH"
@@ -437,6 +443,19 @@ if [[ "$rc" == 0 && ! -e "$SDRUN_LOG" ]] &&
   pass "canonical unit owns verification without a second asynchronous waiter"
 else
   fail "canonical unit verification handoff failed"
+fi
+
+rm -f "$SDRUN_LOG"
+rc=0
+DOCTOR_EXIT=2 HAVEN_PROXY_TRANSACTION=0123456789abcdef0123456789abcdef \
+  HAVEN_DEPLOY_SYNCHRONOUS_VERIFY=1 SYSTEMD_RUN_LOG="$SDRUN_LOG" \
+  run_deploy "$WORKDIR/proxy-verification.out" "$SHA" || rc=$?
+if [[ "$rc" == 0 && ! -e "$SDRUN_LOG" ]] &&
+   has_line "$WORKDIR/proxy-verification.out" 'Deferring the mandatory runtime verdict to the root verifier.' &&
+   has_line "$WORKDIR/proxy-verification.out" 'Root verification is required by haven-deploy@.service ExecStartPost.'; then
+  pass "canonical Caddy transaction reaches mandatory verification after an early doctor failure"
+else
+  fail "early doctor failure prevented canonical Caddy verification"
 fi
 
 # Case: the verifier script is absent. The deployment must fail closed.
