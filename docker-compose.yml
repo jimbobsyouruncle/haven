@@ -263,7 +263,8 @@ services:
   #     socket access really means.
   # -------------------------------------------------------------------------
   status:
-    image: python:3.12-slim
+    image: haven-status:3.12.16-zlib1
+    build: ./status
     container_name: haven-status
     restart: unless-stopped
     depends_on:
