@@ -16,6 +16,9 @@
 ## .github/workflows/agent-context.yml
 - agent-context
 
+## .github/workflows/caddy-arm64.yml
+- build
+
 ## .github/workflows/deploy.yml
 - pr-evidence
 - validate
@@ -163,9 +166,9 @@
 - restore_home_dir()
 
 ## caddy/Dockerfile
-- FROM caddy:2.11.9-builder-alpine@sha256:646fee578e680989ca5c7fd1ce6f1de574d19fd71ef2221810cc0510a9f40c86 AS builder
+- FROM caddy@sha256:646fee578e680989ca5c7fd1ce6f1de574d19fd71ef2221810cc0510a9f40c86 AS builder
 - stage: builder
-- FROM caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+- FROM caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
 
 ## collect-diagnostics.sh
 - redact()
