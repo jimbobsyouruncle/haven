@@ -1900,6 +1900,9 @@ if [[ "$BUILD_GATE_DECISION" != "cache" ]]; then
     die "Control plane image build did not complete."
   fi
   haven_progress_stop
+else
+  # The Hermes cache receipt does not cover the status image.
+  "${COMPOSE[@]}" build status || die "Status image build did not complete."
 fi
 PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 
