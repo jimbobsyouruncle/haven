@@ -413,6 +413,11 @@ fi
 
 # Advance only the former managed DNS image defaults. An explicit custom
 # tag or immutable recovery reference survives rendering.
+# Advance the previous managed default. Other explicit image overrides survive.
+if [[ "${OLLAMA_IMAGE:-}" == "ollama/ollama:0.34.4" ]]; then
+  unset OLLAMA_IMAGE
+fi
+
 case "${CADDY_IMAGE:-}" in
   haven-caddy:2.8.4-dns|haven-caddy:2.11.7-dns)
     log "Migrating CADDY_IMAGE off a retired managed Caddy pin to the current default."
@@ -940,7 +945,7 @@ OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION}
 OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE}
 
 # --- Container image pins --------------------------------------------------
-OLLAMA_IMAGE=${OLLAMA_IMAGE:-ollama/ollama:0.34.4}
+OLLAMA_IMAGE=${OLLAMA_IMAGE:-ollama/ollama:0.40.16@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592}
 WEBUI_IMAGE=${WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.11.4}
 
 # --- Status page identity --------------------------------------------------

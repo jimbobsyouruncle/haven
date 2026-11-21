@@ -32,6 +32,7 @@
 - .github/workflows/agent-context.yml
 - .github/workflows/caddy-arm64.yml
 - .github/workflows/deploy.yml
+- .github/workflows/ollama-arm64.yml
 - .github/workflows/sandbox-image.yml
 - .github/workflows/sast-checks.yml
 - .github/workflows/status-arm64.yml
@@ -280,3 +281,6 @@
 - status/test_deploy_verification.py - FILE: status/test_deploy_verification.py
 - status/test_hub_urls.py - FILE: status/test_hub_urls.py
 - status/test_pod_probe.py - FILE: status/test_pod_probe.py
+## tests/qualification
+
+- tests/qualification/ollama.sh

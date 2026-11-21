@@ -24,6 +24,9 @@
 - validate
 - deploy
 
+## .github/workflows/ollama-arm64.yml
+- ollama
+
 ## .github/workflows/sandbox-image.yml
 - build
 
@@ -1444,3 +1447,7 @@
 - def stub_getaddrinfo(behavior)
 - def shape(tile)
 - def no_leak(label, tile)
+
+## tests/qualification/ollama.sh
+- cleanup()
+- start()
