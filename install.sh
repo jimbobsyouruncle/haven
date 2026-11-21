@@ -1894,7 +1894,13 @@ log "Starting full Hybrid-AI control plane stack..."
 # input check lets us skip its heavier build without hiding other Dockerfile updates.
 build_services=()
 if [[ "$BUILD_GATE_DECISION" == "cache" ]]; then
-  build_services=(status auth proxy)
+  build_services=(status)
+  if tls_is_on; then
+    build_services+=(proxy)
+    if tls_auth_is_on; then
+      build_services+=(auth)
+    fi
+  fi
 fi
 log "Building images..."
 haven_progress_start "build"
