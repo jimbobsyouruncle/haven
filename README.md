@@ -328,7 +328,7 @@ The cost of that first read, and the alternatives measured against it, are in [`
 Both files are generated from the tracked file list, are deterministic (no timestamps or commit SHAs), and must stay under 28672 bytes each. Regenerate them after any change that adds, removes, or renames a tracked file:
 
 ```bash
-python3 <path-to-generate.py> --root . --output-dir . --max-bytes 28672
+python3 scripts/generate-agent-context.py <path-to-generate.py>
 ```
 
 `scripts/check-agent-context.sh` verifies they are fresh. It compares the committed maps against a fresh generator run and exits:

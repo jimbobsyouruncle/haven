@@ -484,8 +484,7 @@ a grant, `hermes -p <profile> hooks test pre_tool_call` exercises it against a s
 
 ### Post-deployment security acceptance
 
-Source tests and installed executable files do not establish runtime enforcement. After a
-separately authorized deployment, the production operator must verify **each of the six
+Source tests and installed executable files do not establish runtime enforcement. After deployment, the production operator must verify **each of the six
 profiles**, using the running container's configured non-root identity and pinned CLI
 `/opt/hermes-agent/.hermes/bin/hermes` (via `docker exec`, without `--user root`):
 
@@ -513,13 +512,13 @@ profiles**, using the running container's configured non-root identity and pinne
    allowlist and logs private. Any skipped/missing/failed control remains open under runtime
    acceptance; successful CI does not convert it to PASS.
 
-At the same separately authorized verification, confirm OpenHands workspace maintenance
+As part of that operator verification, confirm OpenHands workspace maintenance
 uses the configured Haven uid for Git while deployment remains root-run. A dirty workspace
 must report refresh skipped, retain tracked edits and untracked entries byte-for-byte, and
 retain ownership. Verify Git still rejects an unrelated foreign-owned repository, with no
 new safe-directory exception. Reuse existing doctor/deployment evidence for unchanged
 controls; do not rerun identity migration or worker tests for these repairs. Rollback is a
-reviewed source revert and separately authorized deployment; reverting these fixes restores
+reviewed source revert through the owner-merge deployment workflow; reverting these fixes restores
 the two defects and cannot establish security acceptance.
 
 ## Environment variables

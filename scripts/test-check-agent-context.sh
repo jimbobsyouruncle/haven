@@ -71,15 +71,21 @@ EOF
 
 cp "$CHECK_SCRIPT" "$TMP_REPO/scripts/check-agent-context.sh"
 
+cp "$SCRIPT_DIR/generate-agent-context.py" "$TMP_REPO/scripts/"
+cat > "$TMP_REPO/Dockerfile" <<'EOF'
+FROM --platform=linux/arm64 registry.example:5000/library/python:3.12.16-slim@sha256:aaaa AS builder
+FROM builder AS final
+EOF
+
 git -C "$TMP_REPO" init -q
 git -C "$TMP_REPO" config user.name "fixture"
 git -C "$TMP_REPO" config user.email "fixture@example.com"
-python3 "$GENERATOR" --root "$TMP_REPO" --output-dir "$TMP_REPO" --max-bytes 30720 >/dev/null
+python3 "$SCRIPT_DIR/generate-agent-context.py" "$GENERATOR" --root "$TMP_REPO" --output-dir "$TMP_REPO" >/dev/null
 git -C "$TMP_REPO" add -A
 git -C "$TMP_REPO" commit -q -m "fixture: init"
 
 regen_into_repo() {
-  python3 "$GENERATOR" --root "$TMP_REPO" --output-dir "$TMP_REPO" --max-bytes 30720 >/dev/null
+  python3 "$SCRIPT_DIR/generate-agent-context.py" "$GENERATOR" --root "$TMP_REPO" --output-dir "$TMP_REPO" >/dev/null
 }
 
 commit_if_staged() {
@@ -161,7 +167,17 @@ git -C "$TMP_REPO" rm -q -f CONSOLIDATED_DOCS.md
 git -C "$TMP_REPO" commit -q -m "fixture: remove consolidated dump"
 restore_fresh
 
-# Case 7: bad generator path -> 2
+# Image tag and digest bumps keep the structure fresh.
+sed -i 's/3.12.16-slim@sha256:aaaa/3.12.17-slim@sha256:bbbb/' "$TMP_REPO/Dockerfile"
+check_case "Dockerfile pin changes" 0 "$(run_check "$GENERATOR")"
+sed -i 's/AS final/AS release/' "$TMP_REPO/Dockerfile"
+check_case "Dockerfile stage change" 1 "$(run_check "$GENERATOR")"
+restore_fresh
+sed -i 's|library/python|library/ruby|' "$TMP_REPO/Dockerfile"
+check_case "Dockerfile image repository change" 1 "$(run_check "$GENERATOR")"
+restore_fresh
+
+# A bad generator path is a usage error.
 check_case "bad generator path" 2 "$(run_check "$TMP_DIR/does-not-exist.py")"
 
 if [ "$FAILURES" -ne 0 ]; then

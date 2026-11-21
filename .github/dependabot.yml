@@ -32,10 +32,23 @@ updates:
   - package-ecosystem: "docker"
     directories:
       - "/auth"
-      - "/caddy"
       - "/hermes"
-      - "/openhands/agent-server"
       - "/status"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    # Treat Python 3.x series changes as runtime upgrades. This allow rule
+    # limits scheduled version updates only.
+    allow:
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-patch"
+  - package-ecosystem: "docker"
+    directories:
+      - "/caddy"
+      - "/openhands/agent-server"
     schedule:
       interval: "weekly"
     cooldown:

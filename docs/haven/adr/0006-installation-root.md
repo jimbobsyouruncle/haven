@@ -204,4 +204,4 @@ archive protects Caddy. Other service image IDs depend on local retention or a
 retrievable immutable pin, and an image rollback cannot reverse a data migration.
 
 One explicitly authorized bootstrap maintenance window bridges the old policy.
-See the [transition and rollback procedure](../../../deploy/README.md#one-time-policy-transition).
+The [one-time transition](../../../deploy/README.md#one-time-policy-transition) was followed by the successful deployment of [PR #261](https://github.com/jimbobsyouruncle/haven/pull/261) in [run 44944993263](https://github.com/jimbobsyouruncle/haven/actions/runs/44944993263). Direct production operations, destructive data migrations and credential changes require separate owner approval.

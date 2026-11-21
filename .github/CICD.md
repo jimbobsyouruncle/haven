@@ -25,7 +25,7 @@ Tailscale. Required PR checks supply ShellCheck, Semgrep, CodeQL and applicable
 ARM64 coverage. The main workflow repeats functional validation on the actual
 merge SHA. The bot's owner-merged context-map PRs stay deployment-neutral.
 
-See the [one-time host transition](../deploy/README.md#one-time-policy-transition).
+For historical setup and rollback, see the [one-time host transition](../deploy/README.md#one-time-policy-transition).
 Clearing `HAVEN_AUTOMATIC_DEPLOYMENT` pauses new candidates. Drain queued and
 running jobs before host maintenance. A newer main commit can supersede a
 waiting candidate, including when the newer change is docs-only. Merge another
@@ -197,14 +197,14 @@ Dependabot also proposes supported Dockerfile base image updates. These pins sti
 
 `REPO_MAP.md` and `CODE_INDEX.md` at the repository root are small, generated maps of the tracked tree. Coding agents read them instead of whole-code dumps, so context stays small and answers stay fast. The measured cost of that first read, and the layouts compared against it, are recorded in [`../docs/agent-context-index-design.md`](../docs/agent-context-index-design.md).
 
-The **Agent context** workflow (`workflows/agent-context.yml`) enforces that they are fresh. On every pull request to `main` it checks out the generator at a pinned commit from `jimbobsyouruncle/shared-actions`, runs the fixture test (`scripts/test-check-agent-context.sh`), and runs `scripts/check-agent-context.sh` against the committed maps.
+The **Agent context** workflow (`workflows/agent-context.yml`) enforces that they are fresh. On every pull request to `main` it checks out the generator at a pinned commit from `jimbobsyouruncle/shared-actions`, runs the fixture test (`scripts/test-check-agent-context.sh`), and runs `scripts/check-agent-context.sh` against the committed maps. The checker and the context-map committer use the same Haven wrapper. It preserves Dockerfile base image names and stage structure while omitting image tags and digests. Read the Dockerfiles for current pins.
 
 The check prints nothing and exits `0` when both maps match a fresh run. It exits `1` when a map is stale or missing, or when a retired `CONSOLIDATED_*.md` is still tracked. It exits `2` on a usage error or a generator failure (including a size overflow over `--max-bytes 30720`).
 
 To refresh the maps yourself:
 
 ```bash
-python3 <path-to-generate.py> --root . --output-dir . --max-bytes 30720
+python3 scripts/generate-agent-context.py <path-to-generate.py>
 ```
 
 The workflow holds `permissions: contents: read`, adds no write permission, and never commits or pushes. The maps land only through reviewed pull requests.

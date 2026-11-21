@@ -4,6 +4,8 @@ Status: approved simplified architecture, owner direction 2026-11-14.
 Implementation details below are proposals; this documentation revision implements
 no migration code and authorizes no production operations.
 
+The [2026-11-21 decision in ADR-0006](0006-installation-root.md#current-decision-2026-11-21) governs current deployment authorization. The original identity decision and host-transition procedures below remain historical context.
+
 ## Context and decision
 
 Haven is a personal, single-owner Raspberry Pi platform. Reuse ADR-0006's

@@ -6,6 +6,8 @@ Issue: [#147](https://github.com/jimbobsyouruncle/hybrid-ai/issues/147); parent:
 
 The owner accepted #147 as the completed public-source audit in [#147](https://github.com/jimbobsyouruncle/hybrid-ai/issues/147) and [epic #146](https://github.com/jimbobsyouruncle/hybrid-ai/issues/146), superseding the original keep-open requirements. External E01–E20 and unresolved manual-review decisions carry into #148/#149 preparation, #150 cutover and #151 verification; no operational checks are inferred to have passed. This audit did not change runtime behavior, infrastructure, repository identity, credentials or external worker source. Subsequent approved presentation decisions are recorded in [PRESENTATION.md](PRESENTATION.md); executable identity preparation is recorded in [COMPATIBILITY.md](COMPATIBILITY.md).
 
+This directory records historical rename and cutover evidence. For current deployment authorization, see [ADR-0006](../adr/0006-installation-root.md#current-decision-2026-11-21).
+
 Baseline: `c2286bcd266e1924797fc787a677e6f8aa2d94da`, public `main` observed on 2026-11-09. Repository ID: `1380300964`; repository: `jimbobsyouruncle/hybrid-ai`. The audit reads immutable Git blobs from this repository, not files in deployment directories or ignored/untracked configuration. Git remotes, environment files, logs, customer data, backups and other repositories were not inspected. The separately authorized exception is execution of the pinned public map generator, not permission to inspect its repository generally.
 
 ## Artifacts
