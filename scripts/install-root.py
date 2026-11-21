@@ -31,6 +31,13 @@ PROXY_TRANSACTION_LABEL = 'dev.haven.proxy-transaction'
 PROXY_CONFIG = 'status/Caddyfile'
 PROXY_DEST = '/etc/caddy/Caddyfile'
 PROXY_CREDENTIALS = {'/run/secrets/cloudflare_dns_token', '/run/secrets/rfc2136_key_secret'}
+# Docker 28 inspect materializes these empty image settings when the saved
+# configuration omits them. Non-default values and unknown fields still match
+# exactly, and the archive configuration digest uses the original bytes.
+IMAGE_CONFIG_DEFAULTS = (
+    dict.fromkeys(('AttachStderr', 'AttachStdin', 'AttachStdout', 'OpenStdin', 'StdinOnce', 'Tty'), False)
+    | dict.fromkeys(('Domainname', 'Hostname', 'Image', 'User'), '')
+)
 
 
 class Refusal(RuntimeError):
@@ -826,10 +833,13 @@ class Transaction:
                 if config_id != 'sha256:' + expected:
                     raise ValueError
                 config = json.loads(config_bytes)
+                saved_config = config['config']
+                inspected_config = metadata['Config']
                 if (config['os'] != metadata['Os']
                         or config['architecture'] != metadata['Architecture']
-                        or any(config.get('config', {}).get(k) != metadata['Config'].get(k)
-                               for k in set(config.get('config', {})) | set(metadata['Config']))
+                        or any(saved_config.get(key, IMAGE_CONFIG_DEFAULTS.get(key))
+                               != inspected_config.get(key, IMAGE_CONFIG_DEFAULTS.get(key))
+                               for key in saved_config.keys() | inspected_config.keys())
                         or config['rootfs']['diff_ids'] != metadata['RootFS']['Layers']):
                     raise ValueError
                 layers = manifest['Layers']

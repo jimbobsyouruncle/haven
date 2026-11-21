@@ -881,6 +881,21 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
             with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_ARTIFACT'):
                 self.tx.verify_archive(archive, metadata)
 
+    def test_docker_28_inspect_adds_only_known_empty_config_defaults(self):
+        archive = self.root / 'image.tar'
+        self.write_archive(archive)
+        inspected = dict(self.config['config'], AttachStderr=False, AttachStdin=False,
+                         AttachStdout=False, OpenStdin=False, StdinOnce=False, Tty=False,
+                         Domainname='', Hostname='', Image='', User='')
+        metadata = dict(Os='linux', Architecture='arm64', Config=inspected,
+                        RootFS={'Layers': self.config['rootfs']['diff_ids']})
+        self.assertEqual(self.tx.verify_archive(archive, metadata), self.config_id)
+        for change in ({'User': '1000'}, {'AttachStdin': True}, {'Image': 'another-image'},
+                       {'UnknownFlag': False}, {'Env': ['LOCAL_DOMAIN=different']}):
+            with self.subTest(change=change):
+                with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_ARTIFACT'):
+                    self.tx.verify_archive(archive, dict(metadata, Config=inspected | change))
+
     def test_missing_modules_version_and_host_architecture_refuse(self):
         original = self.runner
         for failure in ('version', 'list-modules', 'info'):
