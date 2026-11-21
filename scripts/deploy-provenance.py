@@ -60,7 +60,8 @@ def get(path, authenticated=False):
 
 
 def merged(sha):
-    pulls = get('/commits/' + sha + '/pulls?per_page=100', authenticated=True)
+    # Public merge metadata is available before assigning production access.
+    pulls = get('/commits/' + sha + '/pulls?per_page=100')
     require(isinstance(pulls, list) and len(pulls) < 100)
     require(any(p.get('merged_at') and p.get('merge_commit_sha') == sha
                 and p.get('base', {}).get('ref') == 'main'

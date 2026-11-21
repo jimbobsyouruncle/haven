@@ -170,6 +170,17 @@ class Provenance(unittest.TestCase):
             self.path.write_text(json.dumps(self.event))
             with self.assertRaises(ValueError): m.authorize(SHA)
 
+    def test_both_event_modes_reject_a_superseded_main_sha(self):
+        self.event['inputs'] = dict(deployment_sha=SHA, authorize_production='true')
+        self.path.write_text(json.dumps(self.event))
+        for event in ('push', 'workflow_dispatch'):
+            with self.subTest(event=event), patch.dict(os.environ, self.env, clear=True), \
+                    patch.object(m, 'merged'), patch.object(m, 'get', return_value={
+                        'object': {'sha': 'b' * 40}}):
+                os.environ['GITHUB_EVENT_NAME'] = event
+                with self.assertRaisesRegex(ValueError, 'PROVENANCE_MAIN_SHA'):
+                    m.authorize(SHA)
+
     def run_api(self, entries=None, history=None, attempt_jobs=None, refreshed=None):
         run = copy.deepcopy(self.run)
         entries = copy.deepcopy(entries if entries is not None else [run, dict(
