@@ -242,7 +242,7 @@ jobs:
   hermes-nonroot-smoke:
     name: Hermes non-root smoke
     needs: changes
-    if: needs.changes.outputs.hermes_image == 'true'
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.hermes_image == 'true' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 25
     permissions:

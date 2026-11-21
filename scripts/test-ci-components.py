@@ -146,6 +146,8 @@ class SelectionTests(unittest.TestCase):
         self.assertIn('python3 scripts/test-ci-components.py', workflow)
         self.assertIn('name: Security & SAST gate', sast)
         self.assertIn("always() && (github.event_name != 'workflow_run'", sast)
+        smoke = sast.split('  hermes-nonroot-smoke:\n', 1)[1]
+        self.assertIn("!cancelled() && needs.changes.result == 'success'", smoke)
         # Every narrowed step includes the conservative full fallback. Each
         # component has actual executable consumers, not just detector outputs.
         for line in workflow.splitlines():

@@ -638,6 +638,29 @@ class ExactValidation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'JOB_IDENTITY'):
             self.evidence()
 
+    def test_request_requires_success_from_matching_deployment_attempt(self):
+        event = dict(self.run, path='.github/workflows/deploy.yml', event='push',
+                     id=12, run_attempt=2)
+        job = dict(name='Request exact SHA validation', run_id=12, run_attempt=2,
+                   head_sha=SHA, status='completed')
+        with tempfile.TemporaryDirectory() as directory:
+            event_path = Path(directory) / 'event.json'
+            output = Path(directory) / 'output'
+            event_path.write_text(json.dumps(dict(workflow_run=event)))
+            env = dict(GITHUB_EVENT_PATH=str(event_path), GITHUB_OUTPUT=str(output))
+            with patch.dict(os.environ, env, clear=True), patch.object(m, 'require_current_main'):
+                for conclusion in ('skipped', 'failure', 'success'):
+                    job['conclusion'] = conclusion
+                    with self.subTest(conclusion=conclusion), patch.object(
+                            m, 'get', return_value=dict(jobs=[job], total_count=1)):
+                        if conclusion == 'failure':
+                            with self.assertRaisesRegex(ValueError, 'REQUEST_FAILED'):
+                                m.validation_request(SHA)
+                        else:
+                            m.validation_request(SHA)
+                            self.assertEqual(output.exists(), conclusion == 'success')
+                self.assertEqual(output.read_text(), 'fresh=true\n')
+
 
 class PRValidation(unittest.TestCase):
     def setUp(self):
