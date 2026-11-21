@@ -6,6 +6,8 @@ transaction before SSH reports success. See the [CI guide](../.github/CICD.md).
 
 ## One-time policy transition
 
+Historical runbook for [PR #261](https://github.com/jimbobsyouruncle/haven/pull/261), accepted by [deployment run 44944993263](https://github.com/jimbobsyouruncle/haven/actions/runs/44944993263). Routine deploys skip this transition.
+
 Use one explicitly authorized maintenance window for the host running the old
 cumulative policy. Have the reviewed PR and its successful required checks
 available. Keep its merge until the preparation below is complete.
@@ -72,8 +74,7 @@ A host image override takes precedence over a repository pin.
 
 ## Installation root migration
 
-Fresh bootstrap uses `/opt/haven`. Existing bootstrapped `/opt/haven`
-installations use the separately authorized root migration procedure.
+Fresh bootstrap uses `/opt/haven`. Existing canonical installations update by owner merge. Legacy installations need a separately authorized root migration.
 Do not move the directory manually or rerun bootstrap over an existing legacy
 installation. See [ADR-0006](../docs/haven/adr/0006-installation-root.md) and
 [implementation issue #187](https://github.com/jimbobsyouruncle/haven/issues/187).
@@ -104,41 +105,11 @@ keep older archives and journals. The scheduled Docker cleanup remains
 build-cache-only. Keep the current rollback archive and previous rendered
 checkout through acceptance and until the owner clears that checkpoint.
 
-After approval and merge, the owner must prepare the reviewed driver before
-dispatch: the installed driver runs preflight before it stages the new SHA.
-Use the locked preparation procedure below with the reviewed current main SHA,
-saving the installed driver and replacing only `scripts/install-root.py`.
-Keep the override unchanged. Release the lock, dispatch that same SHA with
-production authorization, and wait for the mandatory verifier.
-
-For the Compose secret-target correction, enter the full reviewed merge SHA
-at the prompt in the [locked preparation procedure](#complete-the-existing-installation-root-migration).
-After checkout and SHA verification, create the private `previous-driver`
-directory and run only these backup and replacement commands while the lock
-is held. Skip the override copy and all `deploy-instance.sh` operations.
-
-```bash
-cp -a /opt/haven/scripts/install-root.py "$PREP/previous-driver/"
-install -o root -g root -m 0644 "$PREP/scripts/install-root.py" /opt/haven/scripts/.install-root.py.new
-mv /opt/haven/scripts/.install-root.py.new /opt/haven/scripts/install-root.py
-cmp "$PREP/scripts/install-root.py" /opt/haven/scripts/install-root.py
-exec 9>&-
-```
-
-Keep the backup for undo under the same lock. Driver preparation alone does
-not start services. In the separately authorized deployment, confirm that
-candidate preflight accepts the Compose-reported DNS credential mount and
-that the mandatory verifier accepts the same requested SHA.
-
-- Confirm the journal records the pre-deploy running image as both
-  `running_image_id` and `recovery_image_id`.
-- Confirm the private archive checksum matches the journal and the previous
-  checkout still contains the rendered Compose and Caddy configuration.
-- Confirm the requested SHA and runtime-health gates passed and the journal
-  reached `accepted`. Report outcomes without sharing protected file contents.
-- If preparation must be undone before dispatch, restore the saved driver
-  under the same lock. If deployment fails, use the existing control rollback
-  and separately authorized proxy-only recovery below.
+The canonical transaction stages the reviewed main revision and uses its
+driver for preflight. During verification, check that the pre-deploy running
+image matches the recorded recovery image, the private archive checksum matches
+the journal, the previous rendered checkout is available and the requested SHA
+reaches `accepted` after runtime health passes.
 
 The verifier requires the proxy to answer a local status request. If it
 identifies the activated candidate and confirms the process exited with an
@@ -201,94 +172,26 @@ deploy path previously pruned dangling images, while canonical transactions
 skipped that step. The incident evidence does not establish which operation
 removed the local references.
 
-Automatic production deployment on a push to main requires prior owner
-activation. A manual workflow run requires explicit assent and the exact
-current main SHA.
+The next eligible owner merge follows the automatic deployment path. Resolve any fenced transaction with the owner before retrying.
 
-### Complete the existing installation-root migration
+### Legacy installation-root migration
 
-This is the retained first-time installation-root procedure. Accepted installations
-already at `/opt/haven` do not repeat it. Namespace preparation uses the existing
-corrected transaction to stage a complete matched checkout; do not copy individual
-new namespace scripts into an older checkout lacking their canonical helpers.
-Review any first-time driver preparation against that selected revision's helper
-dependencies before separately authorizing it.
-
-Use one reviewed, merged main revision throughout. No bootstrap rerun, directory
-rename, proxy replacement or new recovery rehearsal is necessary. The recovery
-candidate must already be available locally; automated checks will refuse if it
-is missing or incompatible. Preserve existing backups and recovery archives.
-
-1. On the host, open a root shell (`sudo -i`). Enter the reviewed **full main SHA**
-   at the prompt below. This stages only public source and installs two corrected
-   driver files under the existing root; it does not start services. The lock
-   prevents concurrent deployment. Keep the printed preparation directory locally
-   for undo; do not publish host files or the transaction journal.
-
-   ```bash
-   set -e
-   read -r -p 'Reviewed merged full main SHA: ' SHA
-   [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
-   exec 9>/run/lock/haven-deploy.lock
-   flock -n 9
-   PREP="/opt/.haven-driver-$SHA"
-   test ! -e "$PREP"
-   umask 022
-   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c http.extraHeader= -c core.hooksPath=/dev/null clone --no-checkout https://github.com/jimbobsyouruncle/haven.git "$PREP"
-   git -C "$PREP" merge-base --is-ancestor "$SHA" origin/main
-   git -C "$PREP" -c core.hooksPath=/dev/null checkout --detach "$SHA"
-   test "$(git -C "$PREP" rev-parse HEAD)" = "$SHA"
-   mkdir -m 0700 "$PREP/previous-driver"
-   if test -e /etc/haven/proxy-recovery-image; then
-     cp -a /etc/haven/proxy-recovery-image "$PREP/previous-driver/"
-   fi
-   cp -a /opt/haven/scripts/install-root.py "$PREP/previous-driver/"
-   cp -a /opt/haven/scripts/deploy-instance.sh "$PREP/previous-driver/"
-   install -o root -g root -m 0644 "$PREP/scripts/install-root.py" /opt/haven/scripts/.install-root.py.new
-   mv /opt/haven/scripts/.install-root.py.new /opt/haven/scripts/install-root.py
-   install -o root -g root -m 0755 "$PREP/scripts/deploy-instance.sh" /opt/haven/scripts/.deploy-instance.sh.new
-   mv /opt/haven/scripts/.deploy-instance.sh.new /opt/haven/scripts/deploy-instance.sh
-   printf 'Prepared driver revision %s; undo files: %s/previous-driver\n' "$SHA" "$PREP"
-   exec 9>&-
-   ```
-
-   Keep an existing validated selection, or follow the recovery instructions above
-   if its digest is unavailable. With no selection file, preflight checks the
-   running image reference. Existing obsolete approval JSON files are ignored.
-
-2. In GitHub Actions, run the **deploy** workflow from main with `deployment_sha`
-   set to that same full SHA and `authorize_production` checked. This is the
-   explicit production action. If main advanced, use the new reviewed main SHA
-   consistently, including driver preparation. Do not retry an old driver.
-
-3. Wait for both deployment and its post-deploy verifier. On the host, keep checks
-   local: confirm `git -C /opt/haven rev-parse HEAD` equals the requested SHA,
-   `/etc/haven/haven.env` selects `/opt/haven`, and the protected journal
-   has phase `accepted` with that SHA. The mandatory verifier checks canonical
-   SSH/unit wiring and service health; use the existing configured Compose command with `-p haven` to inspect services if a specific failure needs it.
-   Report only the revision, accepted outcome and health result in the issue.
-   Leave the issue open on any missing/failed mandatory check. After success,
-   request owner closure; implementation does not authorize automatic closure.
-
-Subsequent deployments need only step 2 and verification. The corrected installed
-driver stages fresh checkouts; no repeated driver installation or recovery
-paperwork is needed. The recovery selection may remain until deliberately changed.
+The original procedure and validation evidence are retained in
+[ADR-0006](../docs/haven/adr/0006-installation-root.md). The old Actions dispatch
+and driver-copy steps are retired. A legacy host needs an owner-approved
+migration plan for its installed controls, data paths, backup and rollback.
 
 ### Rollback
 
-If preparation alone must be undone, hold the same deployment lock and copy the
-two saved `previous-driver` files back to `/opt/haven/scripts/`, preserving
-ownership/modes. Remove the new selection only if it was newly created; preserve
-any prior selection. Do not undo preparation during a running deployment.
+For a healthy, reversible change, merge a reviewed revert. If a failed deployment
+leaves an unresolved host transaction, pause deployment and obtain owner approval
+for direct recovery. An interrupted `activating` journal is recovered by the next
+deployment. An interrupted runtime handoff stays fenced for operator diagnosis.
 
-If migration fails synchronously, the transaction restores roots/control files
-automatically. For an interrupted activation, the next authorized deploy restores
-it before retrying. For failed/missing asynchronous verification, stop further
-deployment and run the following as root using the retained preparation checkout
-and the failed deployment's full SHA:
+For control-plane rollback, use the retained script and the failed full SHA:
 
 ```bash
-python3 /opt/.haven-driver-<reviewed-SHA>/scripts/install-root.py rollback <deployment-SHA>
+python3 <retained-root>/scripts/install-root.py rollback <deployment-SHA>
 ```
 
 This restores code/control files and reloads systemd, without database/volume
@@ -316,22 +219,10 @@ journals/checkouts are retained. Previous canonical code roots use unique
 The initial legacy checkout remains a checkpoint. No permanent symlink, volume
 deletion, database move or automatic artifact cleanup is performed.
 
-The synchronous deploy must schedule its transient verifier successfully.
-Acceptance then requires a fresh schema-v2 receipt with requested and installed
-SHA, canonical layout/SSH/service wiring, doctor/application health and all other
-mandatory gates passing. Root verifier evidence, rather than the service-owned
-receipt alone, accepts the journal. Missing/failed verification leaves the
-transaction `awaiting_verifier` and blocks the next deployment.
+The canonical path verifies wiring, health and the exact SHA synchronously before
+recording acceptance. Legacy paths may use the
+[asynchronous verifier](#legacy-and-local-asynchronous-verification).
 
-On synchronous failure, restore control files/root and retain the failed code.
-An interrupted `activating` journal is recovered on the next authorized deploy.
-An interrupted runtime handoff is deliberately held for operator diagnosis.
-For a separately authorized control-plane rollback, an operator can run the
-retained script with `python3 <retained-root>/scripts/install-root.py rollback
-<full-requested-SHA>`. It acquires the deployment lock, restores the previous
-control files/root and reloads systemd; it does **not** restart containers or
-restore data. If services were recreated, a separately authorized runtime
-recovery must use retained code/configuration and verified immutable images.
 The first legacy dispatcher had already reset code before entering this new
 script: its recorded ORIG_HEAD is revision evidence, not an untouched prior
 rendered checkout or proof of runtime recoverability.
@@ -346,20 +237,7 @@ that can do exactly one thing: start the systemd unit
 `haven-deploy@<sha>.service`, which deploys the 40-character commit `<sha>`.
 The account cannot run git, read the journal, use sudo, or touch any other unit.
 
-Nothing here is active on its own. Today's deploy path
-(`.github/workflows/deploy.yml`) already calls this entrypoint through
-`scripts/deploy-trigger.sh`; it becomes fully active once the owner runs the
-bootstrap below.
-
-> ## Active after bootstrap
->
-> The host pieces here are inert until an owner migration runs. **Card F**,
-> `scripts/bootstrap.sh`, installs the pieces on the host and adds the
-> `authorized_keys` line, which makes the deploy pass live. `deploy.yml` has
-> already been switched over: it connects as `haven-deploy` and sends exactly
-> `deploy <sha>`. Until the bootstrap runs, no account, unit or polkit rule
-> exists on the host, so that connection fails closed at SSH auth with nothing
-> run.
+On a fresh host, `scripts/bootstrap.sh` installs the account, unit, polkit rule and forced-command key before the GitHub workflow can deploy.
 
 ---
 
@@ -388,14 +266,13 @@ another host. For a separately approved installation or configuration change,
 review the root service's process environment and existing drop-ins/overrides,
 record prior state, and explicitly set
 `Environment=HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven` under `[Service]`
-in a root-owned drop-in for `haven-deploy@.service`. Any daemon reload or
-subsequent deployment requires its own authorization. Bootstrap's invocation
+in a root-owned drop-in for `haven-deploy@.service`. The direct host change and daemon reload require owner approval. Bootstrap's invocation
 must independently select the same identity. Editing the layout file or
 exporting a variable in the SSH client does not perform this activation.
 
 `HAVEN_DEPLOY_PUBLIC_REMOTE` is accepted only when it equals the canonical
 HTTPS clone URL above. It does not configure bootstrap or verification. Align
-old redirected or custom overrides before any separately authorized deployment;
+old redirected or custom overrides before deployment;
 foreign repositories, deceptive hosts, userinfo and query strings refuse before
 fetch. The former selector/default and custom remote behavior are historical.
 
@@ -408,19 +285,17 @@ fixtures. See [compatibility evidence and cutover handoff](../docs/haven/rename/
 Feature-branch/PR validation does not deploy. Main-branch automation must be
 reviewed before publication or merge; a documentation PR does not authorize
 host changes or deployment. Rollback of documentation is a reviewed revert;
-runtime rollback requires separate approval of the known-good revision,
-installed standalone verifier and recovery artifacts.
+direct host recovery requires separate approval and verified recovery artifacts. A reversible image change can roll back through a reviewed revert.
 
 The [readiness runbook](../docs/haven/rename/READINESS.md) preserves historical
 preparation and evidence. Current accepted lifecycle decisions and remaining
 post-cutover gates are recorded in [#151](https://github.com/jimbobsyouruncle/haven/issues/151).
 Reuse accepted backup/restore and unchanged worker evidence within its recorded
-scope. New-path runtime verifier propagation awaits the next separately
-approved deployment; source forwarding support alone is not a runtime PASS.
+scope. New-path runtime verifier propagation requires matching deployment-time evidence; source forwarding support alone is not a runtime PASS.
 
 ---
 
-## What card F installs (one bootstrap, on the host)
+## What bootstrap installs (once per host)
 
 Card F is one idempotent, root-run script, `scripts/bootstrap.sh`. It installs
 the account, the files and the SSH key line on a host in a single command, and
@@ -857,8 +732,7 @@ bounded recovery review for the installed full SHA and existing transaction:
    If any mandatory gate fails, retain the unresolved transaction and recovery
    artifacts for owner-directed current-data recovery.
 
-Owner merge review of this PR is not production deployment or recovery acceptance
-authorization. Rollback remains the existing reviewed revert plus separately
+An owner merge authorizes normal automatic deployment. This incident-specific host recovery action still requires explicit approval. Rollback remains the existing reviewed revert plus separately
 approved host recovery procedure; changing code alone does not restore services.
 
 ### Acceptance-only recovery for the 5c2df63 transaction

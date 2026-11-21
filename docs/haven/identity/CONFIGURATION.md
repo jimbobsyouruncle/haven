@@ -41,7 +41,7 @@ Repository provenance now defaults to `jimbobsyouruncle/haven`. Both selector
 variable spellings can select that same identity; neither can actively select
 the former slug, another repository or a deceptive URL. A deployment remote
 override must also equal the canonical HTTPS clone URL; old redirected or custom
-overrides require alignment before any separately authorized deployment. The driver's bounded
+overrides require alignment before deployment. The driver's bounded
 historical checkout import remains part of existing migration/recovery support;
 its controlled fetch uses the canonical public repository.
 

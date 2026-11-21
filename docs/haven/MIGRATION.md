@@ -2,6 +2,10 @@
 
 This document is a **proposed platform workstream plan**, not a declaration of implementation. The repository rename epic is a distinct operational migration.
 
+## Deployment during modernization
+
+Owner merge authorizes automatic deployment after scope-relevant CI and SAST under [ADR-0006](adr/0006-installation-root.md#current-decision-2026-11-21). Direct cutover, destructive data migration and credential operations require separate approval.
+
 ## Existing approved rename sequence
 
 [Epic #146](https://github.com/jimbobsyouruncle/hybrid-ai/issues/146): #147 public-source audit is accepted complete; #148 and #149 own compatibility and deployment preparation; #150 alone performs the separately owner-approved repository rename/cutover; #151 verifies post-cutover behavior. Preserve deferred external verification and accepted audit evidence. Do not infer production verification from source CI.

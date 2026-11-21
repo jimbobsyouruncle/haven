@@ -186,6 +186,7 @@
 - scripts/deploy-remote.sh
 - scripts/deploy-trigger.sh
 - scripts/deploy-verify.sh - Root ExecStartPost: resolve the existing log override and bound verification.
+- scripts/generate-agent-context.py - Generate Haven's architectural maps with the pinned shared generator.
 - scripts/install-root.py - Recoverable installation/identity handoff using the ADR-0006 checkpoint.
 - scripts/no-masked-literals-baseline.txt
 - scripts/prune-conversations.sh - FILE: scripts/prune-conversations.sh

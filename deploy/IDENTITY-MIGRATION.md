@@ -1,8 +1,6 @@
 # Coordinated Haven identity cutover
 
-PR preparation does not authorize this procedure. Automatic deployment remains
-inactive until PR 3. Merge, production cutover, recovery execution and cleanup
-are separate owner decisions. This uses `install-root.py` and its ADR-0006
+This runbook records the one-time legacy identity cutover. Current automatic deployment follows [ADR-0006](../docs/haven/adr/0006-installation-root.md#current-decision-2026-11-21). Direct cutover, recovery execution and cleanup remain separate owner decisions. This uses `install-root.py` and its ADR-0006
 checkpoint, immutable Caddy recovery export, main ancestry check and verifier.
 It does not change the RunPod worker, remote Restic repository or credentials.
 

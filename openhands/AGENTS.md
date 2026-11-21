@@ -89,7 +89,7 @@ For Haven tasks, the [root AGENTS.md](../AGENTS.md#standard-development-workflow
    preserve that restriction and report any push/PR limitation, supported work completed,
    validation evidence and remaining handoff. A local commit alone is not completed PR
    readiness. Never merge, enable auto-merge, bypass branch protection or delegate merge
-   authority. Deployment or service restarts require separate operational authorization.
+   authority. Owner merge authorizes normal automatic deployment. Direct production operations, including manual service restarts, require separate approval.
 
 ## Secrets
 
