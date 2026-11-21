@@ -106,7 +106,7 @@
 ## docs/haven/identity
 
 - docs/haven/identity/CONFIGURATION.md - Canonical source and configuration handoff
-- docs/haven/identity/CONTINUOUS-DEPLOYMENT.md - Restore automatic deployment through the existing workflow
+- docs/haven/identity/CONTINUOUS-DEPLOYMENT.md - Continuous deployment
 - docs/haven/identity/CUTOVER.md - Production cutover, existing verification and operator cleanup
 - docs/haven/identity/DEPENDENCIES.md - Identity dependency register
 - docs/haven/identity/README.md - Final platform identity consolidation
@@ -181,7 +181,6 @@
 - scripts/ci-parity.sh - Replay the repository-owned static gates from CI, locally, before you push.
 - scripts/deploy-forced-command.sh
 - scripts/deploy-image-gate.sh - FILE: scripts/deploy-image-gate.sh
-- scripts/deploy-impact.py - Classify cumulative deployment changes since an independently trusted SHA.
 - scripts/deploy-instance.sh
 - scripts/deploy-provenance.py - Fail-closed main deployment provenance; API reads only, no host mutation.
 - scripts/deploy-remote.sh
@@ -211,6 +210,7 @@
 - scripts/test-check-no-masked-literals.sh - Fixture test for scripts/check-no-masked-literals.sh.
 - scripts/test-ci-components.py - Offline selector and workflow safety regressions. No third-party modules.
 - scripts/test-ci-parity.sh - Offline fixture harness for scripts/ci-parity.sh.
+- scripts/test-container-upgrade.sh - CI smoke: a pinned image replacement preserves data, unrelated services and rollback.
 - scripts/test-deploy-build-gate.sh - FILE: scripts/test-deploy-build-gate.sh
 - scripts/test-deploy-forced-command.sh
 - scripts/test-deploy-image-gate.sh

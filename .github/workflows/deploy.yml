@@ -1,145 +1,56 @@
-# Exact-main deployment. Automatic production access remains disabled until
-# canonical cutover acceptance and explicit owner activation of
-# vars.HAVEN_AUTOMATIC_DEPLOYMENT=enabled. This change does not set that variable.
-# Manual recovery requires explicit assent and the current full main SHA.
-# Existing manual identity acceptance uses install-root.py reverify-manual;
-# it does not dispatch this workflow or enable automatic deployment.
 name: Deploy Control Plane
 
-# "on:" decides when this runs.
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      deployment_sha:
-        description: 'Full current main SHA explicitly authorized for production deployment'
-        required: true
-        type: string
-      authorize_production:
-        description: 'Authorize this production deployment; automated recovery preflight is required'
-        required: true
-        default: false
-        type: boolean
-
-# Only one deploy at a time. Without this, two quick pushes could have two
-# runners reconfiguring the same Pi simultaneously.
-concurrency:
-  group: deploy-control-plane
-  cancel-in-progress: false
 
 permissions:
-  contents: read          # least privilege: the job only needs to read code
+  contents: read
 
 jobs:
-
-  pr-evidence:
-    if: github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha))
+  candidate:
+    if: github.repository == 'jimbobsyouruncle/haven' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled'
     runs-on: ubuntu-latest
-    timeout-minutes: 2
-    permissions:
-      contents: read
-      actions: read
+    timeout-minutes: 3
     outputs:
-      reuse_attempt: ${{ steps.verify.outputs.reuse_attempt }}
-      impact: ${{ steps.impact.outputs.impact }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Verify exact-main deployment request
-        env:
-          GH_TOKEN: ${{ github.token }}
-          AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
-        run: python3 scripts/deploy-provenance.py authorize "$GITHUB_SHA"
-      - name: Classify cumulative deployment impact
-        id: impact
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DEPLOY_RECEIPT_PUBLIC_KEY: ${{ vars.HAVEN_DEPLOY_RECEIPT_PUBLIC_KEY }}
-        run: python3 scripts/deploy-provenance.py preflight-impact "$GITHUB_SHA"
-      - name: Verify PR evidence
-        if: steps.impact.outputs.impact == 'routine' || github.event_name == 'workflow_dispatch'
-        id: verify
-        env:
-          GH_TOKEN: ${{ github.token }}
-          AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
-        run: python3 scripts/deploy-provenance.py pr-validation "$GITHUB_SHA"
-
-  request-validation:
-    name: Request exact SHA validation
-    needs: pr-evidence
-    if: ${{ !cancelled() && needs.pr-evidence.result == 'success' && needs.pr-evidence.outputs.reuse_attempt == '' && (needs.pr-evidence.outputs.impact == 'routine' || github.event_name == 'workflow_dispatch') }}
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - run: test -n "$GITHUB_SHA"
-
-  # The installed bootstrap consumes this exact job name.
-  validate:
-    name: validate / Validate sources
-    needs: [pr-evidence, request-validation]
-    if: ${{ !cancelled() && needs.pr-evidence.result == 'success' && (needs.pr-evidence.outputs.impact == 'routine' || github.event_name == 'workflow_dispatch') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      actions: read
-    outputs:
-      evidence: ${{ steps.verify.outputs.evidence }}
+      deploy: ${{ steps.candidate.outputs.deploy }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 0
-      - name: Verify deployment validation evidence
-        id: verify
+      - id: candidate
         env:
+          BEFORE_SHA: ${{ github.event.before }}
           GH_TOKEN: ${{ github.token }}
-          REUSE_ATTEMPT: ${{ needs.pr-evidence.outputs.reuse_attempt }}
-          AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
-        run: python3 scripts/deploy-provenance.py validation-gate "$GITHUB_SHA"
+        run: python3 scripts/deploy-provenance.py candidate "$GITHUB_SHA" "$BEFORE_SHA"
 
-  # =========================================================================
-  # JOB 2: deploy -- only runs if validate passed
-  # =========================================================================
+  validate:
+    needs: candidate
+    if: needs.candidate.outputs.deploy == 'true'
+    uses: ./.github/workflows/validate.yml
+
   deploy:
     name: Deploy over Tailscale
-    # Automatic access requires separate owner activation; manual access
-    # requires assent for this exact main SHA. Validation has no secrets.
-    if: ${{ !cancelled() && needs.validate.result == 'success' && github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && needs.pr-evidence.result == 'success' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled' && needs.pr-evidence.outputs.impact == 'routine') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha)) }}
-    needs: [pr-evidence, validate] # both gates must succeed
+    needs: validate
+    if: needs.validate.result == 'success'
+    concurrency:
+      group: deploy-control-plane
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 105
-    permissions:
-      contents: read
-      actions: read
-    environment: production  # lets you require manual approval in repo settings
+    environment: production
     steps:
       - name: Checkout
-        # The runner now calls a tracked script (scripts/deploy-trigger.sh),
-        # so it needs the repository present. Credentials are not persisted:
-        # the deploy authenticates with the dedicated deploy key, not with the
-        # GitHub token, and nothing here pushes.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-          fetch-depth: 0
-
-      - name: Verify exact-main deployment provenance
+      - name: Verify exact main before preparing deployment
         env:
           GH_TOKEN: ${{ github.token }}
-          AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
-          REUSE_ATTEMPT: ${{ needs.pr-evidence.outputs.reuse_attempt }}
-          VALIDATION_EVIDENCE: ${{ needs.validate.outputs.evidence }}
-          REQUIRE_VALIDATION_EVIDENCE: 'true'
-        run: python3 scripts/deploy-provenance.py authorize "$GITHUB_SHA"
+        run: python3 scripts/deploy-provenance.py current-main "$GITHUB_SHA"
 
       - name: Wait for the sandbox image
         # Fail-closed pre-flight gate. Before the runner joins the tailnet and
@@ -153,14 +64,10 @@ jobs:
         run: ./scripts/deploy-image-gate.sh
         timeout-minutes: 36
 
-      - name: Recheck main after image wait
+      - name: Recheck exact main
         env:
           GH_TOKEN: ${{ github.token }}
-          AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
-          REUSE_ATTEMPT: ${{ needs.pr-evidence.outputs.reuse_attempt }}
-          VALIDATION_EVIDENCE: ${{ needs.validate.outputs.evidence }}
-          REQUIRE_VALIDATION_EVIDENCE: 'true'
-        run: python3 scripts/deploy-provenance.py authorize "$GITHUB_SHA"
+        run: python3 scripts/deploy-provenance.py current-main "$GITHUB_SHA"
 
       - name: Connect to tailnet
         # Joins the runner to your private network as an ephemeral node tagged
@@ -265,8 +172,7 @@ jobs:
             echo "| Field | Value |"
             echo "|---|---|"
             echo "| Commit | \`${GITHUB_SHA::8}\` |"
-            echo "| Target | \`${{ secrets.PI_TAILSCALE_FULL_DOMAIN }}\` |"
             echo "| Result | ${{ job.status }} |"
             echo ""
-            echo "Persistent mounts (\`webui_data\`, \`ollama_data\`) were not modified."
+            echo "The host reports success only after deployment verification."
           } >> "$GITHUB_STEP_SUMMARY"

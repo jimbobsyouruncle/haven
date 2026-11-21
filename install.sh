@@ -1890,25 +1890,22 @@ else
 fi
 
 log "Starting full Hybrid-AI control plane stack..."
-# Build, then start. `compose build` builds every service with a `build:`
-# section -- hermes always, and the proxy too once the TLS-on render adds its
-# `build:` stanza -- which is exactly what `up --build` did, but as its own
-# phase so its time is visible and so a cache hit can skip it.
-if [[ "$BUILD_GATE_DECISION" != "cache" ]]; then
-  log "Building images..."
-  haven_progress_start "build"
-  if ! BUILD_INPUTS_SHA="$BUILD_GATE_SHA" "${COMPOSE[@]}" build; then
-    haven_progress_stop
-    PHASE_BUILD=$(( SECONDS - _phase_mark ))
-    event "stack_build_failed"
-    warn "docker compose build failed."
-    die "Control plane image build did not complete."
-  fi
-  haven_progress_stop
-else
-  # The Hermes cache receipt does not cover the status image.
-  "${COMPOSE[@]}" build status || die "Status image build did not complete."
+# Docker's build cache covers status, auth and the TLS proxy. The Hermes
+# input check lets us skip its heavier build without hiding other Dockerfile updates.
+build_services=()
+if [[ "$BUILD_GATE_DECISION" == "cache" ]]; then
+  build_services=(status auth proxy)
 fi
+log "Building images..."
+haven_progress_start "build"
+if ! BUILD_INPUTS_SHA="$BUILD_GATE_SHA" "${COMPOSE[@]}" build "${build_services[@]}"; then
+  haven_progress_stop
+  PHASE_BUILD=$(( SECONDS - _phase_mark ))
+  event "stack_build_failed"
+  warn "docker compose build failed."
+  die "Control plane image build did not complete."
+fi
+haven_progress_stop
 PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 
 # STEP 2 exported every key from the stack env file into this shell, so the

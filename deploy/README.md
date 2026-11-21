@@ -1,32 +1,79 @@
 # deploy/ — headless deploy (one commit, one unit)
 
-Automatic deployment preparation (#199): inactive until canonical cutover acceptance
-and explicit owner activation of `HAVEN_AUTOMATIC_DEPLOYMENT=enabled` in Actions
-repository variables. No settings/secrets or host changes occur in this PR.
-After activation, trusted main pushes validate and deploy the exact merged SHA;
-manual dispatch retains explicit assent for the current main SHA. See
-[the activation and recovery contract](../.github/CICD.md).
+Owner merges to main authorize production deployment. Application and workflow
+changes follow the same path. Jarvis verifies the exact SHA and accepts the
+transaction before SSH reports success. See the [CI guide](../.github/CICD.md).
 
-Canonical `haven-deploy@` units now run the existing verifier in `ExecStartPost`:
-SSH success requires root verification and transaction acceptance, not merely
-scheduling. The installer releases its locks first; the unresolved journal fences
-other deployments. The verifier requires successful validation in its own waiting
-deploy workflow instead of waiting for that workflow's eventual completion.
-Older deployment attempts at the same SHA are superseded by the current validated
-run; other returned workflows must finish successfully. Verification has a ten-minute bound;
-failed, disconnected or timed-out attempts require inspection of the protected
-journal and existing current-data recovery procedure. Disconnecting the client
-never authorizes rollback or cancels the root transaction. Keep immutable recovery
-artifacts. Do not clear the journal or retry around failed mandatory controls.
+## One-time policy transition
 
-The asynchronous behavior described below remains for direct operator migration
-and custom/local paths. It no longer describes canonical unit success.
+Use one explicitly authorized maintenance window for the host running the old
+cumulative policy. Have the reviewed PR and its successful required checks
+available. Keep its merge until the preparation below is complete.
 
+1. Pause automatic deployments by clearing `HAVEN_AUTOMATIC_DEPLOYMENT`. Confirm
+   GitHub has no pending or running production deploy and Jarvis has no active
+   deployment unit. Privately verify `/opt/haven` HEAD and the protected journal
+   agree on an accepted SHA. Check health, recent backup evidence and available
+   recovery artifacts. Reconcile an unresolved transaction before proceeding.
+2. Take the existing root-controlled deployment locks in order
+   (`/run/lock/hybrid-ai-deploy.lock`, then `/run/lock/haven-deploy.lock`).
+   Under both locks, take root-only copies of
+   `/opt/haven/scripts/install-root.py` and `deploy-provenance.py`. Inspect whether
+   `/var/lib/haven-install-root/deployment-authorization.json` exists. If present,
+   archive it in the same private recovery directory and remove it from the
+   active path. Retain the old signing key privately for rollback. Atomically
+   replace only the two bootstrap scripts with the versions from the verified
+   PR tree. Keep checkout HEAD, units and running services intact. The files
+   need root ownership and must be writable only by root.
+3. Confirm production secrets are scoped to the `production` environment,
+   restricted to `main`, and that it has no required reviewer. Remove the
+   duplicate repository-wide `PI_TAILSCALE_FULL_DOMAIN` after checking its
+   environment copy. Enable
+   `HAVEN_AUTOMATIC_DEPLOYMENT=enabled`, then merge the reviewed PR. Its push
+   follows the normal workflow and replaces the temporary bootstrap copies
+   through the regular transaction. Confirm the Actions result and Jarvis's
+   accepted full SHA before releasing the maintenance window.
+
+Before activation, restore the two saved scripts under the same locks if
+preparation is aborted. Re-enable the old workflow only as a deliberate owner
+decision. If the merge reached host activation, pause and drain first, then use
+[transaction rollback](#rollback) or proxy/current-data recovery as indicated by
+the journal. The previous checkout during this migration contains the bootstrap
+overlay. Restore the original script pair from the private copies only after
+the rollback has returned to the verified old SHA. Keep the original journal,
+image archives and backup snapshots. Keep the old authorization archived and
+record any future recovery approval for the exact applicable state.
+
+## Routine image updates
+
+Change the image version or digest in the source template, Compose overlay or
+Dockerfile. Prefer immutable digests for recovery and reproducibility. Update
+generated outputs using the existing render path. Dependabot can propose
+supported Dockerfile updates. Review template defaults, host image overrides,
+coordinated Caddy pins and the sandbox image's publish tag separately.
+
+Compose reconciles the existing project without a forced recreate. Matching
+containers and mounts stay in place. A changed image or service configuration
+can recreate that service and any dependencies Compose needs to reconcile. The
+root verifier checks each configured service is running and that its Docker
+health check, where provided, passes. This is local liveness/readiness. In
+particular, OpenHands needs a task-launch smoke for a compatibility change and a
+Hermes upgrade can need a gateway or agent smoke beyond container liveness.
+
+The retained checkout contains previous pins and rendered controls. The root
+journal records the previous service image IDs and keeps a verified Caddy image
+archive. Keep those local images through the rollback window. An image ID alone
+cannot recover an image removed from the host. Revert the pin through a PR for a
+healthy, reversible replacement, or recover the failed transaction first. For a
+release that upgrades SQLite or other persisted state, verify downgrade
+compatibility and have a current restorable backup before merging. Preserve
+post-upgrade writes and review a data recovery plan before reverting the image.
+A host image override takes precedence over a repository pin.
 
 ## Installation root migration
 
 Fresh bootstrap uses `/opt/haven`. Existing bootstrapped `/opt/haven`
-installations migrate during the next **separately authorized normal deployment**.
+installations use the separately authorized root migration procedure.
 Do not move the directory manually or rerun bootstrap over an existing legacy
 installation. See [ADR-0006](../docs/haven/adr/0006-installation-root.md) and
 [implementation issue #187](https://github.com/jimbobsyouruncle/haven/issues/187).
@@ -48,61 +95,6 @@ in isolated temporary containers. No pull/build/load or running-proxy replacemen
 occurs. Index and configuration digests are distinct identities, not an equality
 test. Missing/incompatible/corrupt/unexportable images refuse before activation.
 There are no per-deployment approval/evidence files or expiration window.
-
-### Cumulative deployment authorization
-
-The protected journal must identify the active checkout as `accepted`.
-For `AUTHORIZATION_REQUIRED`, inspect the accepted-to-target Git range. A
-missing, mismatched, or rolled-back journal requires owner reconciliation
-backed by acceptance evidence. Keep all journals and recovery artifacts.
-A previously approved target cannot authorize a later target or a different
-baseline.
-
-On a host with cumulative enforcement installed, the owner records approval
-in the root-owned mode-0600 file
-`/var/lib/haven-install-root/deployment-authorization.json`. Write the JSON
-atomically under both deployment locks with exactly the keys
-`baseline_sha` and `target_sha`, each a full lowercase commit SHA. Dispatch
-the existing production workflow manually against that exact target. An
-automatic push cannot use this file. Remove the approval after acceptance
-or cancellation.
-
-Before deploying the first cumulative-policy revision, the owner must
-separately authorize cutover. Disable automatic deployment before the
-protected merge and confirm there is no in-flight or queued production
-deploy. Under both deployment locks, verify the installed HEAD and
-accepted journal, preserve the existing bootstrap files, and install the
-reviewed `scripts/install-root.py`, `scripts/deploy-provenance.py`, and
-`scripts/deploy-impact.py` together from the same independently verified
-revision. In the same authorized cutover, provision a dedicated Ed25519
-private key as root with mode 0600 at
-`/var/lib/haven-install-root/deployment-receipt.key`. Use
-`openssl genpkey -algorithm ED25519` to generate it and
-`openssl pkey -pubout` to derive its public PEM. Set only that PEM in the
-owner-managed Actions variable `HAVEN_DEPLOY_RECEIPT_PUBLIC_KEY`. Keep the
-private key on the host outside the checkout and away from deployment logs.
-
-The first authorized deployment is manual and establishes the first signed
-baseline. After the final root verifier commits `accepted` to the journal,
-it signs the accepted SHA, deployment run ID and attempt. The existing
-forced command relays the signed line in its normal run log. Before source
-validation or Tailscale access, an automatic run checks the newest prior
-SSH deployment attempt visible in the last 30 main workflow runs and
-verifies that exact job's receipt. Missing logs, invalid signatures, failed
-SSH attempts and exhausted history result in `AUTHORIZATION_REQUIRED`. An
-authorized manual run can establish a new receipt at the next eligible
-target. The runner uses the signed checkout's policy for early classification.
-The host always checks its own journal and installed policy.
-
-Keep automatic deployment disabled until the host and early workflow gates
-have passed cutover verification. Disable automatic deployment and drain any
-queued or running deployment before owner rollback, out-of-band acceptance,
-or key rotation. Reconcile the runtime and journal before using the manual
-workflow to establish a fresh signed baseline. Rotate the receipt key after
-an out-of-band rollback or acceptance so stale receipts cannot authorize
-preflight when automatic deployment is re-enabled. If cutover fails, preserve
-the journal and recovery artifacts, and restore the saved bootstrap files
-together only after confirming no transaction is active or unresolved.
 
 ### #249 cutover and verification
 
@@ -163,38 +155,6 @@ service and data state. Use the separately authorized control rollback and
 targeted recovery procedure below as appropriate. Reconcile the proxy with
 the canonical Compose configuration before the next deploy. See the
 [approved ADR amendment](../docs/haven/adr/0006-installation-root.md#approved-amendment-for-249).
-
-### Canonical deployment authorization
-
-For canonical upgrades, the installed bootstrap holds both deployment locks,
-queries the existing GitHub provenance policy, and requires the requested SHA
-to match current main in both the API and the fetch. The verified staged driver
-then checks and exports the running proxy image. The installed bootstrap checks
-the returned archive before changing the journal or switching checkouts.
-Candidate proxy validation also runs during installation, after saving the
-previous checkout and controls. Use the protected deployment log to identify the
-failed step. For a provenance refusal, investigate the exact main SHA, active
-deployment and validation evidence before requesting another authorized run.
-
-### Transition to the self-updating bootstrap
-
-Use one separately authorized deployment of the reviewed merge SHA through the
-existing path. The last installed driver must pass its existing checkpoint
-preflight for that transition. A successful transaction installs matching
-copies of the bootstrap and provenance verifier together. Subsequent upgrades
-use the staged driver's checkpoint preflight. If the old driver blocks the
-transition, recover the exact image as described below or use separately
-authorized locked driver preparation. If installing the new bootstrap ahead of
-the checkout, prepare and back up both `scripts/install-root.py` and
-`scripts/deploy-provenance.py` from the same reviewed revision under both
-deployment locks. Keep both predecessors for coordinated undo. After checkout
-switch use the existing control rollback and separately authorized proxy
-recovery procedures below.
-
-Verify the requested SHA, accepted journal, exact image or checked archive,
-local proxy health, required verifier results and existing backup integrity
-evidence. Keep sensitive evidence on the host. See
-[the approved trust boundary](../docs/haven/adr/0006-installation-root.md#approved-amendment-for-252).
 
 ### Recover a missing local proxy image
 
@@ -579,10 +539,9 @@ after the reset.
 3. The script refuses anything but that exact form (exit 2), then asks the
    **system** manager to start `haven-deploy@<sha>.service`.
 4. The unit runs `scripts/deploy-instance.sh <sha>` as root. The script
-   re-validates the sha, takes an exclusive lock, refuses a credential-bearing
-   origin, fetches main from the public https remote, refuses unless `<sha>` is
-   an ancestor of `origin/main`, resets to it, asserts `HEAD == <sha>`, and
-   `exec`s the existing `scripts/deploy-remote.sh`.
+   delegates to the locked root transaction. It verifies same-run validation,
+   stages the exact current main checkout and retains recovery artifacts before
+   calling the installer.
 5. `scripts/deploy-remote.sh` re-asserts `HEAD`, runs `install.sh`, and gates on
    `doctor.sh`. `install.sh` rebuilds the Hermes image only when its build
    inputs changed, and prints a per-phase duration summary
@@ -592,10 +551,9 @@ after the reset.
 
 ---
 
-## Post-deploy verification (after the workflow has finished)
+## Legacy and local asynchronous verification
 
-The deploy cannot verify its own build: the workflow run it belongs to is still
-in progress at that moment. So `scripts/deploy-remote.sh` starts
+Legacy and local paths without the synchronous unit use a transient verifier. In those paths, `scripts/deploy-remote.sh` starts
 `/usr/local/sbin/run-post-deploy-verify.sh` and lets it finish afterwards.
 
 What it does: poll `GET /repos/<selected-slug>/actions/runs?head_sha=<sha>`
@@ -863,44 +821,13 @@ The dedicated directory can remain unused when the mount is reverted; deleting
 it or modifying live configuration is not part of this change. No backup data,
 snapshot, log, certificate or credential migration is involved.
 
-## Provenance retries and reruns
+## Workflow retries
 
-The root post-deployment verifier reads public GitHub evidence over HTTPS from
-`api.github.com`, without a token. Trust comes from the fixed repository API,
-matching repository/head repository, main workflow path/event, full commit SHA,
-run ID and attempt identity; a job name alone is insufficient. Runner-side
-exact-main/merged-PR authorization and workflow `needs: validate` remain in place.
-
-For a rerun, `deploy-provenance.py runs` reads the complete bounded job history,
-selects the newest applicable `validate / Validate sources` attempt, and requires
-successful completed validation. It confirms that job through its attempt-specific
-jobs endpoint and requires the current attempt's deployment job to be in progress.
-This supports both inherited earlier validation and GitHub's copied validation
-job in a newer attempt. A newer failed, skipped, cancelled, timed-out or neutral
-validation cannot be replaced with an older success. A final run read must still
-identify the same active attempt. Historical failed deployment jobs are not
-validation failures and do not override a valid current recovery attempt.
-
-Diagnostics are fixed `PROVENANCE_*` codes, never exception text, API bodies,
-credentials or host configuration. `PROVENANCE_API_TRANSPORT`,
-`PROVENANCE_API_TRANSIENT`, `PROVENANCE_API_JSON`, missing/pending evidence,
-inconsistent views and changed attempts return temporary exit 75 only in `runs`
-mode. The existing verifier retries every 30 seconds within its 540-second
-job-aware deadline; each helper invocation is capped by the remaining budget,
-with ExecStartPost's 10-minute timeout as the outer bound. Temporary
-uncertainty never publishes successful acceptance. Other helper failures stop
-verification immediately. Non-rate-limit 403, other permanent HTTP errors,
-identity mismatches, ambiguous gates, failed validation and completed deployment
-runs remain refused. Truncated/count-mismatched lists (including the existing
-100-item bound) cannot pass; persistent incompleteness expires unsuccessfully.
-Neither runner authorization nor manual-cutover acceptance gains retry/override
-semantics from exit 75.
-
-The SSH forced command takes its log directory from the non-secret canonical
-layout (`/etc/haven/haven.env`), ignoring inherited log-directory overrides. A
-missing/unreadable layout or missing log setting refuses before starting a unit;
-it cannot silently report `/opt/haven/deploy`. The stack secrets remain unread,
-and SSH grammar, polkit rights and log permissions are unchanged.
+For a transient failure before activation, confirm the target is still current
+main and rerun all jobs. Same-attempt validation is required. For an unresolved
+host transaction, use [rollback or recovery](#rollback) before replaying.
+The root verifier retries temporarily unavailable public evidence within the
+existing deadline and fails closed if it cannot verify the run.
 
 ### Recovery acceptance requires separate owner authorization
 
