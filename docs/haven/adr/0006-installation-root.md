@@ -214,6 +214,23 @@ legacy compatibility paths before a reversible cutover is qualified. Preserve
 the approved #249 proxy recovery and #252 trusted handoff boundaries until a
 reviewed implementation provides equivalent guarantees.
 
+### Cumulative classification
+
+The installed classifier starts from the private accepted journal's SHA,
+which must match the active checkout and appear on the target's first-parent
+main history. It examines every intervening commit and merge transition, so
+subsequent documentation or routine commits cannot clear a protected change.
+Markdown additions and edits in recognized documentation paths are docs-only.
+Version changes to recognized application images are routine when all other
+configuration bytes match. Unknown changes, deletions, mode changes and
+changes to the classifier itself are protected.
+
+The trusted bootstrap uses the installed classifier before checking out
+candidate files or running candidate preflight. A protected deployment
+requires a manual deployment run and owner approval for the exact accepted
+baseline and target SHA. Existing exact-main, validation, transaction and
+acceptance checks still apply.
+
 Deployment outcomes must distinguish protected-policy refusal, provenance or
 preparation failure, activation failure, health verification failure, and
 recovery failure. Intentional policy refusals should be clearly labeled as

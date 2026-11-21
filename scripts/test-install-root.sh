@@ -8,6 +8,7 @@ import sys
 __file__ = sys.argv.pop(1)
 #!/usr/bin/env python3
 """Offline real-Git migration tests; no network, Docker, systemd or root."""
+import base64
 import importlib.util
 import hashlib
 import gzip
@@ -480,7 +481,10 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
 
     def handoff_fixture(self, candidate):
         policy = self.remote / 'scripts/deploy-provenance.py'
-        policy.write_text("import sys\nassert sys.argv[1] == 'authorize-host'\n")
+        policy.write_text("import sys\nassert sys.argv[1] == 'authorize-host'\n"
+                          "print('workflow_dispatch 123 1')\n")
+        shutil.copyfile(Path(__file__).with_name('deploy-impact.py'),
+                        self.remote / 'scripts/deploy-impact.py')
         self.git(self.remote, 'add', '.')
         self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
                  'commit', '-qm', 'installed bootstrap fixture')
@@ -495,7 +499,13 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         self.git(self.remote, 'add', '.')
         self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
                  'commit', '-qm', 'candidate driver fixture')
-        return self.git(self.remote, 'rev-parse', 'HEAD'), accepted
+        candidate_sha = self.git(self.remote, 'rev-parse', 'HEAD')
+        self.grant_handoff(candidate_sha)
+        return candidate_sha, accepted
+
+    def grant_handoff(self, target):
+        self.tx.atomic(self.tx.state / 'deployment-authorization.json',
+                       json.dumps({'baseline_sha': self.sha, 'target_sha': target}).encode())
 
     def run_handoff_fixture(self, args, **kwargs):
         if args[0] == sys.executable:
@@ -503,7 +513,8 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
             if args[-2] == 'checkpoint-preflight':
                 self.assertEqual(kwargs.pop('pass_fds'), (9, 8))
             else:
-                self.assertEqual(Path(args[2]), self.tx.app / 'scripts/deploy-provenance.py')
+                name = 'deploy-impact.py' if len(args) == 6 else 'deploy-provenance.py'
+                self.assertEqual(Path(args[2]), self.tx.app / 'scripts' / name)
             return subprocess.run(args, **kwargs)
         return self.runner(args, **kwargs)
 
@@ -533,6 +544,62 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         self.tx.wiring(candidate)
         self.assert_preserved()
 
+    def test_protected_impact_refuses_push_and_unapproved_later_target(self):
+        candidate, accepted = self.handoff_fixture(lambda _: "raise AssertionError('candidate ran')\n")
+        self.tx.run = self.run_handoff_fixture
+        with patch.object(self.tx, 'authorize_deploy', return_value=('push', (123, 1))):
+            with self.assertRaisesRegex(MODULE.Refusal, 'AUTHORIZATION_REQUIRED'):
+                self.tx.deploy(candidate, handoff=True)
+        (self.remote / 'README.md').write_text('docs follow-up')
+        self.git(self.remote, 'add', '.')
+        self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-qm', 'later target')
+        later = self.git(self.remote, 'rev-parse', 'HEAD')
+        with self.assertRaisesRegex(MODULE.Refusal, 'AUTHORIZATION_REQUIRED'):
+            self.tx.deploy(later, handoff=True)
+        self.assertFalse(any('checkpoint-preflight' in args for args in self.calls))
+        self.assertEqual(self.tx.journal.read_bytes(), accepted)
+        self.assertFalse(list(self.tx.app.parent.glob('.haven-stage-*')))
+
+    def test_accepted_handoff_signs_exact_run_receipt_in_existing_log(self):
+        candidate, _ = self.handoff_fixture(lambda _: '')
+        key = self.tx.state / 'deployment-receipt.key'
+        subprocess.run(['openssl', 'genpkey', '-algorithm', 'ED25519', '-out', str(key)],
+                       check=True, capture_output=True)
+        key.chmod(0o600)
+        public = self.root / 'receipt-public.pem'
+        public.write_bytes(subprocess.check_output(['openssl', 'pkey', '-in', str(key), '-pubout']))
+        log = self.tx.path('/var/log/hybrid-ai/deploy') / (candidate + '.log')
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.touch()
+        self.tx.run = subprocess.run
+        self.tx.publish_deployment_receipt(candidate, (123, 1))
+        prefix, signature = log.read_bytes().rstrip(b'\n').rsplit(b' ', 1)
+        self.assertEqual(prefix, f'haven-production-v1 {candidate} 123 1'.encode())
+        payload = self.root / 'receipt-payload'
+        payload.write_bytes(prefix)
+        proof = self.root / 'receipt-signature'
+        proof.write_bytes(base64.b64decode(signature, validate=True))
+        subprocess.run(['openssl', 'pkeyutl', '-verify', '-rawin', '-pubin',
+                        '-inkey', str(public), '-in', str(payload), '-sigfile', str(proof)],
+                       check=True, capture_output=True)
+
+    def test_handoff_requires_private_accepted_journal_for_installed_head(self):
+        candidate, accepted = self.handoff_fixture(lambda _: "raise AssertionError('candidate ran')\n")
+        self.tx.run = self.run_handoff_fixture
+        for mode in ('missing', 'wrong-head', 'public'):
+            with self.subTest(mode=mode):
+                self.tx.atomic(self.tx.journal, accepted)
+                if mode == 'missing':
+                    self.tx.journal.unlink()
+                elif mode == 'wrong-head':
+                    self.tx.save(dict(self.tx.load(), sha=candidate))
+                else:
+                    self.tx.journal.chmod(0o644)
+                with self.assertRaisesRegex(MODULE.Refusal, 'AUTHORIZATION_REQUIRED'):
+                    self.tx.deploy(candidate, handoff=True)
+                self.assertFalse(any('checkpoint-preflight' in args for args in self.calls))
+
     def test_preflight_authorization_and_failures_preserve_accepted_deployment(self):
         candidate, accepted = self.handoff_fixture(lambda _: "raise RuntimeError('SYNTHETIC_PRIVATE_DETAIL')\n")
         self.tx.run = self.run_handoff_fixture
@@ -561,11 +628,13 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                     self.git(self.remote, '-c', 'user.name=Fixture', '-c',
                              'user.email=fixture@example.invalid', 'commit', '-qm', 'untrusted stage')
                     sha = self.git(self.remote, 'rev-parse', 'HEAD')
+                    self.grant_handoff(sha)
                 with self.assertRaises((MODULE.Refusal, KeyboardInterrupt)) as caught:
                     self.tx.deploy(sha, handoff=True)
                 if mode == 'untrusted':
                     self.assertIn('symlink in code checkout', str(caught.exception))
                     self.git(self.remote, 'update-ref', 'refs/heads/main', candidate)
+                    self.grant_handoff(candidate)
                 if mode == 'api':
                     self.assertIn('PROVENANCE_API_TRANSPORT', str(caught.exception))
                     self.assertFalse(any(args[0] == 'git' for args in self.calls))

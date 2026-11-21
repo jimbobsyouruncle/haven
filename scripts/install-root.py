@@ -1614,6 +1614,34 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                     raise Refusal('PROXY_CANDIDATE: proxy stopped before acceptance')
             journal['phase'] = 'accepted'
             self.save(journal)
+            if journal.get('deployment_run'):
+                self.publish_deployment_receipt(sha, journal['deployment_run'])
+
+    def publish_deployment_receipt(self, sha, run):
+        key = self.state / 'deployment-receipt.key'
+        self.trusted(key)
+        if not key.is_file() or stat.S_IMODE(key.stat().st_mode) != 0o600:
+            raise Refusal('DEPLOYMENT_RECEIPT: private signing key unavailable')
+        message = f'haven-production-v1 {sha} {run[0]} {run[1]}'
+        # Ed25519 signing uses a seekable message input.
+        with tempfile.NamedTemporaryFile() as payload:
+            payload.write(message.encode('ascii'))
+            payload.flush()
+            signature = self.run(['openssl', 'pkeyutl', '-sign', '-rawin', '-inkey', str(key),
+                                  '-in', payload.name],
+                                 capture_output=True, check=True, timeout=10).stdout
+        if len(signature) != 64:
+            raise Refusal('DEPLOYMENT_RECEIPT: unexpected signature format')
+        values = self.values(self.layout.read_text())
+        log = Path(values['HYBRID_AI_LOG_DIR']) / 'deploy' / (sha + '.log')
+        self.trusted(log)
+        fd = os.open(log, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'a') as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise Refusal('DEPLOYMENT_RECEIPT: deployment log is not regular')
+            print(message, base64.b64encode(signature).decode('ascii'), file=stream)
+            stream.flush()
+            os.fsync(stream.fileno())
 
     def authorize_deploy(self, sha):
         policy = self.app / 'scripts/deploy-provenance.py'
@@ -1621,13 +1649,44 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
         if not policy.is_file():
             raise Refusal('PROVENANCE_INVALID: installed deployment policy is unavailable')
         try:
-            self.command([sys.executable, '-IB', str(policy), 'authorize-host', sha], timeout=150)
+            event = self.command([sys.executable, '-IB', str(policy), 'authorize-host', sha], timeout=150)
         except subprocess.SubprocessError as error:
             stderr = getattr(error, 'stderr', None)
             code = stderr.strip() if isinstance(stderr, str) else ''
             if not re.fullmatch(r'PROVENANCE_[A-Z_]+', code):
                 code = 'PROVENANCE_INVALID'
             raise Refusal(code + ': installed bootstrap could not authorize the deployment') from None
+
+        run = re.fullmatch(r'(push|workflow_dispatch) ([1-9][0-9]*) ([1-9][0-9]*)', event)
+        if not run:
+            raise Refusal('PROVENANCE_INVALID: installed policy returned no trusted run identity')
+        return run[1], (int(run[2]), int(run[3]))
+
+    def deployment_impact(self, stage, base, sha, event):
+        policy = self.app / 'scripts/deploy-impact.py'
+        self.trusted(policy)
+        if not policy.is_file():
+            raise Refusal('AUTHORIZATION_REQUIRED: installed impact policy is unavailable')
+        try:
+            impact = self.command([sys.executable, '-IB', str(policy), str(stage), base, sha],
+                                  timeout=120)
+        except (OSError, subprocess.SubprocessError):
+            raise Refusal('AUTHORIZATION_REQUIRED: cumulative deployment range is unavailable') from None
+        if impact == 'routine':
+            return True
+        if impact == 'docs-only':
+            return False
+        grant = self.state / 'deployment-authorization.json'
+        self.trusted(grant)
+        if (impact == 'protected' and event == 'workflow_dispatch' and grant.is_file()
+                and stat.S_IMODE(grant.stat().st_mode) == 0o600):
+            try:
+                if json.loads(grant.read_text()) == {'baseline_sha': base, 'target_sha': sha}:
+                    return True
+            except (OSError, ValueError):
+                pass
+        raise Refusal('AUTHORIZATION_REQUIRED: record explicit root approval for this baseline '
+                      'and target, then dispatch the exact target SHA manually')
 
     def staged_proxy_preflight(self, stage, sha):
         try:
@@ -1659,8 +1718,7 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                           'review the protected preflight log and deployment runbook') from None
 
     def deploy(self, sha, *, handoff=False):
-        if handoff:
-            self.authorize_deploy(sha)
+        event, run = self.authorize_deploy(sha) if handoff else (None, None)
         if self.identity_cutover:
             self.state = self.path('/var/lib/haven-install-root')
             self.journal = self.state / 'current.json'
@@ -1685,6 +1743,12 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
         if migration:
             proxy_recovery = self.proxy_preflight(source)
         sha_before = self.git(source, 'rev-parse', 'HEAD')
+        if handoff and (not self.journal.is_file()
+                        or stat.S_IMODE(self.journal.stat().st_mode) != 0o600 or not journal
+                        or journal.get('phase') != 'accepted'
+                        or journal.get('sha') != sha_before
+                        or not re.fullmatch(r'[0-9a-f]{40}', sha_before)):
+            raise Refusal('AUTHORIZATION_REQUIRED: current checkout lacks a trusted accepted journal')
         token = uuid.uuid4().hex
         stage = self.app.parent / ('.haven-stage-' + token)
         previous = self.app.parent / ('.haven-previous-' + token)
@@ -1700,6 +1764,8 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
             self.git(stage, 'merge-base', '--is-ancestor', sha, 'origin/main')
             if handoff and self.git(stage, 'rev-parse', 'origin/main') != sha:
                 raise Refusal('PROVENANCE_MAIN_SHA: main changed between authorization and staging')
+            if handoff and not self.deployment_impact(stage, sha_before, sha, event):
+                raise Refusal('DOCS_ONLY: no deployment transaction was started')
             self.git(stage, 'checkout', '--quiet', '--detach', sha)
             if self.git(stage, 'rev-parse', 'HEAD') != sha:
                 raise Refusal('staged checkout does not match requested SHA')
@@ -1739,6 +1805,8 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                        previous_sha=sha_before, files=files,
                        receipt=str(Path(values['HYBRID_AI_DATA_DIR']) /
                                    'hermes_data/deploy-verdicts' / (sha + '.json')))
+        if run is not None:
+            journal['deployment_run'] = run
         if identity is not None:
             journal['identity'] = identity
         if proxy_runtime:

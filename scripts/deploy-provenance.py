@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fail-closed main deployment provenance; API reads only, no host mutation."""
+import base64
 import http.client
 import json
 import os
@@ -7,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 import urllib.error
@@ -92,6 +94,96 @@ def authorize(sha):
         require(inputs.get('authorize_production') in (True, 'true'))
         require(inputs.get('deployment_sha') == sha)
     require_current_main(sha, authenticated=True)
+
+
+def verify_receipt(log, sha, run_id, attempt, public_key):
+    message = f'haven-production-v1 {sha} {run_id} {attempt}'.encode('ascii')
+    signatures = set(re.findall(rb'(?m)^(?:[0-9T:Z.+-]+ )?' + re.escape(message)
+                                + rb' ([A-Za-z0-9+/]{86}==)\r?$', log))
+    require(len(signatures) == 1, 'AUTHORIZATION_REQUIRED_RECEIPT')
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / 'key').write_text(public_key)
+        (root / 'message').write_bytes(message)
+        (root / 'signature').write_bytes(base64.b64decode(signatures.pop(), validate=True))
+        proc = subprocess.run(['openssl', 'pkeyutl', '-verify', '-rawin', '-pubin',
+                               '-inkey', str(root / 'key'), '-in', str(root / 'message'),
+                               '-sigfile', str(root / 'signature')],
+                              capture_output=True, timeout=10, check=False)
+        require(proc.returncode == 0, 'AUTHORIZATION_REQUIRED_RECEIPT')
+
+
+def accepted_baseline():
+    key = os.environ.get('DEPLOY_RECEIPT_PUBLIC_KEY', '')
+    require(key.startswith('-----BEGIN PUBLIC KEY-----'), 'AUTHORIZATION_REQUIRED_RECEIPT_KEY')
+    current = int(os.environ['GITHUB_RUN_ID'])
+    entries = get('/actions/workflows/deploy.yml/runs?branch=main&per_page=30',
+                  authenticated=True)['workflow_runs']
+    require(isinstance(entries, list) and len(entries) <= 30, 'AUTHORIZATION_REQUIRED_RECEIPT')
+    require(sum(run['id'] == current for run in entries) == 1,
+            'AUTHORIZATION_REQUIRED_RECEIPT')
+    previous = [run for run in entries if run['id'] < current]
+    require([r['id'] for r in previous] == sorted({r['id'] for r in previous}, reverse=True),
+            'AUTHORIZATION_REQUIRED_RECEIPT')
+    for run in previous:
+        if run['status'] != 'completed':
+            if run['status'] in ('queued', 'pending', 'waiting', 'requested'):
+                continue
+            raise Refused('AUTHORIZATION_REQUIRED_RECEIPT')
+        sha, run_id = run['head_sha'], run['id']
+        require(re.fullmatch('[0-9a-f]{40}', sha), 'AUTHORIZATION_REQUIRED_RECEIPT')
+        trusted_run(run, sha)
+        require(run['head_branch'] == 'main' and run['path'] == '.github/workflows/deploy.yml'
+                and run['event'] in ('push', 'workflow_dispatch'), 'AUTHORIZATION_REQUIRED_RECEIPT')
+        jobs = evidence_list(get(f'/actions/runs/{run_id}/jobs?filter=all&per_page=100',
+                                 authenticated=True), 'jobs')
+        started = [job for job in jobs if job['name'] == 'Deploy over Tailscale' and any(
+            step['name'] == 'Trigger deploy' and step['conclusion'] != 'skipped'
+            and step.get('started_at') for step in job.get('steps', []))]
+        if not started:
+            continue
+        attempt = max(job['run_attempt'] for job in started)
+        latest = [job for job in started if job['run_attempt'] == attempt]
+        require(len(latest) == 1 and type(attempt) is int and 0 < attempt <= run['run_attempt'],
+                'AUTHORIZATION_REQUIRED_RECEIPT')
+        job = latest[0]
+        require(job['run_id'] == run_id and job['head_sha'] == sha and job['status'] == 'completed'
+                and job['conclusion'] == 'success' and type(job['id']) is int,
+                'AUTHORIZATION_REQUIRED_RECEIPT')
+        log = subprocess.check_output(['gh', 'api', f'repos/{REPO}/actions/jobs/{job["id"]}/logs'],
+                                      stderr=subprocess.DEVNULL, timeout=30)
+        verify_receipt(log, sha, run_id, job['run_attempt'], key)
+        return sha
+    raise Refused('AUTHORIZATION_REQUIRED_RECEIPT')
+
+
+def preflight_impact(sha):
+    require(os.environ.get('GITHUB_REPOSITORY') == REPO
+            and os.environ.get('GITHUB_EVENT_NAME') == 'push',
+            'AUTHORIZATION_REQUIRED_MAIN_HISTORY')
+    require_current_main(sha, authenticated=True)
+    event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+    require(event.get('ref') == 'refs/heads/main' and event.get('after') == sha
+            and event.get('forced') is False and event.get('deleted') is False,
+            'AUTHORIZATION_REQUIRED_MAIN_HISTORY')
+    try:
+        base = accepted_baseline()
+        # Use the same policy version from the signed accepted revision, which
+        # is also installed on the host after a normal accepted activation.
+        classifier = git('show', base + ':scripts/deploy-impact.py')
+        with tempfile.TemporaryDirectory() as directory:
+            policy = Path(directory) / 'deploy-impact.py'
+            policy.write_bytes(classifier)
+            impact = subprocess.check_output([sys.executable, '-IB', str(policy), '.', base, sha],
+                                             text=True, timeout=90).strip()
+    except (OSError, subprocess.SubprocessError) as error:
+        raise Refused('AUTHORIZATION_REQUIRED_RECEIPT_OR_RANGE') from error
+    require(impact in ('docs-only', 'routine', 'protected'), 'AUTHORIZATION_REQUIRED_RANGE')
+    print('AUTHORIZATION_REQUIRED: cumulative range contains protected changes' if impact == 'protected'
+          else f'Cumulative deployment impact: {impact}')
+    with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+        print(f'impact={impact}', file=output)
+    return impact
 
 
 PR_WORKFLOWS = {
@@ -192,7 +284,7 @@ def pr_validation(sha):
     # A successful GitHub Actions check name can also come from changed YAML.
     paths = git('diff', '--name-only', '-z', '--no-renames', base, sha, '--').split(b'\0')
     security_paths = (*PR_WORKFLOWS, '.github/workflows/validate.yml',
-                      'scripts/deploy-provenance.py',
+                      'scripts/deploy-provenance.py', 'scripts/deploy-impact.py',
                       'scripts/ci-components.py', 'scripts/check-agent-context.sh',
                       'scripts/test-check-agent-context.sh', 'scripts/check-no-masked-literals.sh',
                       '.semgrepignore', '.shellcheckrc')
@@ -356,10 +448,11 @@ def active_deployment(sha):
 
 
 def authorize_host(sha):
-    active_deployment(sha)
+    _, _, current = active_deployment(sha)
     # Resolve main after checking the run and attempt. The bootstrap checks
     # it again against the ref obtained by the subsequent Git fetch.
     require_current_main(sha)
+    print(current['event'], current['id'], current['run_attempt'])
 
 
 def runs(sha):
@@ -498,8 +591,10 @@ def manual_runs(sha, historical=False):
 def main():
     require(len(sys.argv) == 3 and re.fullmatch('[0-9a-f]{40}', sys.argv[2]))
     require(sys.argv[1] in ('authorize', 'authorize-host', 'pr-validation', 'runs', 'manual-runs',
-                            'recovery-runs'))
-    if sys.argv[1] == 'authorize':
+                            'recovery-runs', 'preflight-impact'))
+    if sys.argv[1] == 'preflight-impact':
+        preflight_impact(sys.argv[2])
+    elif sys.argv[1] == 'authorize':
         authorize(sys.argv[2])
     elif sys.argv[1] == 'authorize-host':
         authorize_host(sys.argv[2])
