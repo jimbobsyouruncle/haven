@@ -13,6 +13,13 @@ def select(paths):
         # Only prose and the two generated navigation maps are test-free.
         if path.endswith('.md') or path == 'LICENSE':
             continue
+        if path in (
+            'scripts/check-agent-context.sh',
+            'scripts/generate-agent-context.py',
+            'scripts/test-check-agent-context.sh',
+        ):
+            # The required Agent context job runs the generator and its fixtures.
+            continue
         if path in ('status/Caddyfile', 'status/Caddyfile.tmpl'):
             # Shared routing/auth/backup API trust boundary, not just TLS syntax.
             return dict.fromkeys(('full',) + COMPONENTS, True)
@@ -35,7 +42,9 @@ def select(paths):
         ):
             selected.update(('proxy', 'auth'))
         elif path.startswith('status/') or path.startswith('scripts/test-status-'):
-            selected.update(('status', 'backup', 'proxy'))
+            # Status reads backup and wake state. Its contract tests cover those
+            # consumers. Changes to shared routing still take the full path above.
+            selected.add('status')
         elif path.startswith('hermes/') or path == 'scripts/test-secret-guard.sh':
             selected.add('hermes')
         elif path == 'doctor.sh' or path.startswith('scripts/test-doctor-'):
