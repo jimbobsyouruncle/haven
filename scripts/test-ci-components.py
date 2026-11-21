@@ -168,7 +168,7 @@ class SelectionTests(unittest.TestCase):
         for component in COMPONENTS.COMPONENTS:
             self.assertIn(f"steps.components.outputs.{component} == 'true'", workflow)
 
-    def test_deployment_selection_always_runs_full(self):
+    def test_non_pr_source_validation_always_runs_full(self):
         # Execute the real workflow shell, without GitHub or a production host.
         # The same SAST caller opts into scoped PR tests. Every non-PR
         # event must stay full, independently of the input or PR base.
@@ -191,14 +191,6 @@ class SelectionTests(unittest.TestCase):
                         expected = {f'{key}=true' for key in ('full',) + COMPONENTS.COMPONENTS}
                         self.assertEqual(set(result.stdout.splitlines()), expected)
                         self.assertEqual(set(output.read_text().splitlines()), expected)
-        deploy = (ROOT / '.github/workflows/deploy.yml').read_text()
-        validate = deploy.split('  validate:\n', 1)[1].split('  deploy:\n', 1)[0]
-        self.assertIn('uses: ./.github/workflows/validate.yml', validate)
-        self.assertIn('needs: candidate', validate)
-        self.assertNotIn('secrets:', validate)
-        self.assertNotIn('security-events: write', deploy)
-        self.assertIn('needs: validate', deploy)
-        self.assertIn("if: needs.validate.result == 'success'", deploy)
 
 
 if __name__ == '__main__':

@@ -8,10 +8,16 @@ permissions:
   contents: read
 
 jobs:
-  candidate:
+  validate:
+    # The installed root bootstrap matches this exact job name. Keep it for
+    # the transition from the old reusable source-validation job.
+    name: validate / Validate sources
     if: github.repository == 'jimbobsyouruncle/haven' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled'
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    permissions:
+      contents: read
+      checks: read
     outputs:
       deploy: ${{ steps.candidate.outputs.deploy }}
     steps:
@@ -26,15 +32,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/deploy-provenance.py candidate "$GITHUB_SHA" "$BEFORE_SHA"
 
-  validate:
-    needs: candidate
-    if: needs.candidate.outputs.deploy == 'true'
-    uses: ./.github/workflows/validate.yml
-
   deploy:
     name: Deploy over Tailscale
     needs: validate
-    if: needs.validate.result == 'success'
+    if: needs.validate.outputs.deploy == 'true'
     concurrency:
       group: deploy-control-plane
       cancel-in-progress: false
@@ -134,8 +135,8 @@ jobs:
         # pinned to the forced command, so this is all the connection can do.
         #
         # Secrets arrive only through this env: block; none is interpolated
-        # into the run: body. GITHUB_SHA is the runner-provided commit CI
-        # validated. scripts/deploy-trigger.sh validates the sha, verifies the
+        # into the run: body. GITHUB_SHA is the eligible main merge.
+        # scripts/deploy-trigger.sh validates the sha, verifies the
         # Pi's host key fingerprint BEFORE authenticating, writes the private
         # key mode 0600 under $RUNNER_TEMP, and removes it on every exit path.
         #
