@@ -66,6 +66,11 @@ def merged(sha):
                 for p in pulls))
 
 
+def require_current_main(sha, *, authenticated=False):
+    require(get('/git/ref/heads/main', authenticated=authenticated).get('object', {}).get('sha') == sha,
+            'PROVENANCE_MAIN_SHA')
+
+
 def authorize(sha):
     reuse_attempt = os.environ.get('REUSE_ATTEMPT')
     require(not reuse_attempt or reuse_attempt == os.environ.get('GITHUB_RUN_ATTEMPT'),
@@ -86,7 +91,7 @@ def authorize(sha):
         inputs = event.get('inputs', {})
         require(inputs.get('authorize_production') in (True, 'true'))
         require(inputs.get('deployment_sha') == sha)
-    require(get('/git/ref/heads/main', authenticated=True).get('object', {}).get('sha') == sha)
+    require_current_main(sha, authenticated=True)
 
 
 PR_WORKFLOWS = {
@@ -187,6 +192,7 @@ def pr_validation(sha):
     # A successful GitHub Actions check name can also come from changed YAML.
     paths = git('diff', '--name-only', '-z', '--no-renames', base, sha, '--').split(b'\0')
     security_paths = (*PR_WORKFLOWS, '.github/workflows/validate.yml',
+                      'scripts/deploy-provenance.py',
                       'scripts/ci-components.py', 'scripts/check-agent-context.sh',
                       'scripts/test-check-agent-context.sh', 'scripts/check-no-masked-literals.sh',
                       '.semgrepignore', '.shellcheckrc')
@@ -316,7 +322,7 @@ def deployment_jobs(run, sha, historical=False):
             'PROVENANCE_DEPLOY_STATE')
 
 
-def runs(sha):
+def active_deployment(sha):
     """Only the waiting deploy run may remain active, after validation passed."""
     data = get('/actions/runs?head_sha=' + sha + '&per_page=100')
     entries = evidence_list(data, 'workflow_runs')
@@ -346,6 +352,18 @@ def runs(sha):
         pending('PROVENANCE_ATTEMPT_CHANGED')
     require(refreshed['status'] == 'in_progress' and refreshed['conclusion'] is None,
             'PROVENANCE_DEPLOY_STATE')
+    return data, entries, current
+
+
+def authorize_host(sha):
+    active_deployment(sha)
+    # Resolve main after checking the run and attempt. The bootstrap checks
+    # it again against the ref obtained by the subsequent Git fetch.
+    require_current_main(sha)
+
+
+def runs(sha):
+    data, entries, current = active_deployment(sha)
     entries = [r for r in entries if r.get('path') != '.github/workflows/deploy.yml'
                or r['id'] == current['id']]
     current.update(status='completed', conclusion='success')
@@ -479,9 +497,12 @@ def manual_runs(sha, historical=False):
 
 def main():
     require(len(sys.argv) == 3 and re.fullmatch('[0-9a-f]{40}', sys.argv[2]))
-    require(sys.argv[1] in ('authorize', 'pr-validation', 'runs', 'manual-runs', 'recovery-runs'))
+    require(sys.argv[1] in ('authorize', 'authorize-host', 'pr-validation', 'runs', 'manual-runs',
+                            'recovery-runs'))
     if sys.argv[1] == 'authorize':
         authorize(sys.argv[2])
+    elif sys.argv[1] == 'authorize-host':
+        authorize_host(sys.argv[2])
     elif sys.argv[1] == 'pr-validation':
         verify_pr_evidence(sys.argv[2])
     elif sys.argv[1] == 'manual-runs':

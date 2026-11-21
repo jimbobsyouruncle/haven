@@ -109,6 +109,38 @@ targeted recovery procedure below as appropriate. Reconcile the proxy with
 the canonical Compose configuration before the next deploy. See the
 [approved ADR amendment](../docs/haven/adr/0006-installation-root.md#approved-amendment-for-249).
 
+### Canonical deployment authorization
+
+For canonical upgrades, the installed bootstrap holds both deployment locks,
+queries the existing GitHub provenance policy, and requires the requested SHA
+to match current main in both the API and the fetch. The verified staged driver
+then checks and exports the running proxy image. The installed bootstrap checks
+the returned archive before changing the journal or switching checkouts.
+Candidate proxy validation also runs during installation, after saving the
+previous checkout and controls. Use the protected deployment log to identify the
+failed step. For a provenance refusal, investigate the exact main SHA, active
+deployment and validation evidence before requesting another authorized run.
+
+### Transition to the self-updating bootstrap
+
+Use one separately authorized deployment of the reviewed merge SHA through the
+existing path. The last installed driver must pass its existing checkpoint
+preflight for that transition. A successful transaction installs matching
+copies of the bootstrap and provenance verifier together. Subsequent upgrades
+use the staged driver's checkpoint preflight. If the old driver blocks the
+transition, recover the exact image as described below or use separately
+authorized locked driver preparation. If installing the new bootstrap ahead of
+the checkout, prepare and back up both `scripts/install-root.py` and
+`scripts/deploy-provenance.py` from the same reviewed revision under both
+deployment locks. Keep both predecessors for coordinated undo. After checkout
+switch use the existing control rollback and separately authorized proxy
+recovery procedures below.
+
+Verify the requested SHA, accepted journal, exact image or checked archive,
+local proxy health, required verifier results and existing backup integrity
+evidence. Keep sensitive evidence on the host. See
+[the approved trust boundary](../docs/haven/adr/0006-installation-root.md#approved-amendment-for-252).
+
 ### Recover a missing local proxy image
 
 Read the fixed refusal category first. Docker command failures can leave the

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# ADR-0006 and coordinated identity fixtures; no network, Docker, systemd or root.
+# ADR-0006 and coordinated identity fixtures. The optional Compose check uses
+# only CLI normalization, with no daemon, network, systemd or root.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-python3 - "$SCRIPT_DIR/test-install-root.sh" <<'PYTEST'
+python3 - "$SCRIPT_DIR/test-install-root.sh" "$@" <<'PYTEST'
 import sys
 __file__ = sys.argv.pop(1)
 #!/usr/bin/env python3
@@ -21,6 +22,10 @@ import tarfile
 import unittest
 from unittest.mock import patch
 from contextlib import redirect_stderr
+
+if sys.argv[1:] not in ([], ['--compose']):
+    raise SystemExit('usage: test-install-root.sh [--compose]')
+CHECK_COMPOSE = sys.argv[1:] == ['--compose']
 
 SPEC = importlib.util.spec_from_file_location('install_root', Path(__file__).with_name('install-root.py'))
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -439,6 +444,140 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         self.tx.wiring(self.sha)
         self.assert_preserved()
 
+    def test_canonical_deploy_rejects_unmerged_sha_before_proxy_checkpoint(self):
+        self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
+        accepted = self.tx.journal.read_bytes()
+        self.git(self.remote, 'switch', '-qc', 'unmerged')
+        self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '--allow-empty', '-qm', 'unmerged fixture')
+        unmerged = self.git(self.remote, 'rev-parse', 'HEAD')
+        self.calls.clear()
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.tx.deploy(unmerged)
+        self.assertFalse(any(args[0] == 'docker' for args in self.calls))
+        self.assertFalse(list(self.tx.app.parent.glob('.haven-stage-*')))
+        self.assertEqual(self.tx.journal.read_bytes(), accepted)
+        self.tx.wiring(self.sha)
+        self.assert_preserved()
+
+    def test_canonical_missing_image_keeps_last_accepted_archive(self):
+        self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
+        accepted = self.tx.journal.read_bytes()
+        recovery = self.tx.load()['proxy_recovery']
+        self.missing_images.add(self.running_image)
+        self.calls.clear()
+        with self.assertRaisesRegex(MODULE.Refusal, 'operator must restore and verify the exact running image'):
+            self.tx.deploy(self.sha)
+        self.assertEqual(self.tx.journal.read_bytes(), accepted)
+        self.assertEqual(self.tx.file_digest(recovery['archive'], private=True), recovery['archive_sha256'])
+        self.assertFalse(list(self.tx.app.parent.glob('.haven-stage-*')))
+        self.assertFalse(any(args[:3] in (['docker', 'image', 'load'], ['docker', 'image', 'save'])
+                             or args[0] == 'bash' for args in self.calls))
+        self.tx.wiring(self.sha)
+        self.assert_preserved()
+
+    def handoff_fixture(self, candidate):
+        policy = self.remote / 'scripts/deploy-provenance.py'
+        policy.write_text("import sys\nassert sys.argv[1] == 'authorize-host'\n")
+        self.git(self.remote, 'add', '.')
+        self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-qm', 'installed bootstrap fixture')
+        self.sha = self.git(self.remote, 'rev-parse', 'HEAD')
+        self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
+        accepted = self.tx.journal.read_bytes()
+        recovery = self.tx.load()['proxy_recovery']
+        policy.write_text("raise RuntimeError('candidate policy must never authorize its own stage')\n")
+        driver = self.remote / 'scripts/install-root.py'
+        driver.write_text(candidate(recovery))
+        self.git(self.remote, 'add', '.')
+        self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-qm', 'candidate driver fixture')
+        return self.git(self.remote, 'rev-parse', 'HEAD'), accepted
+
+    def run_handoff_fixture(self, args, **kwargs):
+        if args[0] == sys.executable:
+            self.calls.append(args)
+            if args[-2] == 'checkpoint-preflight':
+                self.assertEqual(kwargs.pop('pass_fds'), (9, 8))
+            else:
+                self.assertEqual(Path(args[2]), self.tx.app / 'scripts/deploy-provenance.py')
+            return subprocess.run(args, **kwargs)
+        return self.runner(args, **kwargs)
+
+    def test_obsolete_installed_preflight_hands_off_to_verified_candidate(self):
+        def corrected(recovery):
+            new = dict(recovery, archive=str(self.tx.state / ('proxy-recovery-' + 'f' * 32 + '.tar')))
+            return ("import json, pathlib, shutil, subprocess, sys\n"
+                    "assert sys.argv[1] == 'checkpoint-preflight'\n"
+                    "root = pathlib.Path(__file__).parent.parent\n"
+                    "assert subprocess.check_output(['git', '-C', root, 'rev-parse', 'HEAD'], "
+                    "text=True).strip() == sys.argv[2]\n"
+                    f"shutil.copyfile({recovery['archive']!r}, {new['archive']!r})\n"
+                    f"pathlib.Path({new['archive']!r}).chmod(0o600)\n"
+                    f"print(json.dumps({new!r}))\n")
+
+        candidate, _ = self.handoff_fixture(corrected)
+        self.tx.run = self.run_handoff_fixture
+        with patch.object(self.tx, 'proxy_preflight',
+                          side_effect=MODULE.Refusal('obsolete installed preflight')):
+            self.tx.deploy(candidate, handoff=True)
+        journal = self.tx.load()
+        self.assertEqual(journal['sha'], candidate)
+        self.assertEqual(journal['previous_sha'], self.sha)
+        self.assertEqual((Path(journal['previous']) / 'scripts/install-root.py').read_text(), '# fixture\n')
+        self.assertEqual(journal['phase'], 'awaiting_verifier')
+        self.assertTrue(Path(journal['proxy_recovery']['archive']).is_file())
+        self.tx.wiring(candidate)
+        self.assert_preserved()
+
+    def test_preflight_authorization_and_failures_preserve_accepted_deployment(self):
+        candidate, accepted = self.handoff_fixture(lambda _: "raise RuntimeError('SYNTHETIC_PRIVATE_DETAIL')\n")
+        self.tx.run = self.run_handoff_fixture
+        original_archive = self.tx.load()['proxy_recovery']['archive']
+        original_digest = self.tx.file_digest(original_archive, private=True)
+        for mode in ('api', 'stale', 'untrusted', 'broken', 'interrupt', 'timeout'):
+            with self.subTest(mode=mode):
+                self.calls.clear()
+
+                def run(args, **kwargs):
+                    if mode == 'api' and 'authorize-host' in args:
+                        raise subprocess.CalledProcessError(1, args, stderr='PROVENANCE_API_TRANSPORT\n')
+                    if 'checkpoint-preflight' in args:
+                        if mode == 'interrupt':
+                            raise KeyboardInterrupt
+                        if mode == 'timeout':
+                            raise subprocess.TimeoutExpired(args, 1, stderr=b'SYNTHETIC_PRIVATE_DETAIL')
+                    return self.run_handoff_fixture(args, **kwargs)
+
+                self.tx.run = run
+                sha = self.sha if mode == 'stale' else candidate
+                if mode == 'untrusted':
+                    (self.remote / 'scripts/install-root.py').unlink()
+                    (self.remote / 'scripts/install-root.py').symlink_to('deploy-provenance.py')
+                    self.git(self.remote, 'add', '.')
+                    self.git(self.remote, '-c', 'user.name=Fixture', '-c',
+                             'user.email=fixture@example.invalid', 'commit', '-qm', 'untrusted stage')
+                    sha = self.git(self.remote, 'rev-parse', 'HEAD')
+                with self.assertRaises((MODULE.Refusal, KeyboardInterrupt)) as caught:
+                    self.tx.deploy(sha, handoff=True)
+                if mode == 'untrusted':
+                    self.assertIn('symlink in code checkout', str(caught.exception))
+                    self.git(self.remote, 'update-ref', 'refs/heads/main', candidate)
+                if mode == 'api':
+                    self.assertIn('PROVENANCE_API_TRANSPORT', str(caught.exception))
+                    self.assertFalse(any(args[0] == 'git' for args in self.calls))
+                if mode in ('api', 'stale', 'untrusted'):
+                    self.assertFalse(any('checkpoint-preflight' in args for args in self.calls))
+                self.assertNotIn('SYNTHETIC_PRIVATE_DETAIL', str(caught.exception))
+                self.assertEqual(self.tx.journal.read_bytes(), accepted)
+                self.assertEqual(self.tx.file_digest(original_archive, private=True), original_digest)
+                self.assertFalse(list(self.tx.app.parent.glob('.haven-stage-*')))
+                self.tx.wiring(self.sha)
+                self.assert_preserved()
+
     def proxy_runtime_fixture(self):
         self.tx.deploy(self.sha)
         self.tx.accept(self.sha, self.receipt())
@@ -535,6 +674,50 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         self.assertEqual(overlay['services']['proxy']['pull_policy'], 'never')
         self.assertEqual(overlay['services']['proxy']['labels'][MODULE.PROXY_TRANSACTION_LABEL],
                          runtime['token'])
+
+    @unittest.skipUnless(CHECK_COMPOSE, 'requires --compose with the Docker Compose CLI')
+    def test_candidate_preflight_with_actual_compose_normalization(self):
+        journal, _, _ = self.proxy_runtime_fixture()
+        runtime = journal['proxy_runtime']
+        secret = 'cloudflare_dns_token'
+        destination = '/run/secrets/' + secret
+        caddyfile = self.tx.app / MODULE.PROXY_CONFIG
+        caddyfile.write_text('dns cloudflare {file.' + destination + '}\n')
+        spec = {'services': {'proxy': {
+            'image': 'candidate:fixture', 'environment': {'LOCAL_DOMAIN': 'fixture.test'},
+            'volumes': [
+                dict(type='bind', source=runtime['data'], target='/data'),
+                dict(type='bind', source=str(caddyfile), target=MODULE.PROXY_DEST, read_only=True),
+            ],
+        }}, 'secrets': {secret: {'file': str(self.secret)}}}
+        compose = self.tx.app / MODULE.COMPOSE_FILES[0]
+        original = self.tx.command
+
+        def command(args, **kwargs):
+            if args[-3:] == ['config', '--format', 'json']:
+                return subprocess.check_output(args, text=True, timeout=30)
+            if args[:3] == ['docker', 'image', 'inspect']:
+                return json.dumps(dict(Id=runtime['candidate_image'], Os='linux', Architecture='arm64'))
+            return original(args, **kwargs)
+
+        for name in MODULE.COMPOSE_FILES[1:]:
+            (self.tx.app / name).write_text('services: {}\n')
+        with patch.object(self.tx, 'command', side_effect=command):
+            for entry in ({'source': secret, 'target': destination},
+                          {'source': secret, 'target': secret}, secret,
+                          {'source': secret, 'target': '/tmp/' + secret}):
+                with self.subTest(entry=entry):
+                    spec['services']['proxy']['secrets'] = [entry]
+                    compose.write_text(json.dumps(spec))
+                    self.calls.clear()
+                    if isinstance(entry, dict) and entry['target'].startswith('/tmp/'):
+                        with self.assertRaisesRegex(MODULE.Refusal, 'DNS credential bind unavailable'):
+                            self.tx.candidate_proxy(runtime['token'])
+                        self.assertFalse(any(args[:2] == ['docker', 'run'] for args in self.calls))
+                    else:
+                        self.tx.candidate_proxy(runtime['token'])
+                        expected = f'type=bind,src={self.secret},dst={destination},readonly'
+                        self.assertTrue(any(expected in args and 'validate' in args for args in self.calls))
 
     def test_verified_dead_candidate_recovers_only_proxy_from_retained_archive(self):
         journal, dead, restored = self.proxy_runtime_fixture()
@@ -697,6 +880,21 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         with patch.object(MODULE.gzip, 'GzipFile', side_effect=EOFError):
             with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_ARTIFACT'):
                 self.tx.verify_archive(archive, metadata)
+
+    def test_docker_28_inspect_adds_only_known_empty_config_defaults(self):
+        archive = self.root / 'image.tar'
+        self.write_archive(archive)
+        inspected = dict(self.config['config'], AttachStderr=False, AttachStdin=False,
+                         AttachStdout=False, OpenStdin=False, StdinOnce=False, Tty=False,
+                         Domainname='', Hostname='', Image='', User='')
+        metadata = dict(Os='linux', Architecture='arm64', Config=inspected,
+                        RootFS={'Layers': self.config['rootfs']['diff_ids']})
+        self.assertEqual(self.tx.verify_archive(archive, metadata), self.config_id)
+        for change in ({'User': '1000'}, {'AttachStdin': True}, {'Image': 'another-image'},
+                       {'UnknownFlag': False}, {'Env': ['LOCAL_DOMAIN=different']}):
+            with self.subTest(change=change):
+                with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_ARTIFACT'):
+                    self.tx.verify_archive(archive, dict(metadata, Config=inspected | change))
 
     def test_missing_modules_version_and_host_architecture_refuse(self):
         original = self.runner

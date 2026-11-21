@@ -384,7 +384,7 @@ jobs:
 
       - name: Installation root migration tests
         if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true'
-        run: bash scripts/test-install-root.sh
+        run: bash scripts/test-install-root.sh --compose
 
       - name: Headless deploy instance tests
         if: steps.components.outputs.full == 'true'

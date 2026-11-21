@@ -234,7 +234,7 @@
 - scripts/test-hermes-nonroot-preflight.sh - FILE: scripts/test-hermes-nonroot-preflight.sh
 - scripts/test-install-auth-env-leak.sh - FILE: scripts/test-install-auth-env-leak.sh
 - scripts/test-install-health.sh - FILE: scripts/test-install-health.sh
-- scripts/test-install-root.sh - ADR-0006 and coordinated identity fixtures; no network, Docker, systemd or root.
+- scripts/test-install-root.sh - ADR-0006 and coordinated identity fixtures. The optional Compose check uses
 - scripts/test-install-tailscale-migration.sh - FILE: scripts/test-install-tailscale-migration.sh
 - scripts/test-post-deploy-verify-log-env.sh - FILE: scripts/test-post-deploy-verify-log-env.sh
 - scripts/test-prune-conversations.sh - FILE: scripts/test-prune-conversations.sh

@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'caddy/**'
+      - 'scripts/install-root.py'
+      - 'scripts/prune-docker-cache.sh'
       - '.github/workflows/caddy-arm64.yml'
 
 permissions:
@@ -38,3 +40,80 @@ jobs:
           modules="$("${probe[@]}" list-modules)"
           grep -Fx 'dns.providers.cloudflare' <<< "$modules"
           grep -Fx 'dns.providers.rfc2136' <<< "$modules"
+
+      - name: Verify Caddy recovery after tag movement and cache cleanup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          scratch="$(mktemp -d)"
+          container=''
+          cleanup() {
+            if [[ -n "$container" ]]; then
+              docker container rm -fv "$container" >/dev/null
+            fi
+            rm -rf -- "$scratch"
+          }
+          trap cleanup EXIT
+          docker version --format 'Docker server {{.Server.Version}}'
+          tag=haven-caddy:arm64-test
+          container="$(docker run -d --pull never --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --entrypoint /bin/sleep "$tag" 300)"
+          running="$(docker container inspect --format '{{.Image}}' "$container")"
+          docker image inspect --format '{{json .}}' "$running" > "$scratch/inspect.json"
+          docker image save --output "$scratch/proxy.tar" "$running"
+          sha256sum "$scratch/proxy.tar" > "$scratch/proxy.sha256"
+          verify_archive() {
+            python3 - "$scratch/proxy.tar" "$1" <<'PY'
+          import json
+          from pathlib import Path
+          import runpy
+          import sys
+          import tarfile
+          import traceback
+
+          transaction = runpy.run_path('scripts/install-root.py')['Transaction']
+          metadata = json.loads(Path(sys.argv[2]).read_text())
+          try:
+              print(transaction.verify_archive(sys.argv[1], metadata))
+          except RuntimeError as error:
+              # This archive contains only the public, disposable test image.
+              # Report the failing assertion and field names without values.
+              traceback.print_tb(error.__context__.__traceback__)
+              with tarfile.open(sys.argv[1]) as archive:
+                  manifest = json.load(archive.extractfile('manifest.json'))[0]
+                  config = json.load(archive.extractfile(manifest['Config']))['config']
+              keys = config.keys() | metadata['Config'].keys()
+              print('Inspect/archive differences:',
+                    sorted(key for key in keys if config.get(key) != metadata['Config'].get(key)),
+                    file=sys.stderr)
+              raise
+          PY
+          }
+          config="$(verify_archive "$scratch/inspect.json")"
+
+          mkdir "$scratch/build"
+          printf 'FROM scratch\nCOPY fixture /fixture\n' > "$scratch/build/Dockerfile"
+          printf 'replacement tag fixture\n' > "$scratch/build/fixture"
+          docker build --tag "$tag" "$scratch/build"
+          replacement="$(docker image inspect --format '{{.Id}}' "$tag")"
+          test "$replacement" != "$running"
+          HAVEN_BUILD_CACHE_CAP=1GB bash scripts/prune-docker-cache.sh
+          test "$(docker container inspect --format '{{.Image}} {{.State.Running}}' "$container")" = "$running true"
+          sha256sum --check "$scratch/proxy.sha256"
+
+          # Only the disposable fixture is removed and reloaded. A production
+          # routine-deploy refusal still requires separate operator approval.
+          docker container stop --time 1 "$container" >/dev/null
+          docker container rm -v "$container" >/dev/null
+          container=''
+          if docker image inspect "$running" >/dev/null 2>&1; then
+            docker image rm "$running"
+          fi
+          if docker image inspect "$config" >/dev/null 2>&1; then
+            docker image rm "$config"
+          fi
+          docker image load --input "$scratch/proxy.tar"
+          docker image inspect --format '{{json .}}' "$config" > "$scratch/restored.json"
+          test "$(verify_archive "$scratch/restored.json")" = "$config"
+          test "$(docker image inspect --format '{{.Id}}' "$tag")" = "$replacement"
