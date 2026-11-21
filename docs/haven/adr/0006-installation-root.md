@@ -176,3 +176,56 @@ rollback, secret/data preservation and mandatory verification. CI adds source,
 security, Caddy and Compose checks. Worker contracts are unchanged; no fresh live
 RunPod test is required. Production acceptance and issue closure require actual
 sanitized runtime evidence and the owner's separate closure decision.
+
+## Owner-approved direction (2026-11-21): simplify deployment policy
+
+Status: **approved architectural direction; implementation not yet verified or deployed**.
+This section supersedes the historical manual-only deployment policy in this
+ADR for routine merges. It does not waive existing production safeguards or
+constitute authorization to deploy a particular revision. The detailed
+implementation and removal of legacy paths require a reviewed change.
+
+Haven uses **automatic deployment by default** for owner-authorized merges to
+protected main that affect applications, container image pins, or ordinary
+runtime configuration. Documentation-only changes that do not alter deployable
+artifacts or operational configuration do not need a production deployment.
+Changes to deployment authorization, security policy, privileged execution,
+trusted bootstrap, or deployment infrastructure require **separate explicit
+owner authorization** before production activation. Classify protected changes
+using a small, auditable, fail-closed set of paths and semantic exceptions;
+ambiguous classifications must be reviewed, not silently treated as routine.
+A protected change may merge after required PR checks but must not auto-deploy.
+
+Both automatic and explicitly authorized deployments must converge on the
+**same canonical deployment transaction**. Preserve the exact validated commit,
+trusted main provenance, SSH forced-command and systemd restrictions, Tailscale
+transport, least privilege, secrets boundaries, deployment locks, durable
+journal, previous known-good checkout and proxy recovery artifacts, mandatory
+health verification, and safe rollback/fail-closed behavior. Manual authorization
+is an additional gate, not a second installer or alternate recovery path.
+Do not interpret a successful merge or scheduled verification as production
+acceptance. The recorded deployed SHA and runtime checks determine acceptance.
+
+Reduce redundant evidence queries, duplicate SHA assertions, transitional
+bootstrap handoffs and operator preparation steps **only where equivalence of
+security and recovery behavior is demonstrated by tests**. The installed Jarvis
+bootstrap remains authoritative during transition; do not replace it or remove
+legacy compatibility paths before a reversible cutover is qualified. Preserve
+the approved #249 proxy recovery and #252 trusted handoff boundaries until a
+reviewed implementation provides equivalent guarantees.
+
+Deployment outcomes must distinguish protected-policy refusal, provenance or
+preparation failure, activation failure, health verification failure, and
+recovery failure. Intentional policy refusals should be clearly labeled as
+requiring authorization rather than presented as unexplained runtime crashes.
+Keep `doctor.sh` focused on operational health; it is not a security gate.
+Reuse commit-specific PR validation where trustworthy, while independently
+checking deployment-time conditions that PR CI cannot establish.
+
+Implementation should be incremental and independently testable, with an
+explicit cutover and rollback plan. No new orchestrator or persistent control
+plane is justified solely by this simplification. The RunPod worker interface
+is unchanged unless a concrete compatibility dependency is found. Production
+acceptance requires evidence for routine auto-deploy, protected manual-deploy,
+documentation-only no-op, failed candidate containment/recovery, and clear
+operator diagnostics.
