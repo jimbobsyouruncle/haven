@@ -73,7 +73,7 @@ cp "$CHECK_SCRIPT" "$TMP_REPO/scripts/check-agent-context.sh"
 
 cp "$SCRIPT_DIR/generate-agent-context.py" "$TMP_REPO/scripts/"
 cat > "$TMP_REPO/Dockerfile" <<'EOF'
-FROM --platform=linux/arm64 registry.example:5000/library/python:3.12.16-slim@sha256:aaaa AS builder
+FROM --platform=$BUILDPLATFORM registry.example:5000/library/python:3.12.16-slim@sha256:aaaa AS builder
 FROM builder AS final
 EOF
 
@@ -166,6 +166,12 @@ check_case "tracked CONSOLIDATED dump" 1 "$(run_check "$GENERATOR")"
 git -C "$TMP_REPO" rm -q -f CONSOLIDATED_DOCS.md
 git -C "$TMP_REPO" commit -q -m "fixture: remove consolidated dump"
 restore_fresh
+
+# Keep structural details while removing the mutable image reference parts.
+if ! grep -Fxq -- "- FROM --platform=\$BUILDPLATFORM registry.example:5000/library/python AS builder" "$TMP_REPO/CODE_INDEX.md"; then
+  echo "FAIL: Dockerfile image name, platform and stage missing"
+  exit 1
+fi
 
 # Image tag and digest bumps keep the structure fresh.
 sed -i 's/3.12.16-slim@sha256:aaaa/3.12.17-slim@sha256:bbbb/' "$TMP_REPO/Dockerfile"

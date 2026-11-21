@@ -31,7 +31,7 @@ def main():
 
     def strip_pin(match):
         prefix, image = match.groups()
-        if "$" in match[0]:
+        if "$" in image:
             return match[0]
         repository, slash, name = image.rpartition("/")
         return prefix + repository + slash + name.split(":", 1)[0]
