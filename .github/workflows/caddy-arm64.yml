@@ -69,10 +69,25 @@ jobs:
           from pathlib import Path
           import runpy
           import sys
+          import tarfile
+          import traceback
 
           transaction = runpy.run_path('scripts/install-root.py')['Transaction']
           metadata = json.loads(Path(sys.argv[2]).read_text())
-          print(transaction.verify_archive(sys.argv[1], metadata))
+          try:
+              print(transaction.verify_archive(sys.argv[1], metadata))
+          except RuntimeError as error:
+              # This archive contains only the public, disposable test image.
+              # Report the failing assertion and field names without values.
+              traceback.print_tb(error.__context__.__traceback__)
+              with tarfile.open(sys.argv[1]) as archive:
+                  manifest = json.load(archive.extractfile('manifest.json'))[0]
+                  config = json.load(archive.extractfile(manifest['Config']))['config']
+              keys = config.keys() | metadata['Config'].keys()
+              print('Inspect/archive differences:',
+                    sorted(key for key in keys if config.get(key) != metadata['Config'].get(key)),
+                    file=sys.stderr)
+              raise
           PY
           }
           config="$(verify_archive "$scratch/inspect.json")"
