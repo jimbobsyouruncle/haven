@@ -731,14 +731,14 @@ class PRValidation(unittest.TestCase):
         self.assertIn('auth=true', log)
         self.assertEqual(self.output.read_text(), 'reuse_attempt=2\n')
 
-    def test_missing_source_receipt_or_full_selection_runs_full(self):
+    def test_missing_source_receipt_is_a_miss_but_full_coverage_reuses(self):
         self.jobs['Validate sources / Validate sources']['steps'] = []
         self.assertIn('REUSE_MISS', self.verify())
         self.assertFalse(self.output.exists())
         self.jobs['Validate sources / Validate sources']['steps'] = self.source_steps
         self.flags = 'full=true\n'
-        self.assertIn('cross-cutting', self.verify())
-        self.assertFalse(self.output.exists())
+        self.assertIn('full=true', self.verify())
+        self.assertEqual(self.output.read_text(), 'reuse_attempt=2\n')
 
     def test_missing_required_source_step_does_not_reuse(self):
         self.source_steps[-1]['conclusion'] = 'skipped'

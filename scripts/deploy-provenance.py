@@ -351,10 +351,8 @@ def pr_validation(sha, *, emit=True):
         return
     flags = subprocess.check_output(['python3', 'scripts/ci-components.py', '--base', base],
                                     text=True).splitlines()
-    if 'full=true' in flags:
-        print('REUSE_MISS: cross-cutting or unknown source paths.')
-        return
-    require('full=false' in flags, 'PR_VALIDATION_SELECTION')
+    require(sum(flag in ('full=true', 'full=false') for flag in flags) == 1,
+            'PR_VALIDATION_SELECTION')
     print(f'Reusing PR #{number} source tree {commit["tree"]["sha"]} '
           f'(SAST run {sast["id"]} attempt {sast["run_attempt"]}; '
           f'context run {context["id"]} attempt {context["run_attempt"]}).')
