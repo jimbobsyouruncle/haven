@@ -2,6 +2,7 @@
 # Offline API/event fixtures for the existing deployment workflow.
 set -Eeuo pipefail
 python3 - <<'PY'
+import base64
 import copy
 import io
 from contextlib import redirect_stderr, redirect_stdout
@@ -9,6 +10,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -43,6 +45,64 @@ class Provenance(unittest.TestCase):
         with patch.dict(os.environ, self.env, clear=True), patch.object(m, 'get', side_effect=[
                 [self.pr], {'object': {'sha': SHA}}]):
             m.authorize(SHA)
+
+    def test_acceptance_signature_is_bound_to_sha_run_attempt_and_key(self):
+        root = Path(self.tmp.name)
+        private_key = root / 'signing-key'
+        subprocess.run(['openssl', 'genpkey', '-algorithm', 'ED25519', '-out', str(private_key)],
+                       check=True, capture_output=True)
+        public_key = subprocess.check_output(
+            ['openssl', 'pkey', '-in', str(private_key), '-pubout'], text=True)
+        message = root / 'message'
+        message.write_text(f'haven-production-v1 {SHA} 12 1')
+        encoded = base64.b64encode(subprocess.check_output([
+            'openssl', 'pkeyutl', '-sign', '-rawin', '-inkey', str(private_key), '-in', str(message)]))
+        log = b'2026-11-21T13:19:40.123Z ' + message.read_bytes() + b' ' + encoded + b'\r\n'
+        m.verify_receipt(log, SHA, 12, 1, public_key)
+        for sha, run, attempt in (('b' * 40, 12, 1), (SHA, 13, 1), (SHA, 12, 2)):
+            actual = log.replace(message.read_bytes(),
+                                 f'haven-production-v1 {sha} {run} {attempt}'.encode())
+            with self.assertRaisesRegex(m.Refused, 'AUTHORIZATION_REQUIRED_RECEIPT'):
+                m.verify_receipt(actual, sha, run, attempt, public_key)
+
+    def test_runner_refuses_newest_incomplete_deployment_without_falling_back(self):
+        current = dict(self.run, id=13)
+        previous = dict(self.run, status='completed', conclusion='failure')
+        job = dict(self.jobs[1], status='completed', conclusion='failure',
+                   steps=[dict(name='Trigger deploy', started_at='synthetic', conclusion='failure')])
+        env = dict(GITHUB_RUN_ID='13', DEPLOY_RECEIPT_PUBLIC_KEY='-----BEGIN PUBLIC KEY-----')
+        with patch.dict(os.environ, env, clear=True), patch.object(m, 'get', side_effect=[
+                dict(workflow_runs=[current, previous]), dict(jobs=[job], total_count=1)]), \
+                patch.object(subprocess, 'check_output') as logs:
+            with self.assertRaisesRegex(m.Refused, 'AUTHORIZATION_REQUIRED_RECEIPT'):
+                m.accepted_baseline()
+            logs.assert_not_called()
+
+    def test_preflight_exports_only_classified_outcomes(self):
+        self.path.write_text(json.dumps(self.event))
+        output = Path(self.tmp.name) / 'outputs'
+        self.env['GITHUB_OUTPUT'] = str(output)
+        for impact in ('docs-only', 'routine', 'protected'):
+            with self.subTest(impact=impact), patch.dict(os.environ, self.env, clear=True), \
+                    patch.object(m, 'require_current_main'), \
+                    patch.object(m, 'accepted_baseline', return_value='b' * 40), \
+                    patch.object(m, 'git', return_value=Path('scripts/deploy-impact.py').read_bytes()) \
+                    as git, patch.object(subprocess, 'check_output', return_value=impact):
+                with redirect_stdout(io.StringIO()) as log:
+                    self.assertEqual(m.preflight_impact(SHA), impact)
+                git.assert_called_once_with('show', 'b' * 40 + ':scripts/deploy-impact.py')
+                self.assertEqual('AUTHORIZATION_REQUIRED' in log.getvalue(), impact == 'protected')
+        self.assertEqual(output.read_text().splitlines(),
+                         ['impact=docs-only', 'impact=routine', 'impact=protected'])
+
+    def test_cumulative_preflight_refuses_forced_push_before_receipt_lookup(self):
+        self.event['forced'] = True
+        self.path.write_text(json.dumps(self.event))
+        with patch.dict(os.environ, self.env, clear=True), \
+                patch.object(m, 'require_current_main'), patch.object(m, 'accepted_baseline') as baseline:
+            with self.assertRaisesRegex(m.Refused, 'AUTHORIZATION_REQUIRED_MAIN_HISTORY'):
+                m.preflight_impact(SHA)
+            baseline.assert_not_called()
 
     def test_pr_evidence_retries_transient_api_errors(self):
         errors = [m.Refused('PROVENANCE_API_TRANSIENT', retry=True),
@@ -696,6 +756,113 @@ class PRValidation(unittest.TestCase):
             with self.subTest(count=count), self.assertRaisesRegex(ValueError, reason):
                 data['total_count'] = count
                 self.verify()
+
+
+CLASSIFIER = Path('scripts/deploy-impact.py').resolve()
+COMPOSE = 'docker-compose.yml.tmpl'
+
+
+class DeploymentImpactTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.git('init', '-q', '-b', 'main')
+        self.git('config', 'user.name', 'Fixture')
+        self.git('config', 'user.email', 'fixture@example.invalid')
+        self.write('README.md', 'initial')
+        self.pin('0.1')
+        self.base = self.commit('accepted')
+        self.git('branch', 'accepted')
+
+    def git(self, *args):
+        return subprocess.check_output(['git', '-C', str(self.root), *args], text=True).strip()
+
+    def write(self, name, content):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content + '\n')
+
+    def pin(self, version):
+        self.write(COMPOSE, 'services:\n  ollama:\n    image: '
+                   '${OLLAMA_IMAGE:-ollama/ollama:' + version + '@sha256:' + 'a' * 64 + '}')
+
+    def commit(self, message):
+        self.git('add', '-A')
+        self.git('commit', '-qm', message)
+        return self.git('rev-parse', 'HEAD')
+
+    def result(self, base=None):
+        return subprocess.run([sys.executable, str(CLASSIFIER), str(self.root), base or self.base,
+                               self.git('rev-parse', 'HEAD')],
+                              capture_output=True, text=True)
+
+    def assert_impact(self, expected):
+        result = self.result()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), expected)
+
+    def test_docs_only_then_routine(self):
+        self.write('docs/how-to.md', 'instructions')
+        self.commit('docs')
+        self.assert_impact('docs-only')
+        self.pin('0.2')
+        self.commit('pin')
+        self.assert_impact('routine')
+
+    def test_protected_then_docs_then_routine_even_after_revert(self):
+        self.write('scripts/install-root.py', '# protected')
+        bad = self.commit('trusted bootstrap change')
+        self.write('README.md', 'docs follow-up')
+        self.commit('docs')
+        self.assert_impact('protected')
+        self.pin('0.2')
+        self.commit('pin')
+        self.assert_impact('protected')
+        self.git('revert', '--no-edit', bad)
+        self.assert_impact('protected')
+
+    def test_rename_delete_and_mode_change(self):
+        self.git('mv', 'README.md', 'docs.md')
+        rename = self.commit('rename')
+        self.assert_impact('protected')
+        (self.root / 'docs.md').unlink()
+        self.commit('delete')
+        self.assertEqual(self.result(rename).stdout.strip(), 'protected')
+        self.git('checkout', '-q', '--detach', self.base)
+        (self.root / 'README.md').chmod(0o755)
+        self.commit('executable docs')
+        self.assert_impact('protected')
+
+    def test_unknown_and_security_sensitive_configuration(self):
+        self.write(COMPOSE, 'services:\n  ollama:\n    privileged: true')
+        self.commit('protected runtime configuration')
+        self.assert_impact('protected')
+        self.git('checkout', '-q', '--detach', self.base)
+        self.write('docs/new.py', '# executable content in a documentation directory')
+        self.commit('unknown')
+        self.assert_impact('protected')
+
+    def test_missing_and_rewritten_baselines(self):
+        self.assertIn('AUTHORIZATION_REQUIRED', self.result('a' * 40).stderr)
+        self.write('README.md', 'another main commit')
+        orphan = self.commit('discarded main')
+        self.git('checkout', '-q', '--detach', self.base)
+        self.write('README.md', 'replacement main commit')
+        self.commit('rewritten main')
+        result = self.result(orphan)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('AUTHORIZATION_REQUIRED', result.stderr)
+
+    def test_merge_preserves_transient_topic_changes(self):
+        self.git('checkout', '-qb', 'topic')
+        self.write('scripts/install-root.py', '# protected')
+        self.commit('temporary policy change')
+        (self.root / 'scripts/install-root.py').unlink()
+        self.commit('remove temporary policy change')
+        self.git('checkout', '-q', 'main')
+        self.git('merge', '--no-ff', '--no-edit', 'topic')
+        self.assert_impact('protected')
 
 
 unittest.main()

@@ -1614,6 +1614,34 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                     raise Refusal('PROXY_CANDIDATE: proxy stopped before acceptance')
             journal['phase'] = 'accepted'
             self.save(journal)
+            if journal.get('deployment_run'):
+                self.publish_deployment_receipt(sha, journal['deployment_run'])
+
+    def publish_deployment_receipt(self, sha, run):
+        key = self.state / 'deployment-receipt.key'
+        self.trusted(key)
+        if not key.is_file() or stat.S_IMODE(key.stat().st_mode) != 0o600:
+            raise Refusal('DEPLOYMENT_RECEIPT: private signing key unavailable')
+        message = f'haven-production-v1 {sha} {run[0]} {run[1]}'
+        # Ed25519 signing uses a seekable message input.
+        with tempfile.NamedTemporaryFile() as payload:
+            payload.write(message.encode('ascii'))
+            payload.flush()
+            signature = self.run(['openssl', 'pkeyutl', '-sign', '-rawin', '-inkey', str(key),
+                                  '-in', payload.name],
+                                 capture_output=True, check=True, timeout=10).stdout
+        if len(signature) != 64:
+            raise Refusal('DEPLOYMENT_RECEIPT: unexpected signature format')
+        values = self.values(self.layout.read_text())
+        log = Path(values['HYBRID_AI_LOG_DIR']) / 'deploy' / (sha + '.log')
+        self.trusted(log)
+        fd = os.open(log, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'a') as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise Refusal('DEPLOYMENT_RECEIPT: deployment log is not regular')
+            print(message, base64.b64encode(signature).decode('ascii'), file=stream)
+            stream.flush()
+            os.fsync(stream.fileno())
 
     def authorize_deploy(self, sha):
         policy = self.app / 'scripts/deploy-provenance.py'
@@ -1629,9 +1657,10 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                 code = 'PROVENANCE_INVALID'
             raise Refusal(code + ': installed bootstrap could not authorize the deployment') from None
 
-        if event not in ('push', 'workflow_dispatch'):
-            raise Refusal('PROVENANCE_INVALID: installed policy returned no trusted run event')
-        return event
+        run = re.fullmatch(r'(push|workflow_dispatch) ([1-9][0-9]*) ([1-9][0-9]*)', event)
+        if not run:
+            raise Refusal('PROVENANCE_INVALID: installed policy returned no trusted run identity')
+        return run[1], (int(run[2]), int(run[3]))
 
     def deployment_impact(self, stage, base, sha, event):
         policy = self.app / 'scripts/deploy-impact.py'
@@ -1689,7 +1718,7 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                           'review the protected preflight log and deployment runbook') from None
 
     def deploy(self, sha, *, handoff=False):
-        event = self.authorize_deploy(sha) if handoff else None
+        event, run = self.authorize_deploy(sha) if handoff else (None, None)
         if self.identity_cutover:
             self.state = self.path('/var/lib/haven-install-root')
             self.journal = self.state / 'current.json'
@@ -1776,6 +1805,8 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                        previous_sha=sha_before, files=files,
                        receipt=str(Path(values['HYBRID_AI_DATA_DIR']) /
                                    'hermes_data/deploy-verdicts' / (sha + '.json')))
+        if run is not None:
+            journal['deployment_run'] = run
         if identity is not None:
             journal['identity'] = identity
         if proxy_runtime:

@@ -74,11 +74,35 @@ deploy. Under both deployment locks, verify the installed HEAD and
 accepted journal, preserve the existing bootstrap files, and install the
 reviewed `scripts/install-root.py`, `scripts/deploy-provenance.py`, and
 `scripts/deploy-impact.py` together from the same independently verified
-revision. Keep automatic deployment disabled until the host and early
-workflow gates have passed cutover verification. If cutover fails, keep
-automatic deployment disabled, preserve the journal and recovery artifacts,
-and restore the saved bootstrap files together only after confirming no
-transaction is active or unresolved.
+revision. In the same authorized cutover, provision a dedicated Ed25519
+private key as root with mode 0600 at
+`/var/lib/haven-install-root/deployment-receipt.key`. Use
+`openssl genpkey -algorithm ED25519` to generate it and
+`openssl pkey -pubout` to derive its public PEM. Set only that PEM in the
+owner-managed Actions variable `HAVEN_DEPLOY_RECEIPT_PUBLIC_KEY`. Keep the
+private key on the host outside the checkout and away from deployment logs.
+
+The first authorized deployment is manual and establishes the first signed
+baseline. After the final root verifier commits `accepted` to the journal,
+it signs the accepted SHA, deployment run ID and attempt. The existing
+forced command relays the signed line in its normal run log. Before source
+validation or Tailscale access, an automatic run checks the newest prior
+SSH deployment attempt visible in the last 30 main workflow runs and
+verifies that exact job's receipt. Missing logs, invalid signatures, failed
+SSH attempts and exhausted history result in `AUTHORIZATION_REQUIRED`. An
+authorized manual run can establish a new receipt at the next eligible
+target. The runner uses the signed checkout's policy for early classification.
+The host always checks its own journal and installed policy.
+
+Keep automatic deployment disabled until the host and early workflow gates
+have passed cutover verification. Disable automatic deployment and drain any
+queued or running deployment before owner rollback, out-of-band acceptance,
+or key rotation. Reconcile the runtime and journal before using the manual
+workflow to establish a fresh signed baseline. Rotate the receipt key after
+an out-of-band rollback or acceptance so stale receipts cannot authorize
+preflight when automatic deployment is re-enabled. If cutover fails, preserve
+the journal and recovery artifacts, and restore the saved bootstrap files
+together only after confirming no transaction is active or unresolved.
 
 ### #249 cutover and verification
 
