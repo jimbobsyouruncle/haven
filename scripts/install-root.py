@@ -117,6 +117,15 @@ class Transaction:
                 os.close(fd)
             raise
 
+    def verify_inherited_locks(self):
+        for fd, name in ((9, 'hybrid-ai-deploy.lock'), (8, 'haven-deploy.lock')):
+            info = self.path('/run/lock/' + name).lstat()
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != self.owner
+                    or info.st_nlink != 1 or info.st_mode & 0o022
+                    or not os.path.samestat(os.fstat(fd), info)):
+                raise Refusal('deployment lock handoff mismatch')
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
     def translate(self, content, layout=False):
         # Known keys only; retain raw quoting, dollars and credential bytes.
         helper = (self.app / 'scripts/lib/haven-env.sh').read_text()
@@ -751,7 +760,7 @@ class Transaction:
             raise Refusal('conflicting canonical directory; manual reconciliation required')
         return source, values
 
-    def gate_command(self, refusal, args, *, inspect_image=False):
+    def gate_command(self, refusal, args, *, missing_image=None):
         try:
             return self.command(args, timeout=180)
         except (OSError, subprocess.SubprocessError) as error:
@@ -768,12 +777,10 @@ class Transaction:
                     or 'cannot connect to the docker daemon' in stderr.lower()
                     or 'permission denied while trying to connect' in stderr.lower()):
                 raise Refusal(DOCKER_UNAVAILABLE) from None
-            if inspect_image:
+            if missing_image:
                 self.docker_architecture()
                 if re.search(r'\bno such image\b', stderr, re.IGNORECASE):
-                    refusal = ('RECOVERY_IMAGE: selected immutable image is missing; restore the '
-                               'checked archive or select a locally verified immutable alternative '
-                               'using the deployment runbook')
+                    refusal = missing_image
             raise Refusal(refusal) from None
 
     def docker_architecture(self):
@@ -941,9 +948,14 @@ class Transaction:
             raise Refusal('PROXY_IDENTITY: cannot establish current exact proxy image')
         migration = self.identity_cutover or source == self.legacy
         recovery = self.migration_recovery_image(image) if migration else image
+        missing = 'RECOVERY_IMAGE: selected immutable image is missing; '
+        if migration:
+            missing += 'restore the checked archive or select a verified migration image per the runbook'
+        else:
+            missing += 'an operator must restore and verify the exact running image per the runbook'
         inspection = self.gate_command(
             'RECOVERY_IMAGE: selected image inspection failed; check the protected preflight log',
-            ['docker', 'image', 'inspect', '--format', '{{json .}}', recovery], inspect_image=True)
+            ['docker', 'image', 'inspect', '--format', '{{json .}}', recovery], missing_image=missing)
         # Inspect by immutable reference; its returned Id may be an index or
         # configuration digest. Bind the exported content via Config + RootFS.
         try:
@@ -1593,7 +1605,52 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
             journal['phase'] = 'accepted'
             self.save(journal)
 
-    def deploy(self, sha):
+    def authorize_deploy(self, sha):
+        policy = self.app / 'scripts/deploy-provenance.py'
+        self.trusted(policy)
+        if not policy.is_file():
+            raise Refusal('PROVENANCE_INVALID: installed deployment policy is unavailable')
+        try:
+            self.command([sys.executable, '-IB', str(policy), 'authorize-host', sha], timeout=150)
+        except subprocess.SubprocessError as error:
+            stderr = getattr(error, 'stderr', None)
+            code = stderr.strip() if isinstance(stderr, str) else ''
+            if not re.fullmatch(r'PROVENANCE_[A-Z_]+', code):
+                code = 'PROVENANCE_INVALID'
+            raise Refusal(code + ': installed bootstrap could not authorize the deployment') from None
+
+    def staged_proxy_preflight(self, stage, sha):
+        try:
+            output = self.command([sys.executable, '-IB', str(stage / 'scripts/install-root.py'),
+                                   'checkpoint-preflight', sha], pass_fds=(9, 8), timeout=1500)
+            recovery = json.loads(output)
+            if not isinstance(recovery, dict) or recovery.keys() != {
+                    'archive', 'archive_sha256', 'running_image_id', 'recovery_image_id',
+                    'configuration_id', 'platform'}:
+                raise ValueError
+            archive = Path(recovery['archive'])
+            if (archive.parent != self.state or
+                    not re.fullmatch(r'proxy-recovery-[0-9a-f]{32}\.tar', archive.name)
+                    or not all(re.fullmatch(r'sha256:[0-9a-f]{64}', recovery[key]) for key in
+                               ('running_image_id', 'recovery_image_id', 'configuration_id'))
+                    or recovery['running_image_id'] != recovery['recovery_image_id']
+                    or not re.fullmatch(r'linux/[a-z0-9]+', recovery['platform'])
+                    or self.file_digest(archive, private=True) != recovery['archive_sha256']):
+                raise ValueError
+            return recovery
+        except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
+            # Forward only a fixed refusal category. Candidate output can carry
+            # diagnostics that belong exclusively in the protected probe log.
+            stderr = getattr(error, 'stderr', None)
+            detail = re.match(r'::error::install-root: ((?:RECOVERY|PROXY)_[A-Z_]+):',
+                              stderr if isinstance(stderr, str) else '')
+            category = detail[1] if detail else 'STAGED_PREFLIGHT'
+            raise Refusal(category + ': staged deployment driver refused or failed; '
+                          'review the protected preflight log and deployment runbook') from None
+
+    def deploy(self, sha, *, handoff=False):
+        if handoff:
+            self.authorize_deploy(sha)
         if self.identity_cutover:
             self.state = self.path('/var/lib/haven-install-root')
             self.journal = self.state / 'current.json'
@@ -1612,31 +1669,44 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
             raise Refusal('previous deployment awaits verifier; inspect or explicitly roll back')
         source, values = self.source()
         identity = self.identity_preflight(values) if self.identity_cutover else None
-        proxy_recovery = self.proxy_preflight(source)
-        proxy_runtime = None
-        if (self.project == 'haven' and source == self.app and identity is None
-                and os.environ.get('HAVEN_DEPLOY_SYNCHRONOUS_VERIFY') == '1'):
-            proxy_runtime = self.snapshot_proxy(values, proxy_recovery)
+        migration = self.identity_cutover or source == self.legacy
+        if handoff and migration:
+            raise Refusal('canonical deployment requires the installed Haven root')
+        if migration:
+            proxy_recovery = self.proxy_preflight(source)
         sha_before = self.git(source, 'rev-parse', 'HEAD')
         token = uuid.uuid4().hex
         stage = self.app.parent / ('.haven-stage-' + token)
         previous = self.app.parent / ('.haven-previous-' + token)
         self.trusted(self.app.parent)
         stage.mkdir(mode=0o755)
-        self.git(stage, 'init', '--quiet')
-        remote = 'https://github.com/jimbobsyouruncle/haven.git'
-        self.git(stage, 'remote', 'add', 'origin', remote)
-        self.git(stage, 'fetch', '--no-tags', remote,
-                 '+refs/heads/main:refs/remotes/origin/main')
-        self.git(stage, 'merge-base', '--is-ancestor', sha, 'origin/main')
-        self.git(stage, 'checkout', '--quiet', '--detach', sha)
-        if self.git(stage, 'rev-parse', 'HEAD') != sha:
-            raise Refusal('staged checkout does not match requested SHA')
-        self.git(stage, 'merge-base', '--is-ancestor', sha_before, 'origin/main')
-        self.trusted(stage, tree=True)
-        for name in ('install.sh', 'scripts/deploy-remote.sh', 'scripts/install-root.py'):
-            if not (stage / name).is_file():
-                raise Refusal('staged checkout lacks mandatory deployment files')
+        proxy_runtime = None
+        try:
+            self.git(stage, 'init', '--quiet')
+            remote = 'https://github.com/jimbobsyouruncle/haven.git'
+            self.git(stage, 'remote', 'add', 'origin', remote)
+            self.git(stage, 'fetch', '--no-tags', remote,
+                     '+refs/heads/main:refs/remotes/origin/main')
+            self.git(stage, 'merge-base', '--is-ancestor', sha, 'origin/main')
+            if handoff and self.git(stage, 'rev-parse', 'origin/main') != sha:
+                raise Refusal('PROVENANCE_MAIN_SHA: main changed between authorization and staging')
+            self.git(stage, 'checkout', '--quiet', '--detach', sha)
+            if self.git(stage, 'rev-parse', 'HEAD') != sha:
+                raise Refusal('staged checkout does not match requested SHA')
+            self.git(stage, 'merge-base', '--is-ancestor', sha_before, 'origin/main')
+            self.trusted(stage, tree=True)
+            for name in ('install.sh', 'scripts/deploy-remote.sh', 'scripts/install-root.py'):
+                if not (stage / name).is_file():
+                    raise Refusal('staged checkout lacks mandatory deployment files')
+            if not migration:
+                proxy_recovery = (self.staged_proxy_preflight(stage, sha) if handoff
+                                  else self.proxy_preflight(source))
+                if (self.project == 'haven'
+                        and os.environ.get('HAVEN_DEPLOY_SYNCHRONOUS_VERIFY') == '1'):
+                    proxy_runtime = self.snapshot_proxy(values, proxy_recovery)
+        except (Exception, KeyboardInterrupt):
+            shutil.rmtree(stage, ignore_errors=True)
+            raise
         # Keep a historical record rather than overwrite earlier rollback evidence.
         if self.journal.exists():
             self.atomic(self.state / (token + '.json'), self.journal.read_bytes())
@@ -1795,23 +1865,28 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
 
 def main():
     os.umask(0o022)
-    if len(sys.argv) == 3 and sys.argv[1] == 'proxy-preflight':
-        token = sys.argv[2]
-        if (os.geteuid() != 0 or token != os.environ.get('HAVEN_PROXY_TRANSACTION')
-                or not re.fullmatch(r'[0-9a-f]{32}', token)):
-            raise Refusal('PROXY_IDENTITY: invalid transaction preflight handoff')
+    if len(sys.argv) == 3 and sys.argv[1] in ('proxy-preflight', 'checkpoint-preflight'):
+        action, arg = sys.argv[1:]
+        if os.geteuid() != 0:
+            raise Refusal('deployment preflight requires root')
         transaction = Transaction()
-        # The installer inherits the parent's open file descriptions. Verify
-        # the expected lock inodes and hold both through the preflight.
-        for fd, name in ((9, 'hybrid-ai-deploy.lock'), (8, 'haven-deploy.lock')):
-            path = transaction.path('/run/lock/' + name)
-            info = path.lstat()
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
-                    or info.st_nlink != 1 or info.st_mode & 0o022
-                    or not os.path.samestat(os.fstat(fd), info)):
-                raise Refusal('PROXY_IDENTITY: deployment lock handoff mismatch')
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        print(transaction.candidate_proxy(token))
+        transaction.verify_inherited_locks()
+        if action == 'proxy-preflight':
+            if arg != os.environ.get('HAVEN_PROXY_TRANSACTION') or not re.fullmatch(r'[0-9a-f]{32}', arg):
+                raise Refusal('PROXY_IDENTITY: invalid transaction preflight handoff')
+            print(transaction.candidate_proxy(arg))
+        else:
+            stage = Path(__file__).absolute().parent.parent
+            transaction.trusted(stage, tree=True)
+            if (stage.parent != transaction.app.parent
+                    or not re.fullmatch(r'\.haven-stage-[0-9a-f]{32}', stage.name)
+                    or not re.fullmatch(r'[0-9a-f]{40}', arg)
+                    or transaction.git(stage, 'rev-parse', 'HEAD') != arg):
+                raise Refusal('PROVENANCE_MAIN_SHA: invalid checkpoint preflight checkout')
+            source, _ = transaction.source()
+            if source != transaction.app or transaction.project != 'haven':
+                raise Refusal('checkpoint preflight requires the installed Haven root')
+            print(json.dumps(transaction.proxy_preflight(source)))
         return
     actions = ('deploy', 'migrate', 'recover', 'accept', 'verify', 'verify-proxy',
                'rollback', 'reverify-manual', 'reverify-recovery')
@@ -1855,7 +1930,7 @@ def main():
         os.dup2(stream, 1)
         os.dup2(stream, 2)
         os.close(stream)
-        transaction.deploy(sha)
+        transaction.deploy(sha, handoff=True)
     elif action == 'rollback':
         journal = transaction.load()
         if not journal or journal['sha'] != sha or journal['phase'] not in (

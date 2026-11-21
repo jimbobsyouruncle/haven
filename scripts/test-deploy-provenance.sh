@@ -137,6 +137,39 @@ class Provenance(unittest.TestCase):
     def test_own_wait_does_not_deadlock(self):
         self.assertEqual(self.runs()[0], dict(id=12, status='completed', conclusion='success'))
 
+    def host_authorize(self, current=SHA):
+        self.responses['/git/ref/heads/main'] = {'object': {'sha': current}}
+
+        def api(path, *, authenticated=False):
+            self.assertFalse(authenticated)
+            return copy.deepcopy(self.responses[path])
+
+        with patch.object(m, 'get', side_effect=api):
+            m.authorize_host(SHA)
+
+    def test_host_requires_an_active_validated_run_for_current_main(self):
+        self.run_api()
+        self.host_authorize()
+        with self.assertRaisesRegex(m.Refused, 'PROVENANCE_MAIN_SHA'):
+            self.host_authorize(current='b' * 40)
+        for entries, jobs, reason in (
+            ([], self.jobs, 'ACTIVE_MISSING'),
+            ([self.run, dict(self.run, id=99)], self.jobs, 'ACTIVE_AMBIGUOUS'),
+            ([self.run], self.jobs[1:], 'VALIDATION_MISSING'),
+            ([self.run], [*self.jobs, dict(self.jobs[0], id=103)], 'VALIDATION_AMBIGUOUS'),
+            ([self.run], [dict(self.jobs[0], conclusion='failure'), self.jobs[1]], 'VALIDATION_FAILED'),
+        ):
+            with self.subTest(reason=reason):
+                self.run_api(entries=entries, history=jobs)
+                with self.assertRaisesRegex(m.Refused, reason):
+                    self.host_authorize()
+
+    def test_host_fails_closed_on_api_error(self):
+        with patch.object(m.urllib.request, 'build_opener') as opener:
+            opener.return_value.open.side_effect = OSError('SYNTHETIC_PRIVATE_DETAIL')
+            with self.assertRaisesRegex(m.Refused, '^PROVENANCE_API_TRANSPORT$'):
+                m.authorize_host(SHA)
+
     def test_untrusted_runs_and_missing_failed_validation(self):
         for key, value in [('head_sha', 'b'*40), ('head_branch', 'other'),
                            ('head_repository', {'full_name': 'fork/repo'}),
@@ -635,6 +668,9 @@ class PRValidation(unittest.TestCase):
         self.paths = b'.github/workflows/deploy.yml\0'
         self.assertIn('Full deployment validation', self.verify())
         self.paths = b'.github/workflows/sast-checks.yml\0'
+        with self.assertRaisesRegex(ValueError, 'SECURITY_POLICY_CHANGED'):
+            self.verify()
+        self.paths = b'scripts/deploy-provenance.py\0'
         with self.assertRaisesRegex(ValueError, 'SECURITY_POLICY_CHANGED'):
             self.verify()
         self.assertFalse(self.output.exists())

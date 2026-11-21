@@ -129,6 +129,29 @@ because other services and the installed code may still be at the candidate
 revision. Interrupted recovery is never retried automatically. The explicit
 control rollback and disaster recovery procedures above still apply.
 
+## Approved amendment for #252
+
+The installed, root-owned canonical bootstrap holds both deployment locks and
+authorizes the requested SHA before staging or running candidate code. It uses
+the installed copy of the same provenance policy used by the post-deploy
+verifier. The policy requires one qualifying active GitHub deployment run and
+successful validation for its exact SHA and applicable attempt. The requested
+SHA must match current main in the GitHub API and in the subsequent Git fetch.
+An absent or inconsistent response fails closed. The runner's event and
+production gates, SSH command grammar, systemd boundary and final verifier
+remain in place. The bootstrap uses anonymous reads of the existing public
+repository API.
+
+After checking ancestry, detached HEAD and ownership of the staged tree, the
+bootstrap invokes that tree's fixed checkpoint preflight with the inherited
+locks. The preflight validates and exports the exact running proxy image. The
+installed bootstrap checks the returned archive and retains responsibility for
+the protected journal, prior executable and control snapshots, code switch and
+rollback. A failed handoff leaves the previous checkout and accepted checkpoint
+in place. The earlier installer continues to handle explicit root and identity
+migrations. Routine upgrades still require separate operator authorization to
+load a missing image from an archive.
+
 ## Rationale and accepted residual risks
 
 Root already controls deployment code and Docker; extra root-written attestations
