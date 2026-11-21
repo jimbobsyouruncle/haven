@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """Fail-closed main deployment provenance; API reads only, no host mutation."""
+from datetime import datetime
 import http.client
 import json
 import os
 import re
 import subprocess
 import sys
-import urllib.request
 import urllib.error
+import urllib.parse
+import urllib.request
 
 REPO = 'jimbobsyouruncle/haven'
 API = 'https://api.github.com/repos/' + REPO
 RECOVERY_SHA = '5c2df63a73c81ddfbad868dbfe617ee383242ff4'
 RECOVERY_RUN = 44123963304
+ELIGIBILITY_JOB = 'validate / Validate sources'
+REQUIRED_CHECKS = ('Check agent context maps', 'Security & SAST gate')
+GITHUB_ACTIONS_APP = 15368
 
 
 class Refused(ValueError):
@@ -55,14 +60,14 @@ def get(path, authenticated=False):
         raise Refused('PROVENANCE_API_JSON', retry=True) from None
 
 
-def merged(sha):
-    # Public merge metadata is available before assigning production access.
-    pulls = get('/commits/' + sha + '/pulls?per_page=100')
+def merged(sha, *, authenticated=False):
+    pulls = get('/commits/' + sha + '/pulls?per_page=100', authenticated=authenticated)
     require(isinstance(pulls, list) and len(pulls) < 100)
-    require(any(p.get('merged_at') and p.get('merge_commit_sha') == sha
-                and p.get('base', {}).get('ref') == 'main'
-                and p.get('base', {}).get('repo', {}).get('full_name') == REPO
-                for p in pulls))
+    matches = [p for p in pulls if p.get('merged_at') and p.get('merge_commit_sha') == sha
+               and p.get('base', {}).get('ref') == 'main'
+               and p.get('base', {}).get('repo', {}).get('full_name') == REPO]
+    require(len(matches) == 1, 'PROVENANCE_MERGED_PR')
+    return matches[0]
 
 
 def require_current_main(sha, *, authenticated=False):
@@ -92,9 +97,38 @@ def candidate(sha, before):
     changed = application_changed(before, sha)
     if changed:
         require_current_main(sha, authenticated=True)
-        merged(sha)
+        require_merge_eligibility(sha, before)
     with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
         print('deploy=' + str(changed).lower(), file=output)
+
+
+def require_merge_eligibility(sha, before):
+    # Strict PR protection and no bypass govern the merge. Also confirm the
+    # push base and PR head produce the same tree the runner would deploy.
+    pr = merged(sha, authenticated=True)
+    head = pr['head']['sha']
+    require(re.fullmatch('[0-9a-f]{40}', head), 'PROVENANCE_PR_HEAD')
+    commit = get('/git/commits/' + head, authenticated=True)
+    tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+    require(commit['sha'] == head and commit['tree']['sha'] == tree, 'PROVENANCE_PR_TREE')
+    # The original PR head may be absent locally after a squash or rebase.
+    comparison = get(f'/compare/{before}...{head}?per_page=1', authenticated=True)
+    require(comparison['merge_base_commit']['sha'] == before, 'PROVENANCE_PR_BASE')
+
+    # Require actual successful checks from the configured GitHub App before
+    # the merge. A skipped check or a success posted later cannot qualify it.
+    merged_at = datetime.fromisoformat(pr['merged_at'].replace('Z', '+00:00'))
+    for name in REQUIRED_CHECKS:
+        query = urllib.parse.urlencode(dict(check_name=name, filter='latest', per_page=100))
+        checks = evidence_list(get(f'/commits/{head}/check-runs?{query}', authenticated=True),
+                               'check_runs')
+        matches = [c for c in checks if c['name'] == name and c['app']['id'] == GITHUB_ACTIONS_APP]
+        require(len(matches) == 1, 'PROVENANCE_PR_CHECK')
+        check = matches[0]
+        require((check['head_sha'], check['status'], check['conclusion']) ==
+                (head, 'completed', 'success'), 'PROVENANCE_PR_CHECK')
+        require(datetime.fromisoformat(check['completed_at'].replace('Z', '+00:00')) <= merged_at,
+                'PROVENANCE_PR_CHECK_TIME')
 
 
 def evidence_list(data, key):
@@ -177,7 +211,7 @@ def active_deployment(sha):
     prefix = f'/actions/runs/{run_id}'
     jobs = evidence_list(get(f'{prefix}/attempts/{attempt}/jobs?per_page=100'), 'jobs')
     for name, state in (
-            ('validate / Validate sources', ('completed', 'success')),
+            (ELIGIBILITY_JOB, ('completed', 'success')),
             ('Deploy over Tailscale', ('in_progress', None))):
         matches = [job for job in jobs if job['name'] == name]
         if not matches:
@@ -192,6 +226,7 @@ def active_deployment(sha):
     require(all(refreshed[key] == current[key] for key in
                 ('id', 'run_attempt', 'path', 'event', 'head_branch', 'status', 'conclusion')),
             'PROVENANCE_DEPLOY_STATE')
+    merged(sha)
     return current
 
 
@@ -202,7 +237,7 @@ def authorize_host(sha):
 
 def runs(sha):
     current = active_deployment(sha)
-    # Report the successful prerequisite to the root verifier. The deployment
+    # Report the successful eligibility gate to the root verifier. The deployment
     # run itself is still waiting for this verifier and SSH to finish.
     emit_evidence(dict(total_count=1, workflow_runs=[
         dict(id=current['id'], status='completed', conclusion='success')]))

@@ -3,7 +3,7 @@
 | File | Purpose |
 |---|---|
 | `workflows/deploy.yml` | Validates and deploys the exact current main commit from an owner-merged PR. |
-| `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` for PR checks and fresh exact-SHA deployment validation. Holds no secrets. |
+| `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` for source checks. Holds no secrets. |
 | `workflows/sandbox-image.yml` | Builds and publishes the derived agent-server image to GHCR. Auto-publishes on a push to `main` that changes `openhands/agent-server/Dockerfile` (tag read from the `image_tag` default, guarded against overwriting an existing tag); `workflow_dispatch` is the manual rebuild path. |
 | `workflows/agent-context.yml` | Checks the checked-in `REPO_MAP.md` and `CODE_INDEX.md` are fresh on every pull request. Read-only; never commits. |
 | `workflows/sast-checks.yml` | The pull-request gate, with ShellCheck, Semgrep, source validation, CodeQL and the Hermes non-root smoke test. |
@@ -19,11 +19,15 @@ under `docs/`, the root README and context maps, and the CI guide. Markdown
 used as runtime input and changes to workflows, installers, or image pins
 follow the ordinary deploy path.
 
-On an application change, one workflow verifies the merged PR and current main,
-runs functional validation in a credential-free job, then deploys over
-Tailscale. Required PR checks supply ShellCheck, Semgrep, CodeQL and applicable
-ARM64 coverage. The main workflow repeats functional validation on the actual
-merge SHA. The bot's owner-merged context-map PRs stay deployment-neutral.
+On an application change, the deploy workflow checks the exact current main
+merge, verifies that its tree matches the up-to-date PR head, and confirms both
+required GitHub Actions checks succeeded before the merge. The main ruleset
+requires an up-to-date PR, both existing checks and an empty bypass list.
+Source validation, ShellCheck, Semgrep, CodeQL and applicable ARM64 checks run
+before merge. The deployment eligibility job keeps the name
+`validate / Validate sources` so the installed bootstrap can authorize the
+first upgrade through the normal transaction. The bot's owner-merged
+context-map PRs stay deployment-neutral.
 
 For historical setup and rollback, see the [one-time host transition](../deploy/README.md#one-time-policy-transition).
 Clearing `HAVEN_AUTOMATIC_DEPLOYMENT` pauses new candidates. Drain queued and
@@ -33,7 +37,7 @@ deployable change to pick up the pending application changes.
 
 ### Source validation
 
-The PR gate and the deployment workflow call `validate.yml` directly.
+The PR gate calls `validate.yml`.
 
 | Check | What it catches |
 |---|---|
@@ -62,7 +66,7 @@ Only runs if `validate` passed.
 3. Confirms the Pi is reachable, retrying for ~50 seconds while mesh routes establish
 4. Connects as the dedicated `haven-deploy` account and sends exactly one command string, `deploy <sha>`, through `scripts/deploy-trigger.sh`
 5. The forced command starts `haven-deploy@<sha>.service`. The root bootstrap
-   requires same-attempt validation and checks the requested SHA against current
+   requires same-attempt deployment eligibility and checks the requested SHA against current
    main in both GitHub and its fetch. It stages the candidate, checks recovery
    artifacts, and snapshots the previous checkout and controls before switching.
 6. The host verifies the proxy, enabled Compose services, application health and
@@ -86,7 +90,7 @@ is what removes the admin-account login from the deploy path.
 |---|---|---|
 | `shellcheck` | ShellCheck (Bash) | Common shell scripting bugs. Blocking. |
 | `semgrep` | Semgrep (`--config auto --error`) | SAST findings from the community rulesets. Blocking. On a pull request it scans only the files the PR changed (`--baseline-commit` against the PR base SHA); `workflow_dispatch` and the weekly `schedule` keep the full-tree scan. |
-| `validate` | `Validate sources` | Calls the same reusable `validate.yml` the deploy uses (see Job 1 above). |
+| `validate` | `Validate sources` | Calls reusable `validate.yml` for source tests. |
 | `codeql` | `Analyze (python)` and `Analyze (actions)` | CodeQL advanced setup for Python and GitHub Actions. |
 | `changes` | Detect Hermes changes | Diffs the exact PR base SHA against HEAD using the shared component mapping (including full fallback), passing the SHA through `env:`. Fails closed (`set -euo pipefail`); an empty base (schedule, dispatch) sets the smoke to run. No third-party action. |
 | `hermes-nonroot-smoke` | Hermes non-root smoke | Builds the Hermes image as uid/gid `10001` and runs it as `10001` with `--cap-drop ALL --security-opt no-new-privileges`, no secrets, and a `10001`-owned `/root/.hermes` seeded with a **decoy** agent (a valid Agent source root that writes a marker if imported). Checks `id -u`, HTTP 200 on 8501 within 180 s, liveness at +60 s, the gateway is up, and the local kanban patch is in `/opt/hermes-agent`. Then the pinning checks: PID 1 maps Python only from `/opt/hermes-agent` (never `/root/.hermes`), the decoy marker is absent, one `/api/onboarding/status` request (which imports `run_agent`) answers 200, `bash -lc 'command -v hermes'` resolves to `/usr/local/bin/hermes`, and `docker diff` shows no change under `/app` or `/opt`. Prints `docker diff` (paths only). Skipped only when the `changes` job successfully selects no Hermes/full coverage. |
@@ -138,7 +142,7 @@ that skip. Selection/workflow/shared/unknown changes exercise the ARM64 smoke.
 | ShellCheck, diff-aware Semgrep, Python/Actions CodeQL | Every PR; weekly/manual whole scans | Unchanged | Preserve SAST and secret rule coverage; avoid a security-scanner migration in this change |
 | Source behavior/config tests | All 71 workflow steps | 73 possible steps including selector and its tests; fixture selection: backup 33, auth 25, docs 9; shared/CI 73 | Execute existing affected tests; no weakened assertions |
 | Hermes ARM64 smoke | Image/workflow paths; weekly/manual | Image, shared/unknown, workflow or selector paths; weekly/manual | Real non-root image behavior; conservative fallback on selection changes |
-| Deployment validation / health | Full source checks, exact-SHA provenance, doctor | Unchanged | Doctor cannot replace unexecuted code-path, restore, authorization or artifact checks |
+| Deployment eligibility / health | Protected PR merge, exact-SHA provenance, doctor | Runs at deployment | Source checks run in PR CI |
 
 Timing reference: [PR #213 source-validation job](https://github.com/jimbobsyouruncle/haven/actions/runs/43983948151/job/133707372734)
 at tested head `7b2797a54dd87ea18fa869a39eb91352271ada5c` took

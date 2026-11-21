@@ -186,11 +186,14 @@ protected-change approval policies above and in ADR-0007. Workflow, bootstrap,
 configuration and pinned image changes use the same PR checks and merge path.
 Project documentation and generated context maps do not redeploy the application.
 
-The deployment workflow requires a merged PR, checks exact current main and
-runs functional validation before the production environment job. Required PR
-checks retain SAST, source and applicable ARM64 coverage. The host verifies
-the same active run and attempt, independently checks main, stages the pinned
-checkout, and requires runtime health before accepting. The restricted SSH
+The deployment workflow requires a merged PR, exact current main, a tree
+matching the up-to-date PR head, and both required checks successful before
+merge. The main ruleset requires an up-to-date PR and both checks with no
+bypass. Required PR checks retain SAST, source and applicable ARM64 coverage.
+The host verifies eligibility in the same active run and attempt, independently
+checks main, stages the pinned checkout, and requires runtime health before
+accepting. The eligibility job retains the installed bootstrap's expected
+job name, so the normal deployment transaction installs the updated verifier. The restricted SSH
 command and credentials, network and persona isolation, deployment locks,
 transaction journals, previous checkout, recovery images and backups stay in
 place. The local verdict supplies operational evidence. Cumulative authorization,

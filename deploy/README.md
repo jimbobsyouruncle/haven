@@ -414,7 +414,7 @@ after the reset.
 3. The script refuses anything but that exact form (exit 2), then asks the
    **system** manager to start `haven-deploy@<sha>.service`.
 4. The unit runs `scripts/deploy-instance.sh <sha>` as root. The script
-   delegates to the locked root transaction. It verifies same-run validation,
+   delegates to the locked root transaction. It verifies same-attempt deployment eligibility,
    stages the exact current main checkout and retains recovery artifacts before
    calling the installer.
 5. `scripts/deploy-remote.sh` re-asserts `HEAD`, runs `install.sh`, and gates on
@@ -699,7 +699,7 @@ snapshot, log, certificate or credential migration is involved.
 ## Workflow retries
 
 For a transient failure before activation, confirm the target is still current
-main and rerun all jobs. Same-attempt validation is required. For an unresolved
+main and rerun all jobs. Same-attempt deployment eligibility is required. For an unresolved
 host transaction, use [rollback or recovery](#rollback) before replaying.
 The root verifier retries temporarily unavailable public evidence within the
 existing deadline and fails closed if it cannot verify the run.

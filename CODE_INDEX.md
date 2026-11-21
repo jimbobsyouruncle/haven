@@ -20,7 +20,6 @@
 - build
 
 ## .github/workflows/deploy.yml
-- candidate
 - validate
 - deploy
 
@@ -462,10 +461,11 @@
 - def require(condition, code)
 - def pending(code)
 - def get(path, authenticated)
-- def merged(sha)
+- def merged(sha, *, authenticated)
 - def require_current_main(sha, *, authenticated)
 - def application_changed(before, sha)
 - def candidate(sha, before)
+- def require_merge_eligibility(sha, before)
 - def evidence_list(data, key)
 - def historical_deployment_jobs(run, sha)
 - def active_deployment(sha)
@@ -895,7 +895,7 @@
   - def test_selected_workflow_steps(self)
   - def test_aggregate_gate_fails_closed(self)
   - def test_workflow_contract(self)
-  - def test_deployment_selection_always_runs_full(self)
+  - def test_non_pr_source_validation_always_runs_full(self)
 
 ## scripts/test-ci-parity.sh
 - record()
