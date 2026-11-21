@@ -594,6 +594,51 @@ class Provenance(unittest.TestCase):
         self.assertIn('Environment=HAVEN_VERIFY_DEPLOY_JOB=1', unit)
         self.assertNotIn('Restart=', '\n'.join(l for l in unit.splitlines() if not l.startswith('#')))
 
+class ExactValidation(unittest.TestCase):
+    def setUp(self):
+        self.env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='2')
+        self.run = dict(id=26, run_attempt=1, head_sha=SHA, head_branch='main',
+                        repository=REPO, head_repository=REPO, event='workflow_run',
+                        path='.github/workflows/sast-checks.yml', status='completed',
+                        conclusion='success', display_title='Exact SHA validation 12 attempt 2')
+        names = (*m.EXACT_VALIDATION_JOBS, 'Deployment request 12 attempt 2')
+        self.jobs = [dict(id=i, name=name, run_id=26, run_attempt=1, head_sha=SHA,
+                          status='completed', conclusion='success')
+                     for i, name in enumerate(names, 1)]
+
+    def evidence(self, runs=None, refreshed=None):
+        runs = [self.run] if runs is None else runs
+        with patch.dict(os.environ, self.env, clear=True), patch.object(m, 'get', side_effect=[
+                dict(workflow_runs=runs, total_count=len(runs)),
+                dict(jobs=self.jobs, total_count=len(self.jobs)), refreshed or self.run]):
+            return m.validation_evidence(SHA)
+
+    def test_fresh_exact_sha_and_attempt(self):
+        self.assertEqual(self.evidence(), 'fresh:26:1')
+        with self.assertRaisesRegex(ValueError, 'EVIDENCE_CHANGED'):
+            self.evidence(refreshed=dict(self.run, run_attempt=2))
+
+    def test_missing_ambiguous_and_failed_evidence_refuse(self):
+        for runs, code in (([], 'RUN_MISSING'),
+                           ([self.run, dict(self.run, id=27)], 'RUN_AMBIGUOUS'),
+                           ([dict(self.run, conclusion='failure')], 'RUN_FAILED'),
+                           ([dict(self.run, head_sha='b' * 40)], 'PROVENANCE_SHA')):
+            with self.subTest(code=code), self.assertRaisesRegex(ValueError, code):
+                self.evidence(runs)
+        self.jobs.pop()
+        with self.assertRaisesRegex(ValueError, 'INCOMPLETE_ATTEMPT'):
+            self.evidence()
+
+    def test_other_deployment_attempt_and_partial_rerun_refuse(self):
+        self.env['GITHUB_RUN_ATTEMPT'] = '3'
+        with self.assertRaisesRegex(ValueError, 'RUN_MISSING'):
+            self.evidence()
+        self.env['GITHUB_RUN_ATTEMPT'] = '2'
+        self.run['run_attempt'] = 2
+        with self.assertRaisesRegex(ValueError, 'JOB_IDENTITY'):
+            self.evidence()
+
+
 class PRValidation(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -665,7 +710,7 @@ class PRValidation(unittest.TestCase):
 
     def test_missing_source_receipt_or_full_selection_runs_full(self):
         self.jobs['Validate sources / Validate sources']['steps'] = []
-        self.assertIn('Full deployment validation', self.verify())
+        self.assertIn('REUSE_MISS', self.verify())
         self.assertFalse(self.output.exists())
         self.jobs['Validate sources / Validate sources']['steps'] = self.source_steps
         self.flags = 'full=true\n'
@@ -703,7 +748,7 @@ class PRValidation(unittest.TestCase):
 
     def test_different_checkout_tree_base_and_pr_ref_refused(self):
         for obj, field, value, reason in (
-            (self.commit, 'tree', dict(sha='f'*40), 'TESTED_TREE'),
+            (self.commit, 'tree', dict(sha='invalid'), 'TESTED_TREE'),
             (self.commit, 'parents', [dict(sha=self.head), dict(sha=self.base)], 'TESTED_PARENTS'),
             (self.runs[0]['referenced_workflows'][0], 'ref', 'refs/pull/16/merge', 'WORKFLOW_REFERENCE'),
             (self.jobs['Check agent context maps']['steps'][0], 'name',
@@ -716,6 +761,29 @@ class PRValidation(unittest.TestCase):
                     self.verify()
                 finally:
                     obj[field] = old
+
+    def test_stale_tested_base_or_tree_requires_fresh_validation(self):
+        old_base = 'f' * 40
+        self.commit['parents'][0]['sha'] = old_base
+        for job in self.jobs.values():
+            for step in job['steps']:
+                if step['name'].startswith('PR checkout '):
+                    step['name'] = f'PR checkout 15 {old_base} {self.tested}'
+        self.assertIn('REUSE_MISS', self.verify())
+        self.assertFalse(self.output.exists())
+        self.jobs['CodeQL (actions)']['conclusion'] = 'failure'
+        with self.assertRaisesRegex(ValueError, 'REQUIRED_JOB_UNSUCCESSFUL'):
+            self.verify()
+
+    def test_changed_tree_is_a_reuse_miss(self):
+        self.commit['tree']['sha'] = 'f' * 40
+        self.assertIn('REUSE_MISS', self.verify())
+        self.assertFalse(self.output.exists())
+
+    def test_explicit_manual_dispatch_can_reuse_exact_tree(self):
+        self.env['GITHUB_EVENT_NAME'] = 'workflow_dispatch'
+        self.event['inputs'] = dict(authorize_production='true', deployment_sha=SHA)
+        self.assertIn('Reusing PR #15', self.verify())
 
     def test_push_modes_and_workflow_policy(self):
         self.env['GITHUB_EVENT_NAME'] = 'workflow_dispatch'
@@ -737,7 +805,7 @@ class PRValidation(unittest.TestCase):
             self.verify()
         self.pr['head']['repo']['fork'] = False
         self.paths = b'.github/workflows/deploy.yml\0'
-        self.assertIn('Full deployment validation', self.verify())
+        self.assertIn('REUSE_MISS', self.verify())
         self.paths = b'.github/workflows/sast-checks.yml\0'
         with self.assertRaisesRegex(ValueError, 'SECURITY_POLICY_CHANGED'):
             self.verify()

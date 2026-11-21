@@ -2,11 +2,11 @@
 
 | File | Purpose |
 |---|---|
-| `workflows/deploy.yml` | Inert until owner activation; then canonical main pushes reuse `validate.yml` and deploy the exact validated merged SHA. Manual exact-main recovery remains available. |
-| `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` on every pull request and by `deploy.yml` on activated main pushes or authorized manual dispatch. Holds no secrets. |
+| `workflows/deploy.yml` | Inert until owner activation; then canonical main pushes prove validation coverage and deploy the exact validated merged SHA. Manual exact-main recovery remains available. |
+| `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` for PR checks and fresh exact-SHA deployment validation. Holds no secrets. |
 | `workflows/sandbox-image.yml` | Builds and publishes the derived agent-server image to GHCR. Auto-publishes on a push to `main` that changes `openhands/agent-server/Dockerfile` (tag read from the `image_tag` default, guarded against overwriting an existing tag); `workflow_dispatch` is the manual rebuild path. |
 | `workflows/agent-context.yml` | Checks the checked-in `REPO_MAP.md` and `CODE_INDEX.md` are fresh on every pull request. Read-only; never commits. |
-| `workflows/sast-checks.yml` | The single pull-request gate: ShellCheck, Semgrep, source validation, CodeQL and the Hermes non-root smoke test, ending in the `Security & SAST gate`. |
+| `workflows/sast-checks.yml` | The pull-request gate and separate exact-SHA validation workflow, with ShellCheck, Semgrep, source validation, CodeQL and the Hermes non-root smoke test. |
 | `dependabot.yml` | Grouped pull request that opens weekly on Sunday at 22:00 America/New_York to bump the SHA-pinned GitHub Actions. GitHub Actions only. |
 
 ---
@@ -30,14 +30,16 @@ Installation-root migration must use the transactional deployment path and its a
 
 ## The deploy jobs
 
-`deploy.yml` has two jobs. The first is now a thin caller of the reusable
-`validate.yml`, which the pull-request gate calls too.
+Deployment checks exact-main eligibility and event authorization first. Automatic
+runs also classify cumulative impact using the signed accepted baseline. Only a
+routine range reaches validation on an automatic push. Manual dispatch binds
+assent to the exact main SHA, and the installed bootstrap enforces any root
+approval required for the cumulative range.
 
-### Job 1 — `validate`
+### Source validation
 
-Runs on every pull request to `main` (through `sast-checks.yml`) and on every
-activated canonical-main push or authorized manual dispatch (through `deploy.yml`). Catches mistakes before they can reach
-the Pi.
+The SAST workflow calls `validate.yml` for pull requests and for deployments
+that need fresh validation.
 
 | Check | What it catches |
 |---|---|
@@ -57,7 +59,7 @@ That last check is the one worth understanding. If `.env` somehow got committed,
 
 The old advisory ShellCheck step is gone from validation. It was `continue-on-error`, so it never blocked anything. The blocking ShellCheck job in `sast-checks.yml` covers the same ground and does fail the gate.
 
-### Job 2 — `deploy`
+### Production job
 
 Only runs if `validate` passed.
 
@@ -90,7 +92,7 @@ is what removes the admin-account login from the deploy path.
 
 ## The pull-request gate
 
-`sast-checks.yml` is the one workflow that runs on every pull request to `main`. It has no `paths:` filter on its triggers, so a docs-only pull request still produces the `Security & SAST gate` check the branch ruleset requires. Source validation selects component steps as described below. The only whole job that is filtered is `hermes-nonroot-smoke`, and only by an in-workflow `changes` job: it is skipped only when the shared component mapping excludes Hermes and full validation. Every other job stays unfiltered; `schedule`/`workflow_dispatch` run full validation. It runs on `pull_request` (opened, synchronize, reopened — not `ready_for_review`, so marking a draft ready re-runs nothing), on manual `workflow_dispatch`, and on a weekly `schedule` (Mondays) for a CodeQL baseline and a Semgrep rule-drift check. There is no push-to-main trigger.
+`sast-checks.yml` is the one workflow that runs on every pull request to `main`. It has no `paths:` filter on its triggers, so a docs-only pull request still produces the `Security & SAST gate` check the branch ruleset requires. Source validation selects component steps as described below. The only whole job that is filtered is `hermes-nonroot-smoke`, and only by an in-workflow `changes` job: it is skipped only when the shared component mapping excludes Hermes and full validation. Every other job stays unfiltered; `schedule`/`workflow_dispatch` run full validation. It runs on `pull_request` (opened, synchronize, reopened — not `ready_for_review`, so marking a draft ready re-runs nothing), on manual `workflow_dispatch`, and on a weekly `schedule` (Mondays) for a CodeQL baseline and a Semgrep rule-drift check. There is no push-to-main trigger. A separate run can be triggered by an in-progress deployment run to perform fresh exact-SHA validation.
 
 | Job | Check | What it catches |
 |---|---|---|
@@ -131,17 +133,24 @@ the current deployment attempt and reports that it ran no fresh source tests.
 
 | Case | Result |
 | --- | --- |
-| Trusted merge or squash with exact base, checkout and tree and approved component coverage | Reuse scoped PR validation |
-| Trusted security evidence and equivalent tree, but cross-cutting change, unrelated CI change, or missing source checkout record | Run full source validation |
-| Authorized manual dispatch | Run full source validation |
-| Missing, failed, cancelled or ambiguous required security evidence; a fork, direct push, unproven merge base or tree, or changes to trusted check policy | Refuse automatic deployment |
+| Trusted merged PR with exact base, checkout and tree and approved component coverage | Reuse scoped PR validation, including on an authorized dispatch. |
+| `REUSE_MISS` after successful required PR jobs, or an authorized dispatch without reusable PR coverage | The SAST workflow runs fresh source checks, ShellCheck, Semgrep, CodeQL, agent-context and its full-scope Hermes smoke on the exact main SHA. |
+| `AUTHORIZATION_REQUIRED` | Follow the protected rollout procedure for the exact baseline and target. CI success cannot authorize rollout. |
+| Missing, failed, cancelled, ambiguous or unverifiable required checks | Deployment stops. Inspect the named run and job attempt, correct the failure, then rerun all applicable jobs. |
 
-The evidence job uses a read-only Actions token without production secrets.
-The same policy files must exist in both the deployed and previous main trees.
-A partial PR rerun that leaves required jobs on older attempts does not qualify.
-For a deployment retry that inherited fast-path evidence, rerun all jobs to
-collect fresh evidence. The exact-main checks before and after the image wait,
-host transaction, immutable image checks, rollback and verifier still apply.
+The SAST workflow starts on the deployment workflow's `in_progress` event. It
+checks that the requested SHA equals its own main event SHA and waits for a
+successful fresh-validation request in the triggering deployment attempt.
+When PR evidence is reused, the request is skipped and the scans do not run.
+The validation workflow has no production environment, credentials or tailnet
+connection. CodeQL alone receives `security-events: write`.
+
+The deployment validates the workflow path, repository, SHA, triggering
+deployment run and attempt, and every required job in the validation attempt.
+It checks the same evidence and main SHA again after the image wait. A
+deployment-only rerun cannot inherit evidence from a previous attempt. The
+installed bootstrap still verifies its canonical deployment job and independently
+authorizes the cumulative range before any candidate code runs.
 
 ### Manual deployment after a protected policy change
 

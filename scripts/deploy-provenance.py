@@ -94,6 +94,9 @@ def authorize(sha):
         inputs = event.get('inputs', {})
         require(inputs.get('authorize_production') in (True, 'true'))
         require(inputs.get('deployment_sha') == sha)
+    if os.environ.get('REQUIRE_VALIDATION_EVIDENCE') == 'true':
+        expected = os.environ['VALIDATION_EVIDENCE']
+        require(expected and validation_evidence(sha) == expected, 'VALIDATION_EVIDENCE_CHANGED')
     require_current_main(sha, authenticated=True)
 
 
@@ -194,6 +197,9 @@ PR_WORKFLOWS = {
     ),
     '.github/workflows/agent-context.yml': ('Check agent context maps',),
 }
+EXACT_VALIDATION_JOBS = (*PR_WORKFLOWS['.github/workflows/sast-checks.yml'],
+                         'Detect Hermes changes', 'Hermes non-root smoke',
+                         'deployment-context / Check agent context maps')
 
 
 def pr_runs(head, branch):
@@ -253,28 +259,37 @@ def git(*args):
     return subprocess.check_output(['git', *args], stderr=subprocess.DEVNULL)
 
 
-def pr_validation(sha):
+def pr_validation(sha, *, emit=True):
     require(os.environ.get('GH_TOKEN'), 'PR_VALIDATION_TOKEN')
+    kind = os.environ.get('GITHUB_EVENT_NAME')
     require(os.environ.get('GITHUB_REPOSITORY') == REPO
-            and os.environ.get('GITHUB_EVENT_NAME') == 'push'
             and os.environ.get('GITHUB_REF') == 'refs/heads/main'
-            and os.environ.get('AUTOMATIC_DEPLOYMENT') == 'enabled')
+            and kind in ('push', 'workflow_dispatch'))
     attempt = os.environ['GITHUB_RUN_ATTEMPT']
     require(re.fullmatch('[1-9][0-9]*', attempt), 'PR_VALIDATION_ATTEMPT')
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-    require(event['repository']['full_name'] == REPO and event['repository']['fork'] is False
-            and event['ref'] == 'refs/heads/main' and event['after'] == sha
-            and event['deleted'] is False and event['forced'] is False)
-    base = event['before']
+    require(event['repository']['full_name'] == REPO and event['repository']['fork'] is False)
+    checkout, base = git('rev-parse', 'HEAD', 'HEAD^1').decode().splitlines()
+    if kind == 'push':
+        require(os.environ.get('AUTOMATIC_DEPLOYMENT') == 'enabled'
+                and event['ref'] == 'refs/heads/main' and event['after'] == sha
+                and event['deleted'] is False and event['forced'] is False)
+        require(base == event['before'], 'PR_VALIDATION_MAIN_PARENT')
+    else:
+        inputs = event.get('inputs', {})
+        require(inputs.get('deployment_sha') == sha
+                and inputs.get('authorize_production') in (True, 'true'))
     require(re.fullmatch('[0-9a-f]{40}', base), 'PR_VALIDATION_BASE')
-    require(git('rev-parse', 'HEAD', 'HEAD^1').decode().splitlines() == [sha, base],
-            'PR_VALIDATION_MAIN_PARENT')
+    require(checkout == sha, 'PR_VALIDATION_MAIN_PARENT')
     # Public association endpoint needs a separate pull-requests token scope
     # for authenticated reads. HTTPS public metadata adds no token privileges.
     pulls = get(f'/commits/{sha}/pulls?per_page=100')
     require(isinstance(pulls, list) and len(pulls) < 100, 'PR_VALIDATION_PULL_LIST')
     matches = [p for p in pulls if p['merged_at'] and p['merge_commit_sha'] == sha
                and p['base']['ref'] == 'main' and p['base']['repo']['full_name'] == REPO]
+    if kind == 'workflow_dispatch' and not matches:
+        print('REUSE_MISS: manual target has no associated merged pull request.')
+        return
     require(len(matches) == 1, 'PR_VALIDATION_MERGED_PULL')
     pr = matches[0]
     number, head = pr['number'], pr['head']['sha']
@@ -289,7 +304,8 @@ def pr_validation(sha):
                       'scripts/ci-components.py', 'scripts/check-agent-context.sh',
                       'scripts/test-check-agent-context.sh', 'scripts/check-no-masked-literals.sh',
                       '.semgrepignore', '.shellcheckrc')
-    require(not any(p.encode() in paths for p in security_paths),
+    policy_changed = any(p.encode() in paths for p in security_paths)
+    require(not policy_changed or kind == 'workflow_dispatch',
             'PR_VALIDATION_SECURITY_POLICY_CHANGED')
 
     runs = pr_runs(head, pr['head']['ref'])
@@ -304,11 +320,12 @@ def pr_validation(sha):
             and ref['path'] == f'{REPO}/.github/workflows/validate.yml@{tested}',
             'PR_VALIDATION_WORKFLOW_REFERENCE')
     commit = get('/git/commits/' + tested, authenticated=True)
-    require(commit['sha'] == tested and [p['sha'] for p in commit['parents']] == [base, head],
-            'PR_VALIDATION_TESTED_PARENTS')
-    require(commit['tree']['sha'] == git('rev-parse', 'HEAD^{tree}').decode().strip(),
-            'PR_VALIDATION_TESTED_TREE')
-    receipt = f'PR checkout {number} {base} {tested}'
+    parents = [p['sha'] for p in commit['parents']]
+    require(commit['sha'] == tested and len(parents) == 2 and parents[1] == head
+            and re.fullmatch('[0-9a-f]{40}', parents[0]), 'PR_VALIDATION_TESTED_PARENTS')
+    tree = commit['tree']['sha']
+    require(re.fullmatch('[0-9a-f]{40}', tree), 'PR_VALIDATION_TESTED_TREE')
+    receipt = f'PR checkout {number} {parents[0]} {tested}'
     sast_jobs = required_pr_jobs(sast, PR_WORKFLOWS[sast_path])
     context_jobs = required_pr_jobs(context, PR_WORKFLOWS[context_path])
     require(checkout_step(context_jobs['Check agent context maps'], receipt),
@@ -318,17 +335,24 @@ def pr_validation(sha):
     # Detect superseding runs and reruns across the separate jobs/API reads.
     require(pr_runs(head, pr['head']['ref']) == runs, 'PR_VALIDATION_EVIDENCE_CHANGED')
 
-    if not source or any(p.startswith(b'.github/') for p in paths):
-        print('Full deployment validation: source evidence unavailable or CI policy changed.')
+    if source:
+        steps = [step['name'] for step in source_job['steps']
+                 if (step['status'], step['conclusion']) == ('completed', 'success')]
+        require({'Select component tests', 'Shell syntax check', 'Python syntax check',
+                 'Assert no secrets are tracked'} <= set(steps), 'PR_VALIDATION_SOURCE_COVERAGE')
+    if policy_changed:
+        print('REUSE_MISS: explicitly dispatched target changes validation policy.')
         return
-    steps = [step['name'] for step in source_job['steps']
-             if (step['status'], step['conclusion']) == ('completed', 'success')]
-    require({'Select component tests', 'Shell syntax check', 'Python syntax check',
-             'Assert no secrets are tracked'} <= set(steps), 'PR_VALIDATION_SOURCE_COVERAGE')
+    if parents[0] != base or tree != git('rev-parse', 'HEAD^{tree}').decode().strip():
+        print('REUSE_MISS: PR validation covered a different main base or tree.')
+        return
+    if not source or any(p.startswith(b'.github/') for p in paths):
+        print('REUSE_MISS: source checkout receipt unavailable or CI paths changed.')
+        return
     flags = subprocess.check_output(['python3', 'scripts/ci-components.py', '--base', base],
                                     text=True).splitlines()
     if 'full=true' in flags:
-        print('Full deployment validation: cross-cutting or unknown source paths.')
+        print('REUSE_MISS: cross-cutting or unknown source paths.')
         return
     require('full=false' in flags, 'PR_VALIDATION_SELECTION')
     print(f'Reusing PR #{number} source tree {commit["tree"]["sha"]} '
@@ -336,8 +360,10 @@ def pr_validation(sha):
           f'context run {context["id"]} attempt {context["run_attempt"]}).')
     print('PR component selection: ' + ', '.join(flags))
     print('Successful PR validation steps: ' + json.dumps(steps))
-    with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
-        print(f'reuse_attempt={attempt}', file=output)
+    if emit:
+        with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+            print(f'reuse_attempt={attempt}', file=output)
+    return f'pr:{sast["id"]}:{sast["run_attempt"]}:{context["id"]}:{context["run_attempt"]}'
 
 
 def verify_pr_evidence(sha):
@@ -364,6 +390,90 @@ def evidence_list(data, key):
     if data['total_count'] != len(entries) or len(entries) >= 100:
         pending('PROVENANCE_INCOMPLETE')
     return entries
+
+
+def validation_request(sha):
+    event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())['workflow_run']
+    trusted_run(event, sha)
+    require(event['path'] == '.github/workflows/deploy.yml' and event['head_branch'] == 'main'
+            and event['event'] in ('push', 'workflow_dispatch'), 'VALIDATION_REQUEST_IDENTITY')
+    run_id, attempt = event['id'], event['run_attempt']
+    require(all(type(x) is int and x > 0 for x in (run_id, attempt)), 'PROVENANCE_ATTEMPT')
+    path = f'/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100'
+    for _ in range(30):
+        require_current_main(sha, authenticated=True)
+        jobs = evidence_list(get(path, authenticated=True), 'jobs')
+        matches = [j for j in jobs if j['name'] == 'Request exact SHA validation']
+        require(len(matches) <= 1, 'VALIDATION_REQUEST_AMBIGUOUS')
+        if matches:
+            job = matches[0]
+            require((job['run_id'], job['run_attempt'], job['head_sha']) ==
+                    (run_id, attempt, sha), 'VALIDATION_REQUEST_IDENTITY')
+            if job['status'] == 'completed':
+                if job['conclusion'] == 'skipped':
+                    return
+                require(job['conclusion'] == 'success', 'VALIDATION_REQUEST_FAILED')
+                with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+                    print('fresh=true', file=output)
+                return
+        time.sleep(10)
+    raise Refused('VALIDATION_REQUEST_MISSING')
+
+
+def exact_validation_title(deploy_id, deploy_attempt):
+    return f'Exact SHA validation {deploy_id} attempt {deploy_attempt}'
+
+
+def validation_evidence(sha):
+    deploy_attempt = os.environ['GITHUB_RUN_ATTEMPT']
+    reuse = os.environ.get('REUSE_ATTEMPT')
+    if reuse:
+        require(reuse == deploy_attempt, 'PR_VALIDATION_RERUN_ALL_JOBS')
+        evidence = pr_validation(sha, emit=False)
+        require(evidence, 'VALIDATION_EVIDENCE_CHANGED')
+        return evidence
+    deploy_id = os.environ['GITHUB_RUN_ID']
+    title = exact_validation_title(deploy_id, deploy_attempt)
+    path = '/actions/runs?head_sha=' + sha + '&event=workflow_run&per_page=100'
+    runs = evidence_list(get(path, authenticated=True), 'workflow_runs')
+    matches = [r for r in runs if r['path'] == '.github/workflows/sast-checks.yml'
+               and r['display_title'] == title]
+    require(len(matches) <= 1, 'VALIDATION_RUN_AMBIGUOUS')
+    if not matches:
+        pending('VALIDATION_RUN_MISSING')
+    run = matches[0]
+    trusted_run(run, sha)
+    require(run['event'] == 'workflow_run' and run['head_branch'] == 'main',
+            'VALIDATION_RUN_IDENTITY')
+    if run['status'] != 'completed':
+        pending('VALIDATION_RUN_PENDING')
+    require(run['conclusion'] == 'success', 'VALIDATION_RUN_FAILED')
+    run_id, attempt = run['id'], run['run_attempt']
+    require(all(type(x) is int and x > 0 for x in (run_id, attempt)), 'PROVENANCE_ATTEMPT')
+    required_pr_jobs(run, (*EXACT_VALIDATION_JOBS,
+                           f'Deployment request {deploy_id} attempt {deploy_attempt}'))
+    refreshed = get(f'/actions/runs/{run_id}', authenticated=True)
+    trusted_run(refreshed, sha)
+    identity = ('id', 'run_attempt', 'path', 'event', 'head_branch', 'display_title',
+                'status', 'conclusion')
+    require(all(refreshed[k] == run[k] for k in identity), 'VALIDATION_EVIDENCE_CHANGED')
+    return f'fresh:{run_id}:{attempt}'
+
+
+def validation_gate(sha):
+    deadline = time.monotonic() + 40 * 60
+    while True:
+        require_current_main(sha, authenticated=True)
+        try:
+            evidence = validation_evidence(sha)
+            break
+        except Refused as error:
+            if not error.retry or time.monotonic() >= deadline:
+                raise
+            time.sleep(15)
+    print(f'Exact SHA {sha}: {evidence}')
+    with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+        print(f'evidence={evidence}', file=output)
 
 
 def deployment_jobs(run, sha, historical=False):
@@ -458,8 +568,12 @@ def authorize_host(sha):
 
 def runs(sha):
     data, entries, current = active_deployment(sha)
+    title = exact_validation_title(current['id'], current['run_attempt'])
     entries = [r for r in entries if r.get('path') != '.github/workflows/deploy.yml'
                or r['id'] == current['id']]
+    entries = [r for r in entries if (r.get('path'), r.get('event')) !=
+               ('.github/workflows/sast-checks.yml', 'workflow_run')
+               or r.get('display_title') == title]
     current.update(status='completed', conclusion='success')
     data.update(workflow_runs=entries, total_count=len(entries))
     emit_evidence(data)
@@ -592,7 +706,8 @@ def manual_runs(sha, historical=False):
 def main():
     require(len(sys.argv) == 3 and re.fullmatch('[0-9a-f]{40}', sys.argv[2]))
     require(sys.argv[1] in ('authorize', 'authorize-host', 'pr-validation', 'runs', 'manual-runs',
-                            'recovery-runs', 'preflight-impact'))
+                            'recovery-runs', 'preflight-impact', 'validation-request',
+                            'validation-gate'))
     if sys.argv[1] == 'preflight-impact':
         preflight_impact(sys.argv[2])
     elif sys.argv[1] == 'authorize':
@@ -601,6 +716,10 @@ def main():
         authorize_host(sys.argv[2])
     elif sys.argv[1] == 'pr-validation':
         verify_pr_evidence(sys.argv[2])
+    elif sys.argv[1] == 'validation-request':
+        validation_request(sys.argv[2])
+    elif sys.argv[1] == 'validation-gate':
+        validation_gate(sys.argv[2])
     elif sys.argv[1] == 'manual-runs':
         manual_runs(sys.argv[2])
     elif sys.argv[1] == 'recovery-runs':

@@ -1081,7 +1081,7 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         workflow = (Path(__file__).resolve().parent.parent /
                     '.github/workflows/deploy.yml').read_text()
         self.assertIn('default: false', workflow)
-        for name in ('validate', 'deploy'):
+        for name in ('pr-evidence', 'deploy'):
             job = workflow.split('\n  ' + name + ':\n', 1)[1]
             condition = next(line for line in job.splitlines() if line.startswith('    if:'))
             for guard in ("github.repository == 'jimbobsyouruncle/haven'",
@@ -1089,6 +1089,11 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                           "vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled'",
                           "inputs.authorize_production == true", 'inputs.deployment_sha == github.sha'):
                 self.assertIn(guard, condition)
+        for name in ('request-validation', 'validate'):
+            job = workflow.split('\n  ' + name + ':\n', 1)[1]
+            condition = next(line for line in job.splitlines() if line.startswith('    if:'))
+            self.assertIn("needs.pr-evidence.result == 'success'", condition)
+            self.assertIn("needs.pr-evidence.outputs.impact == 'routine'", condition)
         self.assertIn('    environment: production', workflow)
         self.assertIn('          ref: ${{ github.sha }}', workflow)
 

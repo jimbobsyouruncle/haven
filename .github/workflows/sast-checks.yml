@@ -1,4 +1,5 @@
 name: Security & SAST Checks
+run-name: ${{ github.event_name == 'workflow_run' && format('Exact SHA validation {0} attempt {1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt) || 'Security & SAST Checks' }}
 
 # Always-present required gate. Source validation selects affected components;
 # security scans remain blocking and unfiltered. Weekly/manual runs are full.
@@ -6,6 +7,10 @@ name: Security & SAST Checks
 on:
   pull_request:
     branches: [ "main" ]
+  workflow_run:
+    workflows: [Deploy Control Plane]
+    types: [in_progress]
+    branches: [main]
   workflow_dispatch:
     inputs:
       # Optional. Only used by the Semgrep job, and only on a dispatch run: it
@@ -27,12 +32,39 @@ permissions:
 # One in-flight run per pull request (or ref). A new push to the same PR
 # cancels the older run instead of queueing behind it.
 concurrency:
-  group: sast-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: sast-${{ github.workflow }}-${{ github.event.workflow_run.id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
 
+  deployment-request:
+    name: Deployment request ${{ github.event.workflow_run.id }} attempt ${{ github.event.workflow_run.run_attempt }}
+    if: github.event_name == 'workflow_run' && github.repository == 'jimbobsyouruncle/haven' && github.event.workflow_run.head_sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      fresh: ${{ steps.request.outputs.fresh }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - id: request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/deploy-provenance.py validation-request "$GITHUB_SHA"
+
+  deployment-context:
+    needs: deployment-request
+    if: github.event_name == 'workflow_run' && needs.deployment-request.outputs.fresh == 'true'
+    uses: ./.github/workflows/agent-context.yml
+
   shellcheck:
+    needs: deployment-request
+    if: ${{ !cancelled() && (github.event_name != 'workflow_run' || needs.deployment-request.outputs.fresh == 'true') }}
     name: ShellCheck (Bash)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -51,6 +83,8 @@ jobs:
           check_together: 'yes'
 
   semgrep:
+    needs: deployment-request
+    if: ${{ !cancelled() && (github.event_name != 'workflow_run' || needs.deployment-request.outputs.fresh == 'true') }}
     name: Semgrep (SAST)
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -123,12 +157,16 @@ jobs:
   # The same validation the deploy runs, exposed to pull requests so a
   # mistake is caught before merge rather than on the Pi.
   validate:
+    needs: deployment-request
+    if: ${{ !cancelled() && (github.event_name != 'workflow_run' || needs.deployment-request.outputs.fresh == 'true') }}
     name: Validate sources
     uses: ./.github/workflows/validate.yml
     with:
       changed_only: true
 
   codeql:
+    needs: deployment-request
+    if: ${{ !cancelled() && (github.event_name != 'workflow_run' || needs.deployment-request.outputs.fresh == 'true') }}
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -160,6 +198,8 @@ jobs:
   # Exact PR base-to-head paths; Git errors fail before any output is emitted.
   # Shared CI selection/configuration changes also exercise the ARM64 smoke.
   changes:
+    needs: deployment-request
+    if: ${{ !cancelled() && (github.event_name != 'workflow_run' || needs.deployment-request.outputs.fresh == 'true') }}
     name: Detect Hermes changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -448,8 +488,8 @@ jobs:
   # gate rather than silently skipping the smoke.
   gate:
     name: Security & SAST gate
-    if: always()
-    needs: [changes, shellcheck, semgrep, validate, codeql, hermes-nonroot-smoke]
+    if: ${{ always() && (github.event_name != 'workflow_run' || needs.deployment-request.outputs.fresh == 'true') }}
+    needs: [deployment-request, deployment-context, changes, shellcheck, semgrep, validate, codeql, hermes-nonroot-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -462,6 +502,9 @@ jobs:
           echo "CodeQL           : ${{ needs.codeql.result }}"
           echo "Hermes non-root  : ${{ needs.hermes-nonroot-smoke.result }}"
           failed=0
+          if [ "$GITHUB_EVENT_NAME" = workflow_run ] && [ "${{ needs.deployment-context.result }}" != success ]; then
+            failed=1
+          fi
           # Every job here must report `success`. `changes` must succeed even
           # when the smoke ran, so a broken detector can never skip the smoke
           # vacuously.
