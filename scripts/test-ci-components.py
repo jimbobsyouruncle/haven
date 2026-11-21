@@ -118,10 +118,11 @@ class SelectionTests(unittest.TestCase):
         defaults = {key: 'success' for key in keys}
         defaults['needs.changes.outputs.hermes_image'] = 'true'
 
-        def run(overrides):
+        def run(overrides, event='workflow_run'):
             values = dict(defaults, **overrides)
             script = re.sub(r'\$\{\{ (.*?) \}\}', lambda m: values[m[1]], body)
             return subprocess.run(['bash', '-euo', 'pipefail', '-c', script],
+                                  env=dict(os.environ, GITHUB_EVENT_NAME=event),
                                   capture_output=True).returncode
 
         self.assertEqual(run({}), 0)
@@ -133,6 +134,7 @@ class SelectionTests(unittest.TestCase):
                     with self.subTest(state=state, key=key):
                         self.assertNotEqual(run({key: state}), 0)
         self.assertNotEqual(run({'needs.changes.outputs.hermes_image': ''}), 0)
+        self.assertEqual(run({'needs.deployment-context.result': 'skipped'}, 'pull_request'), 0)
 
     def test_workflow_contract(self):
         workflow = (ROOT / '.github/workflows/validate.yml').read_text()
@@ -143,7 +145,9 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn('changed_only:', deploy)
         self.assertIn('python3 scripts/test-ci-components.py', workflow)
         self.assertIn('name: Security & SAST gate', sast)
-        self.assertIn('if: always()\n    needs:', sast)
+        self.assertIn("always() && (github.event_name != 'workflow_run'", sast)
+        smoke = sast.split('  hermes-nonroot-smoke:\n', 1)[1]
+        self.assertIn("!cancelled() && needs.changes.result == 'success'", smoke)
         # Every narrowed step includes the conservative full fallback. Each
         # component has actual executable consumers, not just detector outputs.
         for line in workflow.splitlines():
@@ -154,15 +158,15 @@ class SelectionTests(unittest.TestCase):
 
     def test_deployment_selection_always_runs_full(self):
         # Execute the real workflow shell, without GitHub or a production host.
-        # Deploy does not opt into changed_only. Even accidental opt-in must
-        # remain full for non-PR events, independently of PR evidence/base.
+        # The same SAST caller opts into scoped PR tests. Every non-PR
+        # event must stay full, independently of the input or PR base.
         workflow = (ROOT / '.github/workflows/validate.yml').read_text()
         block = workflow.split('      - name: Select component tests\n', 1)[1]
         body = block.split('        run: |\n', 1)[1].split('      - name:', 1)[0]
         body = '\n'.join(line[10:] for line in body.splitlines())
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / 'output'
-            for event in ('push', 'workflow_dispatch'):
+            for event in ('push', 'workflow_dispatch', 'workflow_run'):
                 for changed_only in ('false', 'true'):
                     with self.subTest(event=event, changed_only=changed_only):
                         output.write_text('')
@@ -177,10 +181,10 @@ class SelectionTests(unittest.TestCase):
                         self.assertEqual(set(output.read_text().splitlines()), expected)
         deploy = (ROOT / '.github/workflows/deploy.yml').read_text()
         validate = deploy.split('  validate:\n', 1)[1].split('  deploy:\n', 1)[0]
-        self.assertIn('uses: ./.github/workflows/validate.yml', validate)
-        self.assertIn('needs: pr-evidence', validate)
-        self.assertIn('reuse_attempt: ${{ needs.pr-evidence.outputs.reuse_attempt }}', validate)
+        self.assertIn('validation-gate "$GITHUB_SHA"', validate)
+        self.assertIn('needs: [pr-evidence, request-validation]', validate)
         self.assertNotIn('secrets:', validate)
+        self.assertNotIn('security-events: write', deploy)
         self.assertIn('needs: [pr-evidence, validate]', deploy)
 
     def test_reuse_is_bound_to_push_attempt_and_guards_every_test(self):

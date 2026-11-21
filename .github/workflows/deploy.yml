@@ -34,7 +34,7 @@ permissions:
 jobs:
 
   pr-evidence:
-    if: github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled'
+    if: github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha))
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -47,29 +47,63 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 0
+      - name: Verify exact-main deployment request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
+        run: python3 scripts/deploy-provenance.py authorize "$GITHUB_SHA"
       - name: Classify cumulative deployment impact
         id: impact
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
           DEPLOY_RECEIPT_PUBLIC_KEY: ${{ vars.HAVEN_DEPLOY_RECEIPT_PUBLIC_KEY }}
         run: python3 scripts/deploy-provenance.py preflight-impact "$GITHUB_SHA"
       - name: Verify PR evidence
-        if: steps.impact.outputs.impact == 'routine'
+        if: steps.impact.outputs.impact == 'routine' || github.event_name == 'workflow_dispatch'
         id: verify
         env:
           GH_TOKEN: ${{ github.token }}
           AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
         run: python3 scripts/deploy-provenance.py pr-validation "$GITHUB_SHA"
 
-  # Keep the positive validation job consumed by deployment and its verifier.
-  validate:
-    if: ${{ !cancelled() && github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled' && needs.pr-evidence.result == 'success' && needs.pr-evidence.outputs.impact == 'routine') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha)) }}
+  request-validation:
+    name: Request exact SHA validation
     needs: pr-evidence
-    uses: ./.github/workflows/validate.yml
-    with:
-      reuse_attempt: ${{ needs.pr-evidence.outputs.reuse_attempt }}
+    if: ${{ !cancelled() && needs.pr-evidence.result == 'success' && needs.pr-evidence.outputs.reuse_attempt == '' && (needs.pr-evidence.outputs.impact == 'routine' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - run: test -n "$GITHUB_SHA"
+
+  # The installed bootstrap consumes this exact job name.
+  validate:
+    name: validate / Validate sources
+    needs: [pr-evidence, request-validation]
+    if: ${{ !cancelled() && needs.pr-evidence.result == 'success' && (needs.pr-evidence.outputs.impact == 'routine' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      evidence: ${{ steps.verify.outputs.evidence }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify deployment validation evidence
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_ATTEMPT: ${{ needs.pr-evidence.outputs.reuse_attempt }}
+          AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
+        run: python3 scripts/deploy-provenance.py validation-gate "$GITHUB_SHA"
 
   # =========================================================================
   # JOB 2: deploy -- only runs if validate passed
@@ -78,13 +112,13 @@ jobs:
     name: Deploy over Tailscale
     # Automatic access requires separate owner activation; manual access
     # requires assent for this exact main SHA. Validation has no secrets.
-    if: ${{ !cancelled() && needs.validate.result == 'success' && github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled' && needs.pr-evidence.result == 'success' && needs.pr-evidence.outputs.impact == 'routine') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha)) }}
+    if: ${{ !cancelled() && needs.validate.result == 'success' && github.repository == 'jimbobsyouruncle/haven' && github.ref == 'refs/heads/main' && needs.pr-evidence.result == 'success' && ((github.event_name == 'push' && vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled' && needs.pr-evidence.outputs.impact == 'routine') || (github.event_name == 'workflow_dispatch' && inputs.authorize_production == true && inputs.deployment_sha == github.sha)) }}
     needs: [pr-evidence, validate] # both gates must succeed
     runs-on: ubuntu-latest
     timeout-minutes: 105
     permissions:
       contents: read
-      pull-requests: read
+      actions: read
     environment: production  # lets you require manual approval in repo settings
     steps:
       - name: Checkout
@@ -96,12 +130,15 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Verify exact-main deployment provenance
         env:
           GH_TOKEN: ${{ github.token }}
           AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
           REUSE_ATTEMPT: ${{ needs.pr-evidence.outputs.reuse_attempt }}
+          VALIDATION_EVIDENCE: ${{ needs.validate.outputs.evidence }}
+          REQUIRE_VALIDATION_EVIDENCE: 'true'
         run: python3 scripts/deploy-provenance.py authorize "$GITHUB_SHA"
 
       - name: Wait for the sandbox image
@@ -121,6 +158,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           AUTOMATIC_DEPLOYMENT: ${{ vars.HAVEN_AUTOMATIC_DEPLOYMENT }}
           REUSE_ATTEMPT: ${{ needs.pr-evidence.outputs.reuse_attempt }}
+          VALIDATION_EVIDENCE: ${{ needs.validate.outputs.evidence }}
+          REQUIRE_VALIDATION_EVIDENCE: 'true'
         run: python3 scripts/deploy-provenance.py authorize "$GITHUB_SHA"
 
       - name: Connect to tailnet

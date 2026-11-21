@@ -21,6 +21,7 @@
 
 ## .github/workflows/deploy.yml
 - pr-evidence
+- request-validation
 - validate
 - deploy
 
@@ -31,6 +32,8 @@
 - build
 
 ## .github/workflows/sast-checks.yml
+- deployment-request
+- deployment-context
 - shellcheck
 - semgrep
 - validate
@@ -478,9 +481,13 @@
 - def required_pr_jobs(run, names)
 - def checkout_step(job, receipt)
 - def git(*args)
-- def pr_validation(sha)
+- def pr_validation(sha, *, emit)
 - def verify_pr_evidence(sha)
 - def evidence_list(data, key)
+- def validation_request(sha)
+- def exact_validation_title(deploy_id, deploy_attempt)
+- def validation_evidence(sha)
+- def validation_gate(sha)
 - def deployment_jobs(run, sha, historical)
 - def active_deployment(sha)
 - def authorize_host(sha)

@@ -239,6 +239,16 @@ Keep `doctor.sh` focused on operational health; it is not a security gate.
 Reuse commit-specific PR validation where trustworthy, while independently
 checking deployment-time conditions that PR CI cannot establish.
 
+For #257, an authorized deployment with a reuse miss requests fresh exact-SHA
+validation in the existing Security & SAST workflow, outside the production
+environment. The workflow gates its scans on the requesting deployment run and
+attempt and on exact main. It uses no production credentials or tailnet access.
+Only the dedicated CodeQL job can write security events. Deployment reads the
+completed validation attempt and its required jobs and rechecks that evidence
+after the image wait. Invalid, failed or ambiguous evidence blocks deployment.
+The installed bootstrap remains the authority for cumulative protected changes
+and their exact baseline and target approval.
+
 Implementation should be incremental and independently testable, with an
 explicit cutover and rollback plan. No new orchestrator or persistent control
 plane is justified solely by this simplification. The RunPod worker interface
