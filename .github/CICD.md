@@ -152,7 +152,9 @@ will reject the merge and link this procedure. Complete the regular PR checks
 and coordinate the manual rollout before another merge advances `main`.
 
 1. After owner merge, verify that the full merge SHA is still the tip of
-   `main`. Obtain explicit production authorization for that exact SHA.
+   `main`. Obtain explicit production authorization for that exact SHA
+   and record the root-owned baseline/target grant documented in the
+   [deployment runbook](../deploy/README.md#cumulative-deployment-authorization).
 2. In GitHub Actions, open **Deploy Control Plane**, choose **Run workflow**
    from `main`, enter the full SHA in `deployment_sha`, and select
    `authorize_production`. This creates a separate manual run.
@@ -162,7 +164,8 @@ and coordinate the manual rollout before another merge advances `main`.
    post-deployment verification apply. If main advances, stop and review the
    new tip before seeking authorization for it.
 
-`PR_VALIDATION_SECURITY_POLICY_CHANGED` is a deterministic rejection. Use the
+`AUTHORIZATION_REQUIRED` for a protected cumulative range and
+`PR_VALIDATION_SECURITY_POLICY_CHANGED` are deterministic refusals. Use the
 manual procedure above for an approved rollout. A map refresh with only
 manually dispatched checks also lacks the PR-triggered evidence for automatic
 deployment.

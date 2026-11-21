@@ -451,6 +451,12 @@
 - resolve_pin()
 - probe_manifest()
 
+## scripts/deploy-impact.py
+- class UntrustedRange(ValueError)
+- def classify(git, base, target)
+- def normalize_pins(content, pins)
+- def main()
+
 ## scripts/deploy-instance.sh
 - die()
 - url_has_userinfo()
@@ -465,6 +471,9 @@
 - def merged(sha)
 - def require_current_main(sha, *, authenticated)
 - def authorize(sha)
+- def verify_receipt(log, sha, run_id, attempt, public_key)
+- def accepted_baseline()
+- def preflight_impact(sha)
 - def pr_runs(head, branch)
 - def required_pr_jobs(run, names)
 - def checkout_step(job, receipt)
@@ -552,7 +561,9 @@
   - def verify_recovery_render(self, sha)
   - def reverify_recovery(self, sha, journal_hash)
   - def accept(self, sha, evidence, allow_accepted)
+  - def publish_deployment_receipt(self, sha, run)
   - def authorize_deploy(self, sha)
+  - def deployment_impact(self, stage, base, sha, event)
   - def staged_proxy_preflight(self, stage, sha)
   - def deploy(self, sha, *, handoff)
 - def main()

@@ -49,6 +49,61 @@ occurs. Index and configuration digests are distinct identities, not an equality
 test. Missing/incompatible/corrupt/unexportable images refuse before activation.
 There are no per-deployment approval/evidence files or expiration window.
 
+### Cumulative deployment authorization
+
+The protected journal must identify the active checkout as `accepted`.
+For `AUTHORIZATION_REQUIRED`, inspect the accepted-to-target Git range. A
+missing, mismatched, or rolled-back journal requires owner reconciliation
+backed by acceptance evidence. Keep all journals and recovery artifacts.
+A previously approved target cannot authorize a later target or a different
+baseline.
+
+On a host with cumulative enforcement installed, the owner records approval
+in the root-owned mode-0600 file
+`/var/lib/haven-install-root/deployment-authorization.json`. Write the JSON
+atomically under both deployment locks with exactly the keys
+`baseline_sha` and `target_sha`, each a full lowercase commit SHA. Dispatch
+the existing production workflow manually against that exact target. An
+automatic push cannot use this file. Remove the approval after acceptance
+or cancellation.
+
+Before deploying the first cumulative-policy revision, the owner must
+separately authorize cutover. Disable automatic deployment before the
+protected merge and confirm there is no in-flight or queued production
+deploy. Under both deployment locks, verify the installed HEAD and
+accepted journal, preserve the existing bootstrap files, and install the
+reviewed `scripts/install-root.py`, `scripts/deploy-provenance.py`, and
+`scripts/deploy-impact.py` together from the same independently verified
+revision. In the same authorized cutover, provision a dedicated Ed25519
+private key as root with mode 0600 at
+`/var/lib/haven-install-root/deployment-receipt.key`. Use
+`openssl genpkey -algorithm ED25519` to generate it and
+`openssl pkey -pubout` to derive its public PEM. Set only that PEM in the
+owner-managed Actions variable `HAVEN_DEPLOY_RECEIPT_PUBLIC_KEY`. Keep the
+private key on the host outside the checkout and away from deployment logs.
+
+The first authorized deployment is manual and establishes the first signed
+baseline. After the final root verifier commits `accepted` to the journal,
+it signs the accepted SHA, deployment run ID and attempt. The existing
+forced command relays the signed line in its normal run log. Before source
+validation or Tailscale access, an automatic run checks the newest prior
+SSH deployment attempt visible in the last 30 main workflow runs and
+verifies that exact job's receipt. Missing logs, invalid signatures, failed
+SSH attempts and exhausted history result in `AUTHORIZATION_REQUIRED`. An
+authorized manual run can establish a new receipt at the next eligible
+target. The runner uses the signed checkout's policy for early classification.
+The host always checks its own journal and installed policy.
+
+Keep automatic deployment disabled until the host and early workflow gates
+have passed cutover verification. Disable automatic deployment and drain any
+queued or running deployment before owner rollback, out-of-band acceptance,
+or key rotation. Reconcile the runtime and journal before using the manual
+workflow to establish a fresh signed baseline. Rotate the receipt key after
+an out-of-band rollback or acceptance so stale receipts cannot authorize
+preflight when automatic deployment is re-enabled. If cutover fails, preserve
+the journal and recovery artifacts, and restore the saved bootstrap files
+together only after confirming no transaction is active or unresolved.
+
 ### #249 cutover and verification
 
 The canonical driver checkpoints the running image regardless of

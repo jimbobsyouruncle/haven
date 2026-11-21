@@ -181,6 +181,7 @@
 - scripts/ci-parity.sh - Replay the repository-owned static gates from CI, locally, before you push.
 - scripts/deploy-forced-command.sh
 - scripts/deploy-image-gate.sh - FILE: scripts/deploy-image-gate.sh
+- scripts/deploy-impact.py - Classify cumulative deployment changes since an independently trusted SHA.
 - scripts/deploy-instance.sh
 - scripts/deploy-provenance.py - Fail-closed main deployment provenance; API reads only, no host mutation.
 - scripts/deploy-remote.sh
