@@ -99,8 +99,8 @@ is what removes the admin-account login from the deploy path.
 ### Component validation policy
 
 The required names remain **Security & SAST gate** and **Check agent context maps**
-(live main rules inspected during #214). No settings change is needed. Validation
-is one job with native step conditionals, not a job per component. The small
+(enforced by the main ruleset). Validation uses native step conditionals within
+one job. The small
 [switch table](../scripts/ci-components.py) emits booleans for those conditionals.
 It compares the exact PR base SHA to HEAD with NUL-delimited paths and renames
 expanded into both paths. Invalid/missing PR metadata or Git failure fails the
@@ -113,12 +113,13 @@ events use selection. Deployment, weekly and manual SAST runs stay full.
 | `backup/`, named backup fixtures | Backup/restore safety, system units, timers, container control; status backup socket/log mounts; doctor; remote deploy and verifier; installation-root restore identity | Restic/Docker/systemctl fixtures and scratch SQLite/Git trees; no cloud credentials |
 | `auth/`, password reset and named auth fixtures | Auth behavior, installer env escaping, reset; TLS/auth rendering, real Caddy, allowlists and headers | Python login fixtures; stubs for password reset/installer; dummy credentials and isolated Caddy |
 | TLS check, Caddy image, named TLS fixtures | Proxy plus auth tests, Compose configuration and render matrices | Stub render tests offline; real TLS loopback and Docker Caddy tests require local sockets/engine, not production |
-| Status app/tests and named status fixtures | Status probes, private backup API, backup consumers and proxy configuration | Temporary files, mocked DNS/API, real local Unix socket |
+| Status app/tests, image and named status fixtures | Status probes, private backup API, status mount and log contracts, verifier and Compose. The status ARM64 workflow qualifies the image and mounted app. | Temporary files, mocked DNS/API, real local Unix socket |
 | `openwebui/` | Generated pipe and behavioral tests; status wake probe and doctor API/mesh consumers | httpx/mock streams and synthetic worker responses; no worker source or live RunPod |
 | `hermes/`, secret-guard fixture | Guard installation/negative input tests, password reset, image pin assertions and Compose; separate ARM64 non-root smoke | Guard fixtures are offline; smoke builds pinned upstream dependencies and starts a local isolated container |
 | Doctor and named doctor fixtures | Doctor plus backup/status/inference contracts, remote deployment exit mapping and verifier | Stubbed host/API commands; healthy/degraded/failing states, no production diagnosis |
 | Shared paths (including TLS helpers and Caddy routing/auth templates), install/deploy mechanics, firewall/isolation, CI configuration/selection, unknown paths | Full existing suite, including provenance, authorization, destructive restore and rollback protections | Existing fixtures; no live destructive restores |
 | Markdown, LICENSE, generated navigation maps | Universal baseline only | No component behavior changes |
+| Context generator, freshness checker and its fixture | Universal baseline and the required Agent context job | Agent context generation and freshness fixtures exercise these files directly |
 
 Groups explicitly include their consumer tests rather than assuming directories
 are independent. Test-script changes follow the same boundary; new/unclassified
@@ -168,12 +169,20 @@ Caddy builds, package installs and the ARM64 smoke require approved public
 package/image sources; they are not fully offline. Runtime integration and live
 restore evidence remain separately authorized operational work.
 
-Local parity deliberately ignores component conditions and replays its existing
-full/static modes. Its selector setup step is CI-owned (event/output metadata),
-while selection regressions run locally too. Rollback is a reviewed revert of
-this change; deploy workflow, credentials, live configuration and image pins
-are untouched. Manual full validation is **Security & SAST Checks → Run workflow**;
-the existing Monday schedule also runs it. Neither action deploys.
+Run focused checks locally, for example `python3 scripts/test-ci-components.py`
+for changes to component selection. CI supplies slower integration, SAST and
+ARM64 evidence. Local parity still offers full/static modes when needed.
+Manual full validation is **Security & SAST Checks → Run workflow**. The Monday
+schedule also runs full validation.
+
+The main ruleset currently requires both PR gate checks but allows out-of-date
+branches and lacks a pull-request requirement. Before removing the deployment
+source job, require PRs and up-to-date branches on main while preserving the
+existing required checks and no bypass actors. The installed root bootstrap
+also checks for that source job in the active deployment attempt. Its policy
+must support the replacement before a merge can remove the job. See the
+[host policy transition](../deploy/README.md#one-time-policy-transition) for the
+existing bootstrap handoff pattern.
 
 ---
 
