@@ -1022,6 +1022,52 @@ class Transaction:
             args += ['-f', str(overlay)]
         return args
 
+    def service_containers(self, compose):
+        ids = self.command(compose + ['ps', '--all', '--quiet'], timeout=30).splitlines()
+        if not ids:
+            return []
+        if not all(re.fullmatch(r'[0-9a-f]{64}', container) for container in ids):
+            raise Refusal('SERVICE_HEALTH: invalid Compose container identities')
+        # Emit only the fields we need. In particular, do not capture container environment.
+        rows = self.command(['docker', 'container', 'inspect', '--format',
+                             '{{json .Config.Labels}} {{json .Image}} {{json .State}}',
+                             *ids], timeout=30).splitlines()
+        if len(rows) != len(ids):
+            raise Refusal('SERVICE_HEALTH: incomplete Compose container inspection')
+        decoder = json.JSONDecoder()
+        containers = []
+        for row in rows:
+            labels, end = decoder.raw_decode(row)
+            image, end = decoder.raw_decode(row, end + 1)
+            state, _ = decoder.raw_decode(row, end + 1)
+            if labels.get('com.docker.compose.oneoff', '').lower() == 'true':
+                continue
+            if (labels.get('com.docker.compose.project') != self.project
+                    or not re.fullmatch(r'sha256:[0-9a-f]{64}', image)):
+                raise Refusal('SERVICE_HEALTH: unexpected Compose project or image')
+            containers.append((labels['com.docker.compose.service'], image, state))
+        return containers
+
+    def verify_services(self, sha):
+        journal = self.load()
+        if not journal or journal['sha'] != sha or journal['phase'] != 'awaiting_verifier':
+            raise Refusal('SERVICE_HEALTH: no matching pending deployment')
+        values = self.values(self.layout.read_text())
+        compose = self.proxy_compose(self.app, values['HYBRID_AI_STACK_ENV_FILE'])
+        expected = set(self.command(compose + ['config', '--services'], timeout=30).splitlines())
+        deadline = time.monotonic() + 180
+        while expected:
+            containers = self.service_containers(compose)
+            running = {name for name, _, _ in containers}
+            if expected <= running and all(
+                    state['Status'] == 'running' and (state.get('Health') or {}).get('Status', 'healthy') == 'healthy'
+                    for name, _, state in containers if name in expected):
+                return
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(5)
+        raise Refusal('SERVICE_HEALTH: an enabled Compose service is missing, stopped or unhealthy')
+
     def file_digest(self, path, private=False):
         path = Path(path)
         self.trusted(path)
@@ -1614,79 +1660,19 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                     raise Refusal('PROXY_CANDIDATE: proxy stopped before acceptance')
             journal['phase'] = 'accepted'
             self.save(journal)
-            if journal.get('deployment_run'):
-                self.publish_deployment_receipt(sha, journal['deployment_run'])
-
-    def publish_deployment_receipt(self, sha, run):
-        key = self.state / 'deployment-receipt.key'
-        self.trusted(key)
-        if not key.is_file() or stat.S_IMODE(key.stat().st_mode) != 0o600:
-            raise Refusal('DEPLOYMENT_RECEIPT: private signing key unavailable')
-        message = f'haven-production-v1 {sha} {run[0]} {run[1]}'
-        # Ed25519 signing uses a seekable message input.
-        with tempfile.NamedTemporaryFile() as payload:
-            payload.write(message.encode('ascii'))
-            payload.flush()
-            signature = self.run(['openssl', 'pkeyutl', '-sign', '-rawin', '-inkey', str(key),
-                                  '-in', payload.name],
-                                 capture_output=True, check=True, timeout=10).stdout
-        if len(signature) != 64:
-            raise Refusal('DEPLOYMENT_RECEIPT: unexpected signature format')
-        values = self.values(self.layout.read_text())
-        log = Path(values['HYBRID_AI_LOG_DIR']) / 'deploy' / (sha + '.log')
-        self.trusted(log)
-        fd = os.open(log, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, 'a') as stream:
-            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                raise Refusal('DEPLOYMENT_RECEIPT: deployment log is not regular')
-            print(message, base64.b64encode(signature).decode('ascii'), file=stream)
-            stream.flush()
-            os.fsync(stream.fileno())
-
     def authorize_deploy(self, sha):
         policy = self.app / 'scripts/deploy-provenance.py'
         self.trusted(policy)
         if not policy.is_file():
             raise Refusal('PROVENANCE_INVALID: installed deployment policy is unavailable')
         try:
-            event = self.command([sys.executable, '-IB', str(policy), 'authorize-host', sha], timeout=150)
+            self.command([sys.executable, '-IB', str(policy), 'authorize-host', sha], timeout=150)
         except subprocess.SubprocessError as error:
             stderr = getattr(error, 'stderr', None)
             code = stderr.strip() if isinstance(stderr, str) else ''
             if not re.fullmatch(r'PROVENANCE_[A-Z_]+', code):
                 code = 'PROVENANCE_INVALID'
             raise Refusal(code + ': installed bootstrap could not authorize the deployment') from None
-
-        run = re.fullmatch(r'(push|workflow_dispatch) ([1-9][0-9]*) ([1-9][0-9]*)', event)
-        if not run:
-            raise Refusal('PROVENANCE_INVALID: installed policy returned no trusted run identity')
-        return run[1], (int(run[2]), int(run[3]))
-
-    def deployment_impact(self, stage, base, sha, event):
-        policy = self.app / 'scripts/deploy-impact.py'
-        self.trusted(policy)
-        if not policy.is_file():
-            raise Refusal('AUTHORIZATION_REQUIRED: installed impact policy is unavailable')
-        try:
-            impact = self.command([sys.executable, '-IB', str(policy), str(stage), base, sha],
-                                  timeout=120)
-        except (OSError, subprocess.SubprocessError):
-            raise Refusal('AUTHORIZATION_REQUIRED: cumulative deployment range is unavailable') from None
-        if impact == 'routine':
-            return True
-        if impact == 'docs-only':
-            return False
-        grant = self.state / 'deployment-authorization.json'
-        self.trusted(grant)
-        if (impact == 'protected' and event == 'workflow_dispatch' and grant.is_file()
-                and stat.S_IMODE(grant.stat().st_mode) == 0o600):
-            try:
-                if json.loads(grant.read_text()) == {'baseline_sha': base, 'target_sha': sha}:
-                    return True
-            except (OSError, ValueError):
-                pass
-        raise Refusal('AUTHORIZATION_REQUIRED: record explicit root approval for this baseline '
-                      'and target, then dispatch the exact target SHA manually')
 
     def staged_proxy_preflight(self, stage, sha):
         try:
@@ -1718,7 +1704,8 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                           'review the protected preflight log and deployment runbook') from None
 
     def deploy(self, sha, *, handoff=False):
-        event, run = self.authorize_deploy(sha) if handoff else (None, None)
+        if handoff:
+            self.authorize_deploy(sha)
         if self.identity_cutover:
             self.state = self.path('/var/lib/haven-install-root')
             self.journal = self.state / 'current.json'
@@ -1748,13 +1735,14 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                         or journal.get('phase') != 'accepted'
                         or journal.get('sha') != sha_before
                         or not re.fullmatch(r'[0-9a-f]{40}', sha_before)):
-            raise Refusal('AUTHORIZATION_REQUIRED: current checkout lacks a trusted accepted journal')
+            raise Refusal('ACCEPTED_BASELINE_REQUIRED: current checkout lacks a trusted accepted journal')
         token = uuid.uuid4().hex
         stage = self.app.parent / ('.haven-stage-' + token)
         previous = self.app.parent / ('.haven-previous-' + token)
         self.trusted(self.app.parent)
         stage.mkdir(mode=0o755)
         proxy_runtime = None
+        previous_images = {}
         try:
             self.git(stage, 'init', '--quiet')
             remote = 'https://github.com/jimbobsyouruncle/haven.git'
@@ -1764,8 +1752,6 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
             self.git(stage, 'merge-base', '--is-ancestor', sha, 'origin/main')
             if handoff and self.git(stage, 'rev-parse', 'origin/main') != sha:
                 raise Refusal('PROVENANCE_MAIN_SHA: main changed between authorization and staging')
-            if handoff and not self.deployment_impact(stage, sha_before, sha, event):
-                raise Refusal('DOCS_ONLY: no deployment transaction was started')
             self.git(stage, 'checkout', '--quiet', '--detach', sha)
             if self.git(stage, 'rev-parse', 'HEAD') != sha:
                 raise Refusal('staged checkout does not match requested SHA')
@@ -1780,6 +1766,9 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                 if (self.project == 'haven'
                         and os.environ.get('HAVEN_DEPLOY_SYNCHRONOUS_VERIFY') == '1'):
                     proxy_runtime = self.snapshot_proxy(values, proxy_recovery)
+                    compose = self.proxy_compose(source, values['HYBRID_AI_STACK_ENV_FILE'])
+                    for service, image, _ in self.service_containers(compose):
+                        previous_images.setdefault(service, []).append(image)
         except (Exception, KeyboardInterrupt):
             shutil.rmtree(stage, ignore_errors=True)
             raise
@@ -1805,13 +1794,12 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                        previous_sha=sha_before, files=files,
                        receipt=str(Path(values['HYBRID_AI_DATA_DIR']) /
                                    'hermes_data/deploy-verdicts' / (sha + '.json')))
-        if run is not None:
-            journal['deployment_run'] = run
         if identity is not None:
             journal['identity'] = identity
         if proxy_runtime:
             proxy_runtime['token'] = token
             journal['proxy_runtime'] = proxy_runtime
+            journal['previous_service_images'] = previous_images
         if source == self.legacy:
             if sha_before == sha:
                 try:
@@ -1966,7 +1954,7 @@ def main():
                 raise Refusal('checkpoint preflight requires the installed Haven root')
             print(json.dumps(transaction.proxy_preflight(source)))
         return
-    actions = ('deploy', 'migrate', 'recover', 'accept', 'verify', 'verify-proxy',
+    actions = ('deploy', 'migrate', 'recover', 'accept', 'verify', 'verify-proxy', 'verify-services',
                'rollback', 'reverify-manual', 'reverify-recovery')
     if len(sys.argv) not in (3, 4) or sys.argv[1] not in actions \
             or (len(sys.argv) == 4) != (sys.argv[1] == 'reverify-recovery') \
@@ -2020,6 +2008,8 @@ def main():
         transaction.verify_identity(transaction.load())
     elif action == 'verify-proxy':
         transaction.verify_proxy(sha)
+    elif action == 'verify-services':
+        transaction.verify_services(sha)
     elif action == 'reverify-manual':
         transaction.reverify_manual(sha)
     elif action == 'reverify-recovery':

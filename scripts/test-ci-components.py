@@ -118,11 +118,10 @@ class SelectionTests(unittest.TestCase):
         defaults = {key: 'success' for key in keys}
         defaults['needs.changes.outputs.hermes_image'] = 'true'
 
-        def run(overrides, event='workflow_run'):
+        def run(overrides):
             values = dict(defaults, **overrides)
             script = re.sub(r'\$\{\{ (.*?) \}\}', lambda m: values[m[1]], body)
             return subprocess.run(['bash', '-euo', 'pipefail', '-c', script],
-                                  env=dict(os.environ, GITHUB_EVENT_NAME=event),
                                   capture_output=True).returncode
 
         self.assertEqual(run({}), 0)
@@ -134,7 +133,6 @@ class SelectionTests(unittest.TestCase):
                     with self.subTest(state=state, key=key):
                         self.assertNotEqual(run({key: state}), 0)
         self.assertNotEqual(run({'needs.changes.outputs.hermes_image': ''}), 0)
-        self.assertEqual(run({'needs.deployment-context.result': 'skipped'}, 'pull_request'), 0)
 
     def test_workflow_contract(self):
         workflow = (ROOT / '.github/workflows/validate.yml').read_text()
@@ -145,7 +143,8 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn('changed_only:', deploy)
         self.assertIn('python3 scripts/test-ci-components.py', workflow)
         self.assertIn('name: Security & SAST gate', sast)
-        self.assertIn("always() && (github.event_name != 'workflow_run'", sast)
+        self.assertIn('if: ${{ always() }}', sast)
+        self.assertNotIn('workflow_run:', sast)
         smoke = sast.split('  hermes-nonroot-smoke:\n', 1)[1]
         self.assertIn("!cancelled() && needs.changes.result == 'success'", smoke)
         # Every narrowed step includes the conservative full fallback. Each
@@ -166,7 +165,7 @@ class SelectionTests(unittest.TestCase):
         body = '\n'.join(line[10:] for line in body.splitlines())
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / 'output'
-            for event in ('push', 'workflow_dispatch', 'workflow_run'):
+            for event in ('push', 'workflow_dispatch', 'schedule'):
                 for changed_only in ('false', 'true'):
                     with self.subTest(event=event, changed_only=changed_only):
                         output.write_text('')
@@ -181,33 +180,12 @@ class SelectionTests(unittest.TestCase):
                         self.assertEqual(set(output.read_text().splitlines()), expected)
         deploy = (ROOT / '.github/workflows/deploy.yml').read_text()
         validate = deploy.split('  validate:\n', 1)[1].split('  deploy:\n', 1)[0]
-        self.assertIn('validation-gate "$GITHUB_SHA"', validate)
-        self.assertIn('needs: [pr-evidence, request-validation]', validate)
+        self.assertIn('uses: ./.github/workflows/validate.yml', validate)
+        self.assertIn('needs: candidate', validate)
         self.assertNotIn('secrets:', validate)
         self.assertNotIn('security-events: write', deploy)
-        self.assertIn('needs: [pr-evidence, validate]', deploy)
-
-    def test_reuse_is_bound_to_push_attempt_and_guards_every_test(self):
-        workflow = (ROOT / '.github/workflows/validate.yml').read_text()
-        gate, tests = workflow.split('      - name: Checkout\n', 1)
-        body = gate.split('        run: |\n', 1)[1]
-        body = '\n'.join(line[10:] for line in body.splitlines())
-        with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp) / 'output'
-            for event, proof, expected in (
-                ('push', '2', True), ('push', '1', False),
-                ('workflow_dispatch', '2', False), ('pull_request', '2', False),
-            ):
-                output.write_text('')
-                result = subprocess.run(['bash', '-c', body],
-                                        env=dict(os.environ, GITHUB_EVENT_NAME=event,
-                                                 REUSE_ATTEMPT=proof, GITHUB_RUN_ATTEMPT='2',
-                                                 GITHUB_OUTPUT=str(output)), capture_output=True)
-                self.assertEqual(result.returncode == 0, expected)
-                self.assertEqual(output.read_text(), 'verified=true\n' if expected else '')
-        for step in tests.split('      - name: '):
-            self.assertRegex(step, r"(?m)^        if: .*(steps.reuse.outputs.verified != 'true'|"
-                                   r"steps.components.outputs.full == 'true')")
+        self.assertIn('needs: validate', deploy)
+        self.assertIn("if: needs.validate.result == 'success'", deploy)
 
 
 if __name__ == '__main__':

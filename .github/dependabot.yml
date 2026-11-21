@@ -5,10 +5,8 @@
 #   Sunday night Dependabot proposes a single pull request that bumps the pins
 #   it finds, so the pins do not silently age into unpatched versions.
 #
-#   This covers GitHub Actions ONLY. It does not touch the container image
-#   digests (the semgrep container, the compose/Dockerfile image tags), the
-#   `httpx` pin, the shared-actions `ref:`, or the tailscale `version:`
-#   input. Those are updated by hand and called out in .github/CICD.md.
+#   Docker base image proposals also require the normal PR checks and owner merge.
+#   Review generated Compose outputs and pins written as environment defaults separately.
 # ---------------------------------------------------------------------------
 version: 2
 updates:
@@ -31,3 +29,15 @@ updates:
       github-actions:
         patterns:
           - "*"
+  - package-ecosystem: "docker"
+    directories:
+      - "/auth"
+      - "/caddy"
+      - "/hermes"
+      - "/openhands/agent-server"
+      - "/status"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5

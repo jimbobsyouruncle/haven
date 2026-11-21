@@ -20,8 +20,7 @@
 - build
 
 ## .github/workflows/deploy.yml
-- pr-evidence
-- request-validation
+- candidate
 - validate
 - deploy
 
@@ -32,8 +31,6 @@
 - build
 
 ## .github/workflows/sast-checks.yml
-- deployment-request
-- deployment-context
 - shellcheck
 - semgrep
 - validate
@@ -454,12 +451,6 @@
 - resolve_pin()
 - probe_manifest()
 
-## scripts/deploy-impact.py
-- class UntrustedRange(ValueError)
-- def classify(git, base, target)
-- def normalize_pins(content, pins)
-- def main()
-
 ## scripts/deploy-instance.sh
 - die()
 - url_has_userinfo()
@@ -473,22 +464,10 @@
 - def get(path, authenticated)
 - def merged(sha)
 - def require_current_main(sha, *, authenticated)
-- def authorize(sha)
-- def verify_receipt(log, sha, run_id, attempt, public_key)
-- def accepted_baseline()
-- def preflight_impact(sha)
-- def pr_runs(head, branch)
-- def required_pr_jobs(run, names)
-- def checkout_step(job, receipt)
-- def git(*args)
-- def pr_validation(sha, *, emit)
-- def verify_pr_evidence(sha)
+- def application_changed(before, sha)
+- def candidate(sha, before)
 - def evidence_list(data, key)
-- def validation_request(sha)
-- def exact_validation_title(deploy_id, deploy_attempt)
-- def validation_evidence(sha)
-- def validation_gate(sha)
-- def deployment_jobs(run, sha, historical)
+- def historical_deployment_jobs(run, sha)
 - def active_deployment(sha)
 - def authorize_host(sha)
 - def runs(sha)
@@ -550,6 +529,8 @@
   - def retain_recovery(self, recovery)
   - def proxy_container(self)
   - def proxy_compose(self, root, env_file, overlay)
+  - def service_containers(self, compose)
+  - def verify_services(self, sha)
   - def file_digest(self, path, private)
   - def proxy_inputs(self, container)
   - def proxy_data_identity(self, path)
@@ -568,9 +549,7 @@
   - def verify_recovery_render(self, sha)
   - def reverify_recovery(self, sha, journal_hash)
   - def accept(self, sha, evidence, allow_accepted)
-  - def publish_deployment_receipt(self, sha, run)
   - def authorize_deploy(self, sha)
-  - def deployment_impact(self, stage, base, sha, event)
   - def staged_proxy_preflight(self, stage, sha)
   - def deploy(self, sha, *, handoff)
 - def main()
@@ -914,12 +893,16 @@
   - def test_aggregate_gate_fails_closed(self)
   - def test_workflow_contract(self)
   - def test_deployment_selection_always_runs_full(self)
-  - def test_reuse_is_bound_to_push_attempt_and_guards_every_test(self)
 
 ## scripts/test-ci-parity.sh
 - record()
 - run_runner()
 - new_case()
+
+## scripts/test-container-upgrade.sh
+- cleanup()
+- render()
+- start()
 
 ## scripts/test-deploy-build-gate.sh
 - ok()

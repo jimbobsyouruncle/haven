@@ -2,44 +2,38 @@
 
 | File | Purpose |
 |---|---|
-| `workflows/deploy.yml` | Inert until owner activation; then canonical main pushes prove validation coverage and deploy the exact validated merged SHA. Manual exact-main recovery remains available. |
+| `workflows/deploy.yml` | Validates and deploys the exact current main commit from an owner-merged PR. |
 | `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` for PR checks and fresh exact-SHA deployment validation. Holds no secrets. |
 | `workflows/sandbox-image.yml` | Builds and publishes the derived agent-server image to GHCR. Auto-publishes on a push to `main` that changes `openhands/agent-server/Dockerfile` (tag read from the `image_tag` default, guarded against overwriting an existing tag); `workflow_dispatch` is the manual rebuild path. |
 | `workflows/agent-context.yml` | Checks the checked-in `REPO_MAP.md` and `CODE_INDEX.md` are fresh on every pull request. Read-only; never commits. |
-| `workflows/sast-checks.yml` | The pull-request gate and separate exact-SHA validation workflow, with ShellCheck, Semgrep, source validation, CodeQL and the Hermes non-root smoke test. |
-| `dependabot.yml` | Grouped pull request that opens weekly on Sunday at 22:00 America/New_York to bump the SHA-pinned GitHub Actions. GitHub Actions only. |
+| `workflows/sast-checks.yml` | The pull-request gate, with ShellCheck, Semgrep, source validation, CodeQL and the Hermes non-root smoke test. |
+| `dependabot.yml` | Weekly PRs for GitHub Actions and supported Dockerfile image pins. |
 
 ---
 
 ## What this does
 
-Automatic deployment is prepared but **inactive** until canonical cutover acceptance and explicit owner authorization to set the repository variable `HAVEN_AUTOMATIC_DEPLOYMENT` to exactly `enabled`. This PR changes no settings or secrets. After activation, owner merges to main need no additional deployment approval. The existing `production` environment remains in use; any configured protection still applies. Clearing the variable disables future automatic jobs without cancelling a running host transaction.
+The owner merge authorizes deployment. The main push workflow compares the push
+base and merge tree and skips deployment for changes confined to project prose
+under `docs/`, the root README and context maps, and the CI guide. Markdown
+used as runtime input and changes to workflows, installers, or image pins
+follow the ordinary deploy path.
 
-For manual recovery, dispatch **Deploy Control Plane** from `main`, supply the full current main SHA in `deployment_sha`, and select `authorize_production`. Both paths validate that exact SHA before production access. The automatic path additionally requires a canonical repository push and a matching merged-main PR from the GitHub API; fork, forced/deleted push, unmatched SHA and stale main are refused. Provenance is rechecked after the image wait.
+On an application change, one workflow verifies the merged PR and current main,
+runs functional validation in a credential-free job, then deploys over
+Tailscale. Required PR checks supply ShellCheck, Semgrep, CodeQL and applicable
+ARM64 coverage. The main workflow repeats functional validation on the actual
+merge SHA. The bot's owner-merged context-map PRs stay deployment-neutral.
 
-Generated maps still travel through the owner-reviewed draft PR path introduced in #206. The bot never merges. Its token-suppressed branch/PR events are handled by the existing bounded validation dispatches, not by production dispatch. The human owner's eventual main merge generates the ordinary deployment push; map-only main merges are validated/deployed normally after activation. No reconciliation service or bot auto-merge is introduced.
-
-
-The interesting part is how it reaches your Pi. **Your Pi has no public IP address, no open firewall ports, and no port forwarding configured.** The GitHub runner temporarily joins your Tailscale network as a member tagged `tag:ci`, connects over the encrypted mesh, does its work, and disappears when the job ends.
-
-This is strictly better than the conventional approach of exposing SSH to the internet. There is no permanent attack surface, because there is no permanently reachable service.
-
-Installation-root migration must use the transactional deployment path and its automated immutable-image recovery preflight. Do not use an installer invocation to bypass that gate. See [ADR-0006](../docs/haven/adr/0006-installation-root.md) for recovery checks and installed-driver preparation requirements.
-
----
-
-## The deploy jobs
-
-Deployment checks exact-main eligibility and event authorization first. Automatic
-runs also classify cumulative impact using the signed accepted baseline. Only a
-routine range reaches validation on an automatic push. Manual dispatch binds
-assent to the exact main SHA, and the installed bootstrap enforces any root
-approval required for the cumulative range.
+See the [one-time host transition](../deploy/README.md#one-time-policy-transition).
+Clearing `HAVEN_AUTOMATIC_DEPLOYMENT` pauses new candidates. Drain queued and
+running jobs before host maintenance. A newer main commit can supersede a
+waiting candidate, including when the newer change is docs-only. Merge another
+deployable change to pick up the pending application changes.
 
 ### Source validation
 
-The SAST workflow calls `validate.yml` for pull requests and for deployments
-that need fresh validation.
+The PR gate and the deployment workflow call `validate.yml` directly.
 
 | Check | What it catches |
 |---|---|
@@ -67,21 +61,15 @@ Only runs if `validate` passed.
 2. Joins the tailnet as an ephemeral node tagged `tag:ci`
 3. Confirms the Pi is reachable, retrying for ~50 seconds while mesh routes establish
 4. Connects as the dedicated `haven-deploy` account and sends exactly one command string, `deploy <sha>`, through `scripts/deploy-trigger.sh`
-5. The forced command on the Pi starts the system unit `haven-deploy@<sha>.service`, which runs `scripts/deploy-instance.sh <sha>`: it refuses any revision that is not an ancestor of `origin/main`, resets to the exact `github.sha` CI validated, and asserts `HEAD` equals it
-6. `scripts/deploy-instance.sh` hands off to `scripts/deploy-remote.sh <sha>`, which re-asserts `HEAD` and then runs `./install.sh --non-interactive`
-7. `scripts/deploy-remote.sh` polls the health endpoint for up to two minutes and gates on `./doctor.sh --no-cloud`: warnings stay green, failures turn the deploy red
-8. On the canonical unit path, `ExecStartPost` runs the existing root verifier **after** the transaction process releases its locks. It has a 10-minute bound (plus a 30-second kill grace), following the unit's 45-minute install bound, inside the 60-minute SSH step. It requires the matching main deployment run's successful `validate / Validate sources` job and its in-progress deployment job, supersedes older deployment attempts at the same SHA, then checks other returned workflows, exact deployed HEAD, canonical wiring, runtime health, backup policy and durable transaction acceptance. It does not wait for its own deployment job to finish. Non-successful mandatory evidence, API failures, timeout or unresolved transactions fail closed. The existing journal blocks another deployment until acceptance or explicit recovery. Direct operator migration and custom/local deploy paths retain asynchronous verification.
-9. The forced command reads back the unit result and prints the run log into the workflow output, so you can diagnose a failure without SSHing in yourself
-
-**Why the revision is pinned, not `origin/main`.** `validate` tests the commit that
-triggered the run (`GITHUB_SHA`). If the deploy reset to `origin/main`, and `main`
-moved after validation, the Pi would run an unvalidated revision. A manual
-**Run workflow** from a non-main branch would make the validated and deployed
-trees differ outright. The client sends the exact SHA, the host refuses any
-revision that is not an ancestor of `origin/main`, and the tree is reset to that
-SHA with a `HEAD` assert — twice, once in `scripts/deploy-instance.sh` and once
-as `scripts/deploy-remote.sh`'s first action. The ancestor check keeps the target
-on the deployed line of history.
+5. The forced command starts `haven-deploy@<sha>.service`. The root bootstrap
+   requires same-attempt validation and checks the requested SHA against current
+   main in both GitHub and its fetch. It stages the candidate, checks recovery
+   artifacts, and snapshots the previous checkout and controls before switching.
+6. The host verifies the proxy, enabled Compose services, application health and
+   canonical wiring in `ExecStartPost`. The job stays pending until the root
+   verifier accepts the transaction. A failed or incomplete mandatory gate
+   leaves recovery artifacts available and blocks another deployment until
+   recovery. See the [host procedure](../deploy/README.md).
 
 **Why the runner no longer runs a shell script on the Pi.** The deploy account's
 SSH key is pinned to ONE forced command. It cannot run git, a shell, or a second
@@ -92,7 +80,7 @@ is what removes the admin-account login from the deploy path.
 
 ## The pull-request gate
 
-`sast-checks.yml` is the one workflow that runs on every pull request to `main`. It has no `paths:` filter on its triggers, so a docs-only pull request still produces the `Security & SAST gate` check the branch ruleset requires. Source validation selects component steps as described below. The only whole job that is filtered is `hermes-nonroot-smoke`, and only by an in-workflow `changes` job: it is skipped only when the shared component mapping excludes Hermes and full validation. Every other job stays unfiltered; `schedule`/`workflow_dispatch` run full validation. It runs on `pull_request` (opened, synchronize, reopened — not `ready_for_review`, so marking a draft ready re-runs nothing), on manual `workflow_dispatch`, and on a weekly `schedule` (Mondays) for a CodeQL baseline and a Semgrep rule-drift check. There is no push-to-main trigger. A separate run can be triggered by an in-progress deployment run to perform fresh exact-SHA validation.
+`sast-checks.yml` is the one workflow that runs on every pull request to `main`. It has no `paths:` filter on its triggers, so a docs-only pull request still produces the `Security & SAST gate` check the branch ruleset requires. Source validation selects component steps as described below. The only whole job that is filtered is `hermes-nonroot-smoke`, and only by an in-workflow `changes` job: it is skipped only when the shared component mapping excludes Hermes and full validation. Every other job stays unfiltered; `schedule`/`workflow_dispatch` run full validation. It runs on `pull_request` (opened, synchronize, reopened — not `ready_for_review`, so marking a draft ready re-runs nothing), on manual `workflow_dispatch`, and on a weekly `schedule` (Mondays) for a CodeQL baseline and a Semgrep rule-drift check. There is no push-to-main trigger.
 
 | Job | Check | What it catches |
 |---|---|---|
@@ -107,83 +95,6 @@ is what removes the admin-account login from the deploy path.
 **CodeQL advanced setup.** CodeQL previously ran as GitHub "default setup", a dynamic workflow GitHub created and ran on each pull request and each push to `main`. This workflow replaces it with advanced setup: a checked-in `codeql` job, pinned to `github/codeql-action` `33d7b85da1a04171e211befe2c739303b9a4c066` (`v4.39.3`), analysing `python` and `actions` with `build-mode: none`, publishing under the category `/language:<lang>`. Results also appear on the weekly schedule run under **Security → Code scanning**. The `codeql` job is the only job that widens permissions, adding `security-events: write` and `actions: read`; the workflow default is `contents: read`.
 
 **One gate.** Branch protection needs one check, not several. `gate` depends on all six jobs with `if: always()`, so it runs even when an earlier job fails or is cancelled. It prints each result and exits non-zero unless every result is `success`. The single exception is the Hermes non-root smoke, which may be `skipped` — and only because the `changes` job, itself required to succeed, proved the pull request cannot change the image the smoke builds. A failure or a cancellation anywhere, and a skip by any job other than `hermes-nonroot-smoke`, all fail the gate.
-
-### Deployment validation reuse (#219)
-
-PR #222 kept full validation for every deployment. The superseding owner
-decision permits reusing approved scoped PR validation for an equivalent
-tested tree. The historical full-suite baselines are
-[11m40s for #218](https://github.com/jimbobsyouruncle/haven/actions/runs/44108638958/job/134143913958),
-[11m20s on manual dispatch](https://github.com/jimbobsyouruncle/haven/actions/runs/44331207325),
-and [10m59s on an automatic deployment retry](https://github.com/jimbobsyouruncle/haven/actions/runs/44347052427/attempts/2).
-The latter two host-deploy jobs took 2m12s and 2m04s respectively.
-
-On a same-repository PR merge into main, `pr-evidence` checks the exact push
-and merged PR, then reads the latest PR-triggered SAST and agent-context runs
-and their attempt-specific jobs. GitHub's workflow metadata identifies the
-synthetic merge commit used by the SAST workflow. The source and context jobs
-also record the PR number, base and checked-out commit in a successful step.
-The verifier requires the tested tree to match the deployed tree and the
-tested base to be the previous main tip. It recomputes the approved component
-selection with the existing selector. The required SAST aggregate, both
-CodeQL jobs, Semgrep, ShellCheck and agent-context must all succeed. The job
-logs the run attempts, tree, selected components and successful PR source
-steps. The stable `validate / Validate sources` job confirms the proof for
-the current deployment attempt and reports that it ran no fresh source tests.
-
-| Case | Result |
-| --- | --- |
-| Trusted merged PR with exact base, checkout and tree and approved component coverage | Reuse scoped PR validation, including on an authorized dispatch. |
-| `REUSE_MISS` after successful required PR jobs, or an authorized dispatch without reusable PR coverage | The SAST workflow runs fresh source checks, ShellCheck, Semgrep, CodeQL, agent-context and its full-scope Hermes smoke on the exact main SHA. |
-| `AUTHORIZATION_REQUIRED` | Follow the protected rollout procedure for the exact baseline and target. CI success cannot authorize rollout. |
-| Missing, failed, cancelled, ambiguous or unverifiable required checks | Deployment stops. Inspect the named run and job attempt, correct the failure, then rerun all applicable jobs. |
-
-The SAST workflow starts on the deployment workflow's `in_progress` event. It
-checks that the requested SHA equals its own main event SHA and waits for a
-successful fresh-validation request in the triggering deployment attempt.
-When PR evidence is reused, the request is skipped and the scans do not run.
-The validation workflow has no production environment, credentials or tailnet
-connection. CodeQL alone receives `security-events: write`.
-
-The deployment validates the workflow path, repository, SHA, triggering
-deployment run and attempt, and every required job in the validation attempt.
-It checks the same evidence and main SHA again after the image wait. A
-deployment-only rerun cannot inherit evidence from a previous attempt. The
-installed bootstrap still verifies its canonical deployment job and independently
-authorizes the cumulative range before any candidate code runs.
-
-### Manual deployment after a protected policy change
-
-Before merging, compare the PR's changed paths against `PR_WORKFLOWS` and
-`security_paths` in [the deployment provenance verifier](../scripts/deploy-provenance.py).
-For any match, tell the owner in the PR description that automatic deployment
-will reject the merge and link this procedure. Complete the regular PR checks
-and coordinate the manual rollout before another merge advances `main`.
-
-1. After owner merge, verify that the full merge SHA is still the tip of
-   `main`. Obtain explicit production authorization for that exact SHA
-   and record the root-owned baseline/target grant documented in the
-   [deployment runbook](../deploy/README.md#cumulative-deployment-authorization).
-2. In GitHub Actions, open **Deploy Control Plane**, choose **Run workflow**
-   from `main`, enter the full SHA in `deployment_sha`, and select
-   `authorize_production`. This creates a separate manual run.
-3. Verify that the new run is a `workflow_dispatch` for that SHA and that
-   **Validate sources** runs the full suite before the deployment job starts.
-   The existing exact-main checks, image gate, host recovery preflight, and
-   post-deployment verification apply. If main advances, stop and review the
-   new tip before seeking authorization for it.
-
-`AUTHORIZATION_REQUIRED` for a protected cumulative range and
-`PR_VALIDATION_SECURITY_POLICY_CHANGED` are deterministic refusals. Use the
-manual procedure above for an approved rollout. A map refresh with only
-manually dispatched checks also lacks the PR-triggered evidence for automatic
-deployment.
-
-For acceptance, record the full merged SHA, automatic run URL and attempt,
-the reused PR attempts, source gate timings and total deploy duration. Aim for
-under two minutes for evidence and compare against the recorded full-suite
-baseline. Separate queue and image-wait time from validation savings. Keep
-#219 open until a fresh automatic deployment proves the savings.
 
 ### Component validation policy
 
@@ -270,12 +181,12 @@ the existing Monday schedule also runs it. Neither action deploys.
 
 `dependabot.yml` keeps the SHA-pinned actions in the workflows current. It opens one grouped pull request weekly on Sunday at 22:00 America/New_York (all actions in a single group, commit prefix `ci`, at most 5 open at a time) that bumps every pin it finds.
 
-Dependabot covers **GitHub Actions only**. These pins still move by hand and are easy to forget:
+Dependabot also proposes supported Dockerfile base image updates. These pins still move by hand:
 
 | Pin | Where | Why Dependabot does not cover it |
 |---|---|---|
 | `semgrep/semgrep:1.179.0@sha256:93963d…` | `workflows/sast-checks.yml` | Container image tag and digest, not an action |
-| Compose / Dockerfile image tags | `docker-compose.yml`, `hermes/Dockerfile` | Container images, not actions |
+| Compose template defaults | `docker-compose.yml.tmpl` and overlays | Environment defaults and generated manifests need coordinated edits |
 | `httpx==0.28.1` | `workflows/validate.yml` | pip pin inside a workflow step |
 | shared-actions `ref:` | `workflows/agent-context.yml` | A non-action git ref outside Dependabot's scope |
 | Tailscale `version: '1.104.1'` | `workflows/deploy.yml` | An action input, not a versioned dependency |
@@ -320,7 +231,7 @@ It becomes fully active when the owner runs **card F**, `scripts/bootstrap.sh`,
 which installs the unit, the polkit rule, the scripts and the `authorized_keys`
 line on the host and creates the account as a system account with `/bin/sh` and
 a locked password (sshd runs the forced command through the login shell). Once
-that bootstrap has run, an explicitly authorized manual dispatch takes this path. The bootstrap
+bootstrap and the production environment are ready, owner merges take this path. The bootstrap
 installs those files once; `install.sh` re-applies the unit and the polkit rule
 on every deploy, so a change to either file reaches the host without a by-hand
 copy (effective from the next instantiation). See
@@ -404,9 +315,13 @@ Admin console → **Access controls**. Without this, the runner joins the networ
 
 Replace `100.x.x.x` with your Pi's address from `tailscale ip -4`. Keep this rule as narrow as it is — the CI runner needs exactly one port on exactly one host.
 
-### 4. Add the repository secrets
+### 4. Set up the production environment
 
-GitHub repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
+In GitHub **Settings → Environments → production**, allow only the `main`
+branch and set the credentials below as environment secrets. Keep production
+credentials out of repository-wide and organization-wide Actions secrets
+available to this repository. The workflow needs no required environment
+reviewer after the one-time transition.
 
 | Secret | Value | Where to get it |
 |---|---|---|
@@ -425,22 +340,11 @@ GitHub repo → **Settings** → **Secrets and variables** → **Actions** → *
 > remote path is resolved on the host by `scripts/deploy-instance.sh`. The owner
 > may delete both secrets.
 
-### 5. Optional — require approval before deploying
+### 5. Enable the installed deployment path
 
-The workflow declares `environment: production`, but that name alone does not enforce reviewer approval. The inspected environment had only a branch policy. The tracked workflow requires either separately activated automatic canonical-main deployment or manual dispatch with explicit production assent for the exact main SHA before production access. Automated host recovery preflight is also mandatory. Configuring required reviewers is a separate owner settings action; this PR does not change settings.
-
-Worth enabling if the Pi is doing anything you depend on.
-
-### 6. Test it
-
-```bash
-git commit --allow-empty -m "test: verify deploy pipeline"
-git push
-```
-
-Watch the **Actions** tab. First run takes 2–4 minutes.
-
----
+After the host is ready, set the repository variable
+`HAVEN_AUTOMATIC_DEPLOYMENT=enabled`. Review the next application merge in
+Actions and confirm the exact SHA reached an accepted host transaction.
 
 ## Troubleshooting
 
@@ -451,22 +355,13 @@ Watch the **Actions** tab. First run takes 2–4 minutes.
 | `RUNPOD_API_KEY missing and --non-interactive was requested` | `.env` does not exist on the Pi yet | Run `./install.sh` interactively on the Pi once first |
 | `Open WebUI failed its health check` | Container did not start | The workflow output includes the last 50 log lines — read those |
 | OAuth client errors | Wrong scope or missing tag | Client needs `auth_keys` write scope and `tag:ci` |
-| Automatic deploy job skipped | Activation variable absent or not `enabled` | Keep inactive until canonical acceptance and explicit owner activation; manual exact-main dispatch remains available |
+| Automatic deploy job skipped | Activation variable absent or not `enabled` | Check the one-time transition and the activation variable |
 
 ---
 
-## Manual deploy
-
-The workflow is a convenience, not a dependency. This does the same thing:
-
-```bash
-ssh pi@<pi-tailscale-ip>
-cd hybrid-ai
-git pull
-./install.sh
-```
-
----
+For a transient pre-activation failure while the SHA is still current main,
+rerun **all jobs** from the original push run. For a failed host transaction,
+follow the [host rollback procedure](../deploy/README.md#rollback) first.
 
 ## Security notes
 

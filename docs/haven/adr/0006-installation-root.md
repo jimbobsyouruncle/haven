@@ -5,10 +5,11 @@ reopens retained legacy identities and manual-only deployment as new owner scope
 The decision and evidence below remain the historical #187 contract; its
 transaction, integrity, recovery and security controls remain required.
 
-Status: accepted owner decision for implementation. Production deployment remains
-an explicit owner action; source changes and CI do not establish runtime migration.
+Status: accepted. The [current decision below](#current-decision-2026-11-21)
+replaces the historical production dispatch policy. The installation and recovery
+controls remain in effect.
 
-## Decision
+## Original installation-root decision
 
 Haven is a single-owner, self-hosted home installation. Use automated safety
 checks and recoverable transactions rather than recurring operator paperwork.
@@ -177,82 +178,30 @@ security, Caddy and Compose checks. Worker contracts are unchanged; no fresh liv
 RunPod test is required. Production acceptance and issue closure require actual
 sanitized runtime evidence and the owner's separate closure decision.
 
-## Owner-approved direction (2026-11-21): simplify deployment policy
+## Current decision (2026-11-21)
 
-Status: **approved architectural direction; implementation not yet verified or deployed**.
-This section supersedes the historical manual-only deployment policy in this
-ADR for routine merges. It does not waive existing production safeguards or
-constitute authorization to deploy a particular revision. The detailed
-implementation and removal of legacy paths require a reviewed change.
+The owner's merge to protected main authorizes production deployment of Haven,
+a personal, backed-up POC. This supersedes the historical dispatch-only and
+protected-change approval policies above and in ADR-0007. Workflow, bootstrap,
+configuration and pinned image changes use the same PR checks and merge path.
+Project documentation and generated context maps do not redeploy the application.
 
-Haven uses **automatic deployment by default** for owner-authorized merges to
-protected main that affect applications, container image pins, or ordinary
-runtime configuration. Documentation-only changes that do not alter deployable
-artifacts or operational configuration do not need a production deployment.
-Changes to deployment authorization, security policy, privileged execution,
-trusted bootstrap, or deployment infrastructure require **separate explicit
-owner authorization** before production activation. Classify protected changes
-using a small, auditable, fail-closed set of paths and semantic exceptions;
-ambiguous classifications must be reviewed, not silently treated as routine.
-A protected change may merge after required PR checks but must not auto-deploy.
+The deployment workflow requires a merged PR, checks exact current main and
+runs functional validation before the production environment job. Required PR
+checks retain SAST, source and applicable ARM64 coverage. The host verifies
+the same active run and attempt, independently checks main, stages the pinned
+checkout, and requires runtime health before accepting. The restricted SSH
+command and credentials, network and persona isolation, deployment locks,
+transaction journals, previous checkout, recovery images and backups stay in
+place. The local verdict supplies operational evidence. Cumulative authorization,
+signed deployment receipts and cross-workflow validation are retired.
 
-Both automatic and explicitly authorized deployments must converge on the
-**same canonical deployment transaction**. Preserve the exact validated commit,
-trusted main provenance, SSH forced-command and systemd restrictions, Tailscale
-transport, least privilege, secrets boundaries, deployment locks, durable
-journal, previous known-good checkout and proxy recovery artifacts, mandatory
-health verification, and safe rollback/fail-closed behavior. Manual authorization
-is an additional gate, not a second installer or alternate recovery path.
-Do not interpret a successful merge or scheduled verification as production
-acceptance. The recorded deployed SHA and runtime checks determine acceptance.
+The owner accepts that a reviewed merge can change privileged deployment code
+and that exact-main deployment can be superseded while waiting. Source CI and
+local health checks cover different failure modes. Image and mount compatibility,
+schema changes and data recovery still need review when applicable. The recovery
+archive protects Caddy. Other service image IDs depend on local retention or a
+retrievable immutable pin, and an image rollback cannot reverse a data migration.
 
-Reduce redundant evidence queries, duplicate SHA assertions, transitional
-bootstrap handoffs and operator preparation steps **only where equivalence of
-security and recovery behavior is demonstrated by tests**. The installed Jarvis
-bootstrap remains authoritative during transition; do not replace it or remove
-legacy compatibility paths before a reversible cutover is qualified. Preserve
-the approved #249 proxy recovery and #252 trusted handoff boundaries until a
-reviewed implementation provides equivalent guarantees.
-
-### Cumulative classification
-
-The installed classifier starts from the private accepted journal's SHA,
-which must match the active checkout and appear on the target's first-parent
-main history. It examines every intervening commit and merge transition, so
-subsequent documentation or routine commits cannot clear a protected change.
-Markdown additions and edits in recognized documentation paths are docs-only.
-Version changes to recognized application images are routine when all other
-configuration bytes match. Unknown changes, deletions, mode changes and
-changes to the classifier itself are protected.
-
-The trusted bootstrap uses the installed classifier before checking out
-candidate files or running candidate preflight. A protected deployment
-requires a manual deployment run and owner approval for the exact accepted
-baseline and target SHA. Existing exact-main, validation, transaction and
-acceptance checks still apply.
-
-Deployment outcomes must distinguish protected-policy refusal, provenance or
-preparation failure, activation failure, health verification failure, and
-recovery failure. Intentional policy refusals should be clearly labeled as
-requiring authorization rather than presented as unexplained runtime crashes.
-Keep `doctor.sh` focused on operational health; it is not a security gate.
-Reuse commit-specific PR validation where trustworthy, while independently
-checking deployment-time conditions that PR CI cannot establish.
-
-For #257, an authorized deployment with a reuse miss requests fresh exact-SHA
-validation in the existing Security & SAST workflow, outside the production
-environment. The workflow gates its scans on the requesting deployment run and
-attempt and on exact main. It uses no production credentials or tailnet access.
-Only the dedicated CodeQL job can write security events. Deployment reads the
-completed validation attempt and its required jobs and rechecks that evidence
-after the image wait. Invalid, failed or ambiguous evidence blocks deployment.
-The installed bootstrap remains the authority for cumulative protected changes
-and their exact baseline and target approval.
-
-Implementation should be incremental and independently testable, with an
-explicit cutover and rollback plan. No new orchestrator or persistent control
-plane is justified solely by this simplification. The RunPod worker interface
-is unchanged unless a concrete compatibility dependency is found. Production
-acceptance requires evidence for routine auto-deploy, protected manual-deploy,
-documentation-only no-op, failed candidate containment/recovery, and clear
-operator diagnostics.
+One explicitly authorized bootstrap maintenance window bridges the old policy.
+See the [transition and rollback procedure](../../../deploy/README.md#one-time-policy-transition).
