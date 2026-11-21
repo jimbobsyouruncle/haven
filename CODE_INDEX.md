@@ -46,7 +46,7 @@
 - validate
 
 ## auth/Dockerfile
-- FROM python:3.12.16-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+- FROM python
 
 ## auth/app.py
 - def _positive_int(raw, default)
@@ -172,9 +172,9 @@
 - restore_home_dir()
 
 ## caddy/Dockerfile
-- FROM caddy@sha256:646fee578e680989ca5c7fd1ce6f1de574d19fd71ef2221810cc0510a9f40c86 AS builder
+- FROM caddy AS builder
 - stage: builder
-- FROM caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+- FROM caddy
 
 ## collect-diagnostics.sh
 - redact()
@@ -244,7 +244,7 @@
 - resolv_skip()
 
 ## hermes/Dockerfile
-- FROM python:3.11.18-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
+- FROM python
 
 ## hermes/agent-hooks/secret-guard.py
 - def flatten(value, out)
@@ -283,7 +283,7 @@
 - run_backup()
 
 ## openhands/agent-server/Dockerfile
-- FROM docker.openhands.dev/openhands/agent-server:1.37.1-python
+- FROM docker.openhands.dev/openhands/agent-server
 
 ## openhands/docker-compose.openhands.yml
 - openhands
@@ -485,6 +485,9 @@
 
 ## scripts/deploy-verify.sh
 - (no symbols)
+
+## scripts/generate-agent-context.py
+- def main()
 
 ## scripts/install-root.py
 - class Refusal(RuntimeError)
@@ -1355,7 +1358,7 @@
 - step_remove_data()
 
 ## status/Dockerfile
-- FROM python:3.12.16-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+- FROM python
 
 ## status/app.py
 - def base_url(sub)
