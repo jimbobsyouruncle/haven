@@ -706,7 +706,8 @@ class PRValidation(unittest.TestCase):
             'Assert no secrets are tracked'))
         self.runs[0]['referenced_workflows'] = [
             dict(ref='refs/pull/15/merge', sha=self.tested,
-                 path=f'{m.REPO}/.github/workflows/validate.yml@{self.tested}')]
+                 path=f'{m.REPO}/.github/workflows/{workflow}@{self.tested}')
+            for workflow in ('agent-context.yml', 'validate.yml')]
         self.list_path = f'/actions/runs?head_sha={self.head}&per_page=100'
         self.api[self.list_path] = dict(workflow_runs=self.runs, total_count=len(self.runs))
         self.paths = b'auth/app.py\0'
@@ -784,6 +785,38 @@ class PRValidation(unittest.TestCase):
                     self.verify()
                 finally:
                     obj[field] = old
+
+    def test_reusable_workflow_reference_set_must_match(self):
+        context, source = self.runs[0]['referenced_workflows']
+        self.runs[0]['referenced_workflows'] = [source, context]
+        self.assertIn('Reusing PR #15', self.verify())
+        self.output.unlink()
+        for refs in (
+            None,
+            [source],
+            [context, source, source],
+            [source, source],
+            [source, dict(context, path=context['path'].replace(m.REPO, 'other/haven'))],
+            [source, dict(context, path=context['path'].replace('agent-context.yml', 'other.yml'))],
+            [source, dict(context, sha='f' * 40, path=context['path'].replace(self.tested, 'f' * 40))],
+            [source, dict(context, path=context['path'].replace(self.tested, 'f' * 40))],
+            [source, dict(context, ref='refs/heads/main')],
+        ):
+            self.runs[0]['referenced_workflows'] = refs
+            with self.subTest(refs=refs), self.assertRaisesRegex(ValueError, 'WORKFLOW_REFERENCE'):
+                self.verify()
+            self.assertFalse(self.output.exists())
+
+    def test_manual_policy_change_requires_trusted_pr_before_fresh_validation(self):
+        self.env['GITHUB_EVENT_NAME'] = 'workflow_dispatch'
+        self.event['inputs'] = dict(authorize_production='true', deployment_sha=SHA)
+        self.paths = b'.github/workflows/agent-context.yml\0'
+        self.assertIn('REUSE_MISS: explicitly dispatched target changes validation policy', self.verify())
+        self.assertFalse(self.output.exists())
+        self.jobs['CodeQL (actions)']['conclusion'] = 'failure'
+        with self.assertRaisesRegex(ValueError, 'REQUIRED_JOB_UNSUCCESSFUL'):
+            self.verify()
+        self.assertFalse(self.output.exists())
 
     def test_stale_tested_base_or_tree_requires_fresh_validation(self):
         old_base = 'f' * 40

@@ -311,14 +311,21 @@ def pr_validation(sha, *, emit=True):
     runs = pr_runs(head, pr['head']['ref'])
     sast_path, context_path = PR_WORKFLOWS
     sast, context = runs[sast_path], runs[context_path]
-    refs = sast['referenced_workflows']
-    require(isinstance(refs, list) and len(refs) == 1, 'PR_VALIDATION_WORKFLOW_REFERENCE')
-    ref = refs[0]
-    tested = ref['sha']
-    require(re.fullmatch('[0-9a-f]{40}', tested)
-            and ref['ref'] == f'refs/pull/{number}/merge'
-            and ref['path'] == f'{REPO}/.github/workflows/validate.yml@{tested}',
-            'PR_VALIDATION_WORKFLOW_REFERENCE')
+    # GitHub reports both reusable calls even when deployment-context is skipped.
+    refs = sast.get('referenced_workflows')
+    reference_error = 'PR_VALIDATION_WORKFLOW_REFERENCE'
+    reusable_paths = {'.github/workflows/validate.yml', context_path}
+    require(isinstance(refs, list) and len(refs) == len(reusable_paths)
+            and all(isinstance(ref, dict) for ref in refs), reference_error)
+    tested = refs[0].get('sha')
+    require(isinstance(tested, str) and re.fullmatch('[0-9a-f]{40}', tested), reference_error)
+    expected_paths = {f'{REPO}/{path}@{tested}' for path in reusable_paths}
+    for ref in refs:
+        path = ref.get('path')
+        require(isinstance(path, str) and path in expected_paths
+                and ref.get('sha') == tested
+                and ref.get('ref') == f'refs/pull/{number}/merge', reference_error)
+        expected_paths.remove(path)
     commit = get('/git/commits/' + tested, authenticated=True)
     parents = [p['sha'] for p in commit['parents']]
     require(commit['sha'] == tested and len(parents) == 2 and parents[1] == head
