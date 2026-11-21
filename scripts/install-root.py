@@ -1621,13 +1621,43 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
         if not policy.is_file():
             raise Refusal('PROVENANCE_INVALID: installed deployment policy is unavailable')
         try:
-            self.command([sys.executable, '-IB', str(policy), 'authorize-host', sha], timeout=150)
+            event = self.command([sys.executable, '-IB', str(policy), 'authorize-host', sha], timeout=150)
         except subprocess.SubprocessError as error:
             stderr = getattr(error, 'stderr', None)
             code = stderr.strip() if isinstance(stderr, str) else ''
             if not re.fullmatch(r'PROVENANCE_[A-Z_]+', code):
                 code = 'PROVENANCE_INVALID'
             raise Refusal(code + ': installed bootstrap could not authorize the deployment') from None
+
+        if event not in ('push', 'workflow_dispatch'):
+            raise Refusal('PROVENANCE_INVALID: installed policy returned no trusted run event')
+        return event
+
+    def deployment_impact(self, stage, base, sha, event):
+        policy = self.app / 'scripts/deploy-impact.py'
+        self.trusted(policy)
+        if not policy.is_file():
+            raise Refusal('AUTHORIZATION_REQUIRED: installed impact policy is unavailable')
+        try:
+            impact = self.command([sys.executable, '-IB', str(policy), str(stage), base, sha],
+                                  timeout=120)
+        except (OSError, subprocess.SubprocessError):
+            raise Refusal('AUTHORIZATION_REQUIRED: cumulative deployment range is unavailable') from None
+        if impact == 'routine':
+            return True
+        if impact == 'docs-only':
+            return False
+        grant = self.state / 'deployment-authorization.json'
+        self.trusted(grant)
+        if (impact == 'protected' and event == 'workflow_dispatch' and grant.is_file()
+                and stat.S_IMODE(grant.stat().st_mode) == 0o600):
+            try:
+                if json.loads(grant.read_text()) == {'baseline_sha': base, 'target_sha': sha}:
+                    return True
+            except (OSError, ValueError):
+                pass
+        raise Refusal('AUTHORIZATION_REQUIRED: record explicit root approval for this baseline '
+                      'and target, then dispatch the exact target SHA manually')
 
     def staged_proxy_preflight(self, stage, sha):
         try:
@@ -1659,8 +1689,7 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                           'review the protected preflight log and deployment runbook') from None
 
     def deploy(self, sha, *, handoff=False):
-        if handoff:
-            self.authorize_deploy(sha)
+        event = self.authorize_deploy(sha) if handoff else None
         if self.identity_cutover:
             self.state = self.path('/var/lib/haven-install-root')
             self.journal = self.state / 'current.json'
@@ -1685,6 +1714,12 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
         if migration:
             proxy_recovery = self.proxy_preflight(source)
         sha_before = self.git(source, 'rev-parse', 'HEAD')
+        if handoff and (not self.journal.is_file()
+                        or stat.S_IMODE(self.journal.stat().st_mode) != 0o600 or not journal
+                        or journal.get('phase') != 'accepted'
+                        or journal.get('sha') != sha_before
+                        or not re.fullmatch(r'[0-9a-f]{40}', sha_before)):
+            raise Refusal('AUTHORIZATION_REQUIRED: current checkout lacks a trusted accepted journal')
         token = uuid.uuid4().hex
         stage = self.app.parent / ('.haven-stage-' + token)
         previous = self.app.parent / ('.haven-previous-' + token)
@@ -1700,6 +1735,8 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
             self.git(stage, 'merge-base', '--is-ancestor', sha, 'origin/main')
             if handoff and self.git(stage, 'rev-parse', 'origin/main') != sha:
                 raise Refusal('PROVENANCE_MAIN_SHA: main changed between authorization and staging')
+            if handoff and not self.deployment_impact(stage, sha_before, sha, event):
+                raise Refusal('DOCS_ONLY: no deployment transaction was started')
             self.git(stage, 'checkout', '--quiet', '--detach', sha)
             if self.git(stage, 'rev-parse', 'HEAD') != sha:
                 raise Refusal('staged checkout does not match requested SHA')

@@ -356,10 +356,11 @@ def active_deployment(sha):
 
 
 def authorize_host(sha):
-    active_deployment(sha)
+    _, _, current = active_deployment(sha)
     # Resolve main after checking the run and attempt. The bootstrap checks
     # it again against the ref obtained by the subsequent Git fetch.
     require_current_main(sha)
+    print(current['event'])
 
 
 def runs(sha):

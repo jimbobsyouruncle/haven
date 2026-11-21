@@ -49,6 +49,37 @@ occurs. Index and configuration digests are distinct identities, not an equality
 test. Missing/incompatible/corrupt/unexportable images refuse before activation.
 There are no per-deployment approval/evidence files or expiration window.
 
+### Cumulative deployment authorization
+
+The protected journal must identify the active checkout as `accepted`.
+For `AUTHORIZATION_REQUIRED`, inspect the accepted-to-target Git range. A
+missing, mismatched, or rolled-back journal requires owner reconciliation
+backed by acceptance evidence. Keep all journals and recovery artifacts.
+A previously approved target cannot authorize a later target or a different
+baseline.
+
+On a host with cumulative enforcement installed, the owner records approval
+in the root-owned mode-0600 file
+`/var/lib/haven-install-root/deployment-authorization.json`. Write the JSON
+atomically under both deployment locks with exactly the keys
+`baseline_sha` and `target_sha`, each a full lowercase commit SHA. Dispatch
+the existing production workflow manually against that exact target. An
+automatic push cannot use this file. Remove the approval after acceptance
+or cancellation.
+
+Before deploying the first cumulative-policy revision, the owner must
+separately authorize cutover. Disable automatic deployment before the
+protected merge and confirm there is no in-flight or queued production
+deploy. Under both deployment locks, verify the installed HEAD and
+accepted journal, preserve the existing bootstrap files, and install the
+reviewed `scripts/install-root.py`, `scripts/deploy-provenance.py`, and
+`scripts/deploy-impact.py` together from the same independently verified
+revision. Keep automatic deployment disabled until the host and early
+workflow gates have passed cutover verification. If cutover fails, keep
+automatic deployment disabled, preserve the journal and recovery artifacts,
+and restore the saved bootstrap files together only after confirming no
+transaction is active or unresolved.
+
 ### #249 cutover and verification
 
 The canonical driver checkpoints the running image regardless of

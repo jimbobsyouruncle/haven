@@ -371,7 +371,9 @@ jobs:
 
       - name: Deployment provenance tests
         if: steps.components.outputs.full == 'true'
-        run: bash scripts/test-deploy-provenance.sh
+        run: |
+          bash scripts/test-deploy-provenance.sh
+          python3 -B scripts/test-deploy-impact.py
 
       - name: Headless deploy forced-command tests
         if: steps.components.outputs.full == 'true'
