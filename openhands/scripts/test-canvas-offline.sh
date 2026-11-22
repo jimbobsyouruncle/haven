@@ -52,28 +52,30 @@ function get(path, key) {
   });
 }
 
-let browser;
+let asset;
 const deadline = Date.now() + 120_000;
-while (Date.now() < deadline) {
-  try {
-    const response = await get('/canvas');
-    if (response.ok) {
-      browser = response;
-      break;
+while (!asset && Date.now() < deadline) {
+  for (const path of ['/canvas/', '/canvas']) {
+    try {
+      const response = await get(path);
+      const html = await response.text();
+      if (!response.ok || !response.headers.get('content-type')?.includes('text/html')) {
+        continue;
+      }
+      // The production HTML minifier can omit quotes around asset URLs.
+      const script = html.match(/<script\b[^>]*?\ssrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
+      if (script) {
+        asset = new URL(script[1] ?? script[2] ?? script[3], response.url);
+        break;
+      }
+    } catch {
+      // Ingress may still be starting or canonicalizing this path.
     }
-    await response.body?.cancel();
-  } catch {
-    // Ingress may still be starting.
   }
-  await delay(1000);
+  if (!asset) await delay(1000);
 }
-assert.ok(browser, 'Canvas ingress did not become ready');
-assert.match(browser.headers.get('content-type') ?? '', /text\/html/);
-const html = await browser.text();
-const script = html.match(/<script\b[^>]*\bsrc="([^"]+)"/)?.[1];
-assert.ok(script, 'Canvas page must reference a client script');
-const asset = new URL(script, browser.url);
-assert.equal(asset.origin, new URL(browser.url).origin);
+assert.ok(asset, 'Canvas ingress must serve HTML with a client script');
+assert.equal(asset.origin, new URL('http://localhost:8000').origin);
 const client = await get(asset.pathname + asset.search);
 assert.ok(client.ok, 'Canvas client script must load through ingress');
 assert.match(client.headers.get('content-type') ?? '', /javascript/);
