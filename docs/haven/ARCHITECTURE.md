@@ -229,15 +229,32 @@ The owner approved isolated ARM64 qualification of Open WebUI v0.13.4, including
 
 Use synthetic state and an isolated network with explicitly authorized test services. Give the candidate only its own test data and credentials. Exercise the new integrations with authorized resources and verify denial of other users' private chats and other personas' files, credentials and services. Preserve the existing RunPod Function and test approved routing with a synthetic endpoint. Compare effective image-backend permissions before and after migration, including application restart. Reject any implicit grant created by migration. Verify login, chat retention and restoration with the previous pinned image and a consistent pre-upgrade backup.
 
-Merged [PR #247](https://github.com/jimbobsyouruncle/haven/pull/247) qualified the pinned v0.13.4 candidate on native ARM64 at head `0faf59d22c54f460036facf4524d091746afe85e`. The synthetic exercise covered login, private chat retention and cross-user denial, RunPod Function persistence and registration, Tether handshake, admin-only external tool verification, migrated image-backend permissions, and restoration from pre-upgrade state. The shared Compose default remains v0.11.4. Production enablement requires a separate owner decision based on verified isolation and access controls. Keep the upgrade independently reversible from Ollama and the status service.
+Merged [PR #247](https://github.com/jimbobsyouruncle/haven/pull/247) qualified the pinned v0.13.4 candidate on native ARM64 at head `0faf59d22c54f460036facf4524d091746afe85e`. The synthetic exercise covered login, private chat retention and cross-user denial, RunPod Function persistence and registration, Tether handshake, admin-only external tool verification, migrated image-backend permissions, and restoration from pre-upgrade state.
 
-### Ollama and status image qualification
+The owner approved retaining the shared v0.11.4 tag as a compatibility and security hold. Any v0.13.4 production activation requires separate owner approval and evidence of [ADR-0008](adr/0008-persona-runtime-isolation.md) isolation, approved inference routing, preservation of user privacy, credentials, authorization and site-specific image-backend grants, and a tested recovery path. This activation dependency applies to the candidate rollout. Keep the upgrade independently reversible from Ollama and the status service. See the [migration access review and rollback procedure](../TROUBLESHOOTING.md).
+
+### Base and helper image dispositions
 
 Merged [PR #268](https://github.com/jimbobsyouruncle/haven/pull/268) selected the immutable Ollama 0.40.17 index in both Compose sources. The native ARM64 job at head `f5c8a92d448bbdaf74792144fde2c1995a0135cb` exercised API compatibility and a synthetic model-store upgrade and rollback with the same volume.
 
 Merged [PR #244](https://github.com/jimbobsyouruncle/haven/pull/244) selected `haven-status:3.12.16-zlib1`, built from the digest-pinned Python 3.12.16 slim base. Its ARM64 job at head `8691f2747f1d15de548448c7518b2ce54cf907bd` verified the installed `zlib1g` floor of `1:1.3.dfsg+really1.3.1-1+deb13u1` and mounted-app health under resource limits. Retain this pin per the [status hold in #236](https://github.com/jimbobsyouruncle/haven/issues/236#issuecomment-7070733697) until a beneficial same-series replacement is qualified. See the [status recovery procedure](../../status/README.md#why-standard-library-only).
 
-[Issue #238](https://github.com/jimbobsyouruncle/haven/issues/238) owns deployed image identity, target-host health and resource verification, and fleet recovery evidence.
+The source dispositions below cover the seven running services reported in the [#234 inventory](https://github.com/jimbobsyouruncle/haven/issues/234), plus the derived sandbox and the planned Canvas replacement.
+
+| Component | Disposition |
+| --- | --- |
+| Ollama | Upgraded in source to the digest-pinned 0.40.17 index. Recovery retains the prior immutable image and existing model store. [PR #268](https://github.com/jimbobsyouruncle/haven/pull/268) |
+| Status helper | Upgraded in source from the upstream slim reference to the Haven build with the patched zlib floor. Retain the qualified Python base digest. [PR #244](https://github.com/jimbobsyouruncle/haven/pull/244) |
+| Open WebUI | Shared v0.11.4 tag retained by owner decision. The digest-pinned ARM64 v0.13.4 candidate is qualified for synthetic use and awaits production activation evidence. [PR #247](https://github.com/jimbobsyouruncle/haven/pull/247) |
+| Auth | Python 3.12.16 Alpine base refreshed and digest-pinned. Retain bcrypt 4.2.1 pending long-password and malformed-hash compatibility qualification. [PR #240](https://github.com/jimbobsyouruncle/haven/pull/240) |
+| Caddy | Upgraded to 2.11.9 with digest-pinned builder and runtime inputs, including the stock runtime path. The custom build retains the qualified Cloudflare v0.2.4 and RFC2136 v1.0.0 plugins and has verified recovery-artifact evidence under #237. [PR #243](https://github.com/jimbobsyouruncle/haven/pull/243) |
+| Hermes Agent and WebUI | Python 3.11.18 slim base refreshed and digest-pinned. Retain the qualified matched Agent and WebUI commits. Hold GitHub CLI at 2.103.0 pending release checksums for both architectures. [PR #241](https://github.com/jimbobsyouruncle/haven/pull/241) |
+| Legacy OpenHands controller and sandbox | Retain controller 1.10 and the derived 1.37.1-python-hybrid.3 sandbox with its 1.37.1-python upstream base during the transition. The compatible replacement and legacy-state recovery remain with [#235](https://github.com/jimbobsyouruncle/haven/issues/235). |
+| Agent Canvas and bundled backend | Inventory candidate for matched-bundle, isolation, routing, and recovery qualification under [#235](https://github.com/jimbobsyouruncle/haven/issues/235). |
+
+[Issue #237](https://github.com/jimbobsyouruncle/haven/issues/237) accepted the scoped Auth, Caddy, and Hermes work. The RunPod worker was reviewed at the interface boundary in #234 and is outside the image refresh.
+
+The [Ollama owner-merge rollout](https://github.com/jimbobsyouruncle/haven/actions/runs/45009234627) succeeded. Exact installed image IDs and digests, target-host `doctor.sh` and functional checks, Pi resource measurements, and fleet recovery receipts remain with [#238](https://github.com/jimbobsyouruncle/haven/issues/238).
 
 ## 11. Implementation phases and gates
 
