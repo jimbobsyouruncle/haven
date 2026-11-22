@@ -25,7 +25,8 @@ container=$(podman --remote=false run --detach --rm --pull=never \
   --cap-drop ALL --security-opt no-new-privileges --image-volume=ignore \
   --log-driver=none --memory=3g --cpus=2.5 --pids-limit=512 \
   --env "LOCAL_BACKEND_API_KEY=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
-  "$image" --public)
+  --env PUBLIC_MODE_PORT=8001 --env AGENT_SERVER_PORT=18000 \
+  "$image")
 trap 'podman --remote=false stop --time 5 "$container" >/dev/null 2>&1 || true' EXIT
 
 podman --remote=false exec -i "$container" node --input-type=module - <<'JS'
@@ -44,8 +45,8 @@ for (const path of ['/var/run/docker.sock', '/run/podman/podman.sock']) {
   assert.ok(!existsSync(path), 'Container engine socket must be absent');
 }
 
-function get(path, key, accept = 'application/json') {
-  return fetch(new URL(path, 'http://localhost:8000'), {
+function get(path, key, accept = 'application/json', port = 8000) {
+  return fetch(new URL(path, `http://localhost:${port}`), {
     headers: key === undefined ? { accept } : { accept, 'X-Session-API-Key': key },
     redirect: 'error',
     signal: AbortSignal.timeout(3000),
@@ -103,32 +104,47 @@ assert.ok(existsSync(repo + '/task/.git'), 'Git worktree must be available insid
 console.log('Canvas HTML, JavaScript asset, and synthetic worktree passed.');
 
 const conversations = '/api/conversations/search';
-const backendDeadline = Date.now() + 60_000;
-let backendStatus = 'unreachable';
-let backendReady = false;
-while (Date.now() < backendDeadline) {
-  try {
-    const response = await get(conversations, apiKey);
-    const contentType = response.headers.get('content-type');
-    backendStatus = `${response.status} ${contentType}`;
-    if (response.ok && contentType?.includes('application/json')) {
-      await response.json();
-      backendReady = true;
-      break;
+const listeners = [
+  ['bundled ingress', 8000],
+  ['auth-required listener', 8001],
+  ['direct Agent Server', 18000],
+];
+const outcomes = await Promise.allSettled(listeners.map(async ([name, port]) => {
+  const backendDeadline = Date.now() + 60_000;
+  let backendStatus = 'unreachable';
+  let backendReady = false;
+  while (Date.now() < backendDeadline) {
+    try {
+      const response = await get(conversations, apiKey, 'application/json', port);
+      const contentType = response.headers.get('content-type');
+      backendStatus = `${response.status} ${contentType}`;
+      if (response.ok && contentType?.includes('application/json')) {
+        await response.json();
+        backendReady = true;
+        break;
+      }
+      await response.body?.cancel();
+    } catch {
+      // Backend startup can lag behind the static UI.
     }
-    await response.body?.cancel();
-  } catch {
-    // Backend startup can lag behind the static UI.
+    await delay(1000);
   }
-  await delay(1000);
-}
-assert.ok(backendReady, `Authenticated Agent Server did not become ready (${backendStatus})`);
+  assert.ok(backendReady, `${name}: authenticated backend did not become ready (${backendStatus})`);
 
-for (const [label, key] of [['missing', undefined], ['invalid', 'invalid-smoke-key']]) {
-  const denied = await get(conversations, key);
-  assert.ok([401, 403].includes(denied.status),
-    `Backend must reject a ${label} session key (HTTP ${denied.status})`);
-  await denied.body?.cancel();
+  const denials = [];
+  for (const [label, key] of [['missing', undefined], ['invalid', 'invalid-smoke-key']]) {
+    const denied = await get(conversations, key, 'application/json', port);
+    if (![401, 403].includes(denied.status)) {
+      denials.push(`${label} session key returned HTTP ${denied.status}`);
+    }
+    await denied.body?.cancel();
+  }
+  assert.equal(denials.length, 0, `${name}: ${denials.join('; ')}`);
+  console.log(`${name}: session authentication passed.`);
+}));
+for (const outcome of outcomes) {
+  if (outcome.status === 'rejected') console.error(outcome.reason.message);
 }
-console.log('Agent Server session authentication passed.');
+assert.ok(outcomes.every(outcome => outcome.status === 'fulfilled'),
+  'Every backend listener must reject missing and invalid keys.');
 JS
