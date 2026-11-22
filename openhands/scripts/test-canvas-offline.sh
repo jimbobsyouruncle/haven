@@ -44,21 +44,24 @@ for (const path of ['/var/run/docker.sock', '/run/podman/podman.sock']) {
   assert.ok(!existsSync(path), 'Container engine socket must be absent');
 }
 
-function get(path, key) {
+function get(path, key, accept = 'application/json') {
   return fetch(new URL(path, 'http://localhost:8000'), {
-    headers: key === undefined ? {} : { 'X-Session-API-Key': key },
+    headers: key === undefined ? { accept } : { accept, 'X-Session-API-Key': key },
     redirect: 'error',
     signal: AbortSignal.timeout(3000),
   });
 }
 
 let asset;
+const observations = new Map();
 const deadline = Date.now() + 120_000;
 while (!asset && Date.now() < deadline) {
-  for (const path of ['/canvas/', '/canvas']) {
+  for (const path of ['/canvas/', '/canvas', '/canvas/index.html']) {
     try {
-      const response = await get(path);
+      const response = await get(path, undefined, 'text/html');
       const html = await response.text();
+      const tags = [...html.matchAll(/<(script|meta|title|link|iframe)\b/gi)].map(match => match[1]);
+      observations.set(path, { status: response.status, bytes: html.length, tags: tags.slice(0, 20) });
       if (!response.ok || !response.headers.get('content-type')?.includes('text/html')) {
         continue;
       }
@@ -74,9 +77,12 @@ while (!asset && Date.now() < deadline) {
   }
   if (!asset) await delay(1000);
 }
+if (!asset) {
+  console.error('Canvas ingress response shapes:', Object.fromEntries(observations));
+}
 assert.ok(asset, 'Canvas ingress must serve HTML with a client script');
 assert.equal(asset.origin, new URL('http://localhost:8000').origin);
-const client = await get(asset.pathname + asset.search);
+const client = await get(asset.pathname + asset.search, undefined, '*/*');
 assert.ok(client.ok, 'Canvas client script must load through ingress');
 assert.match(client.headers.get('content-type') ?? '', /javascript/);
 await client.body?.cancel();
