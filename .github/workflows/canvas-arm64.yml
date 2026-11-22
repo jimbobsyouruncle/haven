@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'openhands/scripts/test-canvas-offline.sh'
+      - 'openhands/scripts/test-canvas-personas.*'
       - '.github/workflows/canvas-arm64.yml'
 
 permissions:

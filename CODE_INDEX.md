@@ -299,6 +299,12 @@
 ## openhands/scripts/test-canvas-offline.sh
 - cleanup()
 
+## openhands/scripts/test-canvas-personas.sh
+- podman_local()
+- cleanup()
+- start_persona()
+- probe()
+
 ## openwebui/build_pipe.py
 - def build()
 - def main()

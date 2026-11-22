@@ -237,3 +237,5 @@ console.log('Haven Caddy browser, API, and WebSocket authentication gate passed.
 assert.ok(outcomes.every(outcome => outcome.status === 'fulfilled'),
   'Every backend listener must reject missing and invalid keys.');
 JS
+
+bash "$repo_root/openhands/scripts/test-canvas-personas.sh" "$image"

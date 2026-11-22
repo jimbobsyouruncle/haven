@@ -577,6 +577,23 @@ exist before rendering the route. Canvas and its backend ports would stay off ho
 port mappings and shared application networks. Test both layers independently.
 [Upstream self-hosting modes](https://docs.openhands.dev/openhands/usage/agent-canvas/backend-setup/vm)
 
+### Offline persona execution boundary (#275)
+
+The ARM64 workflow also starts two disposable workloads using the pinned Canvas
+image. Each workload runs under a distinct unprivileged host UID/GID and mounts a
+single private synthetic state directory. Each uses its own checkout, credential
+and loopback Git ref service. The fixture checks the observed host identities,
+mounts, capabilities, repository grants, and denial of peer files, execution and
+services before and after container recreation. CI prints the tested revision,
+synthetic host IDs and grant outcomes. The repository credential probes use
+disposable tokens with read-only access to synthetic Git refs.
+
+The fixture uses a Node workload from the Canvas image with external networking
+disabled. The existing bundle probe exercises Haven and Agent Server
+authentication independently. Applying these launch restrictions to the actual
+Canvas entrypoint and qualifying shared services, scoped GitHub credentials and
+independent Hermes operation in the integrated configuration remain part of #235.
+
 The bundled local runtime shares its container with Canvas services. Qualify it
 against the approved [persona boundary](../docs/haven/adr/0008-persona-runtime-isolation.md):
 verify the effective host UID/GID, private storage and credentials, cross-persona
