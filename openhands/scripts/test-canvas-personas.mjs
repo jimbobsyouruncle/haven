@@ -93,6 +93,6 @@ if (mode !== 'probe') {
   assert.equal((await request(ownRefs, 'invalid')).status, 403);
   assert.equal((await request(`${base(persona)}/${peer}.git/info/refs`, token)).status, 404);
   await assert.rejects(request(`${base(peer)}/${peer}.git/info/refs`, token),
-    { cause: { code: 'ECONNREFUSED' } });
+    error => error.cause?.code === 'ECONNREFUSED');
   console.log('Own checkout, persistent state, credential, execution and Git read grant passed. Peer and privilege denials passed.');
 }
