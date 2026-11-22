@@ -572,8 +572,9 @@ Caddy Basic authentication. It checks browser, API and WebSocket upgrade denials
 including a valid Haven cookie without a Canvas grant. The fixture strips both
 ingress credentials before proxying and checks that the Agent Server still
 requires its own session key. It also checks positive browser and API requests.
-All test traffic stays inside the fixture loopback network. TLS and an
-authenticated conversation WebSocket still need qualification. The production auth snippet is optional
+All test traffic stays inside the fixture loopback network. The probe trusts a
+disposable local TLS certificate. Production TLS and an authenticated
+conversation WebSocket still need qualification. The production auth snippet is optional
 globally, so a Canvas site would require an authenticated HTTPS configuration to
 exist before rendering the route. Canvas and its backend ports would stay off host
 port mappings and shared application networks. Test both layers independently.

@@ -67,13 +67,17 @@ auth_container=$(podman --remote=false run "${peer_flags[@]}" \
 canvas_password=$(openssl rand -hex 32)
 canvas_hash=$(podman --remote=false exec --env "CANVAS_PASSWORD=$canvas_password" "$auth_container" \
   python3 -c 'import bcrypt,os; print(bcrypt.hashpw(os.environ["CANVAS_PASSWORD"].encode(), bcrypt.gensalt()).decode())')
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+  -addext subjectAltName=DNS:localhost -keyout "$fixture/tls.key" -out "$fixture/tls.crt" \
+  >/dev/null 2>&1
 # Caddy expands its environment placeholder when it loads this config.
 # shellcheck disable=SC2016
 caddy_config='{
   admin off
   auto_https off
 }
-:9081 {
+https://localhost:9081 {
+  tls /tmp/canvas.crt /tmp/canvas.key
   route {
     forward_auth localhost:8080 {
       uri /verify
@@ -90,18 +94,30 @@ caddy_config='{
 caddy_container=$(podman --remote=false run "${peer_flags[@]}" \
   --user 1000:1000 --entrypoint /bin/sh --env XDG_CONFIG_HOME=/tmp --env XDG_DATA_HOME=/tmp \
   --env "CANVAS_PASSWORD_HASH=$canvas_hash" \
-  --env "FIXTURE_CADDYFILE=$caddy_config" "$caddy_image" \
-  -ec 'printf "%s\n" "$FIXTURE_CADDYFILE" >/tmp/Caddyfile; exec caddy run --config /tmp/Caddyfile')
+  --env "FIXTURE_TLS_CERT=$(cat "$fixture/tls.crt")" \
+  --env "FIXTURE_TLS_KEY=$(cat "$fixture/tls.key")" \
+  --env "FIXTURE_CADDYFILE=$caddy_config" "$caddy_image" -ec '
+    umask 077
+    printf "%s\n" "$FIXTURE_TLS_CERT" >/tmp/canvas.crt
+    printf "%s\n" "$FIXTURE_TLS_KEY" >/tmp/canvas.key
+    printf "%s\n" "$FIXTURE_CADDYFILE" >/tmp/Caddyfile
+    exec caddy run --config /tmp/Caddyfile
+  ')
 cookie=$(podman --remote=false exec "$auth_container" python3 -c \
   'import os,time,app; print(app.COOKIE_NAME+"="+app.sign_expiry(os.environ["HAVEN_AUTH_COOKIE_SECRET"].encode(), time.time()+300))')
 
 
 podman --remote=false exec -i --env "FIXTURE_COOKIE=$cookie" \
-  --env "CANVAS_PASSWORD=$canvas_password" "$container" node --input-type=module - <<'JS'
+  --env "CANVAS_PASSWORD=$canvas_password" --env "FIXTURE_TLS_CERT=$(cat "$fixture/tls.crt")" \
+  "$container" sh -ec '
+    cert=$(mktemp)
+    printf "%s\n" "$FIXTURE_TLS_CERT" >"$cert"
+    NODE_EXTRA_CA_CERTS=$cert exec node --input-type=module -
+  ' <<'JS'
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
-import { request } from 'node:http';
+import { request } from 'node:https';
 import { networkInterfaces } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -219,7 +235,7 @@ const outcomes = await Promise.allSettled(listeners.map(async ([name, port]) => 
 for (const outcome of outcomes) {
   if (outcome.status === 'rejected') console.error(outcome.reason.message);
 }
-const proxy = 'http://localhost:9081';
+const proxy = 'https://localhost:9081';
 const cookie = process.env.FIXTURE_COOKIE;
 function canvasGrant(password) {
   return 'Basic ' + Buffer.from('canvas-fixture:' + password).toString('base64');
