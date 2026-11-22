@@ -57,7 +57,7 @@ services:
     # Bump deliberately after reading the release notes.
     # Overridable so a version bump is an .env change plus a restart, not a
     # commit. The default is still an explicit pin, never :latest.
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.16@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592}
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.17@sha256:ccc42bcd3d5fcf7ab0d532b300382154e1a4da56fc666bdb313b78ebdd912754}
     container_name: ollama
     restart: unless-stopped
     ports:
