@@ -52,6 +52,8 @@ function get(path, key, accept = 'application/json') {
   });
 }
 
+const apiKey = process.env.LOCAL_BACKEND_API_KEY;
+assert.ok(apiKey);
 let asset;
 const observations = new Map();
 const deadline = Date.now() + 120_000;
@@ -65,13 +67,15 @@ while (!asset && Date.now() < deadline) {
       if (!response.ok || !response.headers.get('content-type')?.includes('text/html')) {
         continue;
       }
-      // The production HTML minifier can omit quotes around asset URLs.
-      const script = html.match(/<script\b[^>]*?\ssrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
-      if (script) {
-        asset = new URL(script[1] ?? script[2] ?? script[3], response.url);
+      // Canvas can declare bundled JavaScript through link preloads or scripts.
+      const js = html.match(/<(?:link|script)\b[^>]*?\s(?:href|src)\s*=\s*["']?([^"'\s>]+\.(?:m?js))(?:["'\s>])/i);
+      if (js) {
+        assert.ok(!html.includes(apiKey), 'Canvas HTML must keep the session key private');
+        asset = new URL(js[1], response.url);
         break;
       }
-    } catch {
+    } catch (error) {
+      if (error.code === 'ERR_ASSERTION') throw error;
       // Ingress may still be starting or canonicalizing this path.
     }
   }
@@ -80,7 +84,7 @@ while (!asset && Date.now() < deadline) {
 if (!asset) {
   console.error('Canvas ingress response shapes:', Object.fromEntries(observations));
 }
-assert.ok(asset, 'Canvas ingress must serve HTML with a client script');
+assert.ok(asset, 'Canvas ingress must serve HTML with a JavaScript asset');
 assert.equal(asset.origin, new URL('http://localhost:8000').origin);
 const client = await get(asset.pathname + asset.search, undefined, '*/*');
 assert.ok(client.ok, 'Canvas client script must load through ingress');
@@ -92,7 +96,7 @@ for (const key of [undefined, 'invalid-smoke-key']) {
   assert.ok([401, 403].includes(denied.status), 'Backend must reject missing and invalid keys');
   await denied.body?.cancel();
 }
-const allowed = await get('/api/conversations/search', process.env.LOCAL_BACKEND_API_KEY);
+const allowed = await get('/api/conversations/search', apiKey);
 assert.ok(allowed.ok, 'Backend must accept the disposable session key');
 await allowed.json();
 
