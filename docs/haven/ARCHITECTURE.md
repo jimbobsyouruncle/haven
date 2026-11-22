@@ -13,10 +13,10 @@ multi-user authorization, isolation or inference policy. See the
 
 ## 1. Decisions and objectives
 
-1. One reusable **Coder persona definition** can work across many projects. The trusted control plane enforces repository and inference authorization per project and task. See [ADR-0001](adr/0001-project-scoped-coder.md).
-2. A **project** is a security and collaboration boundary with one or more authorized repositories. A **task** has a narrower explicit repository allowlist. A group is an authorization ceiling, not implicit access.
+1. One reusable **Coder persona definition** can be instantiated in multiple isolated persona runtimes. Coding tasks within one persona may share its authorized filesystem and credentials; sensitive projects requiring separation get their own persona. Enforce remote repository credential scopes and inference policy independently. See [ADR-0001](adr/0001-project-scoped-coder.md).
+2. A **persona runtime** is the local execution and filesystem security boundary. A **project** defines collaboration, classification and intended repository access; sensitive projects needing local isolation use a separate persona runtime. A task-level repository allowlist narrows access only where separately enforced, not merely through instructions.
 3. **Private repository** is an explicit repository classification. Any task touching private-restricted content must use its approved dedicated **RunPod-only inference** for *every* model operation (planning, coding, review, summarization, embeddings, delegated agents); fail closed. A GitHub `private` visibility flag can trigger this default but must not be the only classification signal.
-4. Agent processes never receive host container-management sockets, unrestricted GitHub credentials, or arbitrary access to other project files, services, memories, and secrets.
+4. Agent processes never receive host container-management sockets or unrestricted infrastructure credentials and cannot access resources of other personas. Resources deliberately shared within one persona are within that persona's accepted compromise boundary.
 5. Support Hermes for persistent persona coordination; Pi and Codex as independent execution adapters; OpenHands optional for coding workflows. No engine is automatically authorized to run under a given inference policy: prove provider compatibility and network restrictions first.
 6. Keep the RunPod inference image repository separate by default, with versioned API contracts, pinned image digests, and independent CI. An explicitly authorized multi-repository task may coordinate work across both without merging workspaces.
 7. Existing Caddy/Cloudflare DNS-01 ACME, Tailscale, CI, and Restic/R2 investments should be reused and upgraded where compatible; avoid replacing them by default.
@@ -68,8 +68,8 @@ Human clients (LAN / Tailscale)        Matrix mobile clients (restricted public 
 - **Project:** tenant-like boundary with membership, policy, repositories, encryption key, project memory and budget.
 - **Repository:** immutable provider identity (`github:<installation-id>:<repo-id>`), visibility/classification, allowed refs, optional write policies, and one primary project membership. Cross-project sharing must be explicit and versioned.
 - **Repository group:** named subset of a project's repositories; its members are an authorization ceiling, never automatic mounts.
-- **Task:** initiating user, persona, project, approved repository IDs, read/write levels, branch constraints, inference policy, expiry, budget and approval receipt.
-- **Development worker:** ephemeral sandbox scoped to a single authorized task with short-lived credential leases. Persistent Developer applications and workers must comply with ADR-0001. Workers receive explicit task grants and do not inherit the persistent runtime's filesystem access. The default is one worker per repository. Multi-repo workers require separate explicit approval.
+- **Task:** initiating user, persona, project, requested repositories, read/write levels, branch constraints, inference policy, expiry, budget and approval receipt. These are authorization metadata; runtime restrictions need an actual enforcement mechanism.
+- **Development execution:** coding applications and tasks may execute within the authorized persona runtime using its UID/GID, local repository checkouts and scoped credentials. Per-task ephemeral workers and leases are optional stronger isolation, required when tasks inside one persona must be mutually separated; do not claim that shared Unix identity gives per-task local isolation. See ADR-0001.
 - **Execution session:** user+persona+project+task context; independent across users even when sharing a persona.
 - **Inference deployment:** dedicated RunPod pod, endpoint, model identity, owner, cost ceiling, network policy and lifecycle state.
 
