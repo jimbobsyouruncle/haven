@@ -521,8 +521,9 @@ review before you push it.
 
 Run the [offline smoke test](scripts/test-canvas-offline.sh) on a disposable Linux
 ARM64 qualification host with local rootless Podman, OpenSSL, and cgroup v2 resource
-delegation. Pass `--pull` to preload the pinned image using the qualification host's approved
-registry access. Omit it for an already cached image.
+delegation. Pass `--pull` to preload the pinned Canvas and Caddy images and build the existing
+Haven auth image using the qualification host's approved network access. Omit it
+when all three images are cached locally.
 
 ```bash
 bash openhands/scripts/test-canvas-offline.sh --pull
@@ -565,9 +566,11 @@ documented Agent Server variable, `OH_SESSION_API_KEYS_0`, directly. It uses
 the bundle's `PUBLIC_MODE_PORT` option for its upstream
 auth-required test listener and checks that listener, the original ingress, and
 Agent Server directly with a disposable key. All three stay inside the container.
-A separate proxy test must use Haven's existing Caddy `forward_auth`
-against the auth service's `/verify`, applied before routing any Canvas path,
-including API calls and WebSocket upgrades. The production auth snippet is optional
+The proxy fixture uses Haven's existing auth image and the Caddy runtime pin
+with `forward_auth` against `/verify`. It verifies cookie denial for browser,
+API and WebSocket upgrade requests, plus positive browser and API requests.
+All test traffic stays inside the fixture loopback network. TLS and an
+authenticated conversation WebSocket still need qualification. The production auth snippet is optional
 globally, so a Canvas site would require an authenticated HTTPS configuration to
 exist before rendering the route. Canvas and its backend ports would stay off host
 port mappings and shared application networks. Test both layers independently.

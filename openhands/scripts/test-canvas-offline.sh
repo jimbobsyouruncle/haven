@@ -12,8 +12,13 @@ if [[ $(uname -m) != aarch64 || $(podman --remote=false info --format '{{.Host.S
   exit 1
 fi
 
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+caddy_image=$(awk '/^FROM caddy@sha256:/ { image=$2 } END { print image }' "$repo_root/caddy/Dockerfile")
+auth_image=localhost/haven-canvas-auth-fixture
 if [[ ${1:-} == --pull && $# == 1 ]]; then
   podman --remote=false pull --platform linux/arm64 "$image"
+  podman --remote=false pull --platform linux/arm64 "$caddy_image"
+  podman --remote=false build --tag "$auth_image" "$repo_root/auth"
 elif (( $# != 0 )); then
   echo "Usage: $0 [--pull]" >&2
   exit 2
@@ -27,12 +32,50 @@ container=$(podman --remote=false run --detach --rm --pull=never \
   --env "OH_SESSION_API_KEYS_0=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
   --env PUBLIC_MODE_PORT=8001 --env AGENT_SERVER_PORT=18000 \
   "$image")
-trap 'podman --remote=false stop --time 5 "$container" >/dev/null 2>&1 || true' EXIT
+auth_container=
+caddy_container=
+cleanup() {
+  for id in "$caddy_container" "$auth_container" "$container"; do
+    if [[ -n $id ]]; then
+      podman --remote=false stop --time 5 "$id" >/dev/null 2>&1 || true
+    fi
+  done
+}
+trap cleanup EXIT
 
-podman --remote=false exec -i "$container" node --input-type=module - <<'JS'
+cookie_secret=$(openssl rand -hex 32)
+peer_flags=(--detach --rm --pull=never --network "container:$container"
+  --http-proxy=false --cap-drop ALL --security-opt no-new-privileges --log-driver=none)
+auth_container=$(podman --remote=false run "${peer_flags[@]}" \
+  --env HAVEN_AUTH_USER=canvas-fixture --env HAVEN_AUTH_HASH=fixture-unused \
+  --env "HAVEN_AUTH_COOKIE_SECRET=$cookie_secret" --env TLS_DOMAIN=canvas.invalid "$auth_image")
+# Reuse the configured Caddy runtime and production forward_auth contract.
+# Container networking is disabled apart from the shared fixture loopback.
+caddy_config='{
+  admin off
+  auto_https off
+}
+:9081 {
+  route {
+    forward_auth localhost:8080 {
+      uri /verify
+    }
+    reverse_proxy localhost:8001
+  }
+}'
+caddy_container=$(podman --remote=false run "${peer_flags[@]}" \
+  --user 1000:1000 --entrypoint /bin/sh --env XDG_CONFIG_HOME=/tmp --env XDG_DATA_HOME=/tmp \
+  --env "FIXTURE_CADDYFILE=$caddy_config" "$caddy_image" \
+  -ec 'printf "%s\n" "$FIXTURE_CADDYFILE" >/tmp/Caddyfile; exec caddy run --config /tmp/Caddyfile')
+cookie=$(podman --remote=false exec "$auth_container" python3 -c \
+  'import os,time,app; print(app.COOKIE_NAME+"="+app.sign_expiry(os.environ["HAVEN_AUTH_COOKIE_SECRET"].encode(), time.time()+300))')
+
+
+podman --remote=false exec -i --env "FIXTURE_COOKIE=$cookie" "$container" node --input-type=module - <<'JS'
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { request } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -145,6 +188,47 @@ const outcomes = await Promise.allSettled(listeners.map(async ([name, port]) => 
 for (const outcome of outcomes) {
   if (outcome.status === 'rejected') console.error(outcome.reason.message);
 }
+const proxy = 'http://localhost:9081';
+const cookie = process.env.FIXTURE_COOKIE;
+async function proxyGet(path, headers) {
+  const response = await fetch(proxy + path, {
+    headers, redirect: 'manual', signal: AbortSignal.timeout(3000),
+  });
+  await response.body?.cancel();
+  return response.status;
+}
+async function websocketStatus() {
+  return new Promise((resolve, reject) => {
+    const req = request(proxy + '/sockets/events', {
+      headers: {
+        Connection: 'Upgrade',
+        Upgrade: 'websocket',
+        'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Key': Buffer.alloc(16).toString('base64'),
+      },
+    }, response => {
+      response.resume();
+      resolve(response.statusCode);
+    });
+    req.on('upgrade', (response, socket) => {
+      socket.destroy();
+      resolve(response.statusCode);
+    });
+    req.on('error', reject);
+    req.setTimeout(3000, () => req.destroy(new Error('WebSocket probe timed out')));
+    req.end();
+  });
+}
+
+assert.equal(await proxyGet('/canvas'), 302, 'Caddy must gate the browser');
+assert.equal(await proxyGet(conversations, { 'X-Session-API-Key': apiKey }), 302,
+  'Caddy must require a Haven cookie even with a valid backend key');
+assert.equal(await websocketStatus(), 302, 'Caddy must gate WebSocket upgrades');
+assert.equal(await proxyGet('/canvas', { cookie }), 200, 'Haven session must reach Canvas');
+assert.equal(await proxyGet(conversations, { cookie, 'X-Session-API-Key': apiKey }), 200,
+  'Both credentials must allow the API through Caddy');
+console.log('Haven Caddy browser, API, and WebSocket authentication gate passed.');
+
 assert.ok(outcomes.every(outcome => outcome.status === 'fulfilled'),
   'Every backend listener must reject missing and invalid keys.');
 JS

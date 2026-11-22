@@ -297,7 +297,7 @@
 - workspace()
 
 ## openhands/scripts/test-canvas-offline.sh
-- (no symbols)
+- cleanup()
 
 ## openwebui/build_pipe.py
 - def build()
