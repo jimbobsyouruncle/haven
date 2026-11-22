@@ -42,285 +42,31 @@ Human clients (LAN / Tailscale)        Matrix mobile clients (restricted public 
   - model policy and inference broker
   - scheduler, budget and RunPod lifecycle
                  |
-        trusted worker provisioner (narrow API; no arbitrary socket access)
+       isolated persona runtimes (UID/GID, mounts, secrets)
                  |
    +-------------+---------------+----------------+
    |             |               |                |
- Worker A     Worker B       Worker C         integration runner
- Repo A only  Repo B only    selected group    artifacts/contracts only
- Hermes/Pi/   Codex/Pi/      explicit grants   no blanket repo access
- Codex/etc.   OpenHands
+ General Dev   Sensitive A    Sensitive B     Other personas
+ Hermes/Canvas  project apps    project apps   own private trees
+ scoped repos   scoped token    scoped token   no cross-persona mounts
    |             |               |
    +-------------+---------------+
                  |
-        inference egress broker -> approved dedicated RunPod deployment
-                 |                  (or other approved provider only for
-          restricted egress         non-restricted projects)
-```
+### 4.1 Authorization and inference policy
 
-**Control plane vs data plane:** The trusted Haven control plane authenticates users, evaluates policy, provisions short-lived workers and credentials, and records minimal transactional state. Worker containers are untrusted; model output, repository content, retrieved documents, and agent tool requests are untrusted inputs. An OpenHands controller with host orchestration access, if retained, must be separated from its untrusted agent workers and accessed only through a restricted provisioning interface.
+For a coding session, authenticate the human user and authorize the selected persona and its project(s). Provision that persona only with authorized local checkouts, integrations and scoped remote repository credentials. A fine-grained token or deploy key limits remote GitHub operations; it does not isolate accessible local files. Sensitive projects requiring filesystem or credential separation run in distinct personas.
 
-## 3. Resource model
+Calculate effective content classification and inference policy from the project, repository and data actually used. Restricted content requires the approved dedicated RunPod deployment for all model operations, including delegations, with no fallback. Enforce through trusted routing and network controls rather than instructions. Explicit user-private conversations and data remain independently authorized even when apps share a persona identity.
 
-- **Human user:** independently authorized identity, roles, sessions, private data and conversations. Sharing a persona grants no access to another user's private data.
-- **Persona definition:** reusable behavior, instructions, skills and configuration. Authorization is enforced by Haven independently of the definition.
-- **Persona runtime environment:** dedicated application containers, per-persona host UID/GID, private storage and secrets. This boundary enforces isolation between personas. Applications within a persona may share its identity and designated storage. See [ADR-0008](adr/0008-persona-runtime-isolation.md).
-- **Project:** tenant-like boundary with membership, policy, repositories, encryption key, project memory and budget.
-- **Repository:** immutable provider identity (`github:<installation-id>:<repo-id>`), visibility/classification, allowed refs, optional write policies, and one primary project membership. Cross-project sharing must be explicit and versioned.
-- **Repository group:** named subset of a project's repositories; its members are an authorization ceiling, never automatic mounts.
-- **Task:** initiating user, persona, project, requested repositories, read/write levels, branch constraints, inference policy, expiry, budget and approval receipt. These are authorization metadata; runtime restrictions need an actual enforcement mechanism.
-- **Development execution:** coding applications and tasks may execute within the authorized persona runtime using its UID/GID, local repository checkouts and scoped credentials. Per-task ephemeral workers and leases are optional stronger isolation, required when tasks inside one persona must be mutually separated; do not claim that shared Unix identity gives per-task local isolation. See ADR-0001.
-- **Execution session:** user+persona+project+task context; independent across users even when sharing a persona.
-- **Inference deployment:** dedicated RunPod pod, endpoint, model identity, owner, cost ceiling, network policy and lifecycle state.
-
-### Core schema (conceptual)
-
-```text
-users(id, oidc_subject, status)
-personas(id, owner_id, profile_version)
-projects(id, classification, key_ref, policy_version)
-project_members(user_id, project_id, role, expires_at)
-repositories(id, provider_repo_id, project_id, classification, canonical_url)
-repo_groups(id, project_id, name)
-repo_group_members(group_id, repository_id)
-tasks(id, user_id, persona_id, project_id, state, policy_snapshot, expires_at)
-task_repos(task_id, repository_id, access_mode, allowed_refs)
-workers(id, task_id, sandbox_id, lease_expiry)
-credential_leases(id, task_id, repo_id, scopes, expiry, revoked_at)
-inference_policies(id, project_id, allowed_deployments, fallback_mode)
-inference_requests(id, task_id, provider, deployment_id, budget_reservation_id)
-conversation_events(id, project_id, session_id, actor_id, ciphertext_ref, timestamp)
-memory_items(id, scope_type, scope_id, ciphertext_ref, provenance, expiry)
-approval_receipts(id, task_id, approver_id, action_digest, expiry)
-```
-
-Database row-level authorization and encryption are defense-in-depth, not substitutes for API authorization. Use a relational DB such as PostgreSQL for authoritative grants/events; separate vector indexes by authorized scope.
-
-## 4. Authorization and repository isolation
-
-### 4.1 Decision procedure
-
-For every task and tool invocation, evaluate:
-
-1. Verify user OIDC session and project membership.
-2. Verify persona is permitted in project and engine is permitted by policy.
-3. Resolve repository IDs from GitHub API, not names alone; ensure all belong to authorized project/group.
-4. Compute **effective classification = strictest classification** of project, selected repositories, retrieved sources, and delegated context.
-5. Compute **effective inference policy** from effective classification. Restricted private data requires approved dedicated RunPod deployment; no fallback.
-6. Mint immutable task policy snapshot, scoped credentials, approved worktree paths, and egress policy; issue short expiry.
-7. On each tool call, check task, resource, verb, branch, expiry, remaining budget and approval state. Reject unknown targets.
-8. A child task inherits the parent classification and can only *narrow* repository set, privileges, egress, time and budget. Broader access requires a new human-authorized parent task.
-9. On completion/revocation: revoke leases, stop workers, scrub ephemeral volumes, expire sessions, retain only approved artifacts and minimal receipts.
-
-**Deny by default:** A project group is a maximum set; an individual task starts with no repository grants. A worker cannot change its own project, repo allowlist, classification or inference route. Cross-project tasks require a separate user-approved workflow that delegates to project-local workers and shares only approved contracts/artifacts.
+Task-level policy snapshots, approval receipts, expiring leases and dedicated sandboxes are optional stronger controls where separately implemented; do not claim per-task containment when applications share a persona UID and mounts.
 
 ### 4.2 Runtime enforcement
 
-- Use dedicated rootless worker identity/UID and user namespace; separate filesystem mount namespace, PID namespace, network namespace, read-only base image, restricted capabilities, seccomp and resource quotas. No privileged mode or Docker/Podman sockets.
-- Mount only selected checkout/worktree and ephemeral scratch; never mount deployment directory, other repos, `$HOME`, SSH agent, host credentials, backups or key stores.
-- Provisioner runs as a trusted host service with an authenticated narrow API; workers cannot invoke generic container-create commands or Docker API. Validate mount and network templates server-side.
-- Use short-lived GitHub App tokens scoped to exact repository IDs and minimum permissions, preferably one token per repo; verify Git remote URL and repository ID before checkout/push. Enforce branch protection and PR-only merges. GitHub App installation restrictions must be verified in practice.
-- Egress policy: block host, RFC1918/ULA, link-local, metadata endpoints, other project networks, control-plane APIs, credential services, and arbitrary inference endpoints. Private work uses an allowlisted broker/proxy for model requests, git, package registries and necessary integrations. DNS rebinding, redirects, CONNECT, IPv6, proxy env vars, local Unix sockets and agent subprocesses must be tested. Generic unrestricted internet egress cannot guarantee non-exfiltration.
-- Treat tests, dependency install scripts, build steps, repository instructions, and model tool output as untrusted code. Prefer offline/reproducible dependencies and approval gates for risky operations.
-- Ensure worker image, base filesystem, caches, package mirrors, container build context, build logs and artifacts do not mix restricted projects.
+- Use a distinct unprivileged host UID/GID, dedicated containers, private storage tree, limited mounts and secrets per persona under ADR-0008. Deny cross-persona filesystem and unauthorized network access.
+- Applications within one persona may use the same identity and access its authorized repositories and persistent storage. Do not mount another persona's checkouts, private storage, keys or backup data.
+- Use persona-scoped fine-grained GitHub tokens or deploy keys with minimum remote repository and permission scope; validate token scopes and negative unauthorized repository operations. Prefer short-lived or revocable credentials when available.
+- Keep host Docker/Podman management sockets, privileged execution and broad host mounts out of agent-accessible workloads. If a separate sandbox provisioner is necessary for a stronger task boundary, make it trusted and expose only narrowly authorized operations.
+- Restrict inference egress to approved endpoints and test DNS, IPv6, redirects, proxy bypasses and outages. Mandatory dedicated RunPod routing for restricted operations must fail closed.
+- Treat repository content, installs, test scripts, model output and agent tool requests as untrusted. Assume malicious code may access all resources intentionally exposed to its persona UID. Separate sensitive projects into different personas.
 
-### 4.3 Memory and conversation separation
 
-Persona-wide memory contains only generic non-sensitive working methods. Project and user-private memory are encrypted and indexed separately. The coordinator can use project memory only after project authorization; it cannot silently summarize private repository contents into persona-wide memory. Cross-project knowledge transfer requires an approved, reviewed, explicitly classified artifact. Cache keys include project, task, classification, model and authorization scope. Retrieval filters authorization **before** candidate ranking or summarization.
-
-## 5. Private inference and RunPod
-
-### 5.1 Strict routing policy
-
-A private project is not merely a UI toggle. A server-enforced policy applies to **all** model-bearing operations: coordinator, architect, builder, reviewer, troubleshooting, delegated agents, embeddings, summaries, evaluations, prompt caching and third-party AI tool plugins. Private content must never be sent to an unapproved provider. If a model adapter cannot prove compatibility with RunPod's approved endpoint, disable it for restricted tasks.
-
-```yaml
-# Illustrative policy, not a deployable Haven configuration
-project: private-example
-classification: restricted
-inference:
-  mode: dedicated_runpod_only
-  allowed_deployment_ids: [runpod-private-a]
-  fallback: deny
-  embeddings: approved_runpod_or_disabled
-  summarization: approved_runpod_or_disabled
-  model_capability_probe: required
-network:
-  model_egress: broker_only
-  other_egress: explicit_allowlist
-agents:
-  permitted_engines: [pi] # Codex/Hermes/OpenHands only after compatibility PoC
-  inherit_policy_to_children: true
-```
-
-**Important limitation:** A private RunPod GPU is still a third-party cloud infrastructure environment. Confidentiality also depends on RunPod account access, endpoint authentication, pod storage, telemetry, server configuration and provider terms. “RunPod-only” is a routing requirement, not a promise of on-premises privacy.
-
-### 5.2 Model and engine compatibility
-
-For multi-model harnesses, verify every model and ancillary model call against the same task policy; a compatible primary model does not authorize other providers. Build an adapter capability matrix: configurable OpenAI-compatible endpoint, streaming, tools/function calls, context length, structured output, token accounting, session persistence, embedding support, auth and telemetry control. Pi is a strong PoC candidate for custom provider routing; Hermes, Codex and OpenHands must each pass actual end-to-end tests before they are allowed in restricted mode. Do not assume a particular Codex build supports arbitrary model endpoints or that its ancillary features are disabled by configuration alone.
-
-### 5.3 RunPod deployment management
-
-- Existing `openwebui/runpod_core.py` separates wake/readiness/streaming from UI and validates Tailscale destinations; reuse concepts and tests, not necessarily the legacy API client.
-- Replace single global pod/key assumptions with per-deployment, per-project credential leases, concurrency-safe lifecycle, readiness checks, idle timeout, max runtime and budget reservations.
-- Prefer current supported RunPod API with an adapter and contract tests; verify actual version and endpoint support before migration.
-- Pin RunPod container image digest and model revision; use authenticated private endpoint via Tailscale or equivalent secure transport. Deny unauthenticated public model access.
-- Pod state machine: `stopped -> starting -> health_check -> ready -> draining -> stopped`, plus `failed` and `budget_exhausted`. Deduplicate concurrent wake requests; enforce timeout and cancellation.
-- Budget hard limits reserve estimated maximum spend before startup and each inference; stop when exhausted. Track model token usage, pod uptime and idle fees.
-- Failure of RunPod, readiness, routing, authentication or budget checks means **queue or fail**, never silently switch provider.
-
-## 6. Coder workflow across repositories
-
-**Example:** Haven inference adapter and RunPod image need compatible changes.
-
-1. User selects project `Haven Platform`, repository group `Haven + RunPod`, and approves two scoped workstreams.
-2. Architecture Agent gets approved read-only contracts and relevant source snippets, drafts versioned API and acceptance tests. If restricted source enters context, coordinator must already use RunPod-only inference.
-3. Implementation Agent A receives only `hybrid-ai`, an isolated branch, and a repo-specific GitHub token; implements Haven adapter and tests.
-4. Implementation Agent B receives only RunPod container repo and separate credentials; updates inference server and health checks.
-5. Integration runner receives pinned images, schemas and synthetic test fixtures; it has no default access to either source repository. Tests compatibility, auth, streaming, failures and privacy.
-6. Review Agent examines approved diffs and test results; if it reads restricted content, it must use the same RunPod-only inference policy.
-7. Separate PRs, approvals and staged releases. Publish RunPod image first, then Haven adapter. Roll back independently on failure.
-
-Never place two independent agents on the same writable branch/worktree. An optional cross-repo worker needs an explicit exceptional grant and heightened approval; project grouping alone does not authorize it.
-
-## 7. Identity, UI, and Matrix
-
-- Local IdP (Authentik or Kanidm, selected by PoC), OIDC; passkeys preferred, password + TOTP fallback, hardware-key admin recovery; invite-only accounts. Stable `auth.daemonhub.dev` hostname and TLS.
-- Haven local interface `haven.daemonhub.dev` through existing Caddy wildcard DNS-01 ACME and Tailscale/LAN restrictions; show effective project, repo allowlist, classification, inference backend, engine compatibility, cost estimate, tool approvals and worker state. UI cannot weaken server-side policy.
-- Native persona-service WebUIs may use flat hostnames behind the existing Caddy proxy. Require persona/service authentication and authorization and prevent direct backend bypass. See [ADR-0008](adr/0008-persona-runtime-isolation.md).
-- Use shared Matrix Synapse and Matrix Authentication Service for optional remote chat. Keep the homeserver non-federated, use E2EE where applicable, and treat the explicit bridge as an authorized decrypting endpoint. Scope each Hermes persona to its own bot account, credentials, device/encryption state and authorized private rooms. Enforce Haven authorization independently of room membership. Minimize and review public-facing Matrix/OIDC routes.
-- Roles: platform admin, security admin, project owner/editor/member/viewer, persona owner/editor/member/viewer. Admin privileges do not imply private content read. Shared persona members have review at 90 days and revocation at 180 days inactivity, owner exempt, subject to approved policy.
-
-## 8. Data, keys, backup, deletion
-
-- Canonical conversation event store owned by Haven; adapters emit normalized tool/model events. Preserve engine-native session IDs only as references. Never assume engine UI history is canonical.
-- Encrypt user-private, project and persona data with separate destroyable data-encryption keys, wrapped by a master key; separate encryption domains for highly restricted project data. Enforce retention and scope-aware indexes.
-- To support cryptographic erasure from historical backups, encrypt sensitive data *before* Restic with independent destroyable keys, and ensure wrapped keys are not preserved in recoverable backups after deletion. Key deletion, backup manifests, caches and restoration paths require an explicit adversarial recovery test.
-- Reuse Restic + Cloudflare R2; move from existing nightly backup cadence to satisfy target **RPO <= 4 hours**, test **RTO <= 8 hours** with full restore rehearsals. Restic encryption alone cannot erase a single project's historical data.
-- Delete live DB/index/cache objects, destroy relevant keys, revoke credentials, and retain only minimal deletion receipt. Cannot retract content already delivered to external clients/providers.
-- Evaluate LUKS2 unattended hardware-bound unlock and verified-boot chain as a PoC, not an assumed Raspberry Pi feature.
-
-## 9. Operations, capacity, and updates
-
-- Always-on services: Caddy, IdP, Haven API, DB, optional Matrix. Start with **two concurrent active workers**, idle-stop workers, test three under load. This is a recommended initial limit, not a measured Pi benchmark.
-- Use a component inventory with image digest, approved version, upstream source, ARM64 compatibility, security advisories, DB/schema migration requirements, dependency contracts, rollback artifact and release notes.
-- Automatically discover latest stable compatible releases; **do not auto-deploy `latest` tags**. Pin image digests; run dependency, SAST, integration, security and ARM64 smoke tests; canary/stage; preserve rollback and schema migration plan.
-- Reuse existing Caddy ACME issuance and TLS monitoring, deployment-by-SHA, GitHub Actions/SAST, Tailscale, and backup practices. Validate Docker-to-rootless-Podman migration; do not treat `:ro` Docker socket mount as read-only API permission.
-- Minimal auth/error logs and narrowly necessary transactional receipts, with retention and access controls. No general prompt/tool payload audit logging.
-
-## 10. Current repository conflicts and migration mapping
-
-| Current source | Observed baseline | Haven action |
-|---|---|---|
-| `auth/app.py` | Single-user password/session forward auth | Replace with OIDC and project-aware authorization |
-| `openhands/docker-compose.openhands.yml` | OpenHands image default `1.10`; host Docker socket mounted; separate workspace clone documented | Upgrade compatibility-tested image, remove agent-adjacent host socket, isolate controller and workers |
-| `docker-compose.yml` | Docker Compose, Open WebUI/Ollama, Docker networks, host-facing services | Parallel Haven control plane, restrict ports, cloud-first inference, migrate isolation |
-| [Hermes Compose overlay](../../hermes/docker-compose.hermes.yml) | One service definition, a configurable UID/GID and a Hermes data bind tree | Provision and verify persona runtimes under ADR-0008 |
-| `openwebui/runpod_core.py` | Tailscale-validated vLLM wake/readiness/streaming abstraction | Adapt to dedicated per-project deployment and strict inference broker |
-| `status/Caddyfile.tmpl` | Existing Caddy routing, LAN/Tailscale allowlist and forward-auth | Add explicit OIDC/Haven/Matrix routes; preserve existing DNS-01 ACME |
-| `backup/README.md` | Restic/R2; nightly backup | Add per-project encryption keys and <=4h RPO with restore testing |
-| `.github/workflows/sast-checks.yml` | Existing SAST/security checks | Reuse, expand to image/engine/ARM64 and policy regression tests |
-
-These are source observations, not runtime verification. Do not overwrite legacy volumes or import histories without inventory, owner consent and tested rollback.
-
-### Open WebUI image qualification
-
-The owner approved isolated ARM64 qualification of Open WebUI v0.13.4, including Tether, external tools and image-generation integrations, under [issue #236](https://github.com/jimbobsyouruncle/haven/issues/236). [ADR-0008](adr/0008-persona-runtime-isolation.md) defines the approved boundary. The current Compose service has one persistent Open WebUI data tree, a host-facing port and a host gateway mapping. Its mounts and network configuration do not establish persona isolation or deny access to other personas' services.
-
-Use synthetic state and an isolated network with explicitly authorized test services. Give the candidate only its own test data and credentials. Exercise the new integrations with authorized resources and verify denial of other users' private chats and other personas' files, credentials and services. Preserve the existing RunPod Function and test approved routing with a synthetic endpoint. Compare effective image-backend permissions before and after migration, including application restart. Reject any implicit grant created by migration. Verify login, chat retention and restoration with the previous pinned image and a consistent pre-upgrade backup.
-
-Merged [PR #247](https://github.com/jimbobsyouruncle/haven/pull/247) qualified the pinned v0.13.4 candidate on native ARM64 at head `0faf59d22c54f460036facf4524d091746afe85e`. The synthetic exercise covered login, private chat retention and cross-user denial, RunPod Function persistence and registration, Tether handshake, admin-only external tool verification, migrated image-backend permissions, and restoration from pre-upgrade state.
-
-The owner approved retaining the shared v0.11.4 tag as a compatibility and security hold. Any v0.13.4 production activation requires separate owner approval and evidence of [ADR-0008](adr/0008-persona-runtime-isolation.md) isolation, approved inference routing, preservation of user privacy, credentials, authorization and site-specific image-backend grants, and a tested recovery path. This activation dependency applies to the candidate rollout. Keep the upgrade independently reversible from Ollama and the status service. See the [migration access review and rollback procedure](../TROUBLESHOOTING.md).
-
-### Base and helper image dispositions
-
-Merged [PR #268](https://github.com/jimbobsyouruncle/haven/pull/268) selected the immutable Ollama 0.40.17 index in both Compose sources. The native ARM64 job at head `f5c8a92d448bbdaf74792144fde2c1995a0135cb` exercised API compatibility and a synthetic model-store upgrade and rollback with the same volume.
-
-Merged [PR #244](https://github.com/jimbobsyouruncle/haven/pull/244) selected `haven-status:3.12.16-zlib1`, built from the digest-pinned Python 3.12.16 slim base. Its ARM64 job at head `8691f2747f1d15de548448c7518b2ce54cf907bd` verified the installed `zlib1g` floor of `1:1.3.dfsg+really1.3.1-1+deb13u1` and mounted-app health under resource limits. Retain this pin per the [status hold in #236](https://github.com/jimbobsyouruncle/haven/issues/236#issuecomment-7070733697) until a beneficial same-series replacement is qualified. See the [status recovery procedure](../../status/README.md#why-standard-library-only).
-
-The source dispositions below cover the seven running services reported in the [#234 inventory](https://github.com/jimbobsyouruncle/haven/issues/234), plus the derived sandbox and the planned Canvas replacement.
-
-| Component | Disposition |
-| --- | --- |
-| Ollama | Upgraded in source to the digest-pinned 0.40.17 index. Recovery retains the prior immutable image and existing model store. [PR #268](https://github.com/jimbobsyouruncle/haven/pull/268) |
-| Status helper | Upgraded in source from the upstream slim reference to the Haven build with the patched zlib floor. Retain the qualified Python base digest. [PR #244](https://github.com/jimbobsyouruncle/haven/pull/244) |
-| Open WebUI | Shared v0.11.4 tag retained by owner decision. The digest-pinned ARM64 v0.13.4 candidate is qualified for synthetic use and awaits production activation evidence. [PR #247](https://github.com/jimbobsyouruncle/haven/pull/247) |
-| Auth | Python 3.12.16 Alpine base refreshed and digest-pinned. Retain bcrypt 4.2.1 pending long-password and malformed-hash compatibility qualification. [PR #240](https://github.com/jimbobsyouruncle/haven/pull/240) |
-| Caddy | Upgraded to 2.11.9 with digest-pinned builder and runtime inputs, including the stock runtime path. The custom build retains the qualified Cloudflare v0.2.4 and RFC2136 v1.0.0 plugins and has verified recovery-artifact evidence under #237. [PR #243](https://github.com/jimbobsyouruncle/haven/pull/243) |
-| Hermes Agent and WebUI | Python 3.11.18 slim base refreshed and digest-pinned. Retain the qualified matched Agent and WebUI commits. Hold GitHub CLI at 2.103.0 pending release checksums for both architectures. [PR #241](https://github.com/jimbobsyouruncle/haven/pull/241) |
-| Legacy OpenHands controller and sandbox | Retain controller 1.10 and the derived 1.37.1-python-hybrid.3 sandbox with its 1.37.1-python upstream base during the transition. The compatible replacement and legacy-state recovery remain with [#235](https://github.com/jimbobsyouruncle/haven/issues/235). |
-| Agent Canvas and bundled backend | Inventory candidate for matched-bundle, isolation, routing, and recovery qualification under [#235](https://github.com/jimbobsyouruncle/haven/issues/235). |
-
-[Issue #237](https://github.com/jimbobsyouruncle/haven/issues/237) accepted the scoped Auth, Caddy, and Hermes work. The RunPod worker was reviewed at the interface boundary in #234 and is outside the image refresh.
-
-The [Ollama owner-merge rollout](https://github.com/jimbobsyouruncle/haven/actions/runs/45009234627) succeeded. Exact installed image IDs and digests, target-host `doctor.sh` and functional checks, Pi resource measurements, and fleet recovery receipts remain with [#238](https://github.com/jimbobsyouruncle/haven/issues/238).
-
-## 11. Implementation phases and gates
-
-**Phase 0 — Inventory and compatibility.** Enumerate images, tags/digests, runtime versions, repos, secrets, data volumes and exact RunPod repo. Record latest *compatible* versions, not simply latest available. Establish reproducible dev/test environment and golden backups.
-
-**Phase 1 — Security PoCs (hard gate).** Rootless worker filesystem isolation, denied cross-project reads/writes, no management socket, network egress deny, DNS/IPv6 bypass tests, GitHub token scoping, RunPod-only model routing for all model operations, independent-key deletion across old backups. No production private repo access until all pass.
-
-**Phase 2 — Identity and authorization.** OIDC passkeys/TOTP, projects/groups/repositories, task policy snapshots, approvals, scoped credentials and UI effective-policy display. Test admin cannot read other users' private data by default.
-
-**Phase 3 — Engine and inference adapters.** Hermes coordinator, Pi and Codex task workers, optional OpenHands, normalized events, capability matrix, RunPod lifecycle and budget enforcement. Restricted projects only on proven compatible engines.
-
-**Phase 4 — Cross-repo development.** Separate GitHub App tokens, branches/PRs, integration artifacts and contract tests; preserve source separation.
-
-**Phase 5 — Matrix, memory, resilience.** Matrix/MAS bridge, canonical event/memory stores, backup cadence, cryptographic erasure, disaster recovery, staged upgrades.
-
-### Mandatory acceptance tests
-
-- Task authorized for repo A cannot list/read/write repo B, including via git remote, filesystem, network, symlink, cache, tool plugin, delegated worker or credential reuse.
-- Group A+B can authorize two independent workers but does not implicitly mount both repos in either worker.
-- Private source never reaches non-RunPod model endpoints, including planner, reviewer, summarizer, embeddings and error paths; DNS/IPv6/redirect/proxy bypasses fail.
-- RunPod offline or over budget -> queue/fail closed; no cloud fallback.
-- An engine incompatible with approved RunPod endpoint is unavailable for restricted tasks.
-- Revocation invalidates task/credential leases; already exported PRs/artifacts are treated as external copies.
-- Restore an old backup after project-key destruction cannot decrypt deleted project data.
-- All production image digests are pinned and upgrades have validated rollback artifacts.
-
-## 12. Open design decisions
-
-1. The separate RunPod source repository is confirmed as `jimbobsyouruncle/runpod-hybrid-worker`; its actual API, models, authentication and compatibility remain to be validated.
-2. Select IdP (Authentik/Kanidm) after Pi capacity, OIDC/MAS and passkey tests.
-3. Validate rootless Podman networking, firewall enforcement and the trusted provisioner design on Pi OS.
-4. Verify per-engine RunPod custom endpoint compatibility, telemetry behavior and license/provider restrictions.
-5. Decide whether Matrix is a v1 release dependency or a subsequent phase.
-6. Benchmark Pi worker concurrency, PostgreSQL, IdP and Matrix memory use; adjust two-worker default.
-7. Define private repository classification overrides, sharing policy and emergency incident response procedures.
-
-## 13. Source references
-
-- https://github.com/jimbobsyouruncle/hybrid-ai/blob/main/REPO_MAP.md
-- https://github.com/jimbobsyouruncle/hybrid-ai/blob/main/docker-compose.yml
-- https://github.com/jimbobsyouruncle/hybrid-ai/blob/main/openhands/docker-compose.openhands.yml
-- https://github.com/jimbobsyouruncle/hybrid-ai/blob/main/openwebui/runpod_core.py
-- https://github.com/jimbobsyouruncle/hybrid-ai/blob/main/status/Caddyfile.tmpl
-- https://github.com/jimbobsyouruncle/hybrid-ai/blob/main/backup/README.md
-- https://github.com/jimbobsyouruncle/hybrid-ai/blob/main/.github/workflows/sast-checks.yml
-
-## 14. Design governance, persona migration and GitHub workflow
-
-[DECISIONS.md](DECISIONS.md) distinguishes explicitly approved principles from proposed designs and unverified implementations. [MIGRATION.md](MIGRATION.md) records candidate workstreams and evidence gates; [root AGENTS.md](../../AGENTS.md) governs implementation cards, CI remediation and review readiness. None of these documents grants runtime permissions.
-
-### Independent CISO and digest continuity
-
-The owner requires an independent Haven CISO persona preserving the existing Hermes CISO **daily security digest**, including schedule, recipients, format and research sources. Verify actual profile, scheduler and mail configuration on the host before migration; do not infer them from repository content. CISO receives scoped read-only security research and recipient-allowlisted email sending, without default GitHub write or deploy. Coder must not inherit CISO mail-send rights. This is a **target migration requirement**, not verified functionality. See [ADR-0003](adr/0003-ciso-persona.md).
-
-### Legacy credential transition
-
-Inventory only credential names, owners, consumers, scopes and dependencies—**never values** in docs, issues, prompts or logs. Classify CISO/Coder/infrastructure/other, preserve existing integrations, and move toward independent short-lived broker-issued persona/task credentials with rotation, revocation, recovery and negative authorization tests. Cloudflare DNS, backup and host-admin secrets stay infrastructure-owned. Any live migration or rotation needs separate owner approval and rollback. See [ADR-0002](adr/0002-persona-credentials.md).
-
-### GitHub backlog and epic lifecycle
-
-GitHub Issues/Projects are proposed as the canonical cross-repository backlog. The Implementation Agent follows the [canonical development workflow](../../AGENTS.md#standard-development-workflow) through testing and PR readiness, including mandatory pre-PR security escalation. A Coordinator may plan and groom issues only with scoped authorization. Only the Human Owner merges PRs; agents cannot merge, enable auto-merge, bypass branch protection or delegate merge authority. The developer-local `haven new-epic` presents prioritized, deduplicated candidate epics and child issues; `haven next` verifies epic closure eligibility before proposing another issue. Both commands are **read-only**; epic creation, issue updates and closure require explicit separate owner approval. See [ADR-0004](adr/0004-github-epic-governance.md) and locally managed `~/.local/bin/haven` launcher.
-
-### Component validation and runtime health
-
-PR validation uses a fast universal baseline plus existing tests for changed components and their explicit consumers. Shared helpers, installation/deployment mechanics, security boundaries, CI selection/configuration and unknown paths select full validation; manual, weekly and automatic merge-SHA deployment validation remain full. Required status names and blocking security scans remain intact. This is a small path mapping with native workflow conditionals, not a dependency service. [The CI policy](../../.github/CICD.md#component-validation-policy) records actual boundaries, isolated fixtures, coupling, timing evidence and rollback. `doctor.sh` remains the primary deployed-system health authority (0 healthy / 1 degraded warning / 2 failure); it cannot replace code-path regression, restore safety, authorization or exact-SHA provenance checks. Owner merge authorizes automatic deployment under [ADR-0006](adr/0006-installation-root.md#current-decision-2026-11-21). Runtime verification establishes production health.
-
-### RunPod worker contract
-
-The separate [runpod-hybrid-worker repository](https://github.com/jimbobsyouruncle/runpod-hybrid-worker) requires its own CI, pinned image artifacts, authenticated streaming/inference contract, compatibility probes and negative egress tests. The worker README's deployment examples are not proof that Haven's proposed dedicated-RunPod-only security enforcement is deployed.
