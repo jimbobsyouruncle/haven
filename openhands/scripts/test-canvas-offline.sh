@@ -91,15 +91,6 @@ assert.ok(client.ok, 'Canvas client script must load through ingress');
 assert.match(client.headers.get('content-type') ?? '', /javascript/);
 await client.body?.cancel();
 
-for (const key of [undefined, 'invalid-smoke-key']) {
-  const denied = await get('/api/conversations/search', key);
-  assert.ok([401, 403].includes(denied.status), 'Backend must reject missing and invalid keys');
-  await denied.body?.cancel();
-}
-const allowed = await get('/api/conversations/search', apiKey);
-assert.ok(allowed.ok, 'Backend must accept the disposable session key');
-await allowed.json();
-
 const repo = mkdtempSync('/tmp/canvas-smoke-');
 function git(...args) {
   execFileSync('git', ['-C', repo, ...args], { stdio: 'ignore' });
@@ -109,5 +100,35 @@ git('-c', 'user.name=Canvas Smoke', '-c', 'user.email=smoke@invalid.test',
   'commit', '--allow-empty', '-m', 'Synthetic fixture');
 git('worktree', 'add', '-b', 'smoke-task', repo + '/task');
 assert.ok(existsSync(repo + '/task/.git'), 'Git worktree must be available inside the container');
-console.log('Canvas ingress, Agent Server session authentication, and offline Git worktree passed.');
+console.log('Canvas HTML, JavaScript asset, and synthetic worktree passed.');
+
+const conversations = '/api/conversations/search';
+const backendDeadline = Date.now() + 60_000;
+let backendStatus = 'unreachable';
+let backendReady = false;
+while (Date.now() < backendDeadline) {
+  try {
+    const response = await get(conversations, apiKey);
+    const contentType = response.headers.get('content-type');
+    backendStatus = `${response.status} ${contentType}`;
+    if (response.ok && contentType?.includes('application/json')) {
+      await response.json();
+      backendReady = true;
+      break;
+    }
+    await response.body?.cancel();
+  } catch {
+    // Backend startup can lag behind the static UI.
+  }
+  await delay(1000);
+}
+assert.ok(backendReady, `Authenticated Agent Server did not become ready (${backendStatus})`);
+
+for (const [label, key] of [['missing', undefined], ['invalid', 'invalid-smoke-key']]) {
+  const denied = await get(conversations, key);
+  assert.ok([401, 403].includes(denied.status),
+    `Backend must reject a ${label} session key (HTTP ${denied.status})`);
+  await denied.body?.cancel();
+}
+console.log('Agent Server session authentication passed.');
 JS
