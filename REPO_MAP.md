@@ -31,6 +31,7 @@
 - .github/workflows/agent-context-committer.yml
 - .github/workflows/agent-context.yml
 - .github/workflows/caddy-arm64.yml
+- .github/workflows/canvas-arm64.yml
 - .github/workflows/deploy.yml
 - .github/workflows/ollama-arm64.yml
 - .github/workflows/open-webui-arm64.yml
@@ -159,6 +160,7 @@
 ## openhands/scripts
 
 - openhands/scripts/openhands-control.sh - FILE: openhands/scripts/openhands-control.sh
+- openhands/scripts/test-canvas-offline.sh - Exercise the pinned ARM64 Canvas bundle with synthetic data and no host access.
 ## openwebui
 
 - openwebui/README.md - openwebui/ — the bridge to the cloud GPU

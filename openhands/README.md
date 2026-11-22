@@ -516,3 +516,42 @@ root-equivalent on this host. The workspace clone protects the *sandbox* — the
 untrusted input — but anything that compromises the controller itself already has the host.
 Only trusted administrators should use this service, and every diff and test result deserves
 review before you push it.
+
+## Agent Canvas qualification (#235)
+
+Run the [offline smoke test](scripts/test-canvas-offline.sh) on a disposable Linux
+ARM64 qualification host with local rootless Podman, OpenSSL, and cgroup v2 resource
+delegation. Pass `--pull` to preload the pinned image using the qualification host's approved
+registry access. Omit it for an already cached image.
+
+```bash
+bash openhands/scripts/test-canvas-offline.sh --pull
+```
+
+The pin identifies Canvas 1.42.0 and its bundled Agent Server 1.62.0, Automation Server,
+and ingress from the [inventory](https://github.com/jimbobsyouruncle/haven/issues/234).
+The probe runs a disposable container with no published ports, external network,
+host mounts, engine socket, production state, or provider credentials. It checks
+the UI HTML and client asset through ingress, rejects missing and invalid session
+keys at the Agent Server, and creates a local worktree from a synthetic Git commit.
+The disposable API key is scoped to that one container. The CPU and memory limits
+match the existing controller defaults.
+
+The bundle places the UI, services and agent tools in one container. Its session
+key is a backend credential. A successful probe would establish bundle compatibility
+and the offline fixture boundary only. Production activation requires a demonstrated
+task-scoped worker boundary, authenticated browser and WebSocket behavior behind
+Haven access controls, and fail-closed dedicated RunPod routing for restricted
+content, including ACP subprocesses, telemetry and provider failure. Exercise
+GitHub with scoped credentials and verify optional Hermes delegation independently
+of direct Canvas use. Measure sustained workload behavior on a 16 GB Pi alongside
+the existing stack. Keep the external network disabled for this probe while those
+paths are qualified separately.
+
+Before cutover, retain verified immutable legacy controller and sandbox images
+and a consistent backup of legacy OpenHands state. Rehearse restoring the legacy
+state with those images. Canvas starts with fresh state for qualification. Settings,
+provider secrets and conversation history require a separately verified export or
+import path before reuse. Rollback should restore the legacy wiring and its own
+state without copying Canvas state over it. See the existing
+[backup and restore procedure](../backup/README.md).

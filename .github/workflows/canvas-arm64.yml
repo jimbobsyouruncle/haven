@@ -1,0 +1,21 @@
+name: Agent Canvas ARM64 qualification
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'openhands/scripts/test-canvas-offline.sh'
+      - '.github/workflows/canvas-arm64.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canvas:
+    name: Offline Agent Canvas bundle on ARM64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash openhands/scripts/test-canvas-offline.sh --pull
