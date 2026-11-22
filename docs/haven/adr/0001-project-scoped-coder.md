@@ -1,4 +1,4 @@
-# ADR-0001 — Persona-scoped coding access and restricted inference
+# ADR-0001 — Persona-scoped coding access and inference choice
 
 **Status:** Revised owner-approved principle (2026-11-22; supersedes the universal task-worker requirement approved 2026-11-07). Runtime enforcement not proven.
 **Related:** [ADR-0008](0008-persona-runtime-isolation.md), [decision register](../DECISIONS.md).
@@ -11,7 +11,13 @@ Assign repositories, local checkouts, configuration and credentials only to pers
 
 Sensitive projects requiring isolation from the general Developer persona must use a **separate persona runtime** with different host UID/GID, private storage, credentials and container/network grants. No other persona's repositories or private secrets may be mounted into it. Where distinct tasks or collaborators inside one persona require mutually exclusive local access, stronger task-scoped workers and explicit grants remain required; alternatively split them into separate personas. Task-level policy can narrow access but cannot claim isolation while sharing an unrestricted Unix identity and filesystem.
 
-For any model operation involving restricted content (including coordinator, planning, coding, review, embeddings or delegated agents), require the approved dedicated RunPod inference deployment; no fallback to an unapproved endpoint. Enforce this outside agent prompts through trusted routing, egress policy and fail-closed behavior. An inaccessible mandatory endpoint must block the operation. Independent persona and user authorization remain required for shared services.
+## Inference provider selection and data protection
+
+**Public development.** The general Developer persona may use configured public inference providers, local models, or RunPod for authorized public development tasks in Canvas, ACP, Hermes and other supported applications. Provider selection is a normal user capability. Public development must not depend on dedicated RunPod availability or fail-closed restricted-mode enforcement. A public repository does not make local secrets, private attachments, other personas' resources or private conversation context public: authorized agent resources and provider-bound content must still be scoped appropriately.
+
+**Private and restricted development.** Sensitive projects requiring isolation from general development use separate persona runtimes and scoped resources under ADR-0008. RunPod may be selected for private inference, but that selection alone does not prove protected routing. If a dedicated **protected restricted-inference mode** is implemented and explicitly enabled, enforce its approved-provider restrictions for every model operation handling restricted data (including delegated and ancillary calls), with no unauthorized fallback on outage or credentials/configuration failure. Until those controls have been verified, do not advertise a fail-closed private inference guarantee or silently disclose restricted data to public inference providers.
+
+**Independent protections.** Persona isolation and human-user authorization protect data, credentials and repositories regardless of inference provider selection. Application capabilities should remain available to authorized users; authorization should narrow access to sensitive resources rather than disable features globally.
 
 Agent-accessible containers must not receive host Docker/container-management sockets, privileged execution, broad host mounts or unrestricted infrastructure credentials. If an engine requires these to launch per-conversation containers, keep that control with a separate trusted component or use a safe compatible execution mode; do not grant the engine a privileged socket simply to avoid per-task workers.
 
@@ -23,4 +29,6 @@ Fine-grained credentials restrict remote GitHub operations, not local filesystem
 
 ## Evidence gate
 
-Before production Canvas coding activation, verify effective persona UID/GID, private mounts/storage and secrets, cross-persona filesystem/network denial, no privileged sockets or capabilities, repo token scopes, unauthorized remote repo access, and authorized user/service access. Verify an agent cannot reach another persona's repository checkout or credentials. Test mandatory RunPod-only routing, endpoint outage and fallback denial for Canvas and ACP. Verify native Canvas workflows, authenticated HTTPS/WebSockets and Hermes interoperability independently. Do not claim enforcement or deployment until demonstrated.
+Public-repository Canvas activation requires authenticated HTTPS, API and WebSocket access; authorized repository and credential scopes; an unprivileged agent runtime without host container-management sockets or broad host mounts; and effective separation from other personas' private storage, secrets, checkouts and services. Verify usable native Canvas development with a selected public inference provider, and check Hermes independence and supported interoperability separately. Follow the normal PR, CI, owner-merge and automatic deployment path. A comprehensive rollout of all future personas, universal task-scoped workers, and dedicated RunPod fail-closed restricted-mode routing are **not** prerequisites for public Canvas activation. Document limits and unverified protections rather than claiming them deployed.
+
+If protected restricted inference is enabled in the future, separately verify approved RunPod-only routing, endpoint outage and fallback denial for Canvas and ACP before describing that mode as enforced.
