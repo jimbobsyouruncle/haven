@@ -2,7 +2,7 @@
 set -euo pipefail
 
 candidate="$(sed -n 's/.*image: [$]{OLLAMA_IMAGE:-\(.*\)}/\1/p' docker-compose.yml)"
-baseline=ollama/ollama:0.34.4@sha256:8262851b2846b87c649eddf3e76beb270c52f4d1bc94559f47efde16b0841551
+baseline=ollama/ollama:0.40.16@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592
 container=haven-ollama-qualification
 store=haven-ollama-qualification-data
 cleanup() {
@@ -33,12 +33,12 @@ start() {
   return 1
 }
 
-start "$baseline" 0.34.4
+start "$baseline" 0.40.16
 curl -fsS --data-binary "@$RUNNER_TEMP/ollama-blob" "$api/api/blobs/$digest"
 docker rm -f "$container" >/dev/null
-start "$candidate" 0.40.16
+start "$candidate" 0.40.17
 curl -fsSI "$api/api/blobs/$digest"
 docker stats --no-stream "$container"
 docker rm -f "$container" >/dev/null
-start "$baseline" 0.34.4
+start "$baseline" 0.40.16
 curl -fsSI "$api/api/blobs/$digest"
