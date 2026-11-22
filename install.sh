@@ -418,6 +418,13 @@ case "${OLLAMA_IMAGE:-}" in
     ;;
 esac
 
+# Advance the previous managed Open WebUI default. Custom and recovery pins survive.
+case "${WEBUI_IMAGE:-}" in
+  ghcr.io/open-webui/open-webui:v0.11.4)
+    unset WEBUI_IMAGE
+    ;;
+esac
+
 # Advance only the former managed DNS image defaults. An explicit custom
 # tag or immutable recovery reference survives rendering.
 case "${CADDY_IMAGE:-}" in
@@ -948,7 +955,7 @@ OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE}
 
 # --- Container image pins --------------------------------------------------
 OLLAMA_IMAGE=${OLLAMA_IMAGE:-ollama/ollama:0.40.17@sha256:ccc42bcd3d5fcf7ab0d532b300382154e1a4da56fc666bdb313b78ebdd912754}
-WEBUI_IMAGE=${WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.11.4}
+WEBUI_IMAGE=${WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.13.4@sha256:fe2e541eeb25a88fdcc95c046d10228ec7959c80af2c1019c6d53428cd6f3518}
 
 # --- Status page identity --------------------------------------------------
 STATUS_UID=${STATUS_UID}

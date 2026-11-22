@@ -2637,22 +2637,33 @@ For an owner-authorized rollback, recreate only Ollama with the retained image u
 
 ### Rehearse or roll back Open WebUI v0.13.4
 
-The ARM64 candidate is in `tests/qualification/open-webui.env`. The shared
-installation keeps its existing default. Selecting the candidate through
-`WEBUI_IMAGE` on an existing installation requires separate rollout
-authorization. Run the synthetic migration fixture on the isolated ARM64
-runner first. Never attach that runner to an existing Haven data directory.
+The production default uses the immutable ARM64 image qualified in
+[#247](https://github.com/jimbobsyouruncle/haven/pull/247). The installer
+advances the former managed v0.11.4 tag and preserves distinct
+`WEBUI_IMAGE` overrides. Verify the effective image before deployment.
 
 Before rollout, stop Open WebUI and preserve its exact image, prior Compose
 configuration, signing key and a consistent copy of the entire WebUI data tree.
-Review existing image backend permissions. Rehearse migration while isolated
-from users and network services, and verify that connections retain their
-intended grants before exposing the service. Check grants as an administrator
-and an ordinary user after restart. Enable Tether and external tools only
-behind an effective boundary that denies access to other personas and
-unapproved services.
+Treat the signing key and data copy as private. Verify restoration with the
+old image and rehearse migration on a separate copy with isolated networking.
+Complete these checks before merging the pin because owner merge can trigger
+automatic deployment.
+
+Check login, private chats, Functions, and model registrations after migration.
+Verify the approved RunPod route and confirm that request failure produces no
+provider fallback. For Tether, check that a session can use its authorized relay
+services and that another user cannot use them. For external tools, verify
+administrator-only configuration, per-user invocation grants, and network
+restrictions against unapproved destinations. For image generation, verify
+migrated backend configuration and both allowed and denied generation requests.
+Scope credentials and service access to the authorized persona for each
+integration. Record which integrations pass and any specific limitations.
+On the Pi, record startup, CPU and memory usage, and check for restarts,
+out-of-memory events and impact on other services.
 
 To roll back, stop Open WebUI, preserve the migrated tree separately, restore
 the pre-upgrade data and signing key, and recreate only `open-webui` with
 the retained image using `docker compose up -d --no-deps --pull never open-webui`.
+Set `WEBUI_IMAGE` to the retained digest or a distinct local recovery tag so a
+later installer run preserves the override.
 Verify login, private chats and the RunPod Function before reopening access.
