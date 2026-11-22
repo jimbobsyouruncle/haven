@@ -25,7 +25,7 @@ container=$(podman --remote=false run --detach --rm --pull=never \
   --cap-drop ALL --security-opt no-new-privileges --image-volume=ignore \
   --log-driver=none --memory=3g --cpus=2.5 --pids-limit=512 \
   --env "LOCAL_BACKEND_API_KEY=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
-  "$image")
+  "$image" --public)
 trap 'podman --remote=false stop --time 5 "$container" >/dev/null 2>&1 || true' EXIT
 
 podman --remote=false exec -i "$container" node --input-type=module - <<'JS'

@@ -555,3 +555,26 @@ provider secrets and conversation history require a separately verified export o
 import path before reuse. Rollback should restore the legacy wiring and its own
 state without copying Canvas state over it. See the existing
 [backup and restore procedure](../backup/README.md).
+
+### Authenticated ingress and task execution
+
+The probe passes the upstream `--public` launcher option with a disposable backend
+key. The qualification keeps direct ingress authentication checks inside the
+container. A separate proxy test must use Haven's existing Caddy `forward_auth`
+against the auth service's `/verify`, applied before routing any Canvas path,
+including API calls and WebSocket upgrades. The production auth snippet is optional
+globally, so a Canvas site would require an authenticated HTTPS configuration to
+exist before rendering the route. Canvas and its backend ports would stay off host
+port mappings and shared application networks. Test both layers independently.
+[Upstream self-hosting modes](https://docs.openhands.dev/openhands/usage/agent-canvas/backend-setup/vm)
+
+Worker isolation is an independent dependency. The bundled local runtime shares
+its container with Canvas services. Upstream per-conversation Docker requires
+engine access from the outer server, and the documented selectable runtime can
+fall back to local execution. The approved Haven path requires a task-scoped remote
+worker with synthetic tests for revoked authorization, denied host and peer access,
+worker outage, and mandatory inference outage. The existing RunPod chat client
+does not establish an enforced egress boundary for Canvas or ACP. Keep restricted
+tasks disabled until the existing approved task and inference controls are available
+to the candidate and the failure cases pass.
+[Upstream conversation runtime](https://docs.openhands.dev/openhands/usage/agent-canvas/backend-setup/docker-execution)
