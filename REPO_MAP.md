@@ -97,7 +97,7 @@
 - docs/haven/evidence-completion.md - Haven evidence-based issue completion
 ## docs/haven/adr
 
-- docs/haven/adr/0001-project-scoped-coder.md - ADR-0001 — Persona-scoped coding access and inference choice
+- docs/haven/adr/0001-project-scoped-coder.md - ADR-0001 — Persona-scoped coding access and restricted inference
 - docs/haven/adr/0002-persona-credentials.md - ADR-0002 — Persona credentials and legacy migration
 - docs/haven/adr/0003-ciso-persona.md - ADR-0003 — Independent CISO persona
 - docs/haven/adr/0004-github-epic-governance.md - ADR-0004 — GitHub epics and agent governance
