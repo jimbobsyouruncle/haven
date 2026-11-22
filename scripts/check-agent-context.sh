@@ -30,7 +30,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-if [ ! -d "$REPO_ROOT/.git" ]; then
+if [ ! -d "$REPO_ROOT/.git" ] && [ ! -f "$REPO_ROOT/.git" ]; then
   echo "error: repository root not found at $REPO_ROOT" >&2
   exit 2
 fi

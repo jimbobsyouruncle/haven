@@ -214,13 +214,17 @@ The **Agent context** workflow (`workflows/agent-context.yml`) enforces that the
 
 The check prints nothing and exits `0` when both maps match a fresh run. It exits `1` when a map is stale or missing, or when a retired `CONSOLIDATED_*.md` is still tracked. It exits `2` on a usage error or a generator failure (including a size overflow over `--max-bytes 30720`).
 
-To refresh the maps yourself:
+For each implementation PR update, including documentation-only changes, finish editing and stage intended additions and removals. From the repository root, set `GENERATOR` to the absolute path to the `agent-context/generate.py` at the exact commit pinned in `workflows/agent-context.yml`. Then regenerate and verify the maps before committing and pushing:
 
 ```bash
-python3 scripts/generate-agent-context.py <path-to-generate.py>
+python3 scripts/generate-agent-context.py "$GENERATOR"
+bash scripts/check-agent-context.sh "$GENERATOR"
+git add -- REPO_MAP.md CODE_INDEX.md
 ```
 
-The workflow holds `permissions: contents: read`, adds no write permission, and never commits or pushes. The maps land only through reviewed pull requests.
+Read-only reviews leave the maps as checked in.
+
+The freshness workflow holds `permissions: contents: read`, adds no write permission, and never commits or pushes. The maps land only through reviewed pull requests.
 
 The separate **Agent context committer** (`workflows/agent-context-committer.yml`) runs on pushes to `main`. When maps are stale it pushes a bot branch, opens a **draft** refresh PR, dispatches the map and SAST workflows, and polls their required checks. It stops with an owner-review handoff; it never merges, enables auto-merge or deletes branches. Its permissions remain `contents: write` (bot branch), `pull-requests: write` (draft PR), `actions: write` (check dispatch) and `checks: read` (check polling). GitHub does not provide a create-PR-only permission here: these write grants still require branch protection and human-controlled review; removing the merge step does not revoke token-level merge capability.
 

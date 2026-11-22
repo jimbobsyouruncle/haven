@@ -1,6 +1,6 @@
 # ADR-0008 — Persona runtime, host filesystem, and secret isolation
 
-**Status:** Approved owner requirement (2026-11-19). Implementation and runtime enforcement are unverified.
+**Status:** Approved owner requirement (2026-11-19), clarified for coding tasks (2026-11-22). Implementation and runtime enforcement are unverified.
 **Related:** [HAVEN-SEC-012](../DECISIONS.md), [ADR-0001](0001-project-scoped-coder.md), [ADR-0002](0002-persona-credentials.md), [ADR-0003](0003-ciso-persona.md), and the [architecture](../ARCHITECTURE.md).
 
 ## Isolation boundary
@@ -13,7 +13,7 @@ Each persona owns an isolated persistent tree. Default private directories to mo
 
 A persona's passwords, tokens, API keys and other secrets must be inaccessible to every other persona through mounts, environment files, images, logs, shared configuration and management interfaces. Keep infrastructure credentials outside persona mounts. Trusted provisioning and backup/restore services may access only what their operational role requires. Backups and restores must preserve ownership, access controls, applicable encryption keys and persona separation. [ADR-0002](0002-persona-credentials.md) governs proposed credential delivery and lifecycle.
 
-Project/task authorization and human user privacy apply independently. Persistent Developer applications sharing a UID/GID gain only explicitly authorized project/task access under [ADR-0001](0001-project-scoped-coder.md). Task-scoped workers retain independent isolation and do not inherit the Developer runtime's filesystem grants. Human users sharing a persona retain independently authorized private data and conversations. Shared application storage or services must enforce those user and project boundaries.
+Project authorization and human user privacy remain independent of persona instructions. Under the owner-approved revision of [ADR-0001](0001-project-scoped-coder.md), coding applications and tasks within a persona may share that persona's Unix identity, authorized checkouts, storage and credentials; no universal per-task worker or per-repository sandbox is required. Sensitive projects that must not share these resources belong in separate persona runtimes. Fine-grained GitHub tokens or deploy keys restrict remote repository permissions but do not isolate files already accessible to the persona UID. Stronger task-level isolation is required only where users or tasks must be mutually separated within a persona. Human users sharing a persona retain independently authorized private data and conversations; a shared Unix identity alone does not enforce that privacy. Shared application storage or services handling user-private data must independently authorize access.
 
 ## Applications and access
 
@@ -31,5 +31,5 @@ The repository currently defines one Hermes service with a configurable host UID
 
 - Inventory legacy profile data and credential consumers without collecting secret values. Preserve CISO digest continuity under [ADR-0003](0003-ciso-persona.md). Review rollback before any separately approved migration.
 - Verify effective UID/GID, storage modes, mounts, supplementary groups, capabilities, sockets and secret delivery. Test that each persona can use its own resources and cannot traverse, read, write or mount another persona's storage, including through symlinks, ACLs or volumes.
-- Test unauthorized persona/service requests and direct backend access, independent user and project/task access, and Matrix room authorization when enabled.
+- Test unauthorized persona/service requests and direct backend access, independent user privacy, persona-scoped repository permissions and cross-persona project access. Test optional task boundaries only where configured, and Matrix room authorization when enabled.
 - Verify backup and restore isolation, functional continuity and effective controls after recreation or relevant image/configuration changes. Record runtime evidence before marking implementation complete.
