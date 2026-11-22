@@ -161,6 +161,8 @@
 
 - openhands/scripts/openhands-control.sh - FILE: openhands/scripts/openhands-control.sh
 - openhands/scripts/test-canvas-offline.sh - Exercise the pinned ARM64 Canvas bundle with synthetic data and no host access.
+- openhands/scripts/test-canvas-personas.mjs
+- openhands/scripts/test-canvas-personas.sh - Qualify the persona launcher boundary with two offline, disposable Canvas runtimes.
 ## openwebui
 
 - openwebui/README.md - openwebui/ — the bridge to the cloud GPU
