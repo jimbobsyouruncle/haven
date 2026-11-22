@@ -531,8 +531,9 @@ bash openhands/scripts/test-canvas-offline.sh --pull
 
 The pin identifies Canvas 1.42.0 and its bundled Agent Server 1.62.0, Automation Server,
 and ingress from the [inventory](https://github.com/jimbobsyouruncle/haven/issues/234).
-The probe runs a disposable container with no published ports, external network,
-host mounts, engine socket, production state, or provider credentials. It checks
+The probe runs the bundled entrypoint in a disposable container with one private
+synthetic persona mount and no published ports, external network, engine socket,
+production state, or provider credentials. It checks the host identity and mount,
 the UI HTML and client asset through ingress, rejects missing and invalid session
 keys at the Agent Server, and creates a local worktree from a synthetic Git commit.
 The disposable API key is scoped to that one container. The CPU and memory limits
@@ -566,10 +567,11 @@ documented Agent Server variable, `OH_SESSION_API_KEYS_0`, directly and checks
 both the bundled ingress and the direct Agent Server listener. Neither listener
 is published. The bundle's separate auth-required listener is for upstream tests.
 The proxy fixture uses Haven's existing auth image and the Caddy runtime pin
-with `forward_auth` against `/verify`. It verifies cookie denial for browser,
-API and WebSocket upgrade requests, rejects a tampered cookie even with a valid
-backend key, and checks that a valid Haven cookie alone cannot reach the backend
-API. It also checks positive browser and API requests.
+with `forward_auth` against `/verify` and a separate synthetic Canvas grant using
+Caddy Basic authentication. It checks browser, API and WebSocket upgrade denials,
+including a valid Haven cookie without a Canvas grant. The fixture strips both
+ingress credentials before proxying and checks that the Agent Server still
+requires its own session key. It also checks positive browser and API requests.
 All test traffic stays inside the fixture loopback network. TLS and an
 authenticated conversation WebSocket still need qualification. The production auth snippet is optional
 globally, so a Canvas site would require an authenticated HTTPS configuration to
@@ -590,9 +592,10 @@ disposable tokens with read-only access to synthetic Git refs.
 
 The fixture uses a Node workload from the Canvas image with external networking
 disabled. The existing bundle probe exercises Haven and Agent Server
-authentication independently. Applying these launch restrictions to the actual
-Canvas entrypoint and qualifying shared services, scoped GitHub credentials and
-independent Hermes operation in the integrated configuration remain part of #235.
+authentication independently. The entrypoint probe checks an unprivileged host
+identity and a private test mount. Qualifying cross-persona network enforcement,
+shared services, scoped GitHub credentials and independent Hermes operation in
+the integrated configuration remains part of #235.
 
 The bundled local runtime shares its container with Canvas services. Qualify it
 against the approved [persona boundary](../docs/haven/adr/0008-persona-runtime-isolation.md):
