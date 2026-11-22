@@ -222,6 +222,12 @@ async function websocketStatus() {
 assert.equal(await proxyGet('/canvas'), 302, 'Caddy must gate the browser');
 assert.equal(await proxyGet(conversations, { 'X-Session-API-Key': apiKey }), 302,
   'Caddy must require a Haven cookie even with a valid backend key');
+assert.equal(await proxyGet(conversations, {
+  cookie: cookie + 'tampered',
+  'X-Session-API-Key': apiKey,
+}), 302, 'Caddy must reject a tampered Haven cookie even with a valid backend key');
+assert.ok([401, 403].includes(await proxyGet(conversations, { cookie })),
+  'A valid Haven cookie must not substitute for the backend session key');
 assert.equal(await websocketStatus(), 302, 'Caddy must gate WebSocket upgrades');
 assert.equal(await proxyGet('/canvas', { cookie }), 200, 'Haven session must reach Canvas');
 assert.equal(await proxyGet(conversations, { cookie, 'X-Session-API-Key': apiKey }), 200,

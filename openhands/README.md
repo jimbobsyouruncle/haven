@@ -541,7 +541,7 @@ match the existing controller defaults.
 The bundle places the UI, services and agent tools in one container. Its session
 key is a backend credential. A successful probe would establish bundle compatibility
 and the offline fixture boundary only. Production activation requires a demonstrated
-task-scoped worker boundary, authenticated browser and WebSocket behavior behind
+persona runtime boundary, authenticated browser and WebSocket behavior behind
 Haven access controls, and fail-closed dedicated RunPod routing for restricted
 content, including ACP subprocesses, telemetry and provider failure. Exercise
 GitHub with scoped credentials and verify optional Hermes delegation independently
@@ -567,7 +567,9 @@ both the bundled ingress and the direct Agent Server listener. Neither listener
 is published. The bundle's separate auth-required listener is for upstream tests.
 The proxy fixture uses Haven's existing auth image and the Caddy runtime pin
 with `forward_auth` against `/verify`. It verifies cookie denial for browser,
-API and WebSocket upgrade requests, plus positive browser and API requests.
+API and WebSocket upgrade requests, rejects a tampered cookie even with a valid
+backend key, and checks that a valid Haven cookie alone cannot reach the backend
+API. It also checks positive browser and API requests.
 All test traffic stays inside the fixture loopback network. TLS and an
 authenticated conversation WebSocket still need qualification. The production auth snippet is optional
 globally, so a Canvas site would require an authenticated HTTPS configuration to
@@ -575,13 +577,20 @@ exist before rendering the route. Canvas and its backend ports would stay off ho
 port mappings and shared application networks. Test both layers independently.
 [Upstream self-hosting modes](https://docs.openhands.dev/openhands/usage/agent-canvas/backend-setup/vm)
 
-Worker isolation is an independent dependency. The bundled local runtime shares
-its container with Canvas services. Upstream per-conversation Docker requires
-engine access from the outer server, and the documented selectable runtime can
-fall back to local execution. The approved Haven path requires a task-scoped remote
-worker with synthetic tests for revoked authorization, denied host and peer access,
-worker outage, and mandatory inference outage. The existing RunPod chat client
-does not establish an enforced egress boundary for Canvas or ACP. Keep restricted
-tasks disabled until the existing approved task and inference controls are available
-to the candidate and the failure cases pass.
+The bundled local runtime shares its container with Canvas services. Qualify it
+against the approved [persona boundary](../docs/haven/adr/0008-persona-runtime-isolation.md):
+verify the effective host UID/GID, private storage and credentials, cross-persona
+filesystem and network denial, repository credential scope, and independent
+user authorization. Apply stronger task isolation where tasks require mutually
+exclusive access under [ADR-0001](../docs/haven/adr/0001-project-scoped-coder.md).
+Upstream per-conversation Docker requires engine access from the outer server,
+and the documented selectable runtime can fall back to local execution. Keep
+container-management sockets outside agent-accessible workloads and verify denial
+of unauthorized execution when a required isolated worker is unavailable.
+
+Restricted work also requires enforced dedicated RunPod routing for Canvas and
+ACP, including ancillary model calls, with negative tests for endpoint outage,
+revoked credentials, unapproved egress and provider fallback. The existing RunPod
+chat client covers the Open WebUI path. Keep restricted tasks disabled until
+Canvas and ACP enforcement is verified.
 [Upstream conversation runtime](https://docs.openhands.dev/openhands/usage/agent-canvas/backend-setup/docker-execution)
