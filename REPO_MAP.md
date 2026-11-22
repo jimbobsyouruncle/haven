@@ -12,7 +12,7 @@
 - .gitattributes
 - .gitignore
 - .ip-literal-allowlist
-- AGENTS.md - AGENTS.md — Hybrid-AI → Haven agent operating contract
+- AGENTS.md - AGENTS.md — Haven agent operating contract
 - LICENSE
 - README.md - Haven
 - SECURITY.md - Security
