@@ -19,6 +19,9 @@
 ## .github/workflows/caddy-arm64.yml
 - build
 
+## .github/workflows/canvas-arm64.yml
+- canvas
+
 ## .github/workflows/deploy.yml
 - validate
 - deploy
@@ -292,6 +295,9 @@
 
 ## openhands/scripts/openhands-control.sh
 - workspace()
+
+## openhands/scripts/test-canvas-offline.sh
+- cleanup()
 
 ## openwebui/build_pipe.py
 - def build()
