@@ -6,6 +6,14 @@ This document is a **proposed platform workstream plan**, not a declaration of i
 
 Owner merge authorizes automatic deployment after scope-relevant CI and SAST under [ADR-0006](adr/0006-installation-root.md#current-decision-2026-11-21). Direct cutover, destructive data migration and credential operations require separate approval.
 
+## Component migration checks
+
+- Reuse the existing Caddy and Cloudflare DNS-01 certificate flow. Add routes in the source templates and test renewal instead of adding a second certificate manager.
+- Preserve the RunPod wake, readiness and streaming contracts and Tailscale endpoint checks when adding deployment management or routing. Existing Compose includes Ollama; the Haven target uses cloud inference.
+- Preserve Restic/R2 recovery. Independent destroyable project keys are a prerequisite to claiming cryptographic erasure of backed-up project data. The recovery targets are RPO up to four hours and RTO up to eight hours. Validate with an actual restore.
+- Treat the current `auth/app.py` gate as single-user. The target is OIDC with passkeys and password plus TOTP fallback.
+- For a rootless runtime migration, validate isolation, networking, Caddy reachability, volumes and recovery on ARM64 before replacing the existing runtime. Upgrade to compatible stable components after validation. Preserve the existing deployment until its replacement is verified.
+
 ## Existing approved rename sequence
 
 [Epic #146](https://github.com/jimbobsyouruncle/hybrid-ai/issues/146): #147 public-source audit is accepted complete; #148 and #149 own compatibility and deployment preparation; #150 alone performs the separately owner-approved repository rename/cutover; #151 verifies post-cutover behavior. Preserve deferred external verification and accepted audit evidence. Do not infer production verification from source CI.
