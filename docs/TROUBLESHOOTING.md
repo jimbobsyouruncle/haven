@@ -2634,3 +2634,25 @@ the secret's consumer, not the secret. Do not weaken the rule.
 Before changing Ollama, preserve the exact running image and a consistent copy of `ollama_data` while Ollama is stopped. Record the old image ID. The previous managed default was `ollama/ollama:0.34.4`. The installer advances that exact managed tag, so use the retained image's repository digest or tag the retained image with a distinct local recovery tag in `OLLAMA_IMAGE`.
 
 For an owner-authorized rollback, recreate only Ollama with the retained image using `docker compose up -d --no-deps --pull never ollama`. Restore the saved model tree first if the current tree cannot be read by the prior release. Verify `/api/version`, `/api/tags` and a representative local model request. The CI fixture checks API startup and a synthetic model blob across the upgrade and rollback. Measure representative model generation and peak memory on the target Pi before production rollout.
+
+### Rehearse or roll back Open WebUI v0.13.4
+
+The ARM64 candidate is in `tests/qualification/open-webui.env`. The shared
+installation keeps its existing default. Selecting the candidate through
+`WEBUI_IMAGE` on an existing installation requires separate rollout
+authorization. Run the synthetic migration fixture on the isolated ARM64
+runner first. Never attach that runner to an existing Haven data directory.
+
+Before rollout, stop Open WebUI and preserve its exact image, prior Compose
+configuration, signing key and a consistent copy of the entire WebUI data tree.
+Review existing image backend permissions. Rehearse migration while isolated
+from users and network services, and verify that connections retain their
+intended grants before exposing the service. Check grants as an administrator
+and an ordinary user after restart. Enable Tether and external tools only
+behind an effective boundary that denies access to other personas and
+unapproved services.
+
+To roll back, stop Open WebUI, preserve the migrated tree separately, restore
+the pre-upgrade data and signing key, and recreate only `open-webui` with
+the retained image using `docker compose up -d --no-deps --pull never open-webui`.
+Verify login, private chats and the RunPod Function before reopening access.

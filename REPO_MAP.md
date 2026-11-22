@@ -33,6 +33,7 @@
 - .github/workflows/caddy-arm64.yml
 - .github/workflows/deploy.yml
 - .github/workflows/ollama-arm64.yml
+- .github/workflows/open-webui-arm64.yml
 - .github/workflows/sandbox-image.yml
 - .github/workflows/sast-checks.yml
 - .github/workflows/status-arm64.yml
@@ -286,3 +287,6 @@
 ## tests/qualification
 
 - tests/qualification/ollama.sh
+- tests/qualification/open-webui.env
+- tests/qualification/open-webui.py - Exercise only the loopback API of the disposable Open WebUI container.
+- tests/qualification/open-webui.sh

@@ -1,0 +1,22 @@
+name: Open WebUI ARM64 qualification
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/qualification/open-webui.*'
+      - 'openwebui/**'
+      - '.github/workflows/open-webui-arm64.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  webui:
+    name: Open WebUI synthetic migration and restore on ARM64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: test "$(uname -m)" = aarch64 && bash tests/qualification/open-webui.sh
