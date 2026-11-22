@@ -718,7 +718,7 @@ Rollback uses the existing reviewed deployment/recovery procedure; rolling back
 this fix also restores the earlier credential-import defect, so do not perform
 restore rehearsals with an older entrypoint assumed safe.
 
-For an installed-entrypoint acceptance after a separately authorized deployment,
+For an installed-entrypoint acceptance after deployment,
 the operator must record the resolved entrypoint path, full deployed SHA and
 matching installed/source hashes, then perform an authorized isolated scratch
 rehearsal with the exact installed entrypoint and an existing snapshot. Record

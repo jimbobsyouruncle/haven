@@ -223,6 +223,16 @@ Never place two independent agents on the same writable branch/worktree. An opti
 
 These are source observations, not runtime verification. Do not overwrite legacy volumes or import histories without inventory, owner consent and tested rollback.
 
+### Open WebUI image qualification
+
+The owner approved isolated ARM64 qualification of Open WebUI v0.13.4, including Tether, external tools and image-generation integrations, under [issue #236](https://github.com/jimbobsyouruncle/haven/issues/236). [ADR-0008](adr/0008-persona-runtime-isolation.md) defines the approved boundary. The current Compose service has one persistent Open WebUI data tree, a host-facing port and a host gateway mapping. Its mounts and network configuration do not establish persona isolation or deny access to other personas' services.
+
+Use synthetic state and an isolated network with explicitly authorized test services. Give the candidate only its own test data and credentials. Exercise the new integrations with authorized resources and verify denial of other users' private chats and other personas' files, credentials and services. Preserve the existing RunPod Function and test approved routing with a synthetic endpoint. Compare effective image-backend permissions before and after migration, including application restart. Reject any implicit grant created by migration. Verify login, chat retention and restoration with the previous pinned image and a consistent pre-upgrade backup.
+
+Production enablement requires a separate owner decision based on verified isolation and access controls. Keep the upgrade independently reversible from Ollama and the status service.
+
+The status candidate screened in #234 is on hold. The official Python 3.12.16 slim ARM64 image manifest `sha256:c61cffc3bacb94ed026ff8b45d5114b7693dd0420baca0a1ace0e3d0ce9035fd` has an attached SPDX SBOM listing `zlib1g` `1:1.3.dfsg+really1.3.1-1+b1`. Debian Trixie fixes [CVE-2026-85091](https://security-tracker.debian.org/tracker/CVE-2026-85091) in `1:1.3.dfsg+really1.3.1-1+deb13u1`. Qualify a rebuilt image against the fixed package and check its installed version on ARM64 before selecting the pin. The SBOM describes the candidate artifact, and the effective package version on the existing host remains unverified.
+
 ## 11. Implementation phases and gates
 
 **Phase 0 — Inventory and compatibility.** Enumerate images, tags/digests, runtime versions, repos, secrets, data volumes and exact RunPod repo. Record latest *compatible* versions, not simply latest available. Establish reproducible dev/test environment and golden backups.
@@ -286,7 +296,7 @@ GitHub Issues/Projects are proposed as the canonical cross-repository backlog. T
 
 ### Component validation and runtime health
 
-PR validation uses a fast universal baseline plus existing tests for changed components and their explicit consumers. Shared helpers, installation/deployment mechanics, security boundaries, CI selection/configuration and unknown paths select full validation; manual, weekly and predeployment runs remain full. Required status names and blocking security scans remain intact. This is a small path mapping with native workflow conditionals, not a dependency service. [The CI policy](../../.github/CICD.md#component-validation-policy) records actual boundaries, isolated fixtures, coupling, timing evidence and rollback. `doctor.sh` remains the primary deployed-system health authority (0 healthy / 1 degraded warning / 2 failure); it cannot replace code-path regression, restore safety, authorization or exact-SHA provenance checks. Repository CI does not establish production health or authorize deployment.
+PR validation uses a fast universal baseline plus existing tests for changed components and their explicit consumers. Shared helpers, installation/deployment mechanics, security boundaries, CI selection/configuration and unknown paths select full validation; manual, weekly and automatic merge-SHA deployment validation remain full. Required status names and blocking security scans remain intact. This is a small path mapping with native workflow conditionals, not a dependency service. [The CI policy](../../.github/CICD.md#component-validation-policy) records actual boundaries, isolated fixtures, coupling, timing evidence and rollback. `doctor.sh` remains the primary deployed-system health authority (0 healthy / 1 degraded warning / 2 failure); it cannot replace code-path regression, restore safety, authorization or exact-SHA provenance checks. Owner merge authorizes automatic deployment under [ADR-0006](adr/0006-installation-root.md#current-decision-2026-11-21). Runtime verification establishes production health.
 
 ### RunPod worker contract
 

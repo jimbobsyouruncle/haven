@@ -4,6 +4,8 @@ Status: approved simplified architecture, owner direction 2026-11-14.
 Implementation details below are proposals; this documentation revision implements
 no migration code and authorizes no production operations.
 
+The [2026-11-21 decision in ADR-0006](0006-installation-root.md#current-decision-2026-11-21) governs current deployment authorization. The original identity decision and host-transition procedures below remain historical context.
+
 ## Context and decision
 
 Haven is a personal, single-owner Raspberry Pi platform. Reuse ADR-0006's
@@ -77,11 +79,11 @@ mechanism. Require trusted main-branch validation, exact-SHA deployment, shared
 serialized execution, host locking and successful existing root post-deployment
 verification. Retain manual recovery. See the [CD plan](../identity/CONTINUOUS-DEPLOYMENT.md).
 No reconciliation service, recurring manual approval stage or separate activation
-PR is required by the architecture. Production activation still requires explicit
-owner authorization; preparation cannot activate it through an ordinary merge.
+PR is required. The current ADR-0006 decision makes owner merges the production
+authorization after the one-time host transition.
 
 Extend existing health/security/data/deployment checks only at changed boundaries.
-Keep the existing mandatory receipt gates and acceptance semantics. Reuse accepted
+Keep the root acceptance gates and operational verdict. Reuse accepted
 evidence where its contract is unchanged; no fresh worker/GPU test solely for a
 name change. See [cutover and cleanup](../identity/CUTOVER.md). Replace the proposed
 retirement-manifest engine with an exact operator-reviewed checklist. Preserve

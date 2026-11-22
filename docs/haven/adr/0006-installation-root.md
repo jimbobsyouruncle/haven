@@ -5,10 +5,11 @@ reopens retained legacy identities and manual-only deployment as new owner scope
 The decision and evidence below remain the historical #187 contract; its
 transaction, integrity, recovery and security controls remain required.
 
-Status: accepted owner decision for implementation. Production deployment remains
-an explicit owner action; source changes and CI do not establish runtime migration.
+Status: accepted. The [current decision below](#current-decision-2026-11-21)
+replaces the historical production dispatch policy. The installation and recovery
+controls remain in effect.
 
-## Decision
+## Original installation-root decision
 
 Haven is a single-owner, self-hosted home installation. Use automated safety
 checks and recoverable transactions rather than recurring operator paperwork.
@@ -88,6 +89,70 @@ runtime recovery requires an owner-selected bounded procedure with retained code
 configuration and checksum-verified immutable images. Never infer that restoring
 code restored running services. See the [deployment procedure](../../../deploy/README.md).
 
+## Approved amendment for #249
+
+For canonical upgrades, checkpoint the running proxy's immutable image and
+retain its rendered configuration in the previous checkout. Keep the verified
+archive through activation, acceptance and any rollback window. Preserve the
+optional local selection for explicit root or identity migrations and leave
+existing selections and archives in place. A missing running image blocks a
+routine upgrade until the owner restores and verifies the exact image.
+
+The owner approved bounded automatic proxy recovery for #249. Before replacing
+the proxy, validate the exact locally resolved candidate and rendered
+configuration with read-only inputs, restricted capabilities and no network
+or persistent-data mounts. A separate isolated HTTP startup probe uses
+synthetic configuration without credential mounts. Require the deployed proxy
+to answer a local status request before transaction acceptance.
+
+The canonical verifier may recreate only the proxy after it confirms a
+nonzero process exit in the candidate it identifies by transaction label,
+container ID, image ID and Compose identity. It holds the deployment locks
+and journals recovery intent before acting. Route failures in a running
+proxy can originate in DNS, certificates or a backend, so those failures,
+restart races, missing evidence and changes to recovery inputs require
+operator diagnosis. A previously healthy proxy with unchanged inputs is
+retained. If the candidate has already recovered or identification changes,
+leave it in place.
+Remove an exited candidate by its exact container ID without force. If it
+has restarted, Docker refuses removal. Compose is instructed to leave any
+concurrent replacement alone.
+
+Recovery uses the checked archive configuration ID and retained rendered
+Compose/Caddy configuration. It reattaches the existing Docker-managed
+`/config` volume when present, and preserves the persistent `/data` bind.
+It performs no pulls, builds, dependent service starts or changes to live
+secrets. A missing local image may
+be reloaded from the checked archive. A dead candidate can remain unavailable
+if archive load, recreation or health verification fails. Even verified
+recovery leaves the deployment failed and fenced for owner reconciliation
+because other services and the installed code may still be at the candidate
+revision. Interrupted recovery is never retried automatically. The explicit
+control rollback and disaster recovery procedures above still apply.
+
+## Approved amendment for #252
+
+The installed, root-owned canonical bootstrap holds both deployment locks and
+authorizes the requested SHA before staging or running candidate code. It uses
+the installed copy of the same provenance policy used by the post-deploy
+verifier. The policy requires one qualifying active GitHub deployment run and
+successful validation for its exact SHA and applicable attempt. The requested
+SHA must match current main in the GitHub API and in the subsequent Git fetch.
+An absent or inconsistent response fails closed. The runner's event and
+production gates, SSH command grammar, systemd boundary and final verifier
+remain in place. The bootstrap uses anonymous reads of the existing public
+repository API.
+
+After checking ancestry, detached HEAD and ownership of the staged tree, the
+bootstrap invokes that tree's fixed checkpoint preflight with the inherited
+locks. The preflight validates and exports the exact running proxy image. The
+installed bootstrap checks the returned archive and retains responsibility for
+the protected journal, prior executable and control snapshots, code switch and
+rollback. A failed handoff leaves the previous checkout and accepted checkpoint
+in place. The earlier installer continues to handle explicit root and identity
+migrations. Routine upgrades still require separate operator authorization to
+load a missing image from an archive.
+
 ## Rationale and accepted residual risks
 
 Root already controls deployment code and Docker; extra root-written attestations
@@ -112,3 +177,34 @@ rollback, secret/data preservation and mandatory verification. CI adds source,
 security, Caddy and Compose checks. Worker contracts are unchanged; no fresh live
 RunPod test is required. Production acceptance and issue closure require actual
 sanitized runtime evidence and the owner's separate closure decision.
+
+## Current decision (2026-11-21)
+
+The owner's merge to protected main authorizes production deployment of Haven,
+a personal, backed-up POC. This supersedes the historical dispatch-only and
+protected-change approval policies above and in ADR-0007. Workflow, bootstrap,
+configuration and pinned image changes use the same PR checks and merge path.
+Project documentation and generated context maps do not redeploy the application.
+
+The deployment workflow requires a merged PR, exact current main, a tree
+matching the up-to-date PR head, and both required checks successful before
+merge. The main ruleset requires an up-to-date PR and both checks with no
+bypass. Required PR checks retain SAST, source and applicable ARM64 coverage.
+The host verifies eligibility in the same active run and attempt, independently
+checks main, stages the pinned checkout, and requires runtime health before
+accepting. The eligibility job retains the installed bootstrap's expected
+job name, so the normal deployment transaction installs the updated verifier. The restricted SSH
+command and credentials, network and persona isolation, deployment locks,
+transaction journals, previous checkout, recovery images and backups stay in
+place. The local verdict supplies operational evidence. Cumulative authorization,
+signed deployment receipts and cross-workflow validation are retired.
+
+The owner accepts that a reviewed merge can change privileged deployment code
+and that exact-main deployment can be superseded while waiting. Source CI and
+local health checks cover different failure modes. Image and mount compatibility,
+schema changes and data recovery still need review when applicable. The recovery
+archive protects Caddy. Other service image IDs depend on local retention or a
+retrievable immutable pin, and an image rollback cannot reverse a data migration.
+
+One explicitly authorized bootstrap maintenance window bridges the old policy.
+The [one-time transition](../../../deploy/README.md#one-time-policy-transition) was followed by the successful deployment of [PR #261](https://github.com/jimbobsyouruncle/haven/pull/261) in [run 44944993263](https://github.com/jimbobsyouruncle/haven/actions/runs/44944993263). Direct production operations, destructive data migrations and credential changes require separate owner approval.

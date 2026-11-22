@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# ADR-0006 and coordinated identity fixtures; no network, Docker, systemd or root.
+# ADR-0006 and coordinated identity fixtures. The optional Compose check uses
+# only CLI normalization, with no daemon, network, systemd or root.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-python3 - "$SCRIPT_DIR/test-install-root.sh" <<'PYTEST'
+python3 - "$SCRIPT_DIR/test-install-root.sh" "$@" <<'PYTEST'
 import sys
 __file__ = sys.argv.pop(1)
 #!/usr/bin/env python3
@@ -21,6 +22,10 @@ import tarfile
 import unittest
 from unittest.mock import patch
 from contextlib import redirect_stderr
+
+if sys.argv[1:] not in ([], ['--compose']):
+    raise SystemExit('usage: test-install-root.sh [--compose]')
+CHECK_COMPOSE = sys.argv[1:] == ['--compose']
 
 SPEC = importlib.util.spec_from_file_location('install_root', Path(__file__).with_name('install-root.py'))
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -156,7 +161,7 @@ class MigrationTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, 'aarch64', '')
             if args[1] in ('run', 'exec'):
                 if args[-1] == 'version':
-                    output = 'v2.11.7 fixture'
+                    output = 'v2.11.9 fixture'
                 elif args[-1] == 'list-modules':
                     output = 'dns.providers.cloudflare\ndns.providers.rfc2136'
                 else:
@@ -166,7 +171,7 @@ class MigrationTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, json.dumps({
                     'Config': {'Env': ['LOCAL_DOMAIN=fixture']}, 'Mounts': self.proxy_mounts}), '')
             if args[1] == 'image':
-                metadata = self.image_metadata or dict(Id=self.recovery_image, Os='linux',
+                metadata = self.image_metadata or dict(Id=args[-1], Os='linux',
                                                        Architecture='arm64', Variant='', Config=self.config['config'],
                                                        RootFS={'Layers': self.config['rootfs']['diff_ids']})
                 return subprocess.CompletedProcess(args, 0, json.dumps(metadata), '')
@@ -409,6 +414,441 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         self.tx.accept(self.sha, self.receipt())
         self.assert_preserved()
 
+    def test_canonical_deploy_retains_running_image_despite_stale_selection(self):
+        self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
+        old_archive = Path(self.tx.load()['proxy_recovery']['archive'])
+        self.approve_recovery('sha256:' + 'd' * 64)
+        selection = self.selection.read_bytes()
+        def runner(args, **kwargs):
+            result = self.runner(args, **kwargs)
+            if args[:2] == ['docker', 'run'] and args[-2:] == [self.recovery_image, 'version']:
+                result.stdout = 'v2.11.7 fixture'
+            return result
+
+        self.tx.run = runner
+        self.calls.clear()
+        self.fail_install = True
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.tx.deploy(self.sha)
+        journal = self.tx.load()
+        recovery = journal['proxy_recovery']
+        self.assertEqual(recovery['recovery_image_id'], self.running_image)
+        archive = Path(recovery['archive'])
+        self.assertNotEqual(archive, old_archive)
+        self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(),
+                         recovery['archive_sha256'])
+        self.assertTrue(old_archive.is_file())
+        self.assertEqual(self.selection.read_bytes(), selection)
+        self.assertFalse(any(self.recovery_image in command for command in self.calls))
+        self.tx.wiring(self.sha)
+        self.assert_preserved()
+
+    def test_canonical_deploy_rejects_unmerged_sha_before_proxy_checkpoint(self):
+        self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
+        accepted = self.tx.journal.read_bytes()
+        self.git(self.remote, 'switch', '-qc', 'unmerged')
+        self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '--allow-empty', '-qm', 'unmerged fixture')
+        unmerged = self.git(self.remote, 'rev-parse', 'HEAD')
+        self.calls.clear()
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.tx.deploy(unmerged)
+        self.assertFalse(any(args[0] == 'docker' for args in self.calls))
+        self.assertFalse(list(self.tx.app.parent.glob('.haven-stage-*')))
+        self.assertEqual(self.tx.journal.read_bytes(), accepted)
+        self.tx.wiring(self.sha)
+        self.assert_preserved()
+
+    def test_canonical_missing_image_keeps_last_accepted_archive(self):
+        self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
+        accepted = self.tx.journal.read_bytes()
+        recovery = self.tx.load()['proxy_recovery']
+        self.missing_images.add(self.running_image)
+        self.calls.clear()
+        with self.assertRaisesRegex(MODULE.Refusal, 'operator must restore and verify the exact running image'):
+            self.tx.deploy(self.sha)
+        self.assertEqual(self.tx.journal.read_bytes(), accepted)
+        self.assertEqual(self.tx.file_digest(recovery['archive'], private=True), recovery['archive_sha256'])
+        self.assertFalse(list(self.tx.app.parent.glob('.haven-stage-*')))
+        self.assertFalse(any(args[:3] in (['docker', 'image', 'load'], ['docker', 'image', 'save'])
+                             or args[0] == 'bash' for args in self.calls))
+        self.tx.wiring(self.sha)
+        self.assert_preserved()
+
+    def handoff_fixture(self, candidate):
+        policy = self.remote / 'scripts/deploy-provenance.py'
+        policy.write_text("import sys\nassert sys.argv[1] == 'authorize-host'\n")
+        self.git(self.remote, 'add', '.')
+        self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-qm', 'installed bootstrap fixture')
+        self.sha = self.git(self.remote, 'rev-parse', 'HEAD')
+        self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
+        accepted = self.tx.journal.read_bytes()
+        recovery = self.tx.load()['proxy_recovery']
+        policy.write_text("raise RuntimeError('candidate policy must never authorize its own stage')\n")
+        driver = self.remote / 'scripts/install-root.py'
+        driver.write_text(candidate(recovery))
+        self.git(self.remote, 'add', '.')
+        self.git(self.remote, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-qm', 'candidate driver fixture')
+        candidate_sha = self.git(self.remote, 'rev-parse', 'HEAD')
+        return candidate_sha, accepted
+
+    def run_handoff_fixture(self, args, **kwargs):
+        if args[0] == sys.executable:
+            self.calls.append(args)
+            if args[-2] == 'checkpoint-preflight':
+                self.assertEqual(kwargs.pop('pass_fds'), (9, 8))
+            else:
+                self.assertEqual(Path(args[2]), self.tx.app / 'scripts/deploy-provenance.py')
+            return subprocess.run(args, **kwargs)
+        return self.runner(args, **kwargs)
+
+    def test_obsolete_installed_preflight_hands_off_to_verified_candidate(self):
+        def corrected(recovery):
+            new = dict(recovery, archive=str(self.tx.state / ('proxy-recovery-' + 'f' * 32 + '.tar')))
+            return ("import json, pathlib, shutil, subprocess, sys\n"
+                    "assert sys.argv[1] == 'checkpoint-preflight'\n"
+                    "root = pathlib.Path(__file__).parent.parent\n"
+                    "assert subprocess.check_output(['git', '-C', root, 'rev-parse', 'HEAD'], "
+                    "text=True).strip() == sys.argv[2]\n"
+                    f"shutil.copyfile({recovery['archive']!r}, {new['archive']!r})\n"
+                    f"pathlib.Path({new['archive']!r}).chmod(0o600)\n"
+                    f"print(json.dumps({new!r}))\n")
+
+        candidate, _ = self.handoff_fixture(corrected)
+        self.tx.run = self.run_handoff_fixture
+        with patch.object(self.tx, 'proxy_preflight',
+                          side_effect=MODULE.Refusal('obsolete installed preflight')):
+            self.tx.deploy(candidate, handoff=True)
+        journal = self.tx.load()
+        self.assertEqual(journal['sha'], candidate)
+        self.assertEqual(journal['previous_sha'], self.sha)
+        self.assertEqual((Path(journal['previous']) / 'scripts/install-root.py').read_text(), '# fixture\n')
+        self.assertEqual(journal['phase'], 'awaiting_verifier')
+        self.assertTrue(Path(journal['proxy_recovery']['archive']).is_file())
+        self.tx.wiring(candidate)
+        self.assert_preserved()
+
+    def test_upgrade_health_requires_every_configured_service(self):
+        self.tx.deploy(self.sha)
+        images = {
+            'open-webui': 'sha256:' + '1' * 64,
+            'ollama': 'sha256:' + '2' * 64,
+        }
+        with patch.object(self.tx, 'command', return_value='open-webui\nollama'), \
+                patch.object(self.tx, 'service_containers') as inspect, \
+                patch.object(MODULE.time, 'monotonic', side_effect=lambda: next(clock)):
+            for state in ({'Status': 'running', 'Health': {'Status': 'unhealthy'}}, None):
+                clock = iter((0, 181))
+                inspect.return_value = [('ollama', images['ollama'], {'Status': 'running'})]
+                if state is not None:
+                    inspect.return_value.append(('open-webui', images['open-webui'], state))
+                with self.assertRaisesRegex(MODULE.Refusal, 'SERVICE_HEALTH'):
+                    self.tx.verify_services(self.sha)
+                self.assertEqual(self.tx.load()['phase'], 'awaiting_verifier')
+            clock = iter((0,))
+            inspect.return_value.append(('open-webui', images['open-webui'],
+                                         {'Status': 'running', 'Health': {'Status': 'healthy'}}))
+            self.tx.verify_services(self.sha)
+
+    def test_handoff_requires_private_accepted_journal_for_installed_head(self):
+        candidate, accepted = self.handoff_fixture(lambda _: "raise AssertionError('candidate ran')\n")
+        self.tx.run = self.run_handoff_fixture
+        for mode in ('missing', 'wrong-head', 'public'):
+            with self.subTest(mode=mode):
+                self.tx.atomic(self.tx.journal, accepted)
+                if mode == 'missing':
+                    self.tx.journal.unlink()
+                elif mode == 'wrong-head':
+                    self.tx.save(dict(self.tx.load(), sha=candidate))
+                else:
+                    self.tx.journal.chmod(0o644)
+                with self.assertRaisesRegex(MODULE.Refusal, 'ACCEPTED_BASELINE_REQUIRED'):
+                    self.tx.deploy(candidate, handoff=True)
+                self.assertFalse(any('checkpoint-preflight' in args for args in self.calls))
+
+    def test_preflight_authorization_and_failures_preserve_accepted_deployment(self):
+        candidate, accepted = self.handoff_fixture(lambda _: "raise RuntimeError('SYNTHETIC_PRIVATE_DETAIL')\n")
+        self.tx.run = self.run_handoff_fixture
+        original_archive = self.tx.load()['proxy_recovery']['archive']
+        original_digest = self.tx.file_digest(original_archive, private=True)
+        for mode in ('api', 'stale', 'untrusted', 'broken', 'interrupt', 'timeout'):
+            with self.subTest(mode=mode):
+                self.calls.clear()
+
+                def run(args, **kwargs):
+                    if mode == 'api' and 'authorize-host' in args:
+                        raise subprocess.CalledProcessError(1, args, stderr='PROVENANCE_API_TRANSPORT\n')
+                    if 'checkpoint-preflight' in args:
+                        if mode == 'interrupt':
+                            raise KeyboardInterrupt
+                        if mode == 'timeout':
+                            raise subprocess.TimeoutExpired(args, 1, stderr=b'SYNTHETIC_PRIVATE_DETAIL')
+                    return self.run_handoff_fixture(args, **kwargs)
+
+                self.tx.run = run
+                sha = self.sha if mode == 'stale' else candidate
+                if mode == 'untrusted':
+                    (self.remote / 'scripts/install-root.py').unlink()
+                    (self.remote / 'scripts/install-root.py').symlink_to('deploy-provenance.py')
+                    self.git(self.remote, 'add', '.')
+                    self.git(self.remote, '-c', 'user.name=Fixture', '-c',
+                             'user.email=fixture@example.invalid', 'commit', '-qm', 'untrusted stage')
+                    sha = self.git(self.remote, 'rev-parse', 'HEAD')
+                with self.assertRaises((MODULE.Refusal, KeyboardInterrupt)) as caught:
+                    self.tx.deploy(sha, handoff=True)
+                if mode == 'untrusted':
+                    self.assertIn('symlink in code checkout', str(caught.exception))
+                    self.git(self.remote, 'update-ref', 'refs/heads/main', candidate)
+                if mode == 'api':
+                    self.assertIn('PROVENANCE_API_TRANSPORT', str(caught.exception))
+                    self.assertFalse(any(args[0] == 'git' for args in self.calls))
+                if mode in ('api', 'stale', 'untrusted'):
+                    self.assertFalse(any('checkpoint-preflight' in args for args in self.calls))
+                self.assertNotIn('SYNTHETIC_PRIVATE_DETAIL', str(caught.exception))
+                self.assertEqual(self.tx.journal.read_bytes(), accepted)
+                self.assertEqual(self.tx.file_digest(original_archive, private=True), original_digest)
+                self.assertFalse(list(self.tx.app.parent.glob('.haven-stage-*')))
+                self.tx.wiring(self.sha)
+                self.assert_preserved()
+
+    def proxy_runtime_fixture(self):
+        self.tx.deploy(self.sha)
+        self.tx.accept(self.sha, self.receipt())
+        self.tx.deploy(self.sha)
+        journal = self.tx.load()
+        previous = Path(journal['previous'])
+        for root in (previous, self.tx.app):
+            for name in MODULE.COMPOSE_FILES:
+                path = root / name
+                path.parent.mkdir(exist_ok=True)
+                path.touch()
+        data = str(self.data.parent)
+        mounts = [dict(Destination='/data', Source=data, Type='bind', RW=True)]
+        config_volume = 'caddy-config-fixture'
+        mounts.append(dict(Destination='/config', Name=config_volume, Type='volume', RW=True))
+        image = 'sha256:' + 'b' * 64
+        token = 'c' * 32
+        digest = self.tx.file_digest(previous / MODULE.PROXY_CONFIG)
+        env_digest = self.tx.file_digest(self.secret)
+        runtime = dict(token=token, previous_id='a' * 64, previous_image=self.running_image,
+                       previous_overlay=None, previous_compose_hash='proxy fixture',
+                       candidate_id='b' * 64, candidate_image=image, unchanged=False,
+                       data=data, data_identity=self.tx.proxy_data_identity(data),
+                       config_volume=config_volume,
+                       credentials={}, candidate_credentials={},
+                       caddyfile_digest=digest, candidate_config=digest,
+                       env_file=str(self.secret), env_digest=env_digest, candidate_env=env_digest,
+                       tls_domain='', previous_tls_domain='',
+                       compose_digests=[self.tx.file_digest(previous / name)
+                                        for name in MODULE.COMPOSE_FILES])
+        journal['proxy_runtime'] = runtime
+        self.tx.save(journal)
+        labels = {'com.docker.compose.project': self.project, 'com.docker.compose.service': 'proxy',
+                  MODULE.PROXY_TRANSACTION_LABEL: token}
+        dead = dict(Id=runtime['candidate_id'], Image=image, Config={'Labels': labels}, Mounts=mounts,
+                    State={'Status': 'exited', 'Running': False, 'ExitCode': 1})
+        restored = dict(dead, Id='d' * 64, Image=self.config_id, State={'Running': True},
+                        Config={'Labels': dict(labels, **{MODULE.PROXY_TRANSACTION_LABEL:
+                                                         'recovered-' + token})})
+        return journal, dead, restored
+
+    def test_candidate_preflight_refuses_bad_module_configuration_and_startup(self):
+        journal, _, _ = self.proxy_runtime_fixture()
+        runtime = journal['proxy_runtime']
+        data = dict(type='bind', source=runtime['data'], target='/data')
+        conf = dict(type='bind', source=str(self.tx.app / MODULE.PROXY_CONFIG),
+                    target=MODULE.PROXY_DEST, read_only=True)
+        secret = 'cloudflare_dns_token'
+        destination = '/run/secrets/' + secret
+        (self.tx.app / MODULE.PROXY_CONFIG).write_text(
+            'dns cloudflare {file./run/secrets/cloudflare_dns_token}')
+        spec = {'services': {'proxy': {'image': 'candidate:fixture', 'volumes': [data, conf],
+                                       'secrets': [{'source': secret, 'target': destination}],
+                                       'environment': {}}},
+                'secrets': {secret: {'file': str(self.secret)}}}
+        original = self.tx.command
+
+        def command(args, **kwargs):
+            if args[-3:] == ['config', '--format', 'json']:
+                return json.dumps(spec)
+            if args[:3] == ['docker', 'image', 'inspect']:
+                return json.dumps(dict(Id=runtime['candidate_image'], Os='linux', Architecture='arm64'))
+            if args[-1] == 'list-modules' and failure == 'modules':
+                return 'dns.providers.cloudflare'
+            if ((failure == 'configuration' and 'validate' in args)
+                    or (failure == 'startup' and '/bin/sh' in args)):
+                raise subprocess.CalledProcessError(1, args, stderr='SYNTHETIC_PRIVATE_DETAIL')
+            return original(args, **kwargs)
+
+        with patch.object(self.tx, 'command', side_effect=command):
+            for failure, category in [('modules', 'COMPATIBILITY'), ('configuration', 'CONFIGURATION'),
+                                      ('startup', 'PROXY_CANDIDATE')]:
+                with self.subTest(failure=failure):
+                    with self.assertRaisesRegex(MODULE.Refusal, category) as caught:
+                        self.tx.candidate_proxy(runtime['token'])
+                    self.assertNotIn('SYNTHETIC_PRIVATE_DETAIL', str(caught.exception))
+                    self.assertFalse(list(self.tx.state.glob('proxy-candidate-*')))
+                    self.assertFalse(list(self.tx.state.glob('proxy-env-*')))
+            failure = None
+            for secret_spec in ({'source': secret, 'target': destination},
+                                {'source': secret, 'target': secret}, {'source': secret}):
+                with self.subTest(secret_spec=secret_spec):
+                    spec['services']['proxy']['secrets'] = [secret_spec]
+                    self.calls.clear()
+                    overlay = json.loads(Path(self.tx.candidate_proxy(runtime['token'])).read_text())
+                    expected = f'type=bind,src={self.secret},dst={destination},readonly'
+                    self.assertTrue(any(expected in args and 'validate' in args for args in self.calls))
+            for target in ('/tmp/' + secret, '../secrets/' + secret):
+                with self.subTest(target=target):
+                    spec['services']['proxy']['secrets'] = [{'source': secret, 'target': target}]
+                    with self.assertRaisesRegex(MODULE.Refusal, 'DNS credential bind unavailable'):
+                        self.tx.candidate_proxy(runtime['token'])
+        self.assertEqual(overlay['services']['proxy']['image'], runtime['candidate_image'])
+        self.assertEqual(overlay['services']['proxy']['pull_policy'], 'never')
+        self.assertEqual(overlay['services']['proxy']['labels'][MODULE.PROXY_TRANSACTION_LABEL],
+                         runtime['token'])
+
+    @unittest.skipUnless(CHECK_COMPOSE, 'requires --compose with the Docker Compose CLI')
+    def test_candidate_preflight_with_actual_compose_normalization(self):
+        journal, _, _ = self.proxy_runtime_fixture()
+        runtime = journal['proxy_runtime']
+        secret = 'cloudflare_dns_token'
+        destination = '/run/secrets/' + secret
+        caddyfile = self.tx.app / MODULE.PROXY_CONFIG
+        caddyfile.write_text('dns cloudflare {file.' + destination + '}\n')
+        spec = {'services': {'proxy': {
+            'image': 'candidate:fixture', 'environment': {'LOCAL_DOMAIN': 'fixture.test'},
+            'volumes': [
+                dict(type='bind', source=runtime['data'], target='/data'),
+                dict(type='bind', source=str(caddyfile), target=MODULE.PROXY_DEST, read_only=True),
+            ],
+        }}, 'secrets': {secret: {'file': str(self.secret)}}}
+        compose = self.tx.app / MODULE.COMPOSE_FILES[0]
+        original = self.tx.command
+
+        def command(args, **kwargs):
+            if args[-3:] == ['config', '--format', 'json']:
+                return subprocess.check_output(args, text=True, timeout=30)
+            if args[:3] == ['docker', 'image', 'inspect']:
+                return json.dumps(dict(Id=runtime['candidate_image'], Os='linux', Architecture='arm64'))
+            return original(args, **kwargs)
+
+        for name in MODULE.COMPOSE_FILES[1:]:
+            (self.tx.app / name).write_text('services: {}\n')
+        with patch.object(self.tx, 'command', side_effect=command):
+            for entry in ({'source': secret, 'target': destination},
+                          {'source': secret, 'target': secret}, secret,
+                          {'source': secret, 'target': '/tmp/' + secret}):
+                with self.subTest(entry=entry):
+                    spec['services']['proxy']['secrets'] = [entry]
+                    compose.write_text(json.dumps(spec))
+                    self.calls.clear()
+                    if isinstance(entry, dict) and entry['target'].startswith('/tmp/'):
+                        with self.assertRaisesRegex(MODULE.Refusal, 'DNS credential bind unavailable'):
+                            self.tx.candidate_proxy(runtime['token'])
+                        self.assertFalse(any(args[:2] == ['docker', 'run'] for args in self.calls))
+                    else:
+                        self.tx.candidate_proxy(runtime['token'])
+                        expected = f'type=bind,src={self.secret},dst={destination},readonly'
+                        self.assertTrue(any(expected in args and 'validate' in args for args in self.calls))
+
+    def test_verified_dead_candidate_recovers_only_proxy_from_retained_archive(self):
+        journal, dead, restored = self.proxy_runtime_fixture()
+        commands = []
+        original = self.tx.command
+        recovered = False
+        loaded = False
+        removed = False
+
+        def command(args, **kwargs):
+            nonlocal recovered, loaded, removed
+            commands.append(args)
+            if args[:3] == ['docker', 'image', 'inspect'] and not loaded:
+                raise subprocess.CalledProcessError(1, args, stderr='No such image')
+            if args[:3] == ['docker', 'image', 'load']:
+                self.assertEqual(args[-1], journal['proxy_recovery']['archive'])
+                self.assertEqual(self.tx.load()['phase'], 'proxy_recovery_required')
+                loaded = True
+                return ''
+            if args[:3] == ['docker', 'container', 'rm']:
+                self.assertEqual(args, ['docker', 'container', 'rm', dead['Id']])
+                removed = True
+                return ''
+            if args[:3] == ['docker', 'volume', 'inspect']:
+                return journal['proxy_runtime']['config_volume']
+            if args[:2] == ['docker', 'compose']:
+                self.assertTrue(loaded and removed)
+                self.assertEqual(args[-8:], ['up', '-d', '--no-deps', '--no-build',
+                                              '--pull', 'never', '--no-recreate', 'proxy'])
+                override = json.loads(Path(args[-9]).read_text())
+                self.assertEqual(override['services']['proxy']['volumes'],
+                                 ['haven_proxy_checkpoint:/config'])
+                self.assertEqual(override['volumes']['haven_proxy_checkpoint'],
+                                 dict(external=True, name=journal['proxy_runtime']['config_volume']))
+                recovered = True
+                return ''
+            if args[:2] == ['docker', 'exec']:
+                return journal['proxy_runtime']['caddyfile_digest'] + '  ' + MODULE.PROXY_DEST
+            return original(args, **kwargs)
+
+        with (patch.object(self.tx, 'proxy_container', side_effect=lambda: restored if recovered else dead),
+              patch.object(self.tx, 'proxy_answers', return_value=True),
+              patch.object(self.tx, 'command', side_effect=command)):
+            with self.assertRaisesRegex(MODULE.Refusal, 'previous proxy restored'):
+                self.tx.verify_proxy(self.sha)
+        self.assertEqual(self.tx.load()['phase'], 'proxy_recovered')
+        self.assertEqual(sum(args[:2] == ['docker', 'compose'] for args in commands), 1)
+        with self.assertRaisesRegex(MODULE.Refusal, 'requires owner reconciliation'):
+            self.tx.deploy(self.sha)
+        self.assert_preserved()
+
+    def test_proxy_recovery_refuses_identity_drift_healthy_proxy_and_invalid_archive(self):
+        journal, dead, _ = self.proxy_runtime_fixture()
+        with patch.object(self.tx, 'proxy_container', return_value=dict(dead, Id='f' * 64)):
+            with self.assertRaisesRegex(MODULE.Refusal, 'not the recorded deployment candidate'):
+                self.tx.verify_proxy(self.sha)
+        healthy = dict(dead, State={'Status': 'running', 'Running': True, 'ExitCode': 0})
+        with (patch.object(self.tx, 'proxy_container', return_value=healthy),
+              patch.object(self.tx, 'proxy_answers', return_value=True)):
+            self.tx.verify_proxy(self.sha)
+        self.assertEqual(self.tx.load()['phase'], 'awaiting_verifier')
+        archive = Path(journal['proxy_recovery']['archive'])
+        for missing in (False, True):
+            self.tx.save(journal)
+            if missing:
+                archive.unlink()
+            else:
+                archive.write_bytes(b'synthetic corrupt archive')
+            with patch.object(self.tx, 'proxy_container', return_value=dead):
+                with self.assertRaisesRegex(MODULE.Refusal, 'archive checksum|checkpoint input'):
+                    self.tx.verify_proxy(self.sha)
+            self.assertEqual(self.tx.load()['phase'], 'proxy_recovery_required')
+        self.assertFalse(any(args[:2] == ['docker', 'compose'] for args in self.calls))
+
+    def test_proxy_recovery_leaves_restarted_candidate_alone(self):
+        _, dead, _ = self.proxy_runtime_fixture()
+        original = self.tx.command
+
+        def command(args, **kwargs):
+            if args[:3] == ['docker', 'volume', 'inspect']:
+                return args[-1]
+            if args[:3] == ['docker', 'container', 'rm']:
+                raise subprocess.CalledProcessError(1, args, stderr='container is running')
+            self.assertNotEqual(args[:2], ['docker', 'compose'])
+            return original(args, **kwargs)
+
+        with (patch.object(self.tx, 'proxy_container', return_value=dead),
+              patch.object(self.tx, 'command', side_effect=command)):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.tx.verify_proxy(self.sha)
+        self.assertEqual(self.tx.load()['phase'], 'proxy_recovery_required')
+
     def test_mutable_selection_and_symlink_refused(self):
         self.selection.write_text('caddy:latest')
         self.assert_recovery_refused('RECOVERY_IMAGE')
@@ -479,6 +919,21 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         with patch.object(MODULE.gzip, 'GzipFile', side_effect=EOFError):
             with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_ARTIFACT'):
                 self.tx.verify_archive(archive, metadata)
+
+    def test_docker_28_inspect_adds_only_known_empty_config_defaults(self):
+        archive = self.root / 'image.tar'
+        self.write_archive(archive)
+        inspected = dict(self.config['config'], AttachStderr=False, AttachStdin=False,
+                         AttachStdout=False, OpenStdin=False, StdinOnce=False, Tty=False,
+                         Domainname='', Hostname='', Image='', User='')
+        metadata = dict(Os='linux', Architecture='arm64', Config=inspected,
+                        RootFS={'Layers': self.config['rootfs']['diff_ids']})
+        self.assertEqual(self.tx.verify_archive(archive, metadata), self.config_id)
+        for change in ({'User': '1000'}, {'AttachStdin': True}, {'Image': 'another-image'},
+                       {'UnknownFlag': False}, {'Env': ['LOCAL_DOMAIN=different']}):
+            with self.subTest(change=change):
+                with self.assertRaisesRegex(MODULE.Refusal, 'RECOVERY_ARTIFACT'):
+                    self.tx.verify_archive(archive, dict(metadata, Config=inspected | change))
 
     def test_missing_modules_version_and_host_architecture_refuse(self):
         original = self.runner
@@ -591,21 +1046,6 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                 return self.runner(args, **kwargs)
             self.tx.run = runner
             self.assert_recovery_refused(gate)
-
-    def test_production_workflow_is_inert_until_explicit_activation(self):
-        workflow = (Path(__file__).resolve().parent.parent /
-                    '.github/workflows/deploy.yml').read_text()
-        self.assertIn('default: false', workflow)
-        for name in ('validate', 'deploy'):
-            job = workflow.split('\n  ' + name + ':\n', 1)[1]
-            condition = next(line for line in job.splitlines() if line.startswith('    if:'))
-            for guard in ("github.repository == 'jimbobsyouruncle/haven'",
-                          "github.ref == 'refs/heads/main'",
-                          "vars.HAVEN_AUTOMATIC_DEPLOYMENT == 'enabled'",
-                          "inputs.authorize_production == true", 'inputs.deployment_sha == github.sha'):
-                self.assertIn(guard, condition)
-        self.assertIn('    environment: production', workflow)
-        self.assertIn('          ref: ${{ github.sha }}', workflow)
 
     def test_cli_gate_annotation_never_contains_subprocess_output(self):
         self.tx.state.mkdir(mode=0o700)

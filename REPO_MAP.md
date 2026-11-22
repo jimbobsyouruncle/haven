@@ -32,9 +32,11 @@
 - .github/workflows/agent-context.yml
 - .github/workflows/caddy-arm64.yml
 - .github/workflows/deploy.yml
+- .github/workflows/ollama-arm64.yml
 - .github/workflows/open-webui-arm64.yml
 - .github/workflows/sandbox-image.yml
 - .github/workflows/sast-checks.yml
+- .github/workflows/status-arm64.yml
 - .github/workflows/validate.yml
 ## auth
 
@@ -105,7 +107,7 @@
 ## docs/haven/identity
 
 - docs/haven/identity/CONFIGURATION.md - Canonical source and configuration handoff
-- docs/haven/identity/CONTINUOUS-DEPLOYMENT.md - Restore automatic deployment through the existing workflow
+- docs/haven/identity/CONTINUOUS-DEPLOYMENT.md - Continuous deployment
 - docs/haven/identity/CUTOVER.md - Production cutover, existing verification and operator cleanup
 - docs/haven/identity/DEPENDENCIES.md - Identity dependency register
 - docs/haven/identity/README.md - Final platform identity consolidation
@@ -185,6 +187,7 @@
 - scripts/deploy-remote.sh
 - scripts/deploy-trigger.sh
 - scripts/deploy-verify.sh - Root ExecStartPost: resolve the existing log override and bound verification.
+- scripts/generate-agent-context.py - Generate Haven's architectural maps with the pinned shared generator.
 - scripts/install-root.py - Recoverable installation/identity handoff using the ADR-0006 checkpoint.
 - scripts/no-masked-literals-baseline.txt
 - scripts/prune-conversations.sh - FILE: scripts/prune-conversations.sh
@@ -209,6 +212,7 @@
 - scripts/test-check-no-masked-literals.sh - Fixture test for scripts/check-no-masked-literals.sh.
 - scripts/test-ci-components.py - Offline selector and workflow safety regressions. No third-party modules.
 - scripts/test-ci-parity.sh - Offline fixture harness for scripts/ci-parity.sh.
+- scripts/test-container-upgrade.sh - CI smoke: a pinned image replacement preserves data, unrelated services and rollback.
 - scripts/test-deploy-build-gate.sh - FILE: scripts/test-deploy-build-gate.sh
 - scripts/test-deploy-forced-command.sh
 - scripts/test-deploy-image-gate.sh
@@ -233,7 +237,7 @@
 - scripts/test-hermes-nonroot-preflight.sh - FILE: scripts/test-hermes-nonroot-preflight.sh
 - scripts/test-install-auth-env-leak.sh - FILE: scripts/test-install-auth-env-leak.sh
 - scripts/test-install-health.sh - FILE: scripts/test-install-health.sh
-- scripts/test-install-root.sh - ADR-0006 and coordinated identity fixtures; no network, Docker, systemd or root.
+- scripts/test-install-root.sh - ADR-0006 and coordinated identity fixtures. The optional Compose check uses
 - scripts/test-install-tailscale-migration.sh - FILE: scripts/test-install-tailscale-migration.sh
 - scripts/test-post-deploy-verify-log-env.sh - FILE: scripts/test-post-deploy-verify-log-env.sh
 - scripts/test-prune-conversations.sh - FILE: scripts/test-prune-conversations.sh
@@ -269,8 +273,10 @@
 - scripts/lib/tls.sh - FILE: scripts/lib/tls.sh
 ## status
 
+- status/.dockerignore
 - status/Caddyfile
 - status/Caddyfile.tmpl
+- status/Dockerfile
 - status/README.md - status/ — Status Page
 - status/app.py - FILE: status/app.py
 - status/test_backup_probe.py - FILE: status/test_backup_probe.py
@@ -280,6 +286,7 @@
 - status/test_pod_probe.py - FILE: status/test_pod_probe.py
 ## tests/qualification
 
+- tests/qualification/ollama.sh
 - tests/qualification/open-webui.env
 - tests/qualification/open-webui.py - Exercise only the loopback API of the disposable Open WebUI container.
 - tests/qualification/open-webui.sh

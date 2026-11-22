@@ -411,6 +411,13 @@ elif [[ -n "${OPENHANDS_AGENT_IMAGE_REPOSITORY:-}" || -n "${OPENHANDS_AGENT_IMAG
   log "Leaving the OpenHands agent-server image pin alone (not a known stale default pair)."
 fi
 
+# Advance previous managed defaults. Other explicit image overrides survive.
+case "${OLLAMA_IMAGE:-}" in
+  ollama/ollama:0.34.4|ollama/ollama:0.40.16@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592)
+    unset OLLAMA_IMAGE
+    ;;
+esac
+
 # Advance only the former managed DNS image defaults. An explicit custom
 # tag or immutable recovery reference survives rendering.
 case "${CADDY_IMAGE:-}" in
@@ -940,7 +947,7 @@ OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION}
 OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE}
 
 # --- Container image pins --------------------------------------------------
-OLLAMA_IMAGE=${OLLAMA_IMAGE:-ollama/ollama:0.34.4}
+OLLAMA_IMAGE=${OLLAMA_IMAGE:-ollama/ollama:0.40.17@sha256:ccc42bcd3d5fcf7ab0d532b300382154e1a4da56fc666bdb313b78ebdd912754}
 WEBUI_IMAGE=${WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.11.4}
 
 # --- Status page identity --------------------------------------------------
@@ -1885,22 +1892,28 @@ else
 fi
 
 log "Starting full Hybrid-AI control plane stack..."
-# Build, then start. `compose build` builds every service with a `build:`
-# section -- hermes always, and the proxy too once the TLS-on render adds its
-# `build:` stanza -- which is exactly what `up --build` did, but as its own
-# phase so its time is visible and so a cache hit can skip it.
-if [[ "$BUILD_GATE_DECISION" != "cache" ]]; then
-  log "Building images..."
-  haven_progress_start "build"
-  if ! BUILD_INPUTS_SHA="$BUILD_GATE_SHA" "${COMPOSE[@]}" build; then
-    haven_progress_stop
-    PHASE_BUILD=$(( SECONDS - _phase_mark ))
-    event "stack_build_failed"
-    warn "docker compose build failed."
-    die "Control plane image build did not complete."
+# Docker's build cache covers status, auth and the TLS proxy. The Hermes
+# input check lets us skip its heavier build without hiding other Dockerfile updates.
+build_services=()
+if [[ "$BUILD_GATE_DECISION" == "cache" ]]; then
+  build_services=(status)
+  if tls_is_on; then
+    build_services+=(proxy)
+    if tls_auth_is_on; then
+      build_services+=(auth)
+    fi
   fi
-  haven_progress_stop
 fi
+log "Building images..."
+haven_progress_start "build"
+if ! BUILD_INPUTS_SHA="$BUILD_GATE_SHA" "${COMPOSE[@]}" build "${build_services[@]}"; then
+  haven_progress_stop
+  PHASE_BUILD=$(( SECONDS - _phase_mark ))
+  event "stack_build_failed"
+  warn "docker compose build failed."
+  die "Control plane image build did not complete."
+fi
+haven_progress_stop
 PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 
 # STEP 2 exported every key from the stack env file into this shell, so the
@@ -1912,7 +1925,16 @@ PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 # The fail-closed empty-value check already ran in STEP 5 (tls_auth_fail_closed).
 unset HAVEN_AUTH_HASH HAVEN_AUTH_USER
 
-if ! "${COMPOSE[@]}" up -d --remove-orphans; then
+UP_ARGS=(-d --remove-orphans)
+if [[ -n "${HAVEN_PROXY_TRANSACTION:-}" ]]; then
+  proxy_overlay="$(python3 "${APP_DIR}/scripts/install-root.py" proxy-preflight "$HAVEN_PROXY_TRANSACTION")" \
+    || die "Caddy candidate preflight refused activation."
+  if [[ -n "$proxy_overlay" ]]; then
+    COMPOSE+=(-f "$proxy_overlay")
+  fi
+  UP_ARGS+=(--no-build)
+fi
+if ! "${COMPOSE[@]}" up "${UP_ARGS[@]}"; then
   PHASE_UP=$(( SECONDS - _phase_mark ))
   event "stack_start_failed"
   warn "docker compose up failed. Recent logs:"

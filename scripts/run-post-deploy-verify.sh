@@ -635,7 +635,7 @@ while :; do
         record_gate workflow_runs true PASS "$(jq -r '"exact merged PR \(.manual_cutover.pr) head \(.manual_cutover.head_sha): required CI/SAST and context gates passed; applicable deployed-SHA workflows succeeded"' "$BODY_FILE")"
         record_gate manual_deployment false SKIPPED "$(jq -r '"owner-authorized manual cutover: disabled push deployment runs \(.manual_cutover.intentionally_skipped_deploy_runs | tojson), both jobs skipped; automatic deployment inapplicable"' "$BODY_FILE")"
       elif [[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]]; then
-        record_gate workflow_runs true PASS "current deployment validation passed; other deployment attempts excluded; other workflows succeeded; own deploy job awaits host gates"
+        record_gate workflow_runs true PASS "same-run validation passed; deploy job awaits host gates"
       else
         record_gate workflow_runs true PASS "all returned workflow runs succeeded"
       fi
@@ -662,6 +662,16 @@ while :; do
           finish FAIL 1 "installation wiring failed"
         fi
         record_gate installation_root true PASS "canonical root and installed control paths verified"
+        if [[ "${HAVEN_VERIFY_DEPLOY_JOB:-0}" == 1 ]]; then
+          record_gate proxy_runtime true FAIL "Caddy candidate verification unsuccessful"
+          if ! python3 "$DRIVER_DIR/install-root.py" verify-proxy "$SHA"; then
+            finish FAIL 1 "mandatory Caddy candidate verification failed"
+          fi
+          record_gate proxy_runtime true PASS "Caddy candidate verification complete"
+          if ! python3 "$DRIVER_DIR/install-root.py" verify-services "$SHA"; then
+            finish FAIL 1 "mandatory Compose service health verification failed"
+          fi
+        fi
         health_rc=0
         "$APP_DIR/doctor.sh" --no-cloud >/dev/null 2>&1 || health_rc=$?
         if (( health_rc > 1 )) || ! curl -fsS --max-time 10 http://localhost:3000/health >/dev/null 2>&1; then

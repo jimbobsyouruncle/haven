@@ -276,7 +276,9 @@ curl -s http://localhost/status/api | jq -r '.checks[] | select(.state!="ok") | 
 
 No Flask, no FastAPI, nothing from pip. Fewer dependencies means a smaller supply-chain surface and nothing extra to keep patched — which matters more than usual for a service that touches the Docker socket.
 
-It also means no build step: `app.py` is mounted read-only into the stock `python:3.12-slim` image, so there is no waiting for a Docker build on a Raspberry Pi and no custom image to rebuild when you edit the file.
+The installer builds `haven-status:3.12.16-zlib1` from a pinned Python 3.12 slim index and requires Debian's fixed zlib package. `app.py` remains a read-only mount, so editing the app does not require an image rebuild.
+
+Before rollout, record the current status image ID and retain the exact local artifact and prior rendered Compose file. For an owner-authorized rollback, recreate only `status` with that Compose file and the retained artifact tagged under the previous reference, `python:3.12-slim`. Use `docker compose up -d --no-deps --no-build --pull never status` with the previous configuration and verify `/status/healthz`. The previous image is emergency recovery only because its zlib patch level may be older.
 
 ---
 

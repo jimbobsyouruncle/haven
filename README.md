@@ -328,7 +328,7 @@ The cost of that first read, and the alternatives measured against it, are in [`
 Both files are generated from the tracked file list, are deterministic (no timestamps or commit SHAs), and must stay under 28672 bytes each. Regenerate them after any change that adds, removes, or renames a tracked file:
 
 ```bash
-python3 <path-to-generate.py> --root . --output-dir . --max-bytes 28672
+python3 scripts/generate-agent-context.py <path-to-generate.py>
 ```
 
 `scripts/check-agent-context.sh` verifies they are fresh. It compares the committed maps against a fresh generator run and exits:
@@ -511,7 +511,7 @@ Follow [`runpod/README.md`](runpod/README.md). At the end you will have a pod ID
 
 It prompts for your local domain, OpenRouter API key, RunPod API key, and pod ID. It will generate your `.env` and start the stack — Ollama, Open WebUI, Hermes Agent, the status proxy, and OpenHands.
 
-The installer only *looks* for the GPU pod on your tailnet (a read-only `tailscale status`). It does **not** start the paid pod, and neither does the CI deploy, which runs `./install.sh --non-interactive` only on an explicitly authorized manual production dispatch. The pod starts on demand when you pick the cloud model in Open WebUI. To make the installer start an offline pod too, set `RUNPOD_AUTO_WAKE=1` (or `true`) in `.env`, or run `./install.sh --wake-runpod` for a single run. The default is `RUNPOD_AUTO_WAKE=0`.
+The installer only *looks* for the GPU pod on your tailnet (a read-only `tailscale status`). It does **not** start the paid pod, and neither does the CI deploy, which runs `./install.sh --non-interactive` after an owner merge with application changes. The pod starts on demand when you pick the cloud model in Open WebUI. To make the installer start an offline pod too, set `RUNPOD_AUTO_WAKE=1` (or `true`) in `.env`, or run `./install.sh --wake-runpod` for a single run. The default is `RUNPOD_AUTO_WAKE=0`.
 
 ### Step 4 — Verify Local DNS
 
@@ -631,8 +631,8 @@ inside `scripts/deploy-instance.sh`, which the unit runs as root.
 
 It becomes fully active when the owner runs **card F**, `scripts/bootstrap.sh`,
 which installs the unit, the polkit rule, the scripts and the `authorized_keys`
-line on the host. Once that bootstrap has run, an explicitly authorized manual dispatch takes this
-path. Until then the connection fails closed at SSH auth, with nothing run.
+line on the host. Once bootstrap and the production environment are ready, owner merges with
+application changes take this path.
 
 The bootstrap installs those files once. `install.sh` re-applies the unit and the
 polkit rule (byte-identical from the deployed tree) on every deploy, so a change
@@ -750,8 +750,9 @@ sudo scripts/uninstall.sh               # tear down the software, keep the data
 sudo scripts/uninstall.sh --remove-data # tear down the software AND the data
 ```
 
-Disable the GitHub `deploy.yml` workflow before you decommission. It runs on
-explicitly authorized manual dispatch for the exact main SHA. Merging or pushing does not reinstall the stack. Transactional deployment also runs automated immutable-image recovery preflight; see [ADR-0006](docs/haven/adr/0006-installation-root.md).
+Pause the GitHub deployment workflow and drain running deploy jobs before
+decommissioning. Owner merges otherwise deploy the exact current main SHA.
+Transactional deployment runs immutable-image recovery preflight. see [ADR-0006](docs/haven/adr/0006-installation-root.md).
 
 ### What it removes
 

@@ -2629,6 +2629,12 @@ by reading the block message: it names the failure class, never the payload and
 never a secret value. If a legitimate call is blocked, change the call to name
 the secret's consumer, not the secret. Do not weaken the rule.
 
+### Roll back the Ollama image
+
+Before changing Ollama, preserve the exact running image and a consistent copy of `ollama_data` while Ollama is stopped. Record the old image ID. The previous managed default was `ollama/ollama:0.34.4`. The installer advances that exact managed tag, so use the retained image's repository digest or tag the retained image with a distinct local recovery tag in `OLLAMA_IMAGE`.
+
+For an owner-authorized rollback, recreate only Ollama with the retained image using `docker compose up -d --no-deps --pull never ollama`. Restore the saved model tree first if the current tree cannot be read by the prior release. Verify `/api/version`, `/api/tags` and a representative local model request. The CI fixture checks API startup and a synthetic model blob across the upgrade and rollback. Measure representative model generation and peak memory on the target Pi before production rollout.
+
 ### Rehearse or roll back Open WebUI v0.13.4
 
 The ARM64 candidate is in `tests/qualification/open-webui.env`. The shared

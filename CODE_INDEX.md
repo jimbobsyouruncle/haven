@@ -20,9 +20,11 @@
 - build
 
 ## .github/workflows/deploy.yml
-- pr-evidence
 - validate
 - deploy
+
+## .github/workflows/ollama-arm64.yml
+- ollama
 
 ## .github/workflows/open-webui-arm64.yml
 - webui
@@ -39,11 +41,14 @@
 - hermes-nonroot-smoke
 - gate
 
+## .github/workflows/status-arm64.yml
+- status
+
 ## .github/workflows/validate.yml
 - validate
 
 ## auth/Dockerfile
-- FROM python:3.12.16-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+- FROM python
 
 ## auth/app.py
 - def _positive_int(raw, default)
@@ -169,9 +174,9 @@
 - restore_home_dir()
 
 ## caddy/Dockerfile
-- FROM caddy@sha256:646fee578e680989ca5c7fd1ce6f1de574d19fd71ef2221810cc0510a9f40c86 AS builder
+- FROM caddy AS builder
 - stage: builder
-- FROM caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+- FROM caddy
 
 ## collect-diagnostics.sh
 - redact()
@@ -241,7 +246,7 @@
 - resolv_skip()
 
 ## hermes/Dockerfile
-- FROM python:3.11.18-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
+- FROM python
 
 ## hermes/agent-hooks/secret-guard.py
 - def flatten(value, out)
@@ -280,7 +285,7 @@
 - run_backup()
 
 ## openhands/agent-server/Dockerfile
-- FROM docker.openhands.dev/openhands/agent-server:1.37.1-python
+- FROM docker.openhands.dev/openhands/agent-server
 
 ## openhands/docker-compose.openhands.yml
 - openhands
@@ -459,16 +464,15 @@
 - def require(condition, code)
 - def pending(code)
 - def get(path, authenticated)
-- def merged(sha)
-- def authorize(sha)
-- def pr_runs(head, branch)
-- def required_pr_jobs(run, names)
-- def checkout_step(job, receipt)
-- def git(*args)
-- def pr_validation(sha)
-- def verify_pr_evidence(sha)
+- def merged(sha, *, authenticated)
+- def require_current_main(sha, *, authenticated)
+- def application_changed(before, sha)
+- def candidate(sha, before)
+- def require_merge_eligibility(sha, before)
 - def evidence_list(data, key)
-- def deployment_jobs(run, sha, historical)
+- def historical_deployment_jobs(run, sha)
+- def active_deployment(sha)
+- def authorize_host(sha)
 - def runs(sha)
 - def emit_evidence(data)
 - def complete_list(data, key)
@@ -485,6 +489,9 @@
 ## scripts/deploy-verify.sh
 - (no symbols)
 
+## scripts/generate-agent-context.py
+- def main()
+
 ## scripts/install-root.py
 - class Refusal(RuntimeError)
 - class Transaction()
@@ -494,6 +501,7 @@
   - def mapped_literal(self, raw)
   - def installation_environment()
   - def lock_pair(self)
+  - def verify_inherited_locks(self)
   - def translate(self, content, layout)
   - def identity_preflight(self, values)
   - def operation(self, journal, stage, item)
@@ -517,13 +525,29 @@
   - def load(self)
   - def values(content)
   - def source(self)
-  - def gate_command(self, refusal, args, *, inspect_image)
+  - def gate_command(self, refusal, args, *, missing_image)
   - def docker_architecture(self)
-  - def recovery_image(self, running)
+  - def migration_recovery_image(self, running)
   - def verify_archive(archive, metadata)
-  - def compatible_proxy(self, recovery, source)
+  - def compatible_proxy(self, recovery, source, migration)
+  - def probe_proxy(self, image, source, runtime, compare_running, require_dns)
   - def proxy_preflight(self, source)
   - def retain_recovery(self, recovery)
+  - def proxy_container(self)
+  - def proxy_compose(self, root, env_file, overlay)
+  - def service_containers(self, compose)
+  - def verify_services(self, sha)
+  - def file_digest(self, path, private)
+  - def proxy_inputs(self, container)
+  - def proxy_data_identity(self, path)
+  - def proxy_config_volume(container)
+  - def snapshot_proxy(self, values, recovery)
+  - def candidate_proxy(self, token)
+  - def identify_candidate(self, runtime)
+  - def proxy_answers(self, domain)
+  - def failed_proxy(container)
+  - def verify_proxy(self, sha)
+  - def recover_proxy(self, journal)
   - def snapshots(self, extra)
   - def restore(self, journal)
   - def wiring(self, sha)
@@ -531,7 +555,9 @@
   - def verify_recovery_render(self, sha)
   - def reverify_recovery(self, sha, journal_hash)
   - def accept(self, sha, evidence, allow_accepted)
-  - def deploy(self, sha)
+  - def authorize_deploy(self, sha)
+  - def staged_proxy_preflight(self, stage, sha)
+  - def deploy(self, sha, *, handoff)
 - def main()
 - def cli()
 
@@ -872,13 +898,17 @@
   - def test_selected_workflow_steps(self)
   - def test_aggregate_gate_fails_closed(self)
   - def test_workflow_contract(self)
-  - def test_deployment_selection_always_runs_full(self)
-  - def test_reuse_is_bound_to_push_attempt_and_guards_every_test(self)
+  - def test_non_pr_source_validation_always_runs_full(self)
 
 ## scripts/test-ci-parity.sh
 - record()
 - run_runner()
 - new_case()
+
+## scripts/test-container-upgrade.sh
+- cleanup()
+- render()
+- start()
 
 ## scripts/test-deploy-build-gate.sh
 - ok()
@@ -1330,6 +1360,9 @@
 - step_remove_app_dir()
 - step_remove_data()
 
+## status/Dockerfile
+- FROM python
+
 ## status/app.py
 - def base_url(sub)
 - def domain_caption()
@@ -1427,6 +1460,10 @@
 - def stub_getaddrinfo(behavior)
 - def shape(tile)
 - def no_leak(label, tile)
+
+## tests/qualification/ollama.sh
+- cleanup()
+- start()
 
 ## tests/qualification/open-webui.py
 - class ToolFixture(BaseHTTPRequestHandler)

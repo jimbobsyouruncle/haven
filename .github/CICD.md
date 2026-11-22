@@ -2,42 +2,42 @@
 
 | File | Purpose |
 |---|---|
-| `workflows/deploy.yml` | Inert until owner activation; then canonical main pushes reuse `validate.yml` and deploy the exact validated merged SHA. Manual exact-main recovery remains available. |
-| `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` on every pull request and by `deploy.yml` on activated main pushes or authorized manual dispatch. Holds no secrets. |
+| `workflows/deploy.yml` | Validates and deploys the exact current main commit from an owner-merged PR. |
+| `workflows/validate.yml` | Reusable source validation (`workflow_call` only). Called by `sast-checks.yml` for source checks. Holds no secrets. |
 | `workflows/sandbox-image.yml` | Builds and publishes the derived agent-server image to GHCR. Auto-publishes on a push to `main` that changes `openhands/agent-server/Dockerfile` (tag read from the `image_tag` default, guarded against overwriting an existing tag); `workflow_dispatch` is the manual rebuild path. |
 | `workflows/agent-context.yml` | Checks the checked-in `REPO_MAP.md` and `CODE_INDEX.md` are fresh on every pull request. Read-only; never commits. |
-| `workflows/sast-checks.yml` | The single pull-request gate: ShellCheck, Semgrep, source validation, CodeQL and the Hermes non-root smoke test, ending in the `Security & SAST gate`. |
-| `dependabot.yml` | Grouped pull request that opens weekly on Sunday at 22:00 America/New_York to bump the SHA-pinned GitHub Actions. GitHub Actions only. |
+| `workflows/sast-checks.yml` | The pull-request gate, with ShellCheck, Semgrep, source validation, CodeQL and the Hermes non-root smoke test. |
+| `dependabot.yml` | Weekly PRs for GitHub Actions and supported Dockerfile image pins. |
 
 ---
 
 ## What this does
 
-Automatic deployment is prepared but **inactive** until canonical cutover acceptance and explicit owner authorization to set the repository variable `HAVEN_AUTOMATIC_DEPLOYMENT` to exactly `enabled`. This PR changes no settings or secrets. After activation, owner merges to main need no additional deployment approval. The existing `production` environment remains in use; any configured protection still applies. Clearing the variable disables future automatic jobs without cancelling a running host transaction.
+The owner merge authorizes deployment. The main push workflow compares the push
+base and merge tree and skips deployment for changes confined to project prose
+under `docs/`, the root README and context maps, and the CI guide. Markdown
+used as runtime input and changes to workflows, installers, or image pins
+follow the ordinary deploy path.
 
-For manual recovery, dispatch **Deploy Control Plane** from `main`, supply the full current main SHA in `deployment_sha`, and select `authorize_production`. Both paths validate that exact SHA before production access. The automatic path additionally requires a canonical repository push and a matching merged-main PR from the GitHub API; fork, forced/deleted push, unmatched SHA and stale main are refused. Provenance is rechecked after the image wait.
+On an application change, the deploy workflow checks the exact current main
+merge, verifies that its tree matches the up-to-date PR head, and confirms both
+required GitHub Actions checks succeeded before the merge. The main ruleset
+requires an up-to-date PR, both existing checks and an empty bypass list.
+Source validation, ShellCheck, Semgrep, CodeQL and applicable ARM64 checks run
+before merge. The deployment eligibility job keeps the name
+`validate / Validate sources` so the installed bootstrap can authorize the
+first upgrade through the normal transaction. The bot's owner-merged
+context-map PRs stay deployment-neutral.
 
-Generated maps still travel through the owner-reviewed draft PR path introduced in #206. The bot never merges. Its token-suppressed branch/PR events are handled by the existing bounded validation dispatches, not by production dispatch. The human owner's eventual main merge generates the ordinary deployment push; map-only main merges are validated/deployed normally after activation. No reconciliation service or bot auto-merge is introduced.
+For historical setup and rollback, see the [one-time host transition](../deploy/README.md#one-time-policy-transition).
+Clearing `HAVEN_AUTOMATIC_DEPLOYMENT` pauses new candidates. Drain queued and
+running jobs before host maintenance. A newer main commit can supersede a
+waiting candidate, including when the newer change is docs-only. Merge another
+deployable change to pick up the pending application changes.
 
+### Source validation
 
-The interesting part is how it reaches your Pi. **Your Pi has no public IP address, no open firewall ports, and no port forwarding configured.** The GitHub runner temporarily joins your Tailscale network as a member tagged `tag:ci`, connects over the encrypted mesh, does its work, and disappears when the job ends.
-
-This is strictly better than the conventional approach of exposing SSH to the internet. There is no permanent attack surface, because there is no permanently reachable service.
-
-Installation-root migration must use the transactional deployment path and its automated immutable-image recovery preflight. Do not use an installer invocation to bypass that gate. See [ADR-0006](../docs/haven/adr/0006-installation-root.md) for recovery checks and installed-driver preparation requirements.
-
----
-
-## The deploy jobs
-
-`deploy.yml` has two jobs. The first is now a thin caller of the reusable
-`validate.yml`, which the pull-request gate calls too.
-
-### Job 1 — `validate`
-
-Runs on every pull request to `main` (through `sast-checks.yml`) and on every
-activated canonical-main push or authorized manual dispatch (through `deploy.yml`). Catches mistakes before they can reach
-the Pi.
+The PR gate calls `validate.yml`.
 
 | Check | What it catches |
 |---|---|
@@ -57,7 +57,7 @@ That last check is the one worth understanding. If `.env` somehow got committed,
 
 The old advisory ShellCheck step is gone from validation. It was `continue-on-error`, so it never blocked anything. The blocking ShellCheck job in `sast-checks.yml` covers the same ground and does fail the gate.
 
-### Job 2 — `deploy`
+### Production job
 
 Only runs if `validate` passed.
 
@@ -65,21 +65,15 @@ Only runs if `validate` passed.
 2. Joins the tailnet as an ephemeral node tagged `tag:ci`
 3. Confirms the Pi is reachable, retrying for ~50 seconds while mesh routes establish
 4. Connects as the dedicated `haven-deploy` account and sends exactly one command string, `deploy <sha>`, through `scripts/deploy-trigger.sh`
-5. The forced command on the Pi starts the system unit `haven-deploy@<sha>.service`, which runs `scripts/deploy-instance.sh <sha>`: it refuses any revision that is not an ancestor of `origin/main`, resets to the exact `github.sha` CI validated, and asserts `HEAD` equals it
-6. `scripts/deploy-instance.sh` hands off to `scripts/deploy-remote.sh <sha>`, which re-asserts `HEAD` and then runs `./install.sh --non-interactive`
-7. `scripts/deploy-remote.sh` polls the health endpoint for up to two minutes and gates on `./doctor.sh --no-cloud`: warnings stay green, failures turn the deploy red
-8. On the canonical unit path, `ExecStartPost` runs the existing root verifier **after** the transaction process releases its locks. It has a 10-minute bound (plus a 30-second kill grace), following the unit's 45-minute install bound, inside the 60-minute SSH step. It requires the matching main deployment run's successful `validate / Validate sources` job and its in-progress deployment job, supersedes older deployment attempts at the same SHA, then checks other returned workflows, exact deployed HEAD, canonical wiring, runtime health, backup policy and durable transaction acceptance. It does not wait for its own deployment job to finish. Non-successful mandatory evidence, API failures, timeout or unresolved transactions fail closed. The existing journal blocks another deployment until acceptance or explicit recovery. Direct operator migration and custom/local deploy paths retain asynchronous verification.
-9. The forced command reads back the unit result and prints the run log into the workflow output, so you can diagnose a failure without SSHing in yourself
-
-**Why the revision is pinned, not `origin/main`.** `validate` tests the commit that
-triggered the run (`GITHUB_SHA`). If the deploy reset to `origin/main`, and `main`
-moved after validation, the Pi would run an unvalidated revision. A manual
-**Run workflow** from a non-main branch would make the validated and deployed
-trees differ outright. The client sends the exact SHA, the host refuses any
-revision that is not an ancestor of `origin/main`, and the tree is reset to that
-SHA with a `HEAD` assert — twice, once in `scripts/deploy-instance.sh` and once
-as `scripts/deploy-remote.sh`'s first action. The ancestor check keeps the target
-on the deployed line of history.
+5. The forced command starts `haven-deploy@<sha>.service`. The root bootstrap
+   requires same-attempt deployment eligibility and checks the requested SHA against current
+   main in both GitHub and its fetch. It stages the candidate, checks recovery
+   artifacts, and snapshots the previous checkout and controls before switching.
+6. The host verifies the proxy, enabled Compose services, application health and
+   canonical wiring in `ExecStartPost`. The job stays pending until the root
+   verifier accepts the transaction. A failed or incomplete mandatory gate
+   leaves recovery artifacts available and blocks another deployment until
+   recovery. See the [host procedure](../deploy/README.md).
 
 **Why the runner no longer runs a shell script on the Pi.** The deploy account's
 SSH key is pinned to ONE forced command. It cannot run git, a shell, or a second
@@ -96,7 +90,7 @@ is what removes the admin-account login from the deploy path.
 |---|---|---|
 | `shellcheck` | ShellCheck (Bash) | Common shell scripting bugs. Blocking. |
 | `semgrep` | Semgrep (`--config auto --error`) | SAST findings from the community rulesets. Blocking. On a pull request it scans only the files the PR changed (`--baseline-commit` against the PR base SHA); `workflow_dispatch` and the weekly `schedule` keep the full-tree scan. |
-| `validate` | `Validate sources` | Calls the same reusable `validate.yml` the deploy uses (see Job 1 above). |
+| `validate` | `Validate sources` | Calls reusable `validate.yml` for source tests. |
 | `codeql` | `Analyze (python)` and `Analyze (actions)` | CodeQL advanced setup for Python and GitHub Actions. |
 | `changes` | Detect Hermes changes | Diffs the exact PR base SHA against HEAD using the shared component mapping (including full fallback), passing the SHA through `env:`. Fails closed (`set -euo pipefail`); an empty base (schedule, dispatch) sets the smoke to run. No third-party action. |
 | `hermes-nonroot-smoke` | Hermes non-root smoke | Builds the Hermes image as uid/gid `10001` and runs it as `10001` with `--cap-drop ALL --security-opt no-new-privileges`, no secrets, and a `10001`-owned `/root/.hermes` seeded with a **decoy** agent (a valid Agent source root that writes a marker if imported). Checks `id -u`, HTTP 200 on 8501 within 180 s, liveness at +60 s, the gateway is up, and the local kanban patch is in `/opt/hermes-agent`. Then the pinning checks: PID 1 maps Python only from `/opt/hermes-agent` (never `/root/.hermes`), the decoy marker is absent, one `/api/onboarding/status` request (which imports `run_agent`) answers 200, `bash -lc 'command -v hermes'` resolves to `/usr/local/bin/hermes`, and `docker diff` shows no change under `/app` or `/opt`. Prints `docker diff` (paths only). Skipped only when the `changes` job successfully selects no Hermes/full coverage. |
@@ -106,63 +100,11 @@ is what removes the admin-account login from the deploy path.
 
 **One gate.** Branch protection needs one check, not several. `gate` depends on all six jobs with `if: always()`, so it runs even when an earlier job fails or is cancelled. It prints each result and exits non-zero unless every result is `success`. The single exception is the Hermes non-root smoke, which may be `skipped` — and only because the `changes` job, itself required to succeed, proved the pull request cannot change the image the smoke builds. A failure or a cancellation anywhere, and a skip by any job other than `hermes-nonroot-smoke`, all fail the gate.
 
-### Deployment validation reuse (#219)
-
-PR #222 kept full validation for every deployment. The superseding owner
-decision permits reusing approved scoped PR validation for an equivalent
-tested tree. The historical full-suite baselines are
-[11m40s for #218](https://github.com/jimbobsyouruncle/haven/actions/runs/44108638958/job/134143913958),
-[11m20s on manual dispatch](https://github.com/jimbobsyouruncle/haven/actions/runs/44331207325),
-and [10m59s on an automatic deployment retry](https://github.com/jimbobsyouruncle/haven/actions/runs/44347052427/attempts/2).
-The latter two host-deploy jobs took 2m12s and 2m04s respectively.
-
-On a same-repository PR merge into main, `pr-evidence` checks the exact push
-and merged PR, then reads the latest PR-triggered SAST and agent-context runs
-and their attempt-specific jobs. GitHub's workflow metadata identifies the
-synthetic merge commit used by the SAST workflow. The source and context jobs
-also record the PR number, base and checked-out commit in a successful step.
-The verifier requires the tested tree to match the deployed tree and the
-tested base to be the previous main tip. It recomputes the approved component
-selection with the existing selector. The required SAST aggregate, both
-CodeQL jobs, Semgrep, ShellCheck and agent-context must all succeed. The job
-logs the run attempts, tree, selected components and successful PR source
-steps. The stable `validate / Validate sources` job confirms the proof for
-the current deployment attempt and reports that it ran no fresh source tests.
-
-| Case | Result |
-| --- | --- |
-| Trusted merge or squash with exact base, checkout and tree and approved component coverage | Reuse scoped PR validation |
-| Trusted security evidence and equivalent tree, but cross-cutting change, unrelated CI change, or missing source checkout record | Run full source validation |
-| Authorized manual dispatch | Run full source validation |
-| Missing, failed, cancelled or ambiguous required security evidence; a fork, direct push, unproven merge base or tree, or changes to trusted check policy | Refuse automatic deployment |
-
-The evidence job uses a read-only Actions token without production secrets.
-The same policy files must exist in both the deployed and previous main trees.
-A partial PR rerun that leaves required jobs on older attempts does not qualify.
-For a deployment retry that inherited fast-path evidence, rerun all jobs to
-collect fresh evidence. The exact-main checks before and after the image wait,
-host transaction, immutable image checks, rollback and verifier still apply.
-
-The introducing PR changes validation policy and therefore cannot exercise the
-automatic fast path. The next normal eligible PR merge can demonstrate reuse.
-A map refresh PR with only manually dispatched check runs also lacks the
-required PR-triggered evidence for automatic deployment. If an excluded
-revision needs deployment, use the existing explicitly authorized
-`workflow_dispatch` procedure on the current main SHA. To roll back the
-workflow change, revert through a reviewed PR and use that same procedure if
-a deployment is needed.
-
-For acceptance, record the full merged SHA, automatic run URL and attempt,
-the reused PR attempts, source gate timings and total deploy duration. Aim for
-under two minutes for evidence and compare against the recorded full-suite
-baseline. Separate queue and image-wait time from validation savings. Keep
-#219 open until a fresh automatic deployment proves the savings.
-
 ### Component validation policy
 
 The required names remain **Security & SAST gate** and **Check agent context maps**
-(live main rules inspected during #214). No settings change is needed. Validation
-is one job with native step conditionals, not a job per component. The small
+(enforced by the main ruleset). Validation uses native step conditionals within
+one job. The small
 [switch table](../scripts/ci-components.py) emits booleans for those conditionals.
 It compares the exact PR base SHA to HEAD with NUL-delimited paths and renames
 expanded into both paths. Invalid/missing PR metadata or Git failure fails the
@@ -175,12 +117,13 @@ events use selection. Deployment, weekly and manual SAST runs stay full.
 | `backup/`, named backup fixtures | Backup/restore safety, system units, timers, container control; status backup socket/log mounts; doctor; remote deploy and verifier; installation-root restore identity | Restic/Docker/systemctl fixtures and scratch SQLite/Git trees; no cloud credentials |
 | `auth/`, password reset and named auth fixtures | Auth behavior, installer env escaping, reset; TLS/auth rendering, real Caddy, allowlists and headers | Python login fixtures; stubs for password reset/installer; dummy credentials and isolated Caddy |
 | TLS check, Caddy image, named TLS fixtures | Proxy plus auth tests, Compose configuration and render matrices | Stub render tests offline; real TLS loopback and Docker Caddy tests require local sockets/engine, not production |
-| Status app/tests and named status fixtures | Status probes, private backup API, backup consumers and proxy configuration | Temporary files, mocked DNS/API, real local Unix socket |
+| Status app/tests, image and named status fixtures | Status probes, private backup API, status mount and log contracts, verifier and Compose. The status ARM64 workflow qualifies the image and mounted app. | Temporary files, mocked DNS/API, real local Unix socket |
 | `openwebui/` | Generated pipe and behavioral tests; status wake probe and doctor API/mesh consumers | httpx/mock streams and synthetic worker responses; no worker source or live RunPod |
 | `hermes/`, secret-guard fixture | Guard installation/negative input tests, password reset, image pin assertions and Compose; separate ARM64 non-root smoke | Guard fixtures are offline; smoke builds pinned upstream dependencies and starts a local isolated container |
 | Doctor and named doctor fixtures | Doctor plus backup/status/inference contracts, remote deployment exit mapping and verifier | Stubbed host/API commands; healthy/degraded/failing states, no production diagnosis |
 | Shared paths (including TLS helpers and Caddy routing/auth templates), install/deploy mechanics, firewall/isolation, CI configuration/selection, unknown paths | Full existing suite, including provenance, authorization, destructive restore and rollback protections | Existing fixtures; no live destructive restores |
 | Markdown, LICENSE, generated navigation maps | Universal baseline only | No component behavior changes |
+| Context generator, freshness checker and its fixture | Universal baseline and the required Agent context job | Agent context generation and freshness fixtures exercise these files directly |
 
 Groups explicitly include their consumer tests rather than assuming directories
 are independent. Test-script changes follow the same boundary; new/unclassified
@@ -199,7 +142,7 @@ that skip. Selection/workflow/shared/unknown changes exercise the ARM64 smoke.
 | ShellCheck, diff-aware Semgrep, Python/Actions CodeQL | Every PR; weekly/manual whole scans | Unchanged | Preserve SAST and secret rule coverage; avoid a security-scanner migration in this change |
 | Source behavior/config tests | All 71 workflow steps | 73 possible steps including selector and its tests; fixture selection: backup 33, auth 25, docs 9; shared/CI 73 | Execute existing affected tests; no weakened assertions |
 | Hermes ARM64 smoke | Image/workflow paths; weekly/manual | Image, shared/unknown, workflow or selector paths; weekly/manual | Real non-root image behavior; conservative fallback on selection changes |
-| Deployment validation / health | Full source checks, exact-SHA provenance, doctor | Unchanged | Doctor cannot replace unexecuted code-path, restore, authorization or artifact checks |
+| Deployment eligibility / health | Protected PR merge, exact-SHA provenance, doctor | Runs at deployment | Source checks run in PR CI |
 
 Timing reference: [PR #213 source-validation job](https://github.com/jimbobsyouruncle/haven/actions/runs/43983948151/job/133707372734)
 at tested head `7b2797a54dd87ea18fa869a39eb91352271ada5c` took
@@ -230,12 +173,20 @@ Caddy builds, package installs and the ARM64 smoke require approved public
 package/image sources; they are not fully offline. Runtime integration and live
 restore evidence remain separately authorized operational work.
 
-Local parity deliberately ignores component conditions and replays its existing
-full/static modes. Its selector setup step is CI-owned (event/output metadata),
-while selection regressions run locally too. Rollback is a reviewed revert of
-this change; deploy workflow, credentials, live configuration and image pins
-are untouched. Manual full validation is **Security & SAST Checks → Run workflow**;
-the existing Monday schedule also runs it. Neither action deploys.
+Run focused checks locally, for example `python3 scripts/test-ci-components.py`
+for changes to component selection. CI supplies slower integration, SAST and
+ARM64 evidence. Local parity still offers full/static modes when needed.
+Manual full validation is **Security & SAST Checks → Run workflow**. The Monday
+schedule also runs full validation.
+
+The main ruleset currently requires both PR gate checks but allows out-of-date
+branches and lacks a pull-request requirement. Before removing the deployment
+source job, require PRs and up-to-date branches on main while preserving the
+existing required checks and no bypass actors. The installed root bootstrap
+also checks for that source job in the active deployment attempt. Its policy
+must support the replacement before a merge can remove the job. See the
+[host policy transition](../deploy/README.md#one-time-policy-transition) for the
+existing bootstrap handoff pattern.
 
 ---
 
@@ -243,12 +194,12 @@ the existing Monday schedule also runs it. Neither action deploys.
 
 `dependabot.yml` keeps the SHA-pinned actions in the workflows current. It opens one grouped pull request weekly on Sunday at 22:00 America/New_York (all actions in a single group, commit prefix `ci`, at most 5 open at a time) that bumps every pin it finds.
 
-Dependabot covers **GitHub Actions only**. These pins still move by hand and are easy to forget:
+Dependabot also proposes supported Dockerfile base image updates. These pins still move by hand:
 
 | Pin | Where | Why Dependabot does not cover it |
 |---|---|---|
 | `semgrep/semgrep:1.179.0@sha256:93963d…` | `workflows/sast-checks.yml` | Container image tag and digest, not an action |
-| Compose / Dockerfile image tags | `docker-compose.yml`, `hermes/Dockerfile` | Container images, not actions |
+| Compose template defaults | `docker-compose.yml.tmpl` and overlays | Environment defaults and generated manifests need coordinated edits |
 | `httpx==0.28.1` | `workflows/validate.yml` | pip pin inside a workflow step |
 | shared-actions `ref:` | `workflows/agent-context.yml` | A non-action git ref outside Dependabot's scope |
 | Tailscale `version: '1.104.1'` | `workflows/deploy.yml` | An action input, not a versioned dependency |
@@ -259,14 +210,14 @@ Dependabot covers **GitHub Actions only**. These pins still move by hand and are
 
 `REPO_MAP.md` and `CODE_INDEX.md` at the repository root are small, generated maps of the tracked tree. Coding agents read them instead of whole-code dumps, so context stays small and answers stay fast. The measured cost of that first read, and the layouts compared against it, are recorded in [`../docs/agent-context-index-design.md`](../docs/agent-context-index-design.md).
 
-The **Agent context** workflow (`workflows/agent-context.yml`) enforces that they are fresh. On every pull request to `main` it checks out the generator at a pinned commit from `jimbobsyouruncle/shared-actions`, runs the fixture test (`scripts/test-check-agent-context.sh`), and runs `scripts/check-agent-context.sh` against the committed maps.
+The **Agent context** workflow (`workflows/agent-context.yml`) enforces that they are fresh. On every pull request to `main` it checks out the generator at a pinned commit from `jimbobsyouruncle/shared-actions`, runs the fixture test (`scripts/test-check-agent-context.sh`), and runs `scripts/check-agent-context.sh` against the committed maps. The checker and the context-map committer use the same Haven wrapper. It preserves Dockerfile base image names and stage structure while omitting image tags and digests. Read the Dockerfiles for current pins.
 
 The check prints nothing and exits `0` when both maps match a fresh run. It exits `1` when a map is stale or missing, or when a retired `CONSOLIDATED_*.md` is still tracked. It exits `2` on a usage error or a generator failure (including a size overflow over `--max-bytes 30720`).
 
 To refresh the maps yourself:
 
 ```bash
-python3 <path-to-generate.py> --root . --output-dir . --max-bytes 30720
+python3 scripts/generate-agent-context.py <path-to-generate.py>
 ```
 
 The workflow holds `permissions: contents: read`, adds no write permission, and never commits or pushes. The maps land only through reviewed pull requests.
@@ -293,7 +244,7 @@ It becomes fully active when the owner runs **card F**, `scripts/bootstrap.sh`,
 which installs the unit, the polkit rule, the scripts and the `authorized_keys`
 line on the host and creates the account as a system account with `/bin/sh` and
 a locked password (sshd runs the forced command through the login shell). Once
-that bootstrap has run, an explicitly authorized manual dispatch takes this path. The bootstrap
+bootstrap and the production environment are ready, owner merges take this path. The bootstrap
 installs those files once; `install.sh` re-applies the unit and the polkit rule
 on every deploy, so a change to either file reaches the host without a by-hand
 copy (effective from the next instantiation). See
@@ -377,9 +328,13 @@ Admin console → **Access controls**. Without this, the runner joins the networ
 
 Replace `100.x.x.x` with your Pi's address from `tailscale ip -4`. Keep this rule as narrow as it is — the CI runner needs exactly one port on exactly one host.
 
-### 4. Add the repository secrets
+### 4. Set up the production environment
 
-GitHub repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
+In GitHub **Settings → Environments → production**, allow only the `main`
+branch and set the credentials below as environment secrets. Keep production
+credentials out of repository-wide and organization-wide Actions secrets
+available to this repository. The workflow needs no required environment
+reviewer after the one-time transition.
 
 | Secret | Value | Where to get it |
 |---|---|---|
@@ -398,22 +353,11 @@ GitHub repo → **Settings** → **Secrets and variables** → **Actions** → *
 > remote path is resolved on the host by `scripts/deploy-instance.sh`. The owner
 > may delete both secrets.
 
-### 5. Optional — require approval before deploying
+### 5. Enable the installed deployment path
 
-The workflow declares `environment: production`, but that name alone does not enforce reviewer approval. The inspected environment had only a branch policy. The tracked workflow requires either separately activated automatic canonical-main deployment or manual dispatch with explicit production assent for the exact main SHA before production access. Automated host recovery preflight is also mandatory. Configuring required reviewers is a separate owner settings action; this PR does not change settings.
-
-Worth enabling if the Pi is doing anything you depend on.
-
-### 6. Test it
-
-```bash
-git commit --allow-empty -m "test: verify deploy pipeline"
-git push
-```
-
-Watch the **Actions** tab. First run takes 2–4 minutes.
-
----
+After the host is ready, set the repository variable
+`HAVEN_AUTOMATIC_DEPLOYMENT=enabled`. Review the next application merge in
+Actions and confirm the exact SHA reached an accepted host transaction.
 
 ## Troubleshooting
 
@@ -424,22 +368,13 @@ Watch the **Actions** tab. First run takes 2–4 minutes.
 | `RUNPOD_API_KEY missing and --non-interactive was requested` | `.env` does not exist on the Pi yet | Run `./install.sh` interactively on the Pi once first |
 | `Open WebUI failed its health check` | Container did not start | The workflow output includes the last 50 log lines — read those |
 | OAuth client errors | Wrong scope or missing tag | Client needs `auth_keys` write scope and `tag:ci` |
-| Automatic deploy job skipped | Activation variable absent or not `enabled` | Keep inactive until canonical acceptance and explicit owner activation; manual exact-main dispatch remains available |
+| Automatic deploy job skipped | Activation variable absent or not `enabled` | Check the one-time transition and the activation variable |
 
 ---
 
-## Manual deploy
-
-The workflow is a convenience, not a dependency. This does the same thing:
-
-```bash
-ssh pi@<pi-tailscale-ip>
-cd hybrid-ai
-git pull
-./install.sh
-```
-
----
+For a transient pre-activation failure while the SHA is still current main,
+rerun **all jobs** from the original push run. For a failed host transaction,
+follow the [host rollback procedure](../deploy/README.md#rollback) first.
 
 ## Security notes
 

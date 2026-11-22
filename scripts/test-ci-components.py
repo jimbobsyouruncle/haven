@@ -23,7 +23,10 @@ class SelectionTests(unittest.TestCase):
             (['backup/restore.sh'], {'backup', 'status', 'doctor'}),
             (['auth/app.py'], {'auth', 'proxy'}),
             (['README.md', 'docs/haven/ARCHITECTURE.md'], set()),
-            (['status/app.py'], {'status', 'backup', 'proxy'}),
+            (['status/app.py'], {'status'}),
+            (['status/Dockerfile'], {'status'}),
+            (['scripts/generate-agent-context.py', 'scripts/check-agent-context.sh',
+              'scripts/test-check-agent-context.sh'], set()),
             (['openwebui/runpod_core.py'], {'inference', 'status', 'doctor'}),
             (['hermes/agent-hooks/secret-guard.py'], {'hermes'}),
             (['auth/app.py', 'backup/restore.sh'], {'auth', 'proxy', 'backup', 'status', 'doctor'}),
@@ -35,6 +38,8 @@ class SelectionTests(unittest.TestCase):
     def test_shared_unknown_security_and_ci_are_full(self):
         for path in ('scripts/lib/haven-env.sh', 'scripts/lib/tls.sh', 'scripts/lib/installer-env-render.sh',
                      'install.sh', 'docker-compose.yml',
+                     '.github/workflows/agent-context.yml',
+                     '.github/workflows/agent-context-committer.yml',
                      'scripts/sandbox-firewall.sh', '.github/workflows/validate.yml',
                      'scripts/ci-components.py', 'scripts/test-ci-components.py',
                      'deploy/haven-deploy@.service', '.env.example',
@@ -99,13 +104,21 @@ class SelectionTests(unittest.TestCase):
                          'Validate rendered Caddyfiles with real Caddy (TLS x auth matrix)',
                          'Assert proxy allowlist is intact'}.issubset(auth))
         self.assertNotIn('Backup script fixture tests', auth)
+        status = steps('status/app.py')
+        self.assertTrue({'Private Backups socket tests', 'GPU pod wake-readiness tile tests',
+                         'Post-deploy verifier tests', 'Compose schema check'}.issubset(status))
+        self.assertTrue({'Backup script fixture tests', 'Installation root migration tests',
+                         'B77 port-80 redirect-only dynamic tests', 'Auth service tests',
+                         'Pipe behavioural tests'}.isdisjoint(status))
         docs = steps('README.md')
+        self.assertEqual(steps('scripts/generate-agent-context.py'), docs)
         self.assertIn('Assert no secrets are tracked', docs)
         self.assertIn('Shell syntax check', docs)
         self.assertFalse(any('fixture tests' in name or 'Doctor ' in name for name in docs))
         for path in ('scripts/lib/haven-env.sh', '.github/workflows/validate.yml'):
             self.assertEqual(len(steps(path)), len(blocks))
         for label, path in (('backup', 'backup/restore.sh'), ('auth', 'auth/app.py'),
+                            ('status', 'status/app.py'),
                             ('docs', 'README.md'), ('shared', 'scripts/lib/haven-env.sh')):
             print(f'{label}: {len(steps(path))}/{len(blocks)} validation steps selected')
 
@@ -143,7 +156,10 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn('changed_only:', deploy)
         self.assertIn('python3 scripts/test-ci-components.py', workflow)
         self.assertIn('name: Security & SAST gate', sast)
-        self.assertIn('if: always()\n    needs:', sast)
+        self.assertIn('if: ${{ always() }}', sast)
+        self.assertNotIn('workflow_run:', sast)
+        smoke = sast.split('  hermes-nonroot-smoke:\n', 1)[1]
+        self.assertIn("!cancelled() && needs.changes.result == 'success'", smoke)
         # Every narrowed step includes the conservative full fallback. Each
         # component has actual executable consumers, not just detector outputs.
         for line in workflow.splitlines():
@@ -152,17 +168,17 @@ class SelectionTests(unittest.TestCase):
         for component in COMPONENTS.COMPONENTS:
             self.assertIn(f"steps.components.outputs.{component} == 'true'", workflow)
 
-    def test_deployment_selection_always_runs_full(self):
+    def test_non_pr_source_validation_always_runs_full(self):
         # Execute the real workflow shell, without GitHub or a production host.
-        # Deploy does not opt into changed_only. Even accidental opt-in must
-        # remain full for non-PR events, independently of PR evidence/base.
+        # The same SAST caller opts into scoped PR tests. Every non-PR
+        # event must stay full, independently of the input or PR base.
         workflow = (ROOT / '.github/workflows/validate.yml').read_text()
         block = workflow.split('      - name: Select component tests\n', 1)[1]
         body = block.split('        run: |\n', 1)[1].split('      - name:', 1)[0]
         body = '\n'.join(line[10:] for line in body.splitlines())
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / 'output'
-            for event in ('push', 'workflow_dispatch'):
+            for event in ('push', 'workflow_dispatch', 'schedule'):
                 for changed_only in ('false', 'true'):
                     with self.subTest(event=event, changed_only=changed_only):
                         output.write_text('')
@@ -175,35 +191,6 @@ class SelectionTests(unittest.TestCase):
                         expected = {f'{key}=true' for key in ('full',) + COMPONENTS.COMPONENTS}
                         self.assertEqual(set(result.stdout.splitlines()), expected)
                         self.assertEqual(set(output.read_text().splitlines()), expected)
-        deploy = (ROOT / '.github/workflows/deploy.yml').read_text()
-        validate = deploy.split('  validate:\n', 1)[1].split('  deploy:\n', 1)[0]
-        self.assertIn('uses: ./.github/workflows/validate.yml', validate)
-        self.assertIn('needs: pr-evidence', validate)
-        self.assertIn('reuse_attempt: ${{ needs.pr-evidence.outputs.reuse_attempt }}', validate)
-        self.assertNotIn('secrets:', validate)
-        self.assertIn('needs: [pr-evidence, validate]', deploy)
-
-    def test_reuse_is_bound_to_push_attempt_and_guards_every_test(self):
-        workflow = (ROOT / '.github/workflows/validate.yml').read_text()
-        gate, tests = workflow.split('      - name: Checkout\n', 1)
-        body = gate.split('        run: |\n', 1)[1]
-        body = '\n'.join(line[10:] for line in body.splitlines())
-        with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp) / 'output'
-            for event, proof, expected in (
-                ('push', '2', True), ('push', '1', False),
-                ('workflow_dispatch', '2', False), ('pull_request', '2', False),
-            ):
-                output.write_text('')
-                result = subprocess.run(['bash', '-c', body],
-                                        env=dict(os.environ, GITHUB_EVENT_NAME=event,
-                                                 REUSE_ATTEMPT=proof, GITHUB_RUN_ATTEMPT='2',
-                                                 GITHUB_OUTPUT=str(output)), capture_output=True)
-                self.assertEqual(result.returncode == 0, expected)
-                self.assertEqual(output.read_text(), 'verified=true\n' if expected else '')
-        for step in tests.split('      - name: '):
-            self.assertRegex(step, r"(?m)^        if: .*(steps.reuse.outputs.verified != 'true'|"
-                                   r"steps.components.outputs.full == 'true')")
 
 
 if __name__ == '__main__':

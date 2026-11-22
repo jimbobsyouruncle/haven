@@ -202,7 +202,7 @@ jobs:
   hermes-nonroot-smoke:
     name: Hermes non-root smoke
     needs: changes
-    if: needs.changes.outputs.hermes_image == 'true'
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.hermes_image == 'true' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 25
     permissions:
@@ -448,7 +448,7 @@ jobs:
   # gate rather than silently skipping the smoke.
   gate:
     name: Security & SAST gate
-    if: always()
+    if: ${{ always() }}
     needs: [changes, shellcheck, semgrep, validate, codeql, hermes-nonroot-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
