@@ -30,7 +30,7 @@ container=$(podman --remote=false run --detach --rm --pull=never \
   --cap-drop ALL --security-opt no-new-privileges --image-volume=ignore \
   --log-driver=none --memory=3g --cpus=2.5 --pids-limit=512 \
   --env "OH_SESSION_API_KEYS_0=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
-  --env PUBLIC_MODE_PORT=8001 --env AGENT_SERVER_PORT=18000 \
+  --env AGENT_SERVER_PORT=18000 \
   "$image")
 auth_container=
 caddy_container=
@@ -60,7 +60,7 @@ caddy_config='{
     forward_auth localhost:8080 {
       uri /verify
     }
-    reverse_proxy localhost:8001
+    reverse_proxy localhost:8000
   }
 }'
 caddy_container=$(podman --remote=false run "${peer_flags[@]}" \
@@ -149,7 +149,6 @@ console.log('Canvas HTML, JavaScript asset, and synthetic worktree passed.');
 const conversations = '/api/conversations/search';
 const listeners = [
   ['bundled ingress', 8000],
-  ['auth-required listener', 8001],
   ['direct Agent Server', 18000],
 ];
 const outcomes = await Promise.allSettled(listeners.map(async ([name, port]) => {

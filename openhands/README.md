@@ -562,10 +562,9 @@ state without copying Canvas state over it. See the existing
 The bundled image entrypoint does not forward the VM launcher's `--public`
 argument. With this pin, supplying only `LOCAL_BACKEND_API_KEY` skips the
 entrypoint branch that exports the key to Agent Server. The probe sets the
-documented Agent Server variable, `OH_SESSION_API_KEYS_0`, directly. It uses
-the bundle's `PUBLIC_MODE_PORT` option for its upstream
-auth-required test listener and checks that listener, the original ingress, and
-Agent Server directly with a disposable key. All three stay inside the container.
+documented Agent Server variable, `OH_SESSION_API_KEYS_0`, directly and checks
+both the bundled ingress and the direct Agent Server listener. Neither listener
+is published. The bundle's separate auth-required listener is for upstream tests.
 The proxy fixture uses Haven's existing auth image and the Caddy runtime pin
 with `forward_auth` against `/verify`. It verifies cookie denial for browser,
 API and WebSocket upgrade requests, plus positive browser and API requests.
