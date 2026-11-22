@@ -24,7 +24,7 @@ container=$(podman --remote=false run --detach --rm --pull=never \
   --platform linux/arm64 --network none --http-proxy=false \
   --cap-drop ALL --security-opt no-new-privileges --image-volume=ignore \
   --log-driver=none --memory=3g --cpus=2.5 --pids-limit=512 \
-  --env "LOCAL_BACKEND_API_KEY=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
+  --env "OH_SESSION_API_KEYS_0=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
   --env PUBLIC_MODE_PORT=8001 --env AGENT_SERVER_PORT=18000 \
   "$image")
 trap 'podman --remote=false stop --time 5 "$container" >/dev/null 2>&1 || true' EXIT
@@ -53,7 +53,7 @@ function get(path, key, accept = 'application/json', port = 8000) {
   });
 }
 
-const apiKey = process.env.LOCAL_BACKEND_API_KEY;
+const apiKey = process.env.OH_SESSION_API_KEYS_0;
 assert.ok(apiKey);
 let asset;
 const observations = new Map();

@@ -559,9 +559,13 @@ state without copying Canvas state over it. See the existing
 ### Authenticated ingress and task execution
 
 The bundled image entrypoint does not forward the VM launcher's `--public`
-argument. The probe uses the bundle's `PUBLIC_MODE_PORT` option for its upstream
+argument. With this pin, supplying only `LOCAL_BACKEND_API_KEY` skips the
+entrypoint branch that exports the key to Agent Server. The probe sets the
+documented Agent Server variable, `OH_SESSION_API_KEYS_0`, directly. It uses
+the bundle's `PUBLIC_MODE_PORT` option for its upstream
 auth-required test listener and checks that listener, the original ingress, and
-Agent Server directly with a disposable key. All three stay inside the container. A separate proxy test must use Haven's existing Caddy `forward_auth`
+Agent Server directly with a disposable key. All three stay inside the container.
+A separate proxy test must use Haven's existing Caddy `forward_auth`
 against the auth service's `/verify`, applied before routing any Canvas path,
 including API calls and WebSocket upgrades. The production auth snippet is optional
 globally, so a Canvas site would require an authenticated HTTPS configuration to
