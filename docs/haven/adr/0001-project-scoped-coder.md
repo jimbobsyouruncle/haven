@@ -1,4 +1,4 @@
-# ADR-0001 — Persona-scoped coding access and inference choice
+# ADR-0001 — Persona-scoped coding access and restricted inference
 
 **Status:** Revised owner-approved principle (2026-11-22; supersedes the universal task-worker requirement approved 2026-11-07). Runtime enforcement not proven.
 **Related:** [ADR-0008](0008-persona-runtime-isolation.md), [decision register](../DECISIONS.md).
