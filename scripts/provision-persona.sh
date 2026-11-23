@@ -17,13 +17,9 @@ fi
 persona="$1"
 account="haven-$persona"
 check="${2:-}"
-raw_data="${HAVEN_DATA_DIR:-${HYBRID_AI_DATA_DIR:-}}"
 # shellcheck source=scripts/lib/haven-env.sh
 source "$script_dir/lib/haven-env.sh"
-if [[ -z "$raw_data" ]]; then
-  raw_data="$(_haven_file_get "$HAVEN_ENV_FILE" HAVEN_DATA_DIR)"
-fi
-raw_data="$(_haven_expand_tilde "${raw_data:-$HAVEN_DEFAULT_REPO_DIR}")"
+raw_data="$_HAVEN_DATA_DIR_RAW"
 data="$HAVEN_DATA_DIR"
 [[ "$data" != / && "$raw_data" == "$data" ]] ||
   die "HAVEN_DATA_DIR resolves through a symlink."

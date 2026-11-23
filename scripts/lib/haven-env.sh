@@ -267,6 +267,8 @@ _haven_resolve_path() {
     # about a set path that does not exist yet).
     HAVEN_EXPLICIT_SETTINGS="${HAVEN_EXPLICIT_SETTINGS:-} ${name}"
   fi
+  # The provisioner verifies the original data path before touching storage.
+  if [[ "$name" == HAVEN_DATA_DIR ]]; then _HAVEN_DATA_DIR_RAW="$val"; fi
   printf -v "$name" '%s' "$(_haven_canon "$val")"
   export "${name?}"
   return 0
