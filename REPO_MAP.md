@@ -147,6 +147,7 @@
 
 - openhands/AGENTS.md - OpenHands Maintenance Agent Instructions
 - openhands/README.md - openhands/ — natural-language code maintenance
+- openhands/canvas-ingress.caddyfile
 - openhands/docker-compose.openhands.yml - FILE: openhands/docker-compose.openhands.yml
 - openhands/sandbox-gitconfig
 ## openhands/agent-server

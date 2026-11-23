@@ -70,27 +70,18 @@ canvas_hash=$(podman --remote=false exec --env "CANVAS_PASSWORD=$canvas_password
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
   -addext subjectAltName=DNS:localhost -keyout "$fixture/tls.key" -out "$fixture/tls.crt" \
   >/dev/null 2>&1
-# Caddy expands its environment placeholder when it loads this config.
-# shellcheck disable=SC2016
-caddy_config='{
-  admin off
-  auto_https off
-}
+# Exercise the same route intended for an authenticated Haven HTTPS site.
+caddy_config=$(cat "$repo_root/openhands/canvas-ingress.caddyfile")
+caddy_config+='
 https://localhost:9081 {
   tls /tmp/canvas.crt /tmp/canvas.key
-  route {
-    forward_auth localhost:8080 {
-      uri /verify
-    }
-    basic_auth {
-      canvas-fixture {$CANVAS_PASSWORD_HASH}
-    }
-    reverse_proxy localhost:8000 {
-      header_up -Authorization
-      header_up -Cookie
-    }
-  }
+  import canvas_ingress localhost:8080 localhost:8000 canvas-fixture
 }'
+# Disable the admin listener and automatic redirects in the fixture.
+caddy_config=$'{
+  admin off
+  auto_https off
+}\n'"$caddy_config"
 caddy_container=$(podman --remote=false run "${peer_flags[@]}" \
   --user 1000:1000 --entrypoint /bin/sh --env XDG_CONFIG_HOME=/tmp --env XDG_DATA_HOME=/tmp \
   --env "CANVAS_PASSWORD_HASH=$canvas_hash" \

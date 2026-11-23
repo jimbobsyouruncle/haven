@@ -580,6 +580,23 @@ exist before rendering the route. Canvas and its backend ports would stay off ho
 port mappings and shared application networks. Test both layers independently.
 [Upstream self-hosting modes](https://docs.openhands.dev/openhands/usage/agent-canvas/backend-setup/vm)
 
+The [Canvas ingress snippet](canvas-ingress.caddyfile) is exercised by the
+ARM64 fixture and can be imported by a dedicated HTTPS site. It takes the
+Haven auth upstream, the private Canvas ingress upstream, and the Canvas grant
+username. Caddy must receive the separate bcrypt hash as `CANVAS_PASSWORD_HASH`.
+The route verifies the Haven session first and strips both ingress credentials
+before proxying. The Canvas session API key uses its own header.
+
+The snippet is inactive in Haven's installed Caddy configuration. Before
+enabling it, verify an authorized conversation WebSocket, confirm the Canvas
+listeners cannot be reached around Caddy, and demonstrate cross-persona denial
+with the required GitHub and inference routes enabled. For side-by-side
+activation, give Canvas a fresh persona state directory. Keep the legacy
+OpenHands state and Hermes setup available for rollback. Rehearse withdrawing
+the Canvas route and stopping its runtime while retaining its state for
+recovery. Any later import of legacy data needs a supported export/import path
+and separate approval for destructive changes.
+
 ### Offline persona execution boundary (#275)
 
 The ARM64 workflow also starts two disposable workloads using the pinned Canvas
