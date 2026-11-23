@@ -175,6 +175,7 @@
 - die()
 - confirm_yes()
 - verify_databases()
+- check_persona_reservations()
 - check_canvas_copy()
 - hermes_backup_path()
 - restore_home_dir()
@@ -627,6 +628,10 @@
 - installer_render_openhands_grace()
 - installer_render_prune_settings()
 
+## scripts/lib/persona-reservations.sh
+- persona_valid_name()
+- persona_validate_reservations()
+
 ## scripts/lib/read-probe.sh
 - probe_can_read()
 - find_unreadable()
@@ -689,6 +694,15 @@
 - tls_print_ca_caution()
 - tls_check_dns()
 - tls_load_env_file_values()
+
+## scripts/provision-persona.sh
+- die()
+- exists()
+- require_unmounted()
+- metadata()
+- lookup()
+- cleanup()
+- make_stage()
 
 ## scripts/prune-conversations.sh
 - log()
@@ -805,16 +819,10 @@
 - inv_add()
 
 ## scripts/test-agent-image-hybrid-cutover.sh
-- ok()
-- bad()
-- check()
 - run_install()
 - env_value()
 
 ## scripts/test-agent-image-repo-migration.sh
-- ok()
-- bad()
-- check()
 - run_install()
 - env_value()
 
@@ -825,7 +833,6 @@
 - check_fail_closed()
 
 ## scripts/test-b77-port80-dynamic.sh
-- cleanup()
 - pass()
 - fail()
 - render_variant()
@@ -835,15 +842,9 @@
 - check_redir()
 
 ## scripts/test-backup-containers.sh
-- ok()
-- bad()
-- assert()
 - run_helper()
 
 ## scripts/test-backup-mode-timers.sh
-- ok()
-- bad()
-- assert()
 - run_doctor()
 - run_deploy()
 - run_collect()
@@ -851,8 +852,6 @@
 
 ## scripts/test-backup-system-units.sh
 - cleanup_tmp()
-- ok()
-- bad()
 - skip()
 - has_line()
 - hasnt_regex()
@@ -861,12 +860,9 @@
 - run_verify()
 
 ## scripts/test-backup.sh
-- cleanup()
 - mkwal()
 - run_backup()
 - run_backup_env()
-- check()
-- assert()
 - log_has()
 - log_lacks()
 - sqlite_log_has()
@@ -875,14 +871,8 @@
 - docker_log_lacks()
 - run_safety_restore()
 - run_restore_env()
-- die()
-- warn()
-- log()
 
 ## scripts/test-bootstrap.sh
-- ok()
-- bad()
-- check()
 - have()
 - pub_ed25519()
 - priv_ed25519()
@@ -900,6 +890,7 @@
 
 ## scripts/test-check-agent-context.sh
 - greet()
+- fixture_helper()
 - regen_into_repo()
 - commit_if_staged()
 - restore_fresh()
@@ -948,21 +939,14 @@
 - new_case()
 
 ## scripts/test-container-upgrade.sh
-- cleanup()
 - render()
 - start()
 
 ## scripts/test-deploy-build-gate.sh
-- ok()
-- bad()
-- check()
 - decide()
 - current_sha()
-- log()
 
 ## scripts/test-deploy-forced-command.sh
-- ok()
-- bad()
 - skip()
 - has_line()
 - hasnt_regex()
@@ -970,14 +954,10 @@
 - run_split()
 
 ## scripts/test-deploy-image-gate.sh
-- ok()
-- bad()
 - probes_used()
 - run_gate()
 
 ## scripts/test-deploy-instance.sh
-- ok()
-- bad()
 - has_line()
 - hasnt_regex()
 - run_instance()
@@ -1003,8 +983,6 @@
 - run_doctor()
 
 ## scripts/test-deploy-trigger.sh
-- ok()
-- bad()
 - has_line()
 - hasnt_regex()
 - run()
@@ -1012,9 +990,6 @@
 - key_left()
 
 ## scripts/test-deploy-wiring-install.sh
-- ok()
-- bad()
-- check()
 - run_install()
 - reset_state()
 - reset_sbin()
@@ -1091,17 +1066,10 @@
 - run_doctor()
 
 ## scripts/test-env-pin-migration.sh
-- ok()
-- bad()
-- check()
 - run_install()
 - env_value()
 
 ## scripts/test-haven-env.sh
-- ok()
-- bad()
-- check()
-- assert()
 - resolve()
 - resolve_rc()
 - fb_resolve()
@@ -1113,16 +1081,10 @@
 - fail()
 
 ## scripts/test-install-auth-env-leak.sh
-- ok()
-- bad()
-- check()
 - seed_stack()
 - run_install()
 
 ## scripts/test-install-health.sh
-- ok()
-- bad()
-- check()
 - run_install()
 - firewall_sudo()
 - set_stack_tls()
@@ -1131,25 +1093,20 @@
 - (no symbols)
 
 ## scripts/test-install-tailscale-migration.sh
-- ok()
-- bad()
-- check()
 - run_install()
 - env_value()
 - normalise()
 
 ## scripts/test-post-deploy-verify-log-env.sh
-- ok()
-- bad()
-- check()
 - run_install()
 - env_value()
 
+## scripts/test-provision-persona.sh
+- provision()
+- reject()
+
 ## scripts/test-prune-conversations.sh
-- ok()
-- bad()
 - skip()
-- check()
 - case_begin()
 - case_end()
 - new_tree()
@@ -1160,9 +1117,6 @@
 - refusals_of()
 
 ## scripts/test-prune-docker-cache.sh
-- ok()
-- bad()
-- check()
 - has()
 - cache_only_offenders()
 - run_prune()
@@ -1173,19 +1127,13 @@
 - env_value()
 
 ## scripts/test-read-probe.sh
-- ok()
-- bad()
 - skip()
-- check()
 - run_find_unreadable()
 
 ## scripts/test-repository-identity.sh
 - (no symbols)
 
 ## scripts/test-reset-passwords.sh
-- ok()
-- bad()
-- check()
 - fresh_fixture()
 - hermes_config_with_password()
 - hermes_config_without_auth()
@@ -1207,9 +1155,6 @@
 - write_gate_layout()
 
 ## scripts/test-sandbox-firewall.sh
-- ok()
-- bad()
-- check()
 - have()
 - absent()
 - chain_exists()
@@ -1239,22 +1184,15 @@
 - line_of()
 
 ## scripts/test-secret-guard.sh
-- ok()
-- bad()
-- check()
 - run_guard()
 - assert_block()
 - extract_function()
-- warn()
 - event()
 - run_step()
 - config_bytes()
 - reset_fixtures()
 
 ## scripts/test-status-backup-log-env.sh
-- ok()
-- bad()
-- check()
 - write_layout()
 - run_install()
 - env_value()
@@ -1287,10 +1225,7 @@
 - b77_render_off()
 
 ## scripts/test-tls-check.sh
-- ok()
-- bad()
 - skipped()
-- cleanup()
 - make_ca()
 - make_leaf()
 - build_leaf()
@@ -1301,9 +1236,6 @@
 - assert_exit()
 
 ## scripts/test-tls-dry-run-renewal.sh
-- ok()
-- bad()
-- cleanup()
 - assert_exit()
 
 ## scripts/test-tls-installer-render.sh
@@ -1318,9 +1250,6 @@
 - check_redir()
 
 ## scripts/test-uninstall.sh
-- ok()
-- bad()
-- check()
 - have()
 - have_not()
 - new_root()

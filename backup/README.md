@@ -793,3 +793,53 @@ installed-script parity has been recorded separately, while the earlier
 operator cancellation/impact confirmation and corrected installed-entrypoint
 rehearsal remain operational requirements. Source validation alone does not
 close those requirements or authorize deployment or issue closure.
+
+## Persona identity reservations
+
+The host operator provisions named Haven personas with
+`sudo /opt/haven/scripts/provision-persona.sh <persona>`. Use
+`sudo /opt/haven/scripts/provision-persona.sh <persona> --check` to verify the
+account, group, reservation and directory metadata. The command uses the
+Haven layout configuration and requires an existing root-controlled data
+directory. Its output contains the assigned UID/GID and the data directory.
+Existing unmanaged accounts or data require operator review before adoption.
+
+Keep `$HAVEN_DATA_DIR/.persona-identities` across account deletion,
+decommissioning and restores. Each line is `persona:uid:gid`. The host
+allocator reserves an available system UID/GID pair before creating the local
+identity. Backups capture the full record as `env/persona-identities` and
+record its capture status in the manifest. A corrupt or unreadable record
+marks capture incomplete. The installed system capture unit already has read
+access to root-protected data. Legacy user-mode capture reports an incomplete
+snapshot if it cannot read the record. Backups predating the record remain
+readable.
+
+During host recovery, use the staged copy from the newest verified backup
+that includes the record. Before provisioning on a replacement host, stop
+persona provisioning and reconcile that copy with any reservations made
+since the snapshot. Retain every issued reservation, including retired
+personas, and resolve discrepancies and UID/GID conflicts before proceeding.
+Keep the current record during in-place data recovery. A data restore leaves
+the live reservation record alone.
+
+On a fresh host, install the reconciled record in the resolved data
+directory as a root-owned `0600` file before allocating any identities.
+Use a root-controlled staging location and publish without overwriting an
+existing record. For example, with `DATA_DIR` set to the verified Haven
+data directory and `RECONCILED` pointing to the protected, reconciled copy:
+
+```bash
+sudo bash -eu -s -- "$DATA_DIR" "$RECONCILED" <<'RECOVER'
+pending=$(mktemp -- "$1/.persona-identities.recovery.XXXXXXXX")
+trap 'rm -f -- "$pending"' EXIT
+install -o root -g root -m 0600 -- "$2" "$pending"
+mv -T -n -- "$pending" "$1/.persona-identities"
+[[ ! -e "$pending" ]]
+RECOVER
+```
+
+Run the provisioner for each persona to recreate its reserved identity,
+then run `--check` and follow the service-specific data recovery procedure.
+For Canvas, use the recovered UID/GID in the protected stack environment
+before restoring its state. The reservation record covers identities.
+Persona application data follows each service's backup policy.

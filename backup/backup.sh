@@ -1171,6 +1171,23 @@ if [[ -d "${OPENHANDS_STATE_DIR}" ]]; then
   rsync_classify "$rc" "OpenHands state" "openhands"
 fi
 
+local identity_record="$HAVEN_DATA_DIR/.persona-identities"
+local identity_capture=absent identity_copy="$STAGING_DIR/env/persona-identities"
+if [[ -e "$identity_record" || -L "$identity_record" ]]; then
+  # shellcheck source=scripts/lib/persona-reservations.sh
+  source "${HAVEN_LIB_DIR}/persona-reservations.sh"
+  identity_capture=incomplete
+  if [[ -f "$identity_record" && ! -L "$identity_record" &&
+        "$(stat -c '%u:%g:%a:%h' -- "$identity_record" 2>/dev/null)" == 0:0:600:1 ]] &&
+     install -m 0600 -- "$identity_record" "$identity_copy" &&
+     persona_validate_reservations "$identity_copy"; then
+    identity_capture=complete
+  else
+    rm -f -- "$identity_copy"
+    mark_incomplete "persona_identities_incomplete"
+  fi
+fi
+
 local canvas_state=absent canvas_ids=none canvas_key canvas_path
 local canvas_root="$HAVEN_DATA_DIR/canvas_data"
 if [[ "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_ENABLED)" == on ||
@@ -1464,6 +1481,7 @@ source_host        : ${BACKUP_HOST}
 consistency_method : ${CONSISTENCY}
 run_status         : $( (( INCOMPLETE_COUNT > 0 )) && echo "incomplete" || echo "complete" )
 databases_captured : ${DB_COUNT}
+persona_identities : ${identity_capture}
 canvas_capture     : ${canvas_state}
 canvas_owner       : $( [[ "$canvas_state" == complete ]] && printf '%s' "$canvas_ids" || printf '%s' n/a )
 ollama_models      : ${OLLAMA_MODEL_COUNT:-0} (names only; weights not backed up)
@@ -1482,6 +1500,7 @@ openhands/   ~/.openhands state; cache, temp, and logs excluded.
 host/        Compose files, scripts, Caddyfile, model list, host metadata.
 env/         Active .env configuration.
              canvas-state-key accompanies a complete Canvas cold copy.
+             persona-identities records reserved host persona UID/GID pairs.
 
 To restore, see backup/restore.sh in the haven repository.
 MANIFEST
