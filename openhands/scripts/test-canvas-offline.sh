@@ -30,11 +30,21 @@ container=
 auth_container=
 caddy_container=
 cleanup() {
+  local rc=$?
+  if (( rc != 0 )) && [[ -n $container ]]; then
+    # This container has synthetic credentials only. Mask generated keys so
+    # failures can be diagnosed without copying them into Actions logs.
+    podman --remote=false logs "$container" 2>&1 |
+      sed -E 's/[[:xdigit:]]{64}/[fixture value]/g' >&2 || true
+  fi
   for id in "$caddy_container" "$auth_container" "$container"; do
     if [[ -n $id ]]; then
       podman --remote=false stop --time 5 "$id" >/dev/null 2>&1 || true
     fi
   done
+  if [[ -n $container ]]; then
+    podman --remote=false rm -f "$container" >/dev/null 2>&1 || true
+  fi
   podman --remote=false unshare rm -rf -- "$fixture"
 }
 trap cleanup EXIT
@@ -42,12 +52,12 @@ install -d -m 0700 "$fixture/developer" "$fixture/peer"
 printf 'synthetic peer state\n' >"$fixture/peer/peer-state"
 openssl rand -hex 32 >"$fixture/developer/repo-token"
 chmod 0600 "$fixture/developer/repo-token"
-container=$(podman --remote=false run --detach --rm --pull=never \
+container=$(podman --remote=false run --detach --pull=never \
   --platform linux/arm64 --network none --http-proxy=false \
   --user 20001:20001 --env HOME=/persona --env XDG_CONFIG_HOME=/persona/.config \
   --env OH_PERSISTENCE_DIR=/persona/.openhands \
   --cap-drop ALL --security-opt no-new-privileges --image-volume=ignore \
-  --log-driver=none --memory=3g --cpus=2.5 --pids-limit=512 \
+  --log-driver=k8s-file --memory=3g --cpus=2.5 --pids-limit=512 \
   --volume "$fixture/developer:/persona:rw,U,Z" \
   --env "OH_SESSION_API_KEYS_0=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
   --env AGENT_SERVER_PORT=18000 \

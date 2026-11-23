@@ -428,9 +428,9 @@
 - def network(name, bridge, *, internal, allowed)
 - def topology()
 - def policy(uplink, blocked, *, ipv6)
-- def rules(family)
+- def rules(family, table)
 - def verify(listing, hooks, chains)
-- def install(family, listing, hooks, chains)
+- def install(family, table, listing, hooks, chains)
 - def main(mode)
 
 ## scripts/canvas-runtime.sh
@@ -889,6 +889,7 @@
 ## scripts/test-canvas-firewall.py
 - class CanvasFirewallTests(TestCase)
   - def test_kernel_policy_and_drift(self)
+  - def host_input_boundary(self, peer, fixture)
   - def test_missing_bridge_does_not_modify_rules(self)
 
 ## scripts/test-check-agent-context.sh

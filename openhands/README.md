@@ -612,10 +612,11 @@ permissions enforced by the credentials provisioned for the persona.
 `haven-canvas.service` verifies both bridges and the firewall before creating
 the transient startup grant. Docker cannot auto-restart Canvas. The unit also
 checks policy and container identity periodically and removes its grant,
-disconnects egress, and stops Canvas on failure. The checks run every two
-seconds plus command latency. Host administrators must preserve the managed
-rules while Canvas runs. A deliberate simultaneous removal of host firewall
-controls is outside the boundary enforced by the agent's sandbox.
+disconnects egress, and stops Canvas on failure. Both the host mangle and
+filter tables enforce the policy. Drift in one table leaves the other
+enforcing it while the supervisor stops Canvas. The checks run every two
+seconds plus command latency. Simultaneous removal of both host policies is
+outside the sandbox boundary.
 
 Before an owner-merge deploy that enables Canvas:
 

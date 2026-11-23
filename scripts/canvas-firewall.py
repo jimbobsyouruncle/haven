@@ -115,9 +115,9 @@ def policy(uplink, blocked, *, ipv6):
     return hooks, chains
 
 
-def rules(family):
+def rules(family, table):
     listing = {}
-    for line in command(family, "-w", "5", "-t", "mangle", "-S").splitlines():
+    for line in command(family, "-w", "5", "-t", table, "-S").splitlines():
         action, chain, *arguments = shlex.split(line)
         if action in ("-N", "-P"):
             listing[chain] = []
@@ -133,13 +133,13 @@ def verify(listing, hooks, chains):
                     for chain, expected in hooks.items()))
 
 
-def install(family, listing, hooks, chains):
+def install(family, table, listing, hooks, chains):
     # Refuse to overwrite a foreign or partially modified policy. The
     # supervisor keeps Canvas stopped until an administrator resolves drift.
     if (chains.keys() & listing.keys()
             or any("haven-canvas" in rule for entries in listing.values() for rule in entries)):
         raise ValueError("existing Canvas firewall policy drift")
-    lines = ["*mangle", *(f"-N {chain}" for chain in chains)]
+    lines = [f"*{table}", *(f"-N {chain}" for chain in chains)]
     for chain, entries in chains.items():
         lines.extend(f"-A {chain} " + " ".join(entry) for entry in entries)
     for chain, entries in hooks.items():
@@ -149,15 +149,18 @@ def install(family, listing, hooks, chains):
 
 def main(mode):
     uplink, blocked = topology()
-    # IPv6 denial is installed first. Canvas is stopped during initial apply.
+    # Both tables enforce the same allowlist. A flush or reordering in one
+    # table leaves the other boundary in force until the supervisor stops
+    # Canvas. Docker manages its own filter chains below these early hooks.
     for family in ("ip6tables", "iptables"):
         hooks, chains = policy(uplink, blocked, ipv6=family == "ip6tables")
-        listing = rules(family)
-        if mode == "apply" and not verify(listing, hooks, chains):
-            install(family, listing, hooks, chains)
-            listing = rules(family)
-        if not verify(listing, hooks, chains):
-            raise ValueError("Canvas firewall rules are absent or out of policy")
+        for table in ("mangle", "filter"):
+            listing = rules(family, table)
+            if mode == "apply" and not verify(listing, hooks, chains):
+                install(family, table, listing, hooks, chains)
+                listing = rules(family, table)
+            if not verify(listing, hooks, chains):
+                raise ValueError("Canvas firewall rules are absent or out of policy")
 
 
 if __name__ == "__main__":
