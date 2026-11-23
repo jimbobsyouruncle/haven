@@ -1,0 +1,16 @@
+# Import in a dedicated HTTPS site with the auth upstream, Canvas upstream,
+# and Canvas grant username. Caddy loads the separate bcrypt hash at startup.
+(canvas_ingress) {
+	route {
+		forward_auth {args[0]} {
+			uri /verify
+		}
+		basic_auth {
+			{args[2]} {$CANVAS_PASSWORD_HASH}
+		}
+		reverse_proxy {args[1]} {
+			header_up -Authorization
+			header_up -Cookie
+		}
+	}
+}
