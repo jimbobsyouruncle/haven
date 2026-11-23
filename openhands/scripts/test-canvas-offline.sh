@@ -63,14 +63,28 @@ container=$(podman --remote=false run --detach --pull=never \
   --env "OH_SESSION_API_KEYS_0=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
   --env AGENT_SERVER_PORT=18000 \
   "$image")
-mounts=$(podman --remote=false inspect --format '{{range .Mounts}}{{println .Source .Destination}}{{end}}' "$container" | LC_ALL=C sort)
-[[ $mounts == "$fixture/developer /persona"$'\n'"$fixture/projects /projects" ]]
+podman --remote=false inspect --format '{{json .Mounts}}' "$container" |
+  python3 -c 'import json,sys
+from pathlib import Path
+root = Path(sys.argv[1])
+actual = {(mount["Source"], mount["Destination"]) for mount in json.load(sys.stdin)}
+expected = {(str(root / "developer"), "/persona"), (str(root / "projects"), "/projects")}
+if actual != expected:
+    raise SystemExit("Canvas fixture has an unexpected bind mount")' "$fixture"
 [[ $(podman --remote=false inspect --format '{{.HostConfig.NetworkMode}}' "$container") == none ]]
 pid=$(podman --remote=false inspect --format '{{.State.Pid}}' "$container")
+if (( pid == 0 )); then
+  echo "Canvas entrypoint stopped before the authentication fixture ran." >&2
+  exit 1
+fi
 read -r uid gid <<<"$(ps -o euid=,egid= -p "$pid")"
 [[ $uid != 0 && $gid != 0 ]]
-[[ $(stat -c '%u:%g' "$fixture/developer") == "$uid:$gid" ]]
-[[ $(stat -c '%u:%g' "$fixture/projects") == "$uid:$gid" ]]
+for dir in developer projects; do
+  if [[ $(stat -c '%u:%g' "$fixture/$dir") != "$uid:$gid" ]]; then
+    echo "Canvas fixture has unexpected ownership on the $dir mount." >&2
+    exit 1
+  fi
+done
 
 cookie_secret=$(openssl rand -hex 32)
 peer_flags=(--detach --rm --pull=never --network "container:$container"
