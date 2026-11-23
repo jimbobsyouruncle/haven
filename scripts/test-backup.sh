@@ -1190,6 +1190,121 @@ assert "case z3: external dry run reports consistency=paused from the helper fil
   bash -c "grep -qx 'consistency=paused' '$BIG_WORK/.backup-staging/STATUS'"
 assert "case z3: external dry-run stage issued NO docker command" bash -c "[[ ! -s '$DOCKER_LOG' ]]"
 
+# Canvas capture runs with the existing external writer controller. Simulate
+# host-root ownership of the fixture directory without changing the runner's
+# live permissions. Rsync and SQLite operate on the real fixture files.
+export CANVAS_FIXTURE_ROOT="$REPO/canvas_data"
+mkdir -m 0700 "$CANVAS_FIXTURE_ROOT" "$CANVAS_FIXTURE_ROOT/persona" "$CANVAS_FIXTURE_ROOT/projects"
+fixture_key="$(openssl rand -base64 32)"
+canvas_env="$TMPROOT/canvas-stack.env"
+printf 'CANVAS_ENABLED=on\nCANVAS_UID=23456\nCANVAS_GID=23456\nCANVAS_STATE_KEY=%s\n' "$fixture_key" > "$canvas_env"
+touch "$CONTROL_DRY/canvas-ready"
+cat > "$STUB/stat" <<'EOF'
+#!/usr/bin/env bash
+case "${*: -1}" in
+  "$CANVAS_FIXTURE_ROOT") [[ "$2" == '%u:%a' ]] && { echo 0:700; exit; } ;;
+  "$CANVAS_FIXTURE_ROOT/persona"|"$CANVAS_FIXTURE_ROOT/projects")
+    [[ "$2" == '%u:%g:%a' ]] && { echo 23456:23456:700; exit; } ;;
+esac
+exec /usr/bin/stat "$@"
+EOF
+chmod +x "$STUB/stat"
+mkwal "$CANVAS_FIXTURE_ROOT/persona/state.sqlite" 7
+git -C "$CANVAS_FIXTURE_ROOT/projects" init -q
+printf 'workspace\n' > "$CANVAS_FIXTURE_ROOT/projects/worktree.txt"
+ln -s worktree.txt "$CANVAS_FIXTURE_ROOT/projects/internal-link"
+ln -s "$CONF/repo-password" "$CANVAS_FIXTURE_ROOT/projects/outside-link"
+canvas_args=(HAVEN_STACK_ENV_FILE="$canvas_env" BACKUP_CONF_DIR="$EMPTYCONF"
+             HAVEN_WORK_DIR="$STAGE_WORK" BACKUP_CONTAINER_CONTROL=external BACKUP_CONTROL_RUN_DIR="$CONTROL_DRY")
+run_backup_env "${canvas_args[@]}" -- --non-interactive --stage-only
+check "Canvas cold capture succeeds without backup credentials" 0 "$RUN_RC"
+assert "Canvas manifest records the source persona UID/GID" grep -Eq '^canvas_owner +: 23456:23456$' "$STAGE/MANIFEST.txt"
+assert "Canvas staged key is private" test "$(stat -c %a "$STAGE/env/canvas-state-key")" = 600
+assert "Canvas SQLite WAL is staged" test -f "$STAGE/files/canvas_data/persona/state.sqlite-wal"
+assert "Canvas Git workspace metadata is staged" test -d "$STAGE/files/canvas_data/projects/.git"
+assert "Canvas confined symlinks are retained" test -L "$STAGE/files/canvas_data/projects/internal-link"
+assert "Canvas symlinks cannot capture backup credentials" test ! -L "$STAGE/files/canvas_data/projects/outside-link"
+assert "Canvas capture makes no Docker call" test ! -s "$DOCKER_LOG"
+# shellcheck disable=SC2016 # Arguments are passed to the child shell.
+assert "Canvas key is omitted from output" bash -c '! grep -Fq -- "$1" "$2"' _ "$fixture_key" "$TMPROOT/out"
+
+CANVAS_CAPTURE="$TMPROOT/canvas-capture"
+cp -a "$STAGE" "$CANVAS_CAPTURE"
+SNAPSHOT_SRC="$CANVAS_CAPTURE" RESTORE_ARGS="$TMPROOT/canvas-restore.args" run_restore_env -- --test
+check "Canvas scratch restore succeeds" 0 "$RUN_RC"
+canvas_scratch="$(tail -n1 "$TMPROOT/canvas-restore.args")"
+canvas_rows="$("$REAL_SQLITE3" "$canvas_scratch/files/canvas_data/persona/state.sqlite" 'select count(*) from t;')"
+assert "Canvas WAL rows survive scratch restore" test "$canvas_rows" = 7
+assert "Canvas scratch restore preserves its key" cmp -s "$CANVAS_CAPTURE/env/canvas-state-key" "$canvas_scratch/env/canvas-state-key"
+assert "Canvas scratch restore leaves the supervisor untouched" test ! -s "$DOCKER_LOG"
+
+if (( EUID != 0 )); then
+  chmod 000 "$CANVAS_FIXTURE_ROOT/projects/worktree.txt"
+else
+  # Root cannot reproduce an ordinary DAC read error. Disappear the required
+  # source root instead, which must be reported the same way.
+  mv "$CANVAS_FIXTURE_ROOT/projects" "$CANVAS_FIXTURE_ROOT/unavailable"
+fi
+run_backup_env "${canvas_args[@]}" -- --non-interactive --stage-only
+check "Enabled but unreadable Canvas makes the snapshot incomplete" 3 "$RUN_RC"
+assert "No partial Canvas tree is published as restorable" test ! -e "$STAGE/files/canvas_data"
+assert "Incomplete Canvas capture omits the settings key" test ! -e "$STAGE/env/canvas-state-key"
+if (( EUID != 0 )); then chmod 600 "$CANVAS_FIXTURE_ROOT/projects/worktree.txt"; fi
+rm -f "$CONTROL_DRY/canvas-ready"
+run_backup_env "${canvas_args[@]}" -- --non-interactive --stage-only
+check "Enabled Canvas without a writer hold is incomplete" 3 "$RUN_RC"
+
+if [[ ${1:-} == --canvas-root ]]; then
+  # CI runs the actual rsync/chown in an isolated temporary destination.
+  # Account lookup and systemd are fixtures. Nothing addresses a host unit.
+  root_data="$TMPROOT/canvas-restore-data"
+  root_app="$TMPROOT/canvas-restore-app"
+  mkdir -p "$root_data" "$root_app/scripts/lib" "$root_app/backup"
+  sudo -n install -d -m 0700 "$root_data/canvas_data"
+  sudo -n install -d -m 0700 -o 24567 -g 24567 \
+    "$root_data/canvas_data/persona" "$root_data/canvas_data/projects"
+  sudo -n install -m 0600 -o 24567 -g 24567 "$CANVAS_CAPTURE/files/canvas_data/projects/worktree.txt" \
+    "$root_data/canvas_data/projects/prior.txt"
+  cat > "$STUB/id" <<'EOF'
+#!/usr/bin/env bash
+if [[ ${2:-} == haven-canvas ]]; then echo 24567; else exec /usr/bin/id "$@"; fi
+EOF
+  cat > "$STUB/getent" <<'EOF'
+#!/usr/bin/env bash
+if [[ ${2:-} == 24567 ]]; then echo haven-canvas:x:24567; else exec /usr/bin/getent "$@"; fi
+EOF
+  chmod +x "$STUB/id" "$STUB/getent"
+  cat > "$root_app/backup/backup-containers.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "$CANVAS_RESTORE_CONTROL_LOG"
+[[ "$1" == canvas-restore-hold || "$1" == canvas-restore-release ]]
+EOF
+  sed -n '/^restore_canvas() (/,/^)/p' "$REPO_SRC/backup/restore.sh" > "$root_app/function.sh"
+  root_rc=0
+  # shellcheck disable=SC2024 # Keep fixture logs owned by the test account.
+  sudo -n env PATH="$STUB:$PATH" CANVAS_FIXTURE_ROOT="$CANVAS_FIXTURE_ROOT" \
+    HAVEN_DATA_DIR="$root_data" HAVEN_LIB_DIR="$root_app/scripts/lib" STAGED_ROOT="$CANVAS_CAPTURE" \
+    CANVAS_RESTORE_CONTROL_LOG="$root_app/control.log" CANVAS_IDS=24567:24567 \
+    bash -c 'set -Eeuo pipefail
+      die() { echo "$*" >&2; exit 1; }
+      warn() { echo "$*" >&2; }
+      log() { :; }; ok() { :; }; event() { :; }
+      source "$1/scripts/lib/canvas.sh"
+      source "$2/function.sh"
+      restore_canvas' _ "$REPO_SRC" "$root_app" > "$TMPROOT/canvas-root.out" 2>&1 || root_rc=$?
+  check "Canvas live-restore logic succeeds in the isolated fixture" 0 "$root_rc"
+  if (( root_rc != 0 )); then cat "$TMPROOT/canvas-root.out"; fi
+  assert "Canvas restore applies the destination persona UID/GID" test \
+    "$(sudo -n stat -c '%u:%g:%a' "$root_data/canvas_data/projects/worktree.txt")" = 24567:24567:600
+  assert "Canvas restore keeps the prior tree in a protected safety directory" test -n \
+    "$(sudo -n find "$root_data" -path '*/previous/projects/prior.txt' -print -quit)"
+  assert "Canvas recovered key is root-owned and private" test \
+    "$(sudo -n stat -c '%u:%a' "$root_data/canvas_data/settings-key.recovered")" = 0:600
+  assert "Canvas restore leaves the supervisor stopped" grep -Fxq canvas-restore-hold "$root_app/control.log"
+  assert "Canvas restore releases its hold" grep -Fxq canvas-restore-release "$root_app/control.log"
+  sudo -n rm -rf -- "$root_data"
+fi
+
 # ---------------------------------------------------------------------------
 if [[ "$FAILURES" -ne 0 ]]; then
   echo "FAILURES: $FAILURES" >&2

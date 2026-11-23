@@ -107,6 +107,8 @@ has_line "$CAP" 'ExecStartPre=+/opt/haven/backup/backup-containers.sh host-info'
 has_line "$CAP" 'ExecStartPre=+/opt/haven/backup/backup-containers.sh pause'     "capture pauses containers second"
 has_line "$CAP" 'ExecStart=/opt/haven/backup/backup.sh --stage-only'             "capture runs the stage-only phase"
 has_line "$CAP" 'ExecStopPost=+/opt/haven/backup/backup-containers.sh unpause'   "capture unpauses on exit"
+has_line "$CAP" 'InaccessiblePaths=-/etc/credstore/haven-backup' "capture cannot open backup credentials with its read capability"
+has_line "$CAP" 'InaccessiblePaths=-/run/credentials/haven-backup-upload.service' "capture cannot access upload credentials"
 has_line "$CAP" 'SuccessExitStatus=3'                "capture treats exit 3 as success"
 hasnt_regex "$CAP" '^Restart='                       "capture has NO Restart= (never loops)"
 # The upload unit is started by the capture's OnSuccess.

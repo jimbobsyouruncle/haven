@@ -120,7 +120,7 @@ jobs:
         # found in container-written data, must verify captured databases, and
         # must report a run that missed durable state as incomplete. Fully
         # offline: restic, docker and systemctl are stubbed on PATH.
-        run: bash scripts/test-backup.sh
+        run: bash scripts/test-backup.sh --canvas-root
 
       - name: Repository identity tests
         if: steps.components.outputs.full == 'true'

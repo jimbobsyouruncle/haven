@@ -188,6 +188,68 @@ verify_databases() {
   return 0
 }
 
+check_canvas_copy() {
+  local root="$1" data="$1/files/canvas_data" key="$1/env/canvas-state-key" path
+  CANVAS_SNAPSHOT=0
+  if [[ ! -e "$data" && ! -L "$data" && ! -e "$key" && ! -L "$key" ]]; then
+    if [[ -f "$root/MANIFEST.txt" && ! -L "$root/MANIFEST.txt" ]] &&
+       grep -Eq '^canvas_capture[[:space:]]*:[[:space:]]*complete$' "$root/MANIFEST.txt"; then
+      die "Snapshot's recorded Canvas capture is missing."
+    fi
+    return 0
+  fi
+  for path in "$data/persona" "$data/projects"; do
+    [[ -d "$path" && "$(realpath -e -- "$path")" == "$path" ]] ||
+      die "Snapshot lacks a complete, confined Canvas tree."
+  done
+  local key_value
+  [[ -f "$key" && "$(realpath -e -- "$key")" == "$key" &&
+     "$(stat -c '%a' -- "$key")" == 600 ]] || die "Snapshot lacks its protected Canvas settings key."
+  key_value="$(< "$key")"
+  [[ "$key_value" =~ ^[A-Za-z0-9+/]{43}=$ ]] || die "Snapshot Canvas settings key has an invalid format."
+  unset key_value
+  CANVAS_SNAPSHOT=1
+  ok "Canvas persona, worktrees and settings key are present in the staged snapshot."
+  if [[ ! -f "$root/MANIFEST.txt" || -L "$root/MANIFEST.txt" ]] ||
+     ! grep -Eq '^canvas_capture[[:space:]]*:[[:space:]]*complete$' "$root/MANIFEST.txt"; then
+    die "Snapshot has no complete Canvas capture record."
+  fi
+}
+
+restore_canvas() (
+  local live="$HAVEN_DATA_DIR/canvas_data" prepared="" safety="" part
+  local helper="$HAVEN_LIB_DIR/../../backup/backup-containers.sh"
+  trap '
+    if [[ -n "$safety" && -d "$safety/previous" && ! -e "$live" && ! -L "$live" ]]; then
+      mv -T -- "$safety/previous" "$live" || warn "Canvas safety copy needs manual recovery."
+    fi
+    if [[ -n "$prepared" ]]; then rm -rf -- "$prepared"; fi
+    bash "$helper" canvas-restore-release || warn "Canvas restore hold needs manual release."
+  ' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  prepared="$(mktemp -d "$HAVEN_DATA_DIR/.canvas-restore.XXXXXXXX")"
+  for part in persona projects; do
+    mkdir -m 0700 -- "$prepared/$part"
+    rsync -ax --safe-links --no-devices --no-specials --chown="$CANVAS_IDS" \
+      --chmod=Du=rwx,Dgo=,Fu+rw,Fgo= -- "$STAGED_ROOT/files/canvas_data/$part/" \
+      "$prepared/$part/" >/dev/null 2>&1 || die "Canvas restore preparation failed."
+  done
+  install -m 0600 -- "$STAGED_ROOT/env/canvas-state-key" "$prepared/settings-key.recovered"
+  bash "$helper" canvas-restore-hold || die "Could not stop and hold Canvas for restore."
+  canvas_check_identity "$live" "${CANVAS_IDS%:*}" "${CANVAS_IDS#*:}" ||
+    die "Canvas destination changed after restore preflight."
+  safety="$(mktemp -d "$HAVEN_DATA_DIR/canvas_data.pre-restore.XXXXXXXX")"
+  mv -T -- "$live" "$safety/previous"
+  mv -T -- "$prepared" "$live"
+  prepared=""
+  bash "$helper" canvas-restore-release || die "Could not release the Canvas restore hold."
+  event "canvas_restore" "status=complete"
+  ok "Canvas restored; previous state kept under $(basename "$safety")."
+  log "Canvas stays stopped. Reconcile CANVAS_STATE_KEY with the protected settings-key.recovered file before starting it."
+)
+
 # ---------------------------------------------------------------------------
 # --list
 # ---------------------------------------------------------------------------
@@ -212,6 +274,7 @@ if [[ "$MODE" == "test" ]]; then
 
   STAGED="$(find "$TEST_DIR" -type d -name databases | head -n1)"
   [[ -n "$STAGED" ]] || die "Restored data contains no databases/ directory."
+  check_canvas_copy "$(dirname "$STAGED")"
 
   if ! command -v sqlite3 >/dev/null 2>&1; then
     warn "sqlite3 is not installed, so database integrity cannot be verified."
@@ -263,6 +326,15 @@ restic restore "$SNAPSHOT_ID" --tag haven --tag hybrid-ai --target "$RESTORE_WOR
 STAGED="$(find "$RESTORE_WORK" -type d -name databases | head -n1)"
 [[ -n "$STAGED" ]] || die "Snapshot has no databases/ directory. Wrong snapshot?"
 STAGED_ROOT="$(dirname "$STAGED")"
+check_canvas_copy "$STAGED_ROOT"
+if (( CANVAS_SNAPSHOT )); then
+  (( EUID == 0 )) || die "Restoring Canvas requires root and the provisioned Canvas identity."
+  # shellcheck source=scripts/lib/canvas.sh
+  source "${HAVEN_LIB_DIR}/canvas.sh"
+  CANVAS_IDS="$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_UID):$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_GID)"
+  canvas_check_identity "$HAVEN_DATA_DIR/canvas_data" "${CANVAS_IDS%:*}" "${CANVAS_IDS#*:}" ||
+    die "Provision the dedicated Canvas identity and private destination before restore."
+fi
 
 # Repo-relative layout (databases/webui_data/... or databases/hermes_data/...)
 # vs legacy (databases/webui.db, i.e. relative to webui_data).
@@ -300,10 +372,12 @@ fi
 hr
 printf '  %sThis will replace the live contents of webui_data and hermes_data.%s\n' "$C_WRN" "$C_RST"
 printf '  Current data will be preserved aside, not deleted.\n'
+if (( CANVAS_SNAPSHOT )); then printf '  Canvas persona state and projects will also be replaced.\n'; fi
 printf '  All containers will be stopped for the duration.\n'
 hr
 read -r -p "  Type RESTORE to proceed: " confirm < /dev/tty
 [[ "$confirm" == "RESTORE" ]] || die "Aborted by user."
+if (( CANVAS_SNAPSHOT )); then restore_canvas; fi
 
 # ---------------------------------------------------------------------------
 # Stop the application

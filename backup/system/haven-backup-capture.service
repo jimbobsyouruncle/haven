@@ -14,7 +14,7 @@
 #     * docker socket paths  -- made inaccessible, so it cannot drive Docker.
 #   A root helper (backup-containers.sh, run via the leading "+" on the Exec
 #   lines below, which alone lifts the sandbox for one fixed command) pauses the
-#   containers and collects host facts; it never starts or stops a container.
+#   legacy containers, holds Canvas stopped through its supervisor, and collects host facts.
 #
 #   ONE capability is granted: CAP_DAC_READ_SEARCH, so the account can read the
 #   container-owned data. Nothing else.
@@ -45,7 +45,7 @@ Group=haven-backup
 
 # Fixed, root-owned commands run with privilege: the leading "+" drops every
 # sandbox restriction for that single command so it can talk to Docker. It only
-# ever pauses/unpauses the FIXED container list and reads host facts.
+# coordinates the fixed writer set and reads host facts.
 ExecStartPre=+/opt/haven/backup/backup-containers.sh host-info
 ExecStartPre=+/opt/haven/backup/backup-containers.sh pause
 ExecStart=/opt/haven/backup/backup.sh --stage-only
@@ -71,6 +71,8 @@ Environment=BACKUP_LOG=/var/log/haven-backup/backup.log
 
 # Give up rather than run forever.
 TimeoutStartSec=4h
+# Allow the Canvas supervisor's verified startup to finish during cleanup.
+TimeoutStopSec=7min
 
 # --- The privilege split ---------------------------------------------------
 # The ONE capability that makes container-owned data readable. Nothing else.
@@ -84,6 +86,8 @@ PrivateNetwork=yes
 # No Docker: the socket is not reachable from this unit.
 InaccessiblePaths=-/run/docker.sock
 InaccessiblePaths=-/var/run/docker.sock
+InaccessiblePaths=-/etc/credstore/haven-backup
+InaccessiblePaths=-/run/credentials/haven-backup-upload.service
 
 # Filesystem: read-only except the staging, runtime and log directories systemd
 # hands this unit by name.

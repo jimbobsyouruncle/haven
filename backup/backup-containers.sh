@@ -5,7 +5,7 @@
 #   The ONLY part of a system-mode backup that is allowed to talk to Docker.
 #   It is run as root (systemd's leading "+" on an Exec line drops every
 #   sandbox restriction for that one command) by the capture unit's
-#   ExecStartPre/ExecStopPost, and it does exactly three fixed things:
+#   ExecStartPre/ExecStopPost:
 #
 #     pause      pause the app containers that write durable state, and record
 #                which ones were paused
@@ -24,9 +24,8 @@
 #   containers for a point-in-time capture and reading docker's own facts.
 #
 # WHAT IT WILL NOT DO:
-#   * It never STARTs or STOPs a container -- only pause and unpause. Stopping
-#     hermes-agent kills in-flight agent sessions (incident B1, 2026-10-15);
-#     a pause is a SIGSTOP with no restart.
+#   * It pauses legacy containers. Canvas alone uses a cold copy, with
+#     stop/start delegated to its firewall-verified systemd supervisor.
 #   * It takes NO path and NO container name from its arguments. The only
 #     argument it accepts is the verb above; the container list is the fixed
 #     APP_CONTAINERS set below.
@@ -54,6 +53,7 @@ source "${SCRIPT_DIR}/../scripts/lib/haven-env.sh"
 # writable by the service account and must never be used for root output.
 CONTROL_RUN_DIR=/run/haven-backup-control
 CONTROL_GROUP=haven-backup
+CANVAS_UNIT=haven-canvas.service
 umask 027
 
 # The FIXED list of containers that write durable state. It is the same
@@ -93,11 +93,58 @@ ensure_run_dir() {
   chmod 2750 -- "$CONTROL_RUN_DIR"
 }
 
+# The supervisor refuses new writers while this root-owned hold exists.
+# Publish the owner atomically so backup cleanup cannot release a restore hold.
+hold_canvas() {
+  local purpose="$1" active writers pending
+  pending="$(mktemp "$CONTROL_RUN_DIR/.canvas-hold.XXXXXXXX")" || return 1
+  if ! { printf '%s\n' "$purpose" > "$pending" &&
+         ln -T -- "$pending" "$CONTROL_RUN_DIR/canvas-hold"; }; then
+    rm -f -- "$pending"
+    return 1
+  fi
+  rm -f -- "$pending"
+  active="$(systemctl show -p ActiveState --value "$CANVAS_UNIT")" || return 1
+  case "$active" in
+    active|activating|reloading|deactivating)
+      if [[ "$purpose" == backup && "$active" == active &&
+            "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_ENABLED)" == on ]] &&
+        systemctl is-enabled --quiet "$CANVAS_UNIT"; then
+        : > "$CONTROL_RUN_DIR/canvas-resume" || return 1
+      fi
+      systemctl stop "$CANVAS_UNIT" || return 1 ;;
+    inactive|failed) ;;
+    *) return 1 ;;
+  esac
+  writers="$(docker ps --filter 'name=^/haven-canvas$' --format '{{.Names}}')" || return 1
+  [[ -z "$writers" ]] || return 1
+  if [[ "$purpose" == backup ]]; then
+    : > "$CONTROL_RUN_DIR/canvas-ready"
+  fi
+}
+
+release_canvas() {
+  local purpose="$1" resume=0 hold="$CONTROL_RUN_DIR/canvas-hold"
+  trusted_run_dir && [[ -f "$hold" && ! -L "$hold" && "$(< "$hold")" == "$purpose" ]] || return 0
+  if [[ "$purpose" == backup && -f "$CONTROL_RUN_DIR/canvas-resume" ]]; then
+    resume=1
+  fi
+  rm -f -- "$CONTROL_RUN_DIR/canvas-ready" "$CONTROL_RUN_DIR/canvas-resume" "$hold" || return 1
+  if (( resume )) && [[ "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_ENABLED)" == on ]] &&
+    systemctl is-enabled --quiet "$CANVAS_UNIT"; then
+    systemctl start "$CANVAS_UNIT"
+  fi
+}
+
 # An empty record tells capture to use SQLite's online backup. During this
 # pre-start command the record also tells ExecStopPost whether a pause was
 # attempted, including when systemd interrupts an in-flight Docker command.
 cmd_pause() {
   ensure_run_dir
+  if [[ "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_ENABLED)" == on ||
+        -e "$HAVEN_DATA_DIR/canvas_data" || -L "$HAVEN_DATA_DIR/canvas_data" ]]; then
+    hold_canvas backup || log "Could not confirm Canvas is stopped for capture."
+  fi
   local paused_file="${CONTROL_RUN_DIR}/paused" c
   if [[ ! -L "$paused_file" && -f "$paused_file" && -s "$paused_file" ]]; then
     resume_apps
@@ -133,27 +180,32 @@ resume_apps() {
     docker unpause "$c" >/dev/null 2>&1 || failed=1
   done
   (( failed )) || return 0
-  paused="$(docker ps --filter status=paused --format '{{.Names}}' 2>/dev/null)" \
-    || die "Could not verify that app containers resumed."
+  if ! paused="$(docker ps --filter status=paused --format '{{.Names}}' 2>/dev/null)"; then
+    log "Could not verify that app containers resumed."
+    return 1
+  fi
   for c in "${APP_CONTAINERS[@]}"; do
     if grep -qxF -- "$c" <<< "$paused"; then
-      die "Could not resume ${c}. Run: docker unpause ${c}"
+      log "Could not resume ${c}. Run: docker unpause ${c}"
+      return 1
     fi
   done
 }
 
 cmd_unpause() {
-  local paused_file="${CONTROL_RUN_DIR}/paused"
+  local paused_file="${CONTROL_RUN_DIR}/paused" cleanup_rc=0
   # An empty, trusted record means there was no pause to undo. In particular,
   # a Docker outage that prevented pausing must still permit online upload.
   # With no usable record, attempt recovery directly through Docker.
   if ! trusted_run_dir || [[ -L "$paused_file" || ! -f "$paused_file" || -s "$paused_file" ]]; then
-    resume_apps
+    resume_apps || cleanup_rc=1
   fi
-  if trusted_run_dir; then
+  if (( cleanup_rc == 0 )) && trusted_run_dir; then
     rm -f -- "$paused_file"
     rm -rf -- "${CONTROL_RUN_DIR}/host-info"
   fi
+  release_canvas backup || cleanup_rc=1
+  return "$cleanup_rc"
 }
 
 # host-info: collect the facts the capture unit cannot gather without docker.
@@ -204,5 +256,7 @@ case "$1" in
   pause)     cmd_pause ;;
   unpause)   cmd_unpause ;;
   host-info) cmd_host_info ;;
+  canvas-restore-hold) ensure_run_dir; hold_canvas "restore:$PPID" ;;
+  canvas-restore-release) release_canvas "restore:$PPID" ;;
   *)         printf 'usage: %s pause|unpause|host-info\n' "${0##*/}" >&2; exit 2 ;;
 esac

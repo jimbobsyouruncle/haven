@@ -35,14 +35,25 @@ firewall() {
 }
 
 rm -f /run/haven-canvas/firewall-ready
+[[ ! -e /run/haven-backup-control/canvas-hold && ! -L /run/haven-backup-control/canvas-hold ]]
 stop_canvas
 enabled
 canvas_check_identity "$HAVEN_DATA_DIR/canvas_data" \
   "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_UID)" \
   "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_GID)"
+recovered_key="$HAVEN_DATA_DIR/canvas_data/settings-key.recovered"
+if [[ -e "$recovered_key" || -L "$recovered_key" ]]; then
+  if [[ -L "$recovered_key" || ! -f "$recovered_key" ||
+        "$(stat -c '%u:%a' -- "$recovered_key")" != 0:600 ||
+        "$(< "$recovered_key")" != "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_STATE_KEY)" ]]; then
+    echo "Canvas requires the recovered settings key before startup." >&2
+    exit 1
+  fi
+fi
 firewall apply
 trap 'rm -f /run/haven-canvas/firewall-ready; stop_canvas' EXIT
 trap 'exit 0' TERM INT
+[[ ! -e /run/haven-backup-control/canvas-hold && ! -L /run/haven-backup-control/canvas-hold ]]
 install -m 0444 /dev/null /run/haven-canvas/firewall-ready
 "${compose[@]}" up -d --force-recreate --no-deps --no-build --pull never canvas
 container="$(docker inspect -f '{{.Id}}' haven-canvas)"
