@@ -97,8 +97,6 @@ source "${SCRIPT_DIR}/scripts/lib/haven-env.sh"
 source "${SCRIPT_DIR}/scripts/lib/build-gate.sh"
 # shellcheck source=scripts/lib/installer-env-render.sh
 source "${SCRIPT_DIR}/scripts/lib/installer-env-render.sh"
-# shellcheck source=scripts/lib/canvas.sh
-source "${SCRIPT_DIR}/scripts/lib/canvas.sh"
 
 APP_DIR="$HAVEN_APP_DIR"
 # The stack's env file: the one handed to `docker compose --env-file` and the
@@ -679,6 +677,8 @@ tls_auth_fail_closed
 case "${CANVAS_ENABLED:-off}" in
   off) ;;
   on)
+    # shellcheck source=scripts/lib/canvas.sh
+    source "${SCRIPT_DIR}/scripts/lib/canvas.sh"
     [[ "$APP_DIR" == /opt/haven && $EUID == 0 ]] ||
       die "Canvas requires Haven's canonical system installation."
     if ! tls_is_on || ! tls_auth_is_on; then
@@ -1983,7 +1983,8 @@ PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 # hash arrives as 63 bytes and every password is refused). Drop only these two
 # from this shell before the start; the env file itself carries them intact.
 # The fail-closed empty-value check already ran in STEP 5 (tls_auth_fail_closed).
-unset HAVEN_AUTH_HASH HAVEN_AUTH_USER CANVAS_PASSWORD_HASH
+unset HAVEN_AUTH_HASH HAVEN_AUTH_USER
+unset CANVAS_PASSWORD_HASH
 
 UP_ARGS=(-d --remove-orphans)
 if [[ -n "${HAVEN_PROXY_TRANSACTION:-}" ]]; then
