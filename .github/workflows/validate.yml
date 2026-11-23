@@ -598,7 +598,7 @@ jobs:
         # context (./caddy) exists with its Dockerfile: that context was
         # specified in docs/tls-acme-design.md but never committed, so
         # `docker compose build proxy` failed on the first TLS enablement.
-        run: bash scripts/test-tls-installer-render.sh
+        run: bash scripts/test-tls-installer-render.sh --compose
 
       - name: B77 port-80 redirect-only dynamic tests
         if: steps.components.outputs.full == 'true' || steps.components.outputs.proxy == 'true' || steps.components.outputs.auth == 'true'

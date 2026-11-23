@@ -59,6 +59,8 @@ class CanvasFirewallTests(unittest.TestCase):
             # A foreign rule before our host boundary must prevent admission.
             subprocess.run(["iptables", "-t", "mangle", "-I", "INPUT", "1",
                             "-i", firewall.EGRESS, "-j", "ACCEPT"], check=True)
+            subprocess.run(["iptables", "-t", "mangle", "-I", "OUTPUT", "1",
+                            "-o", firewall.EGRESS, "-j", "ACCEPT"], check=True)
             self.assertEqual(peer_run(*connect).returncode, 1)
             with self.assertRaises(ValueError):
                 firewall.main("check")

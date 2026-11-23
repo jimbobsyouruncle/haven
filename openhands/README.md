@@ -622,7 +622,9 @@ Before an owner-merge deploy that enables Canvas:
 
 - Create a dedicated system account and group named `haven-canvas` with
   non-reused UID/GID and no supplementary grants. Create
-  `${HAVEN_DATA_DIR}/canvas_data` owned by that identity with mode `0700`.
+  `${HAVEN_DATA_DIR}/canvas_data` as root and its `persona` and `projects`
+  subdirectories as that identity. Set all three to mode `0700`. Only the
+  child directories are mounted.
 - Make `canvas.<TLS_DOMAIN>` resolve to the existing Haven HTTPS endpoint on
   the authorized network. In the protected stack env file, set
   `CANVAS_UID`, `CANVAS_GID`, `CANVAS_SESSION_KEY` (32 random bytes as hex),
@@ -633,7 +635,7 @@ Before an owner-merge deploy that enables Canvas:
   Git operations, and enter the selected public provider key in Canvas. Keep
   credentials in the persona's protected storage and out of clone URLs and
   worktrees. Retain the Agent Server key for the authenticated Canvas backend
-  prompt. Use a workspace under `/persona` for persistent checkouts.
+  prompt. Use a workspace under `/projects` for persistent checkouts.
 
 After deploy:
 

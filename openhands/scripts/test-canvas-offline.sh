@@ -48,7 +48,7 @@ cleanup() {
   podman --remote=false unshare rm -rf -- "$fixture"
 }
 trap cleanup EXIT
-install -d -m 0700 "$fixture/developer" "$fixture/peer"
+install -d -m 0700 "$fixture/developer" "$fixture/projects" "$fixture/peer"
 printf 'synthetic peer state\n' >"$fixture/peer/peer-state"
 openssl rand -hex 32 >"$fixture/developer/repo-token"
 chmod 0600 "$fixture/developer/repo-token"
@@ -59,15 +59,18 @@ container=$(podman --remote=false run --detach --pull=never \
   --cap-drop ALL --security-opt no-new-privileges --image-volume=ignore \
   --log-driver=k8s-file --memory=3g --cpus=2.5 --pids-limit=512 \
   --volume "$fixture/developer:/persona:rw,U,Z" \
+  --volume "$fixture/projects:/projects:rw,U,Z" \
   --env "OH_SESSION_API_KEYS_0=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
   --env AGENT_SERVER_PORT=18000 \
   "$image")
-[[ $(podman --remote=false inspect --format '{{range .Mounts}}{{.Source}}:{{.Destination}}{{end}}' "$container") == "$fixture/developer:/persona" ]]
+mounts=$(podman --remote=false inspect --format '{{range .Mounts}}{{println .Source .Destination}}{{end}}' "$container" | LC_ALL=C sort)
+[[ $mounts == "$fixture/developer /persona"$'\n'"$fixture/projects /projects" ]]
 [[ $(podman --remote=false inspect --format '{{.HostConfig.NetworkMode}}' "$container") == none ]]
 pid=$(podman --remote=false inspect --format '{{.State.Pid}}' "$container")
 read -r uid gid <<<"$(ps -o euid=,egid= -p "$pid")"
 [[ $uid != 0 && $gid != 0 ]]
 [[ $(stat -c '%u:%g' "$fixture/developer") == "$uid:$gid" ]]
+[[ $(stat -c '%u:%g' "$fixture/projects") == "$uid:$gid" ]]
 
 cookie_secret=$(openssl rand -hex 32)
 peer_flags=(--detach --rm --pull=never --network "container:$container"
@@ -205,7 +208,7 @@ assert.ok(client.ok, 'Canvas client script must load through ingress');
 assert.match(client.headers.get('content-type') ?? '', /javascript/);
 await client.body?.cancel();
 
-const repo = mkdtempSync('/persona/canvas-smoke-');
+const repo = mkdtempSync('/projects/canvas-smoke-');
 function git(...args) {
   execFileSync('git', ['-C', repo, ...args], { stdio: 'ignore' });
 }

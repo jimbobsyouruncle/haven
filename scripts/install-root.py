@@ -1054,7 +1054,8 @@ class Transaction:
             raise Refusal('SERVICE_HEALTH: no matching pending deployment')
         values = self.values(self.layout.read_text())
         compose = self.proxy_compose(self.app, values['HYBRID_AI_STACK_ENV_FILE'])
-        if '  canvas:' in (self.app / 'docker-compose.yml').read_text().splitlines():
+        canvas_enabled = '  canvas:' in (self.app / 'docker-compose.yml').read_text().splitlines()
+        if canvas_enabled:
             compose += ['--profile', 'canvas']
         expected = set(self.command(compose + ['config', '--services'], timeout=30).splitlines())
         deadline = time.monotonic() + 180
@@ -1064,6 +1065,11 @@ class Transaction:
             if expected <= running and all(
                     state['Status'] == 'running' and (state.get('Health') or {}).get('Status', 'healthy') == 'healthy'
                     for name, _, state in containers if name in expected):
+                if canvas_enabled:
+                    self.command(['systemctl', 'is-active', '--quiet', 'haven-canvas.service'],
+                                 timeout=15)
+                    self.command(['bash', str(self.app / 'scripts/sandbox-firewall.sh'),
+                                  'canvas-check'], timeout=60)
                 return
             if time.monotonic() >= deadline:
                 break

@@ -76,6 +76,27 @@ if (render "on canvas" "$WORK/unauthenticated") >/dev/null 2>&1; then
 else
   pass "Canvas candidate requires Haven authentication"
 fi
+if [[ ${1:-} == --compose ]]; then
+  (
+    export HAVEN_DATA_DIR="$WORK/data" HAVEN_LOG_DIR="$WORK/log"
+    export BACKUP_LOG="$WORK/backup.log" BACKUP_GROUP_GID=1234
+    export LOCAL_DOMAIN=jarvis.lan TLS_DOMAIN=example.test CANVAS_UID=20001 CANVAS_GID=20001
+    export CANVAS_SESSION_KEY=fixture CANVAS_STATE_KEY=fixture CANVAS_PASSWORD_HASH=fixture
+    compose=(docker compose --project-directory "$APP_DIR" -f "$WORK/canvas/docker-compose.yml")
+    [[ $("${compose[@]}" config --services) != *canvas* ]]
+    "${compose[@]}" --profile canvas config --format json |
+      python3 -c 'import json,sys
+spec = json.load(sys.stdin)
+canvas = spec["services"]["canvas"]
+assert canvas["restart"] == "no" and not canvas.get("ports") and not canvas.get("privileged")
+assert set(canvas["networks"]) == {"canvas-ingress", "canvas-egress"}
+assert canvas["user"] == "20001:20001" and canvas["cap_drop"] == ["ALL"]
+path = next(v for v in canvas["volumes"] if v["source"] == "/run/haven-canvas/firewall-ready")
+assert path["read_only"] and not path["bind"]["create_host_path"]
+assert spec["networks"]["canvas-ingress"]["internal"]'
+  )
+  pass "Compose keeps Canvas behind its profile and startup grant"
+fi
 
 # --- TLS off ---------------------------------------------------------------
 LOCAL_DOMAIN="jarvis.lan"
