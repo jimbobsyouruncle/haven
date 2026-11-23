@@ -758,6 +758,7 @@ jobs:
               -e ACME_AUTO_HTTPS=disable_redirects \
               -e HAVEN_AUTH_USER="$HAVEN_AUTH_USER" \
               -e HAVEN_AUTH_HASH="$HAVEN_AUTH_HASH" \
+              -e CANVAS_PASSWORD_HASH="$DUMMY_AUTH_HASH" \
               -v "${out}:/etc/caddy/Caddyfile:ro" \
               -v "$WORK/dummy_dns_token:/run/secrets/cloudflare_dns_token:ro" \
               haven-caddy:ci validate --adapter caddyfile --config /etc/caddy/Caddyfile
@@ -777,6 +778,10 @@ jobs:
           HAVEN_AUTH_USER="$DUMMY_AUTH_USER"
           HAVEN_AUTH_HASH="$DUMMY_AUTH_HASH"
           check_case tls_on_auth_on "on dns auth"
+
+          CANVAS_ENABLED="on"
+          check_case tls_on_auth_canvas auto
+          unset CANVAS_ENABLED
 
           # (d) AUTH_ENABLED truthy + TLS off. The variants must be exactly
           # "off" (suppress, not repair), the render must be BYTE-IDENTICAL to
