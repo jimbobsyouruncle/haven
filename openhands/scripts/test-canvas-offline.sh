@@ -51,6 +51,7 @@ container=$(podman --remote=false run --detach --rm --pull=never \
   --env AGENT_SERVER_PORT=18000 \
   "$image")
 [[ $(podman --remote=false inspect --format '{{range .Mounts}}{{.Source}}:{{.Destination}}{{end}}' "$container") == "$fixture/developer:/persona" ]]
+[[ $(podman --remote=false inspect --format '{{.HostConfig.NetworkMode}}' "$container") == none ]]
 pid=$(podman --remote=false inspect --format '{{.State.Pid}}' "$container")
 read -r uid gid <<<"$(ps -o euid=,egid= -p "$pid")"
 [[ $uid != 0 && $gid != 0 ]]
@@ -97,6 +98,23 @@ caddy_container=$(podman --remote=false run "${peer_flags[@]}" \
 cookie=$(podman --remote=false exec "$auth_container" python3 -c \
   'import os,time,app; print(app.COOKIE_NAME+"="+app.sign_expiry(os.environ["HAVEN_AUTH_COOKIE_SECRET"].encode(), time.time()+300))')
 
+for id in "$container" "$auth_container" "$caddy_container"; do
+  [[ -z $(podman --remote=false port "$id") ]]
+done
+fixture_net=$(podman --remote=false exec "$container" readlink /proc/self/ns/net)
+[[ -n $fixture_net && $(readlink /proc/self/ns/net) != "$fixture_net" ]]
+podman --remote=false run --rm --pull=never --network none --http-proxy=false \
+  --cap-drop ALL --security-opt no-new-privileges --entrypoint python3 "$auth_image" -c '
+import socket
+
+for port in (8000, 18000):
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=3):
+            raise SystemExit(f"Canvas port {port} is reachable from a separate namespace")
+    except ConnectionRefusedError:
+        pass
+'
+echo 'The Canvas fixture uses a separate, loopback-only namespace with no host-published ports.'
 
 podman --remote=false exec -i --env "FIXTURE_COOKIE=$cookie" \
   --env "CANVAS_PASSWORD=$canvas_password" --env "FIXTURE_TLS_CERT=$(cat "$fixture/tls.crt")" \
@@ -107,6 +125,7 @@ podman --remote=false exec -i --env "FIXTURE_COOKIE=$cookie" \
   ' <<'JS'
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { request } from 'node:https';
 import { networkInterfaces } from 'node:os';
@@ -239,14 +258,14 @@ async function proxyGet(path, headers) {
   await response.body?.cancel();
   return response.status;
 }
-async function websocketStatus(headers) {
+async function websocketStatus(path, headers) {
   return new Promise((resolve, reject) => {
-    const req = request(proxy + '/sockets/events', {
+    const req = request(proxy + path, {
       headers: {
         Connection: 'Upgrade',
         Upgrade: 'websocket',
         'Sec-WebSocket-Version': '13',
-        'Sec-WebSocket-Key': Buffer.alloc(16).toString('base64'),
+        'Sec-WebSocket-Key': randomBytes(16).toString('base64'),
         ...headers,
       },
     }, response => {
@@ -278,16 +297,76 @@ assert.equal(await proxyGet('/canvas', { cookie, authorization: canvasGrant('inv
   'Caddy must reject an invalid Canvas grant');
 assert.ok([401, 403].includes(await proxyGet(conversations, { cookie, authorization })),
   'Both ingress credentials must not substitute for the backend session key');
-assert.equal(await websocketStatus(), 302, 'Caddy must gate WebSocket upgrades');
-assert.equal(await websocketStatus({ cookie }), 401, 'WebSocket upgrades must require the Canvas grant');
 assert.equal(await proxyGet('/canvas', { cookie, authorization }), 200,
   'The Haven session and Canvas grant must allow the UI');
 assert.equal(await proxyGet(conversations, { cookie, authorization, 'X-Session-API-Key': apiKey }), 200,
   'The Haven session, Canvas grant and backend key must allow the API through Caddy');
-console.log('Haven Caddy browser, API, and WebSocket authentication gate passed.');
-
 assert.ok(outcomes.every(outcome => outcome.status === 'fulfilled'),
   'Every backend listener must reject missing and invalid keys.');
+
+const created = await fetch(proxy + '/api/conversations', {
+  method: 'POST',
+  headers: {
+    cookie, authorization, 'X-Session-API-Key': apiKey, 'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    agent: {
+      kind: 'Agent', tools: [], llm: { model: 'openai/gpt-4o-mini', api_key: 'synthetic-unused' },
+    },
+    workspace: { kind: 'LocalWorkspace', working_dir: repo + '/task' },
+  }),
+  redirect: 'error',
+  signal: AbortSignal.timeout(30_000),
+});
+assert.ok(created.ok, `Conversation creation through Caddy returned HTTP ${created.status}`);
+const { id } = await created.json();
+assert.match(id, /^[0-9a-f-]{32,36}$/i);
+const eventPath = '/sockets/events/' + id;
+assert.equal(await websocketStatus(eventPath, {}), 302, 'Caddy must gate the conversation upgrade');
+assert.equal(await websocketStatus(eventPath, { cookie }), 401,
+  'The conversation upgrade must require the Canvas grant');
+
+function conversationSocket(key) {
+  const url = new URL(eventPath, proxy);
+  url.protocol = 'wss:';
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url, { headers: { cookie, authorization } });
+    const timeout = setTimeout(() => {
+      ws.close();
+      reject(new Error('Conversation WebSocket timed out'));
+    }, 15_000);
+    ws.addEventListener('open', () => {
+      ws.send(JSON.stringify({ type: 'auth', session_api_key: key }));
+    });
+    ws.addEventListener('message', ({ data }) => {
+      try {
+        const event = JSON.parse(data);
+        if (key !== apiKey || event.kind === 'ConversationStateUpdateEvent') {
+          clearTimeout(timeout);
+          ws.close();
+          resolve({ kind: event.kind });
+        }
+      } catch {
+        clearTimeout(timeout);
+        ws.close();
+        reject(new Error('Conversation WebSocket returned an invalid event'));
+      }
+    });
+    ws.addEventListener('close', ({ code }) => {
+      clearTimeout(timeout);
+      resolve({ code });
+    });
+    ws.addEventListener('error', () => {
+      clearTimeout(timeout);
+      reject(new Error('Conversation WebSocket failed to upgrade or exchange frames'));
+    });
+  });
+}
+assert.deepEqual(await conversationSocket('invalid-smoke-key'), { code: 4001 },
+  'The Agent Server must reject an invalid key without sending conversation data');
+assert.deepEqual(await conversationSocket(apiKey), { kind: 'ConversationStateUpdateEvent' },
+  'The authorized socket must deliver conversation state through Caddy');
+console.log('Haven Caddy browser, API, and authenticated conversation event stream passed.');
 JS
 
 bash "$repo_root/openhands/scripts/test-canvas-personas.sh" "$image"
