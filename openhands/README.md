@@ -600,6 +600,20 @@ and separate approval for destructive changes.
 
 ### Public deployment acceptance
 
+A candidate Compose render places the pinned ARM64 bundle on a dedicated
+internal bridge with only Caddy, its own persona state bind, and no published
+ports. The Caddy render uses the existing Haven login and denies requests
+without the separate Canvas grant. The normal installer does not select this
+render while the public egress path is unresolved.
+
+Jarvis's existing sandbox firewall applies to the legacy Docker bridge.
+Canvas needs its own enforced egress path before activation. A normal routed
+bridge gives the agent a path toward host and private services, including
+published services, and the existing firewall applies after container startup.
+An approved extension must block those paths before Canvas can run, including
+after reboot or container recreation, while permitting public GitHub and
+inference traffic.
+
 A later activation change needs a dedicated, non-reused persona UID/GID and
 private state, a Canvas HTTPS hostname and grant, and owner-provisioned GitHub
 and provider credentials scoped to the public persona. Reuse the Haven login

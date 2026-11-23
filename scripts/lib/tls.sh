@@ -565,7 +565,20 @@ tls_prepare_render_values() {  # VARIANTS
 tls_render_to_file() {  # TEMPLATE VARIANTS OUTFILE
   local template="$1" variants="$2" out="$3"
   [[ -f $template ]] || tls__die "Missing template: ${template}"
-  if ! tls_render_template "$template" "$variants" | tls_substitute > "$out"; then
+  if [[ " $variants " == *" canvas "* ]] &&
+    [[ " $variants " != *" on "* || " $variants " != *" auth "* ]]; then
+    tls__die "Canvas ingress requires HTTPS and Haven authentication."
+  fi
+  if ! tls_render_template "$template" "$variants" | tls_substitute |
+    awk -v snippet="${APP_DIR:-.}/openhands/canvas-ingress.caddyfile" '
+      $0 == "%CANVAS_INGRESS_SNIPPET%" {
+        while ((result = (getline line < snippet)) > 0) print line
+        if (result < 0) exit 1
+        close(snippet)
+        next
+      }
+      { print }
+    ' > "$out"; then
     rm -f -- "$out"
     tls__die "Rendering ${template} failed."
   fi
@@ -694,6 +707,14 @@ tls_validate_caddyfile() {  # FILE
     # control moved to the installer (install.sh -> tls_auth_fail_closed, which
     # rejects an empty user, hash or cookie secret before any render).
   )
+  if grep -Fq 'import canvas_ingress auth:8080 canvas:8000 canvas' "$file"; then
+    # Validate the provisioned grant without emitting it in validation output.
+    local bcrypt_pattern='^[$]2[aby][$][0-9]{2}[$][./A-Za-z0-9]{53}$'
+    if [[ ! ${CANVAS_PASSWORD_HASH:-} =~ $bcrypt_pattern ]]; then
+      tls__die "Canvas requires a valid bcrypt grant in CANVAS_PASSWORD_HASH."
+    fi
+    envs+=("CANVAS_PASSWORD_HASH=$CANVAS_PASSWORD_HASH")
+  fi
   # A DNS-01 render must be validated in a container: `caddy validate`
   # provisions the TLS app and the solver reads its credential from a file, and
   # a bare host caddy cannot be given that file.

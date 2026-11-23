@@ -30,9 +30,10 @@ WORK="$(mktemp -d)"
 trap 'rm -rf -- "$WORK"' EXIT
 
 APP_DIR="$WORK/app"
-mkdir -p "$APP_DIR/status"
+mkdir -p "$APP_DIR/status" "$APP_DIR/openhands"
 cp "${HAVEN_APP_DIR}/status/Caddyfile.tmpl" "$APP_DIR/status/Caddyfile.tmpl"
 cp "${HAVEN_APP_DIR}/docker-compose.yml.tmpl" "$APP_DIR/docker-compose.yml.tmpl"
+cp "${HAVEN_APP_DIR}/openhands/canvas-ingress.caddyfile" "$APP_DIR/openhands/"
 
 FAILED=0
 pass() { printf '[ OK ] %s\n' "$*"; }
@@ -60,6 +61,21 @@ render() {  # VARIANTS OUTDIR
   tls_render_to_file "$APP_DIR/status/Caddyfile.tmpl" "$variants" "$out/Caddyfile"
   tls_render_to_file "$APP_DIR/docker-compose.yml.tmpl" "$variants" "$out/docker-compose.yml"
 }
+
+render "on auth canvas" "$WORK/canvas"
+if rg -Fq 'import canvas_ingress auth:8080 canvas:8000 canvas' "$WORK/canvas/Caddyfile" &&
+   rg -Fq '(canvas_ingress) {' "$WORK/canvas/Caddyfile" &&
+   ! rg -Fq '%CANVAS_INGRESS_SNIPPET%' "$WORK/canvas/Caddyfile" &&
+   rg -Fq 'com.docker.network.bridge.gateway_mode_ipv4: isolated' "$WORK/canvas/docker-compose.yml"; then
+  pass "Canvas candidate shares the qualified authenticated ingress on an isolated bridge"
+else
+  fail "Canvas ingress or private bridge is missing from the candidate"
+fi
+if (render "on canvas" "$WORK/unauthenticated") >/dev/null 2>&1; then
+  fail "Canvas candidate rendered without Haven authentication"
+else
+  pass "Canvas candidate requires Haven authentication"
+fi
 
 # --- TLS off ---------------------------------------------------------------
 LOCAL_DOMAIN="jarvis.lan"
