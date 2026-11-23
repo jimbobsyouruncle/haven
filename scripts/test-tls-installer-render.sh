@@ -63,10 +63,10 @@ render() {  # VARIANTS OUTDIR
 }
 
 render "on auth canvas" "$WORK/canvas"
-if rg -Fq 'import canvas_ingress auth:8080 canvas:8000 canvas' "$WORK/canvas/Caddyfile" &&
-   rg -Fq '(canvas_ingress) {' "$WORK/canvas/Caddyfile" &&
-   ! rg -Fq '%CANVAS_INGRESS_SNIPPET%' "$WORK/canvas/Caddyfile" &&
-   rg -Fq 'com.docker.network.bridge.gateway_mode_ipv4: isolated' "$WORK/canvas/docker-compose.yml"; then
+if grep -Fq 'import canvas_ingress auth:8080 canvas:8000 canvas' "$WORK/canvas/Caddyfile" &&
+   grep -Fq '(canvas_ingress) {' "$WORK/canvas/Caddyfile" &&
+   ! grep -Fq '%CANVAS_INGRESS_SNIPPET%' "$WORK/canvas/Caddyfile" &&
+   grep -Fq 'com.docker.network.bridge.gateway_mode_ipv4: isolated' "$WORK/canvas/docker-compose.yml"; then
   pass "Canvas candidate shares the qualified authenticated ingress on an isolated bridge"
 else
   fail "Canvas ingress or private bridge is missing from the candidate"
