@@ -97,6 +97,8 @@ source "${SCRIPT_DIR}/scripts/lib/haven-env.sh"
 source "${SCRIPT_DIR}/scripts/lib/build-gate.sh"
 # shellcheck source=scripts/lib/installer-env-render.sh
 source "${SCRIPT_DIR}/scripts/lib/installer-env-render.sh"
+# shellcheck source=scripts/lib/canvas.sh
+source "${SCRIPT_DIR}/scripts/lib/canvas.sh"
 
 APP_DIR="$HAVEN_APP_DIR"
 # The stack's env file: the one handed to `docker compose --env-file` and the
@@ -674,6 +676,28 @@ tls_prompt_flow
 # the control that replaces it (docs/tls-acme-design.md section 4.7). No-op
 # unless TLS is on AND AUTH_ENABLED=on.
 tls_auth_fail_closed
+case "${CANVAS_ENABLED:-off}" in
+  off) ;;
+  on)
+    [[ "$APP_DIR" == /opt/haven && $EUID == 0 ]] ||
+      die "Canvas requires Haven's canonical system installation."
+    if ! tls_is_on || ! tls_auth_is_on; then
+      die "Canvas requires TLS and Haven authentication."
+    fi
+    canvas_check_identity "$HAVEN_DATA_DIR/canvas_data" "${CANVAS_UID:-}" "${CANVAS_GID:-}" ||
+      die "Provision the dedicated haven-canvas account and its private canvas_data directory."
+    [[ "$CANVAS_UID" != "${HAVEN_UID:-}" && "$CANVAS_GID" != "${HAVEN_GID:-}" &&
+       "${CANVAS_SESSION_KEY:-}" =~ ^[a-f0-9]{64}$ ]] ||
+      die "Canvas requires its own UID/GID and a 32-byte hex Agent Server key."
+    if [[ -z "${CANVAS_STATE_KEY:-}" ]]; then
+      CANVAS_STATE_KEY="$(openssl rand -base64 32)" || die "Could not generate Canvas settings key."
+    fi
+    [[ "$CANVAS_STATE_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] ||
+      die "CANVAS_STATE_KEY must be a base64-encoded 32-byte settings key."
+    TLS_HOSTS+=",canvas.$TLS_DOMAIN"
+    ;;
+  *) die "CANVAS_ENABLED must be on or off." ;;
+esac
 if tls_is_on; then
   event "tls_enabled" "domain=${TLS_DOMAIN}" "validation=${TLS_VALIDATION}" \
     "ca=$(tls_ca_label "${TLS_CA_URL}")"
@@ -1046,6 +1070,14 @@ OPENHANDS_LOG_ALL_EVENTS=${OPENHANDS_LOG_ALL_EVENTS:-false}
 OPENHANDS_MEM_LIMIT=${OPENHANDS_MEM_LIMIT:-3g}
 OPENHANDS_CPUS=${OPENHANDS_CPUS:-2.5}
 
+# --- Agent Canvas public Developer persona -----------------------------------
+CANVAS_ENABLED=${CANVAS_ENABLED:-off}
+CANVAS_UID=${CANVAS_UID:-}
+CANVAS_GID=${CANVAS_GID:-}
+CANVAS_SESSION_KEY=${CANVAS_SESSION_KEY:-}
+CANVAS_STATE_KEY=${CANVAS_STATE_KEY:-}
+CANVAS_PASSWORD_HASH=$(tls_compose_escape "${CANVAS_PASSWORD_HASH:-}")
+
 # --- Docker build-cache cap ------------------------------------------------
 # haven-docker-prune.timer runs scripts/prune-docker-cache.sh daily at
 # 04:35 to cap the Docker BUILD CACHE (cache only; never images, containers,
@@ -1145,6 +1177,13 @@ ok ".env written (0600)."
 # A TLS DNS-01 render is validated with the DNS-capable proxy image, which this
 # step therefore builds first (idempotent cache hit on a re-run). The image
 # would otherwise not exist yet: STEP 9 `compose up` builds it.
+if [[ "$APP_DIR" == /opt/haven && $EUID == 0 ]] && (( ! NO_START )) &&
+   systemctl cat haven-canvas.service >/dev/null 2>&1; then
+  systemctl stop haven-canvas.service || die "Could not stop the Canvas supervisor before rendering."
+  if [[ "${CANVAS_ENABLED:-off}" == off ]]; then
+    systemctl disable haven-canvas.service || die "Could not disable Canvas at boot."
+  fi
+fi
 tls_render_and_install
 
 # Keep an owner's legacy TAILSCALE_IP value byte-for-byte. STEP 2b refused to
@@ -1837,6 +1876,20 @@ COMPOSE=(
   -f "$APP_DIR/openhands/docker-compose.openhands.yml"
   -f "$APP_DIR/hermes/docker-compose.hermes.yml"
 )
+# Only the firewall supervisor explicitly enables the Canvas profile.
+export COMPOSE_PROFILES=''
+
+if [[ "${CANVAS_ENABLED:-off}" == on ]]; then
+  if ! docker network inspect haven-canvas-egress >/dev/null 2>&1; then
+    docker network create --driver bridge --ipv6=false \
+      --opt com.docker.network.bridge.name=haven-canvas-eg \
+      --opt com.docker.network.bridge.enable_icc=false \
+      --label dev.haven.canvas=egress haven-canvas-egress >/dev/null ||
+      die "Could not create the dedicated Canvas egress bridge."
+  fi
+  "${COMPOSE[@]}" --profile canvas pull canvas ||
+    die "Could not pull the qualified Canvas image."
+fi
 
 export COMPOSE_HTTP_TIMEOUT=600
 export DOCKER_CLIENT_TIMEOUT=600
@@ -1930,7 +1983,7 @@ PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 # hash arrives as 63 bytes and every password is refused). Drop only these two
 # from this shell before the start; the env file itself carries them intact.
 # The fail-closed empty-value check already ran in STEP 5 (tls_auth_fail_closed).
-unset HAVEN_AUTH_HASH HAVEN_AUTH_USER
+unset HAVEN_AUTH_HASH HAVEN_AUTH_USER CANVAS_PASSWORD_HASH
 
 UP_ARGS=(-d --remove-orphans)
 if [[ -n "${HAVEN_PROXY_TRANSACTION:-}" ]]; then
@@ -1989,6 +2042,17 @@ case "$FIREWALL_RC" in
     ;;
 esac
 
+if [[ "${CANVAS_ENABLED:-off}" == on ]]; then
+  unit_dir="${HAVEN_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+  if ! { install -m 0644 "$APP_DIR/deploy/haven-canvas.service" "$unit_dir/haven-canvas.service.tmp" &&
+         mv -f "$unit_dir/haven-canvas.service.tmp" "$unit_dir/haven-canvas.service" &&
+         systemctl daemon-reload &&
+         systemctl enable haven-canvas.service &&
+         systemctl start haven-canvas.service; }; then
+    die "Canvas did not pass its firewall/startup gate. Check haven-canvas.service."
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # STEP 10. Verify service health and check local DNS resolution
 # ---------------------------------------------------------------------------
@@ -2021,7 +2085,7 @@ wait_for() {
   return 1
 }
 
-# wait_for_https LABEL URL RESOLVE_HOST RESOLVE_IP MAX APEX_DOMAIN
+# wait_for_https LABEL URL RESOLVE_HOST RESOLVE_IP MAX APEX_DOMAIN [REQUIRED_STATUS]
 #
 # The TLS sibling of wait_for: probes URL over HTTPS with an explicit
 # --resolve of RESOLVE_HOST to RESOLVE_IP, this host's own address, so SNI and Host agree without real
@@ -2033,7 +2097,7 @@ wait_for() {
 # separate so wait_for's signature and behaviour stay unchanged for every
 # other caller.
 wait_for_https() {
-  local label="$1" url="$2" resolve_host="$3" resolve_ip="$4" max="$5" apex="$6" waited=0 code loc=""
+  local label="$1" url="$2" resolve_host="$3" resolve_ip="$4" max="$5" apex="$6" required_status="${7:-}" waited=0 code loc=""
   while (( waited < max )); do
     code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
               --resolve "${resolve_host}:443:${resolve_ip}" "$url" 2>/dev/null || true)"
@@ -2042,7 +2106,8 @@ wait_for_https() {
       loc="$(curl -sS -o /dev/null -w '%{redirect_url}' --max-time 5 \
                 --resolve "${resolve_host}:443:${resolve_ip}" "$url" 2>/dev/null || true)"
     fi
-    if tls_https_login_gate "$code" "$loc" "$apex"; then
+    if [[ -z "$required_status" || "$code" == "$required_status" ]] &&
+       tls_https_login_gate "$code" "$loc" "$apex"; then
       ok "${label} healthy after ${waited}s (HTTP ${code} over HTTPS)."
       event "healthcheck_pass" "service=${label}" "seconds=${waited}"
       return 0
@@ -2095,6 +2160,14 @@ case "$tls_state" in
     else
       wait_for_https "status page" "https://${tls_status_host}/status/healthz" \
         "$tls_status_host" "$tls_probe_ip" 60 "$TLS_DOMAIN" || warn "Status reverse proxy initializing..."
+    fi
+    if [[ "${CANVAS_ENABLED:-off}" == on ]]; then
+      canvas_host="canvas.$TLS_DOMAIN"
+      if ! wait_for_https "Canvas login gate" "https://$canvas_host/canvas" \
+        "$canvas_host" "${tls_probe_ip:-127.0.0.1}" 60 "$TLS_DOMAIN" 302; then
+        systemctl stop haven-canvas.service
+        HEALTH_FAILED=1
+      fi
     fi
     unset tls_status_host tls_probe_ip
     ;;

@@ -629,6 +629,13 @@ if grep -Fq '  canvas:' "$APP_DIR/docker-compose.yml"; then
     starting) warn "Canvas is initializing" "Wait for the Agent Server health probe and run ./doctor.sh again." ;;
     *) fail "Canvas health: ${CANVAS_STATE:-container missing}" "Check the installer result and the Canvas persona state ownership." ;;
   esac
+  if [[ $EUID == 0 ]]; then
+    if bash "$APP_DIR/scripts/sandbox-firewall.sh" canvas-check; then
+      pass "Canvas firewall policy matches the active bridge topology"
+    else
+      fail "Canvas firewall policy failed verification" "Check haven-canvas.service before restarting Canvas."
+    fi
+  fi
 fi
 
 # --- Hermes :: shellcheck is present in the image ----------------------------

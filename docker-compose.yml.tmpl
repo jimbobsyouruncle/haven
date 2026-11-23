@@ -461,8 +461,9 @@ services:
 #@canvas
       CANVAS_PASSWORD_HASH: ${CANVAS_PASSWORD_HASH:?Canvas requires a separate bcrypt grant}
     networks:
-      - default
-      - canvas-ingress
+      default: {}
+      canvas-ingress:
+        ipv4_address: 172.31.253.2
 #@end
     security_opt:
       - no-new-privileges:true
@@ -483,11 +484,15 @@ services:
     image: ghcr.io/openhands/agent-canvas@sha256:c349868d301e879a50da45f7f51e3c1f5f2814c8265b4a8ef8979d115956f59c
     platform: linux/arm64
     container_name: haven-canvas
+    profiles: [canvas]
     user: "${CANVAS_UID:?Canvas requires a dedicated persona UID}:${CANVAS_GID:?Canvas requires a dedicated persona GID}"
-    restart: unless-stopped
+    restart: "no"
     init: true
     environment:
       HOME: /persona
+      XDG_CONFIG_HOME: /persona/.config
+      OH_PERSISTENCE_DIR: /persona/.openhands
+      OH_SECRET_KEY: ${CANVAS_STATE_KEY:?Canvas requires its persistent settings encryption key}
       OH_SESSION_API_KEYS_0: ${CANVAS_SESSION_KEY:?Canvas requires an independent Agent Server key}
       AGENT_CANVAS_DISABLE_TELEMETRY: "1"
       AGENT_SERVER_PORT: "18000"
@@ -497,8 +502,20 @@ services:
         target: /persona
         bind:
           create_host_path: false
+      - type: bind
+        source: /run/haven-canvas/firewall-ready
+        target: /run/haven-canvas-firewall-ready
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
-      - canvas-ingress
+      canvas-ingress:
+        ipv4_address: 172.31.253.3
+      canvas-egress: {}
+    dns: [1.1.1.1, 1.0.0.1]
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
     cap_drop:
       - ALL
     security_opt:
@@ -593,4 +610,11 @@ networks:
     enable_ipv6: false
     driver_opts:
       com.docker.network.bridge.gateway_mode_ipv4: isolated
+      com.docker.network.bridge.name: haven-canvas-in
+    ipam:
+      config:
+        - subnet: 172.31.253.0/29
+  canvas-egress:
+    name: haven-canvas-egress
+    external: true
 #@end

@@ -1,0 +1,22 @@
+[Unit]
+Description=Haven Agent Canvas with verified sandbox firewall
+After=docker.service network-online.target
+Wants=network-online.target
+BindsTo=docker.service
+PartOf=docker.service
+ConditionPathExists=/opt/haven/scripts/canvas-runtime.sh
+
+[Service]
+Type=notify
+NotifyAccess=all
+RuntimeDirectory=haven-canvas
+RuntimeDirectoryMode=0755
+TimeoutStartSec=360
+TimeoutStopSec=30
+ExecStart=/bin/bash /opt/haven/scripts/canvas-runtime.sh
+# An unsuccessful start, a failed policy check, or a killed supervisor must
+# stop the agent. Docker itself is deliberately barred from restarting it.
+ExecStopPost=/bin/bash /opt/haven/scripts/canvas-runtime.sh stop
+
+[Install]
+WantedBy=docker.service

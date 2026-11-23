@@ -44,6 +44,8 @@ openssl rand -hex 32 >"$fixture/developer/repo-token"
 chmod 0600 "$fixture/developer/repo-token"
 container=$(podman --remote=false run --detach --rm --pull=never \
   --platform linux/arm64 --network none --http-proxy=false \
+  --user 20001:20001 --env HOME=/persona --env XDG_CONFIG_HOME=/persona/.config \
+  --env OH_PERSISTENCE_DIR=/persona/.openhands \
   --cap-drop ALL --security-opt no-new-privileges --image-volume=ignore \
   --log-driver=none --memory=3g --cpus=2.5 --pids-limit=512 \
   --volume "$fixture/developer:/persona:rw,U,Z" \

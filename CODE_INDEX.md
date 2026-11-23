@@ -423,6 +423,21 @@
 - run_install()
 - run_cutoff()
 
+## scripts/canvas-firewall.py
+- def command(*args, data)
+- def network(name, bridge, *, internal, allowed)
+- def topology()
+- def policy(uplink, blocked, *, ipv6)
+- def rules(family)
+- def verify(listing, hooks, chains)
+- def install(family, listing, hooks, chains)
+- def main(mode)
+
+## scripts/canvas-runtime.sh
+- stop_canvas()
+- enabled()
+- firewall()
+
 ## scripts/check-agent-context.sh
 - (no symbols)
 
@@ -584,6 +599,9 @@
 - build_gate_decide()
 - haven_progress_start()
 - haven_progress_stop()
+
+## scripts/lib/canvas.sh
+- canvas_check_identity()
 
 ## scripts/lib/haven-env.sh
 - haven_key()
@@ -867,6 +885,11 @@
 - setup_doctor_migration_root()
 - assert_no_cutoff()
 - run_real_install()
+
+## scripts/test-canvas-firewall.py
+- class CanvasFirewallTests(TestCase)
+  - def test_kernel_policy_and_drift(self)
+  - def test_missing_bridge_does_not_modify_rules(self)
 
 ## scripts/test-check-agent-context.sh
 - greet()

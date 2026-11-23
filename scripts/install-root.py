@@ -1054,6 +1054,8 @@ class Transaction:
             raise Refusal('SERVICE_HEALTH: no matching pending deployment')
         values = self.values(self.layout.read_text())
         compose = self.proxy_compose(self.app, values['HYBRID_AI_STACK_ENV_FILE'])
+        if '  canvas:' in (self.app / 'docker-compose.yml').read_text().splitlines():
+            compose += ['--profile', 'canvas']
         expected = set(self.command(compose + ['config', '--services'], timeout=30).splitlines())
         deadline = time.monotonic() + 180
         while expected:
@@ -1528,7 +1530,7 @@ class Transaction:
                 or stat.S_IMODE(stack.stat().st_mode) != 0o600):
             raise Refusal('recovery render requires the private installed stack settings')
         allowed = {'TLS_ENABLED', 'AUTH_ENABLED', 'TLS_VALIDATION', 'ACME_DNS_PROVIDER',
-                   'TLS_DOMAIN', 'RFC2136_KEY_NAME', 'RFC2136_SERVER'}
+                   'TLS_DOMAIN', 'RFC2136_KEY_NAME', 'RFC2136_SERVER', 'CANVAS_ENABLED'}
         settings = {}
         for line in stack.read_text().split('\n'):
             key, _, value = line.partition('=')
@@ -1540,9 +1542,15 @@ class Transaction:
                     'false', 'FALSE', 'False', 'true', 'TRUE', 'True'}
         if (settings.get('TLS_ENABLED') not in switches
                 or settings.get('AUTH_ENABLED') not in switches | {'on', 'ON', 'On', 'off', 'OFF', 'Off'}
+                or settings.get('CANVAS_ENABLED', 'off') not in ('on', 'off')
                 or settings.get('TLS_VALIDATION') not in ('dns', 'http', 'tlsalpn')
                 or settings.get('ACME_DNS_PROVIDER') not in ('cloudflare', 'rfc2136')):
             raise Refusal('invalid installed recovery render settings')
+        if settings.get('CANVAS_ENABLED') == 'on':
+            snippet = 'openhands/canvas-ingress.caddyfile'
+            if (self.git(self.app, 'hash-object', '--no-filters', str(self.app / snippet))
+                    != self.git(self.app, 'rev-parse', f'{sha}:{snippet}')):
+                raise Refusal('Canvas ingress snippet differs from installed revision')
 
         # Run only the pure rendering functions from the installed revision.
         # No stack file is sourced, and no token or other credential is passed.

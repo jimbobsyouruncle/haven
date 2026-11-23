@@ -315,6 +315,10 @@ jobs:
         # still exit 0, and the ordering self-check failing loudly.
         run: bash scripts/test-sandbox-firewall.sh
 
+      - name: Canvas firewall boundary
+        if: steps.components.outputs.full == 'true'
+        run: sudo unshare --net -- python3 scripts/test-canvas-firewall.py
+
       - name: Deploy-remote tests
         if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true' || steps.components.outputs.doctor == 'true'
         # Offline. Proves scripts/deploy-remote.sh refuses a wrong revision

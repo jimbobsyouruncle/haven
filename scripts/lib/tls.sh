@@ -485,6 +485,9 @@ tls_variants() {
   if tls_is_on && tls_auth_is_on; then
     variants="${variants} auth"
   fi
+  if [[ ${CANVAS_ENABLED:-off} == on ]]; then
+    variants="${variants} canvas"
+  fi
   printf '%s\n' "$variants"
 }
 
@@ -710,10 +713,12 @@ tls_validate_caddyfile() {  # FILE
   if grep -Fq 'import canvas_ingress auth:8080 canvas:8000 canvas' "$file"; then
     # Validate the provisioned grant without emitting it in validation output.
     local bcrypt_pattern='^[$]2[aby][$][0-9]{2}[$][./A-Za-z0-9]{53}$'
-    if [[ ! ${CANVAS_PASSWORD_HASH:-} =~ $bcrypt_pattern ]]; then
+    local canvas_hash
+    canvas_hash="$(tls_compose_unescape "${CANVAS_PASSWORD_HASH:-}")"
+    if [[ ! $canvas_hash =~ $bcrypt_pattern ]]; then
       tls__die "Canvas requires a valid bcrypt grant in CANVAS_PASSWORD_HASH."
     fi
-    envs+=("CANVAS_PASSWORD_HASH=$CANVAS_PASSWORD_HASH")
+    envs+=("CANVAS_PASSWORD_HASH=$canvas_hash")
   fi
   # A DNS-01 render must be validated in a container: `caddy validate`
   # provisions the TLS app and the solver reads its credential from a file, and
@@ -961,7 +966,7 @@ tls_load_env_file_values() {  # FILE
       HAVEN_TLS_TOKEN_FILE|TLS_HOSTS|ACME_AUTO_HTTPS|CADDY_IMAGE|LOCAL_DOMAIN|\
       RFC2136_KEY_NAME|RFC2136_SERVER|AUTH_ENABLED|HAVEN_AUTH_USER|\
       HAVEN_AUTH_HASH|HAVEN_AUTH_COOKIE_SECRET|\
-      HAVEN_AUTH_COOKIE_MAX_AGE) ;;
+      HAVEN_AUTH_COOKIE_MAX_AGE|CANVAS_ENABLED|CANVAS_PASSWORD_HASH) ;;
       *) continue ;;
     esac
     [[ -n "${!key:-}" ]] && continue
