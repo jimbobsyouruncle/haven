@@ -79,7 +79,9 @@ case "$1" in
     exit 0 ;;
   pause) [[ "${2:-}" != "${FAIL_PAUSE:-}" ]] ;;
   unpause) [[ "${2:-}" != "${FAIL_UNPAUSE:-}" ]] ;;
-  ps) printf '%s\n' "${STILL_PAUSED:-}" ;;
+  ps)
+    if [[ "$*" == *haven-canvas* ]]; then printf '%s' "${CANVAS_WRITERS:-}"
+    else printf '%s\n' "${STILL_PAUSED:-}"; fi ;;
   exec)
     # ollama list -> a header plus one model name
     printf 'NAME\tSIZE\nllama3:latest\t4GB\n'
@@ -88,6 +90,21 @@ case "$1" in
   *) exit 0 ;;
 esac
 EOF
+
+cat > "$BIN/systemctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
+case "$1" in
+  show) printf '%s\n' "${CANVAS_ACTIVITY:-inactive}" ;;
+  stop)
+    if [[ ${INTERRUPT_STOP:-0} == 1 ]]; then
+      kill -TERM "$PPID"
+      exit 143
+    fi ;;
+  is-enabled) [[ ${CANVAS_UNIT_ENABLED:-1} == 1 ]] ;;
+esac
+EOF
+export SYSTEMCTL_LOG="$WORK/systemctl.log"
 
 # Stub id: `id -u` prints the UID override; `id <user>` succeeds when the user
 # is in ID_USERS. This is how the root-only gate is exercised without root.
@@ -128,6 +145,39 @@ echo "== backup-containers.sh tests =="
 # a) root-only gate: a non-root caller is refused with exit 1.
 run_helper "PATH=$BIN:$PATH" "ID_UID_OVERRIDE=1000" -- pause
 assert "non-root is refused" test "$HELPER_RC" -eq 1
+
+printf 'CANVAS_ENABLED=on\n' > "$WORK/canvas.env"
+CANVAS_ENV=("${BASE_ENV[@]}" "HAVEN_STACK_ENV_FILE=$WORK/canvas.env" "BACKUP_NO_PAUSE=1")
+run_helper "${CANVAS_ENV[@]}" CANVAS_ACTIVITY=active -- pause
+assert "active Canvas is stopped through its supervisor" grep -Fxq 'stop haven-canvas.service' "$SYSTEMCTL_LOG"
+assert "only a confirmed cold Canvas tree receives a ready record" test -f "$RUN_DIR/canvas-ready"
+run_helper "${CANVAS_ENV[@]}" -- unpause
+assert "cleanup resumes the previously running Canvas supervisor" grep -Fxq 'start haven-canvas.service' "$SYSTEMCTL_LOG"
+assert "cleanup withdraws the Canvas cold capture record" test ! -e "$RUN_DIR/canvas-ready"
+
+: > "$SYSTEMCTL_LOG"
+run_helper "${CANVAS_ENV[@]}" -- pause
+run_helper "${CANVAS_ENV[@]}" -- unpause
+assert "a previously stopped Canvas is never started" bash -c "! grep -q '^start ' '$SYSTEMCTL_LOG'"
+run_helper "${CANVAS_ENV[@]}" CANVAS_ACTIVITY=active CANVAS_UNIT_ENABLED=0 -- pause
+run_helper "${CANVAS_ENV[@]}" CANVAS_UNIT_ENABLED=0 -- unpause
+assert "a previously disabled supervisor is never started" bash -c "! grep -q '^start ' '$SYSTEMCTL_LOG'"
+
+: > "$SYSTEMCTL_LOG"
+run_helper "${CANVAS_ENV[@]}" CANVAS_ACTIVITY=active INTERRUPT_STOP=1 -- pause
+assert "interrupted stop retains its prior running-state record" test -f "$RUN_DIR/canvas-resume"
+assert "interrupted stop grants no cold capture" test ! -e "$RUN_DIR/canvas-ready"
+run_helper "${CANVAS_ENV[@]}" -- unpause
+assert "interruption cleanup attempts safe supervisor recovery" grep -Fxq 'start haven-canvas.service' "$SYSTEMCTL_LOG"
+
+run_helper "${CANVAS_ENV[@]}" -- canvas-restore-hold
+assert "restore obtains an exclusive writer hold" test "$HELPER_RC" -eq 0
+run_helper "${CANVAS_ENV[@]}" -- pause
+assert "backup cannot publish readiness during restore" test ! -e "$RUN_DIR/canvas-ready"
+run_helper "${CANVAS_ENV[@]}" -- unpause
+assert "backup cleanup retains the restore hold" test -f "$RUN_DIR/canvas-hold"
+run_helper "${CANVAS_ENV[@]}" -- canvas-restore-release
+assert "restore owner can release its hold" test ! -e "$RUN_DIR/canvas-hold"
 
 # b) usage errors: no verb, and an unknown verb -> exit 2.
 run_helper "${BASE_ENV[@]}" --

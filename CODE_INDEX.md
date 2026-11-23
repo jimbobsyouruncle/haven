@@ -118,6 +118,8 @@
 - is_running()
 - trusted_run_dir()
 - ensure_run_dir()
+- hold_canvas()
+- release_canvas()
 - cmd_pause()
 - resume_apps()
 - cmd_unpause()
@@ -173,6 +175,7 @@
 - die()
 - confirm_yes()
 - verify_databases()
+- check_canvas_copy()
 - hermes_backup_path()
 - restore_home_dir()
 
@@ -872,6 +875,9 @@
 - docker_log_lacks()
 - run_safety_restore()
 - run_restore_env()
+- die()
+- warn()
+- log()
 
 ## scripts/test-bootstrap.sh
 - ok()

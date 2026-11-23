@@ -51,6 +51,7 @@ Open WebUI stores essentially all of its state in SQLite, not in config files. T
 | Container image versions in use | `host/container-images.txt` |
 | Local edits to compose files and the pipe | `host/` |
 | Git commit and any uncommitted changes | `host/git-state.txt`, `host/uncommitted.patch` |
+| Agent Canvas persona state and projects | `files/canvas_data/{persona,projects}` and `env/canvas-state-key` in the encrypted system-mode snapshot |
 
 ### Deliberately not covered
 
@@ -445,9 +446,66 @@ account in the `docker` group. The two units split the job:
 The capture writes a consistent copy to its `StateDirectory`; the upload sends
 that copy to R2 and holds the only copy of the credentials. Neither unit can do
 the other's job, so a compromise of either half is contained. A single fixed,
-root-owned helper (`backup-containers.sh`) bridges the only gap — pausing the
-containers for a point-in-time capture — and it never starts or stops a
-container.
+root-owned helper (`backup-containers.sh`) pauses the legacy writers and
+coordinates Canvas through `haven-canvas.service`. It holds Canvas stopped
+through capture and attempts recovery even after a failed or interrupted run.
+It starts the supervisor only for a previously running, enabled instance
+whose configuration remains enabled. The supervisor rechecks its firewall.
+
+### Agent Canvas cold capture
+
+System-mode capture copies the resolved `${HAVEN_DATA_DIR}/canvas_data/persona`
+and `projects` trees while Canvas is stopped, including settings, conversation
+data, Git metadata and worktrees, SQLite files and their WAL/SHM sidecars.
+No Canvas cache patterns are excluded. The copy stays on the source
+filesystem and keeps symlinks confined to each authorized tree. Devices,
+special files and links escaping either tree are omitted. Live permissions
+stay unchanged. Staged files are private to the backup account and the
+manifest records the source UID/GID. The existing Restic upload encrypts both
+trees and the Canvas settings key before sending them to R2.
+
+An enabled instance with missing or unreadable data, an unconfirmed writer
+hold, or any partial copy makes the run incomplete. No partial Canvas tree
+or unpaired key is published as restorable. A disabled instance with retained
+state can still be cold-captured without starting it. Canvas capture requires
+the existing system-mode writer coordination. Manual dry runs and user-mode
+backups do not stop Canvas. Configure and exercise the existing timer before
+relying on Canvas backups. Schedule key changes outside the capture window.
+
+### Recovering Canvas
+
+Pre-Canvas snapshots leave the Canvas tree alone. For a snapshot with a
+complete Canvas copy, provision the dedicated `haven-canvas` identity and
+its root-protected destination as described in the
+[Canvas runbook](../openhands/README.md#public-deployment-acceptance).
+Live restore requires root. It stops and holds the supervisor, prepares a
+private replacement using the destination persona UID/GID, and retains the
+old tree under `canvas_data.pre-restore.*/previous`. Canvas stays stopped.
+
+The snapshot's `CANVAS_STATE_KEY` is recovered as the root-owned mode-0600
+`canvas_data/settings-key.recovered`, outside the mounted children. Restore
+does not change the active stack environment or credentials. If the keys
+differ, securely restore the recovered value to `CANVAS_STATE_KEY` in the
+protected stack environment. Without the matching key, provider settings
+encrypted with it cannot be read and the supervisor refuses to start.
+After confirming the restored settings work, retain a protected recovery
+copy and remove the recovered-key file before a future key rotation.
+DNS, the ingress grant, the Agent Server key and any revoked provider or
+GitHub credentials must be provisioned separately.
+
+For Jarvis verification, review the existing night's capture and upload
+receipts and rehearse with an exact snapshot ID:
+
+```bash
+sudo journalctl -u haven-backup-capture.service -u haven-backup-upload.service --since today \
+  | grep -E 'event=(canvas_capture|backup_success|backup_incomplete)'
+sudo /opt/haven/backup/restore.sh --test --snapshot SNAPSHOT_ID
+```
+
+Expect `canvas_capture status=complete`, a successful upload and the Canvas
+tree and key confirmation in the scratch rehearsal. Keep scratch output and
+contents private. The rehearsal neither installs the recovered key nor
+changes the supervisor.
 
 ### What card F creates (one bootstrap, on the host)
 

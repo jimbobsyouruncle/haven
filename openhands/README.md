@@ -661,11 +661,12 @@ After deploy:
 Use `systemctl stop haven-canvas.service` to stop Canvas immediately. To
 withdraw the hostname and disable startup on subsequent boots, set
 `CANVAS_ENABLED=off` and render the stack through the normal deployment path.
-Preserve `canvas_data` and the protected state key for rollback. Canvas state
-is separate from legacy OpenHands and Hermes and is outside the existing
-nightly capture set. If retaining a Canvas recovery copy, stop the unit and
-copy its state into owner-controlled encrypted storage with the state key
-protected separately. Restore with the same dedicated UID/GID and permissions.
+Preserve `canvas_data` and the protected state key for rollback. The existing
+encrypted nightly system backup cold-captures the Canvas persona and project
+trees and their settings key. When Canvas was running, capture restarts it
+through the firewall-verified supervisor after copying. Verify one complete
+capture and scratch rehearsal before relying on regular Canvas activation.
+See [Canvas backup and recovery](../backup/README.md#agent-canvas-cold-capture).
 
 ### Offline persona execution boundary (#275)
 

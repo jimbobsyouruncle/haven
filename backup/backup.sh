@@ -1171,6 +1171,57 @@ if [[ -d "${OPENHANDS_STATE_DIR}" ]]; then
   rsync_classify "$rc" "OpenHands state" "openhands"
 fi
 
+local canvas_state=absent canvas_ids=none canvas_key canvas_path
+local canvas_root="$HAVEN_DATA_DIR/canvas_data"
+if [[ "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_ENABLED)" == on ||
+      -e "$canvas_root" || -L "$canvas_root" ]]; then
+  canvas_state=incomplete
+  canvas_ids="$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_UID):$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_GID)"
+  if [[ -e "$canvas_root/settings-key.recovered" || -L "$canvas_root/settings-key.recovered" ]]; then
+    canvas_key=""
+    if [[ -f "$canvas_root/settings-key.recovered" && ! -L "$canvas_root/settings-key.recovered" &&
+          "$(stat -c '%u:%a' -- "$canvas_root/settings-key.recovered" 2>/dev/null)" == 0:600 &&
+          "$(realpath -e -- "$canvas_root/settings-key.recovered" 2>/dev/null)" == "$canvas_root/settings-key.recovered" ]]; then
+      canvas_key="$(< "$canvas_root/settings-key.recovered")"
+    fi
+  else
+    canvas_key="$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_STATE_KEY)"
+  fi
+  # Only the system capture helper may attest that there are no writers.
+  # Copy each authorized root separately so relative symlinks cannot escape it.
+  if (( EXTERNAL_CONTROL )) && [[ "$MODE" != dryrun &&
+       -f "$CONTROL_RUN_DIR/canvas-ready" && ! -L "$CONTROL_RUN_DIR/canvas-ready" &&
+       "$canvas_ids" =~ ^[1-9][0-9]*:[1-9][0-9]*$ &&
+       "$canvas_key" =~ ^[A-Za-z0-9+/]{43}=$ &&
+       "$(stat -c '%u:%a' -- "$canvas_root" 2>/dev/null)" == 0:700 ]]; then
+    canvas_state=complete
+    for canvas_path in persona projects; do
+      if [[ ! -d "$canvas_root/$canvas_path" ||
+            "$(realpath -e -- "$canvas_root/$canvas_path" 2>/dev/null)" != "$canvas_root/$canvas_path" ||
+            "$(stat -c '%u:%g:%a' -- "$canvas_root/$canvas_path" 2>/dev/null)" != "$canvas_ids:700" ]] ||
+         ! mkdir -p -- "$STAGING_DIR/files/canvas_data/$canvas_path" ||
+         ! rsync -ax --safe-links --no-devices --no-specials --no-owner --no-group \
+            --chmod=Du=rwx,Dgo=,Fu+rw,Fgo= "$canvas_root/$canvas_path/" \
+            "$STAGING_DIR/files/canvas_data/$canvas_path/" >/dev/null 2>&1; then
+        canvas_state=incomplete
+        break
+      fi
+    done
+    if [[ "$canvas_state" == complete ]]; then
+      (umask 077; printf '%s\n' "$canvas_key" > "$STAGING_DIR/env/canvas-state-key") ||
+        canvas_state=incomplete
+    fi
+  fi
+  unset canvas_key
+  if [[ "$canvas_state" != complete ]]; then
+    # A partial cold copy must not be mistaken for a recoverable Canvas tree.
+    rm -rf -- "$STAGING_DIR/files/canvas_data" "$STAGING_DIR/env/canvas-state-key"
+    mark_incomplete "canvas_capture_incomplete"
+    warn "Canvas cold capture was unavailable or incomplete."
+  fi
+  event "canvas_capture" "status=$canvas_state"
+fi
+
 unpause_webui || die "Could not resume app containers after capture."
 [[ "$MODE" == "dryrun" ]] || ok "Capture complete; application services resumed."
 
@@ -1413,6 +1464,8 @@ source_host        : ${BACKUP_HOST}
 consistency_method : ${CONSISTENCY}
 run_status         : $( (( INCOMPLETE_COUNT > 0 )) && echo "incomplete" || echo "complete" )
 databases_captured : ${DB_COUNT}
+canvas_capture     : ${canvas_state}
+canvas_owner       : $( [[ "$canvas_state" == complete ]] && printf '%s' "$canvas_ids" || printf '%s' n/a )
 ollama_models      : ${OLLAMA_MODEL_COUNT:-0} (names only; weights not backed up)
 restic_version     : $(restic version 2>/dev/null | head -n1)
 layout             : repo-relative (v2)
@@ -1423,10 +1476,12 @@ databases/   Consistent SQLite snapshots, repo-relative, discovered at run time
              (webui_data/... and hermes_data/...).
 files/       Uploads, vector data, and the whole durable hermes_data tree
              (rebuildable/volatile content excluded), repo-relative.
+             canvas_data/{persona,projects} is a cold copy when present.
 hermes/      Durable ~/.hermes state; runtime/cache content excluded.
 openhands/   ~/.openhands state; cache, temp, and logs excluded.
 host/        Compose files, scripts, Caddyfile, model list, host metadata.
 env/         Active .env configuration.
+             canvas-state-key accompanies a complete Canvas cold copy.
 
 To restore, see backup/restore.sh in the haven repository.
 MANIFEST
