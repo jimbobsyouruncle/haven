@@ -198,6 +198,7 @@
 - scripts/generate-agent-context.py - Generate Haven's architectural maps with the pinned shared generator.
 - scripts/install-root.py - Recoverable installation/identity handoff using the ADR-0006 checkpoint.
 - scripts/no-masked-literals-baseline.txt
+- scripts/provision-persona.sh - Provision and verify a dedicated Haven persona identity and storage as root.
 - scripts/prune-conversations.sh - FILE: scripts/prune-conversations.sh
 - scripts/prune-docker-cache.sh - FILE: scripts/prune-docker-cache.sh
 - scripts/reset-passwords.sh - FILE: scripts/reset-passwords.sh
@@ -249,6 +250,7 @@
 - scripts/test-install-root.sh - ADR-0006 and coordinated identity fixtures. The optional Compose check uses
 - scripts/test-install-tailscale-migration.sh - FILE: scripts/test-install-tailscale-migration.sh
 - scripts/test-post-deploy-verify-log-env.sh - FILE: scripts/test-post-deploy-verify-log-env.sh
+- scripts/test-provision-persona.sh - Run as root in a disposable environment. Account mutations use only fixtures.
 - scripts/test-prune-conversations.sh - FILE: scripts/test-prune-conversations.sh
 - scripts/test-prune-docker-cache.sh - FILE: scripts/test-prune-docker-cache.sh
 - scripts/test-read-probe.sh - FILE: scripts/test-read-probe.sh
@@ -277,6 +279,7 @@
 - scripts/lib/haven-env.sh - FILE: scripts/lib/haven-env.sh
 - scripts/lib/hybrid-ai-env.sh - Transitional import for installed legacy callers; no independent defaults.
 - scripts/lib/installer-env-render.sh - Render installer-owned settings to stdout. The installer owns the private
+- scripts/lib/persona-reservations.sh - Shared snapshot and provisioner validation. Records are name:uid:gid.
 - scripts/lib/read-probe.sh - FILE: scripts/lib/read-probe.sh
 - scripts/lib/repository-identity.sh - Source-only repository identity selection. Process environment only: never
 - scripts/lib/tailscale-resolve.sh - FILE: scripts/lib/tailscale-resolve.sh

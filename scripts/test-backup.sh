@@ -1199,9 +1199,13 @@ fixture_key="$(openssl rand -base64 32)"
 canvas_env="$TMPROOT/canvas-stack.env"
 printf 'CANVAS_ENABLED=on\nCANVAS_UID=23456\nCANVAS_GID=23456\nCANVAS_STATE_KEY=%s\n' "$fixture_key" > "$canvas_env"
 touch "$CONTROL_DRY/canvas-ready"
+export PERSONA_FIXTURE_RECORD="$REPO/.persona-identities"
+printf 'canvas:997:997\nretired:996:996\n' > "$PERSONA_FIXTURE_RECORD"
+chmod 600 "$PERSONA_FIXTURE_RECORD"
 cat > "$STUB/stat" <<'EOF'
 #!/usr/bin/env bash
 case "${*: -1}" in
+  "$PERSONA_FIXTURE_RECORD") [[ "$2" == '%u:%g:%a:%h' ]] && { echo 0:0:600:1; exit; } ;;
   "$CANVAS_FIXTURE_ROOT") [[ "$2" == '%u:%a' ]] && { echo 0:700; exit; } ;;
   "$CANVAS_FIXTURE_ROOT/persona"|"$CANVAS_FIXTURE_ROOT/projects")
     [[ "$2" == '%u:%g:%a' ]] && { echo 23456:23456:700; exit; } ;;
@@ -1219,6 +1223,10 @@ canvas_args=(HAVEN_STACK_ENV_FILE="$canvas_env" BACKUP_CONF_DIR="$EMPTYCONF"
 run_backup_env "${canvas_args[@]}" -- --non-interactive --stage-only
 check "Canvas cold capture succeeds without backup credentials" 0 "$RUN_RC"
 assert "Canvas manifest records the source persona UID/GID" grep -Eq '^canvas_owner +: 23456:23456$' "$STAGE/MANIFEST.txt"
+assert "Persona reservations are captured including retired identities" \
+  cmp -s "$PERSONA_FIXTURE_RECORD" "$STAGE/env/persona-identities"
+assert "Staged persona reservations are private" test "$(stat -c %a "$STAGE/env/persona-identities")" = 600
+assert "Persona capture status is recorded" grep -Eq '^persona_identities +: complete$' "$STAGE/MANIFEST.txt"
 assert "Canvas staged key is private" test "$(stat -c %a "$STAGE/env/canvas-state-key")" = 600
 assert "Canvas SQLite WAL is staged" test -f "$STAGE/files/canvas_data/persona/state.sqlite-wal"
 assert "Canvas Git workspace metadata is staged" test -d "$STAGE/files/canvas_data/projects/.git"
@@ -1236,6 +1244,17 @@ canvas_scratch="$(tail -n1 "$TMPROOT/canvas-restore.args")"
 canvas_rows="$("$REAL_SQLITE3" "$canvas_scratch/files/canvas_data/persona/state.sqlite" 'select count(*) from t;')"
 assert "Canvas WAL rows survive scratch restore" test "$canvas_rows" = 7
 assert "Canvas scratch restore preserves its key" cmp -s "$CANVAS_CAPTURE/env/canvas-state-key" "$canvas_scratch/env/canvas-state-key"
+assert "Scratch restore preserves persona reservations" \
+  cmp -s "$PERSONA_FIXTURE_RECORD" "$canvas_scratch/env/persona-identities"
+printf 'duplicate:997:995\n' >> "$CANVAS_CAPTURE/env/persona-identities"
+SNAPSHOT_SRC="$CANVAS_CAPTURE" run_restore_env -- --test
+check "Scratch restore rejects duplicate reserved UIDs" 1 "$RUN_RC"
+cp -a "$STAGE/env/persona-identities" "$CANVAS_CAPTURE/env/persona-identities"
+printf 'duplicate:997:995\n' >> "$PERSONA_FIXTURE_RECORD"
+run_backup_env "${canvas_args[@]}" -- --non-interactive --stage-only
+check "Invalid persona reservations mark backup incomplete" 3 "$RUN_RC"
+assert "Invalid persona reservations are omitted" test ! -e "$STAGE/env/persona-identities"
+cp -a "$CANVAS_CAPTURE/env/persona-identities" "$PERSONA_FIXTURE_RECORD"
 assert "Canvas scratch restore leaves the supervisor untouched" test ! -s "$DOCKER_LOG"
 
 if (( EUID != 0 )); then

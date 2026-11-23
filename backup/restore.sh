@@ -188,6 +188,24 @@ verify_databases() {
   return 0
 }
 
+check_persona_reservations() {
+  local root="$1" record="$1/env/persona-identities"
+  if [[ -e "$record" || -L "$record" ]]; then
+    # shellcheck source=scripts/lib/persona-reservations.sh
+    source "${HAVEN_LIB_DIR}/persona-reservations.sh"
+    [[ -f "$record" && "$(realpath -e -- "$record")" == "$record" &&
+       "$(stat -c '%a:%h' -- "$record")" == 600:1 ]] || die "Unsafe staged persona identity reservations."
+    persona_validate_reservations "$record" || die "Invalid staged persona identity reservations."
+    ok "Persona identity reservations are present in the staged snapshot."
+  elif [[ -f "$root/MANIFEST.txt" && ! -L "$root/MANIFEST.txt" ]] &&
+       grep -Eq '^persona_identities[[:space:]]*:[[:space:]]*complete$' "$root/MANIFEST.txt"; then
+    die "Snapshot's recorded persona identity reservations are missing."
+  elif [[ -f "$root/MANIFEST.txt" && ! -L "$root/MANIFEST.txt" ]] &&
+       grep -Eq '^persona_identities[[:space:]]*:[[:space:]]*incomplete$' "$root/MANIFEST.txt"; then
+    warn "Snapshot has incomplete persona identity reservations. Use a verified record for identity recovery."
+  fi
+}
+
 check_canvas_copy() {
   local root="$1" data="$1/files/canvas_data" key="$1/env/canvas-state-key" path
   CANVAS_SNAPSHOT=0
@@ -274,6 +292,7 @@ if [[ "$MODE" == "test" ]]; then
 
   STAGED="$(find "$TEST_DIR" -type d -name databases | head -n1)"
   [[ -n "$STAGED" ]] || die "Restored data contains no databases/ directory."
+  check_persona_reservations "$(dirname "$STAGED")"
   check_canvas_copy "$(dirname "$STAGED")"
 
   if ! command -v sqlite3 >/dev/null 2>&1; then
@@ -326,6 +345,7 @@ restic restore "$SNAPSHOT_ID" --tag haven --tag hybrid-ai --target "$RESTORE_WOR
 STAGED="$(find "$RESTORE_WORK" -type d -name databases | head -n1)"
 [[ -n "$STAGED" ]] || die "Snapshot has no databases/ directory. Wrong snapshot?"
 STAGED_ROOT="$(dirname "$STAGED")"
+check_persona_reservations "$STAGED_ROOT"
 check_canvas_copy "$STAGED_ROOT"
 if (( CANVAS_SNAPSHOT )); then
   (( EUID == 0 )) || die "Restoring Canvas requires root and the provisioned Canvas identity."

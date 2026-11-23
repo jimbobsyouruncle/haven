@@ -37,7 +37,13 @@ def main():
         return prefix + repository + slash + name.split(":", 1)[0]
 
     original = index.read_text(encoding="utf-8")
-    index.write_text(reference.sub(strip_pin, original), encoding="utf-8")
+    content = reference.sub(strip_pin, original)
+    # Keep shell fixtures and their specific helpers indexed. Omit common
+    # assertion, logging and cleanup names to leave room for production symbols.
+    fixture = re.compile(r"^## scripts/test-[^\n]+\.sh\n(?:- [^\n]*\n)+", re.MULTILINE)
+    boilerplate = re.compile(r"^- (?:ok|bad|cleanup|assert|die|warn|log|check)\(\)\n", re.MULTILINE)
+    content = fixture.sub(lambda match: boilerplate.sub("", match[0]), content)
+    index.write_text(content, encoding="utf-8")
     # Enforce the published budget after pin normalization. The upstream
     # generator gets bounded headroom for full Dockerfile image references.
     for path in (args.output_dir / "REPO_MAP.md", index):

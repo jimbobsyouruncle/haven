@@ -620,11 +620,14 @@ outside the sandbox boundary.
 
 Before an owner-merge deploy that enables Canvas:
 
-- Create a dedicated system account and group named `haven-canvas` with
-  non-reused UID/GID and no supplementary grants. Create
-  `${HAVEN_DATA_DIR}/canvas_data` as root and its `persona` and `projects`
-  subdirectories as that identity. Set all three to mode `0700`. Only the
-  child directories are mounted.
+- On Jarvis, run `sudo /opt/haven/scripts/provision-persona.sh canvas`.
+  Save the printed `uid` and `gid` as `CANVAS_UID` and `CANVAS_GID` in the
+  protected stack environment. Verify the host setup with
+  `sudo /opt/haven/scripts/provision-persona.sh canvas --check`.
+  The command creates `haven-canvas` and its private state directories.
+  Only `persona` and `projects` are mounted. If Canvas was provisioned
+  manually, preserve the existing accounts and data and review their
+  identity before switching to the reservation-based command.
 - Make `canvas.<TLS_DOMAIN>` resolve to the existing Haven HTTPS endpoint on
   the authorized network. In the protected stack env file, set
   `CANVAS_UID`, `CANVAS_GID`, `CANVAS_SESSION_KEY` (32 random bytes as hex),

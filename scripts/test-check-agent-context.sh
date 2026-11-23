@@ -77,6 +77,17 @@ FROM --platform=$BUILDPLATFORM registry.example:5000/library/python:3.12.16-slim
 FROM builder AS final
 EOF
 
+cat > "$TMP_REPO/scripts/test-fixture.sh" <<'EOF'
+#!/usr/bin/env bash
+fixture_helper() {
+  true
+}
+check() {
+  fixture_helper
+}
+check
+EOF
+
 git -C "$TMP_REPO" init -q
 git -C "$TMP_REPO" config user.name "fixture"
 git -C "$TMP_REPO" config user.email "fixture@example.com"
@@ -170,6 +181,14 @@ restore_fresh
 # Keep structural details while removing the mutable image reference parts.
 if ! grep -Fxq -- "- FROM --platform=\$BUILDPLATFORM registry.example:5000/library/python AS builder" "$TMP_REPO/CODE_INDEX.md"; then
   echo "FAIL: Dockerfile image name, platform and stage missing"
+  exit 1
+fi
+
+if ! grep -Fxq '## scripts/test-fixture.sh' "$TMP_REPO/CODE_INDEX.md" ||
+   ! grep -Fxq -- '- fixture_helper()' "$TMP_REPO/CODE_INDEX.md" ||
+   grep -Fxq -- '- check()' "$TMP_REPO/CODE_INDEX.md" ||
+   ! grep -Fxq -- '- greet()' "$TMP_REPO/CODE_INDEX.md"; then
+  echo "FAIL: fixture paths and production symbols must remain discoverable"
   exit 1
 fi
 
