@@ -571,10 +571,12 @@ with `forward_auth` against `/verify` and a separate synthetic Canvas grant usin
 Caddy Basic authentication. It checks browser, API and WebSocket upgrade denials,
 including a valid Haven cookie without a Canvas grant. The fixture strips both
 ingress credentials before proxying and checks that the Agent Server still
-requires its own session key. It also checks positive browser and API requests.
-All test traffic stays inside the fixture loopback network. The probe trusts a
-disposable local TLS certificate. Production TLS and an authenticated
-conversation WebSocket still need qualification. The production auth snippet is optional
+requires its own session key. The test creates a conversation in the synthetic
+worktree and checks that the authenticated event socket returns conversation
+state through Caddy. An invalid backend key must close the socket before it
+receives conversation data. The fixture checks for absent host port mappings
+and refused connections on the backend ports from a separate network namespace.
+The probe trusts a disposable local TLS certificate. The production auth snippet is optional
 globally, so a Canvas site would require an authenticated HTTPS configuration to
 exist before rendering the route. Canvas and its backend ports would stay off host
 port mappings and shared application networks. Test both layers independently.
@@ -588,14 +590,39 @@ The route verifies the Haven session first and strips both ingress credentials
 before proxying. The Canvas session API key uses its own header.
 
 The snippet is inactive in Haven's installed Caddy configuration. Before
-enabling it, verify an authorized conversation WebSocket, confirm the Canvas
-listeners cannot be reached around Caddy, and demonstrate cross-persona denial
-with the required GitHub and inference routes enabled. For side-by-side
+enabling it for public work, qualify the effective deployment with the required
+GitHub and inference routes enabled. For side-by-side
 activation, give Canvas a fresh persona state directory. Keep the legacy
 OpenHands state and Hermes setup available for rollback. Rehearse withdrawing
 the Canvas route and stopping its runtime while retaining its state for
 recovery. Any later import of legacy data needs a supported export/import path
 and separate approval for destructive changes.
+
+### Public deployment acceptance
+
+A later activation change needs a dedicated, non-reused persona UID/GID and
+private state, a Canvas HTTPS hostname and grant, and owner-provisioned GitHub
+and provider credentials scoped to the public persona. Reuse the Haven login
+and the Canvas ingress snippet above. When testing the deployed candidate:
+
+1. Use the browser to start and reopen a conversation. Confirm the event socket
+   delivers events over HTTPS. Repeat with a missing Haven session, Canvas
+   grant, and Agent Server key independently and confirm access is denied.
+2. From the host, LAN, and a separate persona with its normal egress enabled,
+   verify the Canvas and Agent Server listeners cannot be reached directly.
+   From Canvas, verify denial of peer state, credentials, checkouts, and
+   services with the intended GitHub and inference destinations enabled.
+3. Use an authorized public repository and a selected provider to clone, make
+   and test a small change in a worktree, and exercise writing a feature branch
+   to a designated test repository. Verify the same GitHub credential is denied
+   write access outside its grant. Keep credentials and conversation payloads
+   out of evidence.
+4. Run a normal independent Hermes workflow while Canvas is active. Test
+   delegation separately if the installed integration supports it.
+5. On the Raspberry Pi 5, record idle and sustained-workload Canvas CPU and
+   memory, alongside host memory headroom and Hermes responsiveness. Rehearse
+   withdrawing the Canvas route and stopping its runtime. Confirm legacy
+   OpenHands and Hermes are still usable and Canvas state is retained.
 
 ### Offline persona execution boundary (#275)
 
