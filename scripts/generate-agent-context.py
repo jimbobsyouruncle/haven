@@ -17,7 +17,7 @@ def main():
 
     subprocess.run(
         [sys.executable, str(args.generator), "--root", str(args.root),
-         "--output-dir", str(args.output_dir), "--max-bytes", "30720"],
+         "--output-dir", str(args.output_dir), "--max-bytes", "32768"],
         check=True,
     )
 
@@ -38,6 +38,15 @@ def main():
 
     original = index.read_text(encoding="utf-8")
     index.write_text(reference.sub(strip_pin, original), encoding="utf-8")
+    # Enforce the published budget after pin normalization. The upstream
+    # generator gets bounded headroom for full Dockerfile image references.
+    for path in (args.output_dir / "REPO_MAP.md", index):
+        content = path.read_text(encoding="utf-8").replace(
+            "Size limit: 32768 bytes per file", "Size limit: 30720 bytes per file", 1
+        )
+        if len(content.encode("utf-8")) > 30720:
+            sys.exit(f"{path} exceeds the 30720-byte agent context limit")
+        path.write_text(content, encoding="utf-8")
 
 
 if __name__ == "__main__":

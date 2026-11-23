@@ -600,10 +600,44 @@ and separate approval for destructive changes.
 
 ### Public deployment acceptance
 
-A later activation change needs a dedicated, non-reused persona UID/GID and
-private state, a Canvas HTTPS hostname and grant, and owner-provisioned GitHub
-and provider credentials scoped to the public persona. Reuse the Haven login
-and the Canvas ingress snippet above. When testing the deployed candidate:
+The canonical installer enables Canvas only with `CANVAS_ENABLED=on` and
+authenticated Haven TLS. The pinned ARM64 container has no published ports.
+An isolated bridge connects Caddy to Canvas port 8000. A separate bridge
+permits outbound public IPv4 HTTPS and DNS to the configured public resolvers.
+Host input/output, peer networks, private and on-link IPv4 destinations, routed
+DNAT, and IPv6 are denied. Public package mirrors must support HTTPS. The
+policy allows ordinary public HTTPS destinations, with GitHub and provider
+permissions enforced by the credentials provisioned for the persona.
+
+`haven-canvas.service` verifies both bridges and the firewall before creating
+the transient startup grant. Docker cannot auto-restart Canvas. The unit also
+checks policy and container identity periodically and removes its grant,
+disconnects egress, and stops Canvas on failure. Both the host mangle and
+filter tables enforce the policy. Drift in one table leaves the other
+enforcing it while the supervisor stops Canvas. The checks run every two
+seconds plus command latency. Simultaneous removal of both host policies is
+outside the sandbox boundary.
+
+Before an owner-merge deploy that enables Canvas:
+
+- Create a dedicated system account and group named `haven-canvas` with
+  non-reused UID/GID and no supplementary grants. Create
+  `${HAVEN_DATA_DIR}/canvas_data` as root and its `persona` and `projects`
+  subdirectories as that identity. Set all three to mode `0700`. Only the
+  child directories are mounted.
+- Make `canvas.<TLS_DOMAIN>` resolve to the existing Haven HTTPS endpoint on
+  the authorized network. In the protected stack env file, set
+  `CANVAS_UID`, `CANVAS_GID`, `CANVAS_SESSION_KEY` (32 random bytes as hex),
+  `CANVAS_PASSWORD_HASH` (a bcrypt hash for the separate `canvas` Basic grant),
+  and `CANVAS_ENABLED=on`. The installer generates and preserves
+  `CANVAS_STATE_KEY` for stored provider settings.
+- Provision a GitHub credential scoped to the approved public repositories and
+  Git operations, and enter the selected public provider key in Canvas. Keep
+  credentials in the persona's protected storage and out of clone URLs and
+  worktrees. Retain the Agent Server key for the authenticated Canvas backend
+  prompt. Use a workspace under `/projects` for persistent checkouts.
+
+After deploy:
 
 1. Use the browser to start and reopen a conversation. Confirm the event socket
    delivers events over HTTPS. Repeat with a missing Haven session, Canvas
@@ -623,6 +657,15 @@ and the Canvas ingress snippet above. When testing the deployed candidate:
    memory, alongside host memory headroom and Hermes responsiveness. Rehearse
    withdrawing the Canvas route and stopping its runtime. Confirm legacy
    OpenHands and Hermes are still usable and Canvas state is retained.
+
+Use `systemctl stop haven-canvas.service` to stop Canvas immediately. To
+withdraw the hostname and disable startup on subsequent boots, set
+`CANVAS_ENABLED=off` and render the stack through the normal deployment path.
+Preserve `canvas_data` and the protected state key for rollback. Canvas state
+is separate from legacy OpenHands and Hermes and is outside the existing
+nightly capture set. If retaining a Canvas recovery copy, stop the unit and
+copy its state into owner-controlled encrypted storage with the state key
+protected separately. Restore with the same dedicated UID/GID and permissions.
 
 ### Offline persona execution boundary (#275)
 

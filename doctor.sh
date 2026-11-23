@@ -622,6 +622,22 @@ for svc in ollama open-webui haven-status haven-proxy haven-openhands; do
   esac
 done
 
+if grep -Fq '  canvas:' "$APP_DIR/docker-compose.yml"; then
+  CANVAS_STATE="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' haven-canvas 2>/dev/null || true)"
+  case "$CANVAS_STATE" in
+    healthy) pass "Canvas Agent Server health probe passed" ;;
+    starting) warn "Canvas is initializing" "Wait for the Agent Server health probe and run ./doctor.sh again." ;;
+    *) fail "Canvas health: ${CANVAS_STATE:-container missing}" "Check the installer result and the Canvas persona state ownership." ;;
+  esac
+  if [[ $EUID == 0 ]]; then
+    if bash "$APP_DIR/scripts/sandbox-firewall.sh" canvas-check; then
+      pass "Canvas firewall policy matches the active bridge topology"
+    else
+      fail "Canvas firewall policy failed verification" "Check haven-canvas.service before restarting Canvas."
+    fi
+  fi
+fi
+
 # --- Hermes :: shellcheck is present in the image ----------------------------
 # The repo's own shell lint and the hermes harnesses assume shellcheck is in the
 # image: it is an apt package in the root layer, and the runtime uid cannot add

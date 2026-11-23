@@ -97,6 +97,12 @@ readonly TAG="haven-sandbox-egress"
 readonly CHAIN="DOCKER-USER"
 readonly IPT_LOCK_WAIT="5"
 
+# The Canvas bridge has a mandatory, separately tagged policy. Keep its
+# refusal semantics independent of the legacy sandbox's degraded behavior.
+if [[ $# == 1 && ${1:-} =~ ^canvas-(apply|check)$ ]]; then
+  exec python3 "$(dirname -- "${BASH_SOURCE[0]}")/canvas-firewall.py" "${BASH_REMATCH[1]}"
+fi
+
 # The Docker networks the app container is attached to. Each resolves to a host
 # bridge interface: `br-` + the first 12 hex characters of its network id.
 APP_NETWORKS=(haven haven-coder)

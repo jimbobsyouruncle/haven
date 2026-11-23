@@ -485,6 +485,9 @@ tls_variants() {
   if tls_is_on && tls_auth_is_on; then
     variants="${variants} auth"
   fi
+  if [[ ${CANVAS_ENABLED:-off} == on ]]; then
+    variants="${variants} canvas"
+  fi
   printf '%s\n' "$variants"
 }
 
@@ -565,7 +568,20 @@ tls_prepare_render_values() {  # VARIANTS
 tls_render_to_file() {  # TEMPLATE VARIANTS OUTFILE
   local template="$1" variants="$2" out="$3"
   [[ -f $template ]] || tls__die "Missing template: ${template}"
-  if ! tls_render_template "$template" "$variants" | tls_substitute > "$out"; then
+  if [[ " $variants " == *" canvas "* ]] &&
+    [[ " $variants " != *" on "* || " $variants " != *" auth "* ]]; then
+    tls__die "Canvas ingress requires HTTPS and Haven authentication."
+  fi
+  if ! tls_render_template "$template" "$variants" | tls_substitute |
+    awk -v snippet="${APP_DIR:-.}/openhands/canvas-ingress.caddyfile" '
+      $0 == "%CANVAS_INGRESS_SNIPPET%" {
+        while ((result = (getline line < snippet)) > 0) print line
+        if (result < 0) exit 1
+        close(snippet)
+        next
+      }
+      { print }
+    ' > "$out"; then
     rm -f -- "$out"
     tls__die "Rendering ${template} failed."
   fi
@@ -694,6 +710,16 @@ tls_validate_caddyfile() {  # FILE
     # control moved to the installer (install.sh -> tls_auth_fail_closed, which
     # rejects an empty user, hash or cookie secret before any render).
   )
+  if grep -Fq 'import canvas_ingress auth:8080 canvas:8000 canvas' "$file"; then
+    # Validate the provisioned grant without emitting it in validation output.
+    local bcrypt_pattern='^[$]2[aby][$][0-9]{2}[$][./A-Za-z0-9]{53}$'
+    local canvas_hash
+    canvas_hash="$(tls_compose_unescape "${CANVAS_PASSWORD_HASH:-}")"
+    if [[ ! $canvas_hash =~ $bcrypt_pattern ]]; then
+      tls__die "Canvas requires a valid bcrypt grant in CANVAS_PASSWORD_HASH."
+    fi
+    envs+=("CANVAS_PASSWORD_HASH=$canvas_hash")
+  fi
   # A DNS-01 render must be validated in a container: `caddy validate`
   # provisions the TLS app and the solver reads its credential from a file, and
   # a bare host caddy cannot be given that file.
@@ -940,7 +966,7 @@ tls_load_env_file_values() {  # FILE
       HAVEN_TLS_TOKEN_FILE|TLS_HOSTS|ACME_AUTO_HTTPS|CADDY_IMAGE|LOCAL_DOMAIN|\
       RFC2136_KEY_NAME|RFC2136_SERVER|AUTH_ENABLED|HAVEN_AUTH_USER|\
       HAVEN_AUTH_HASH|HAVEN_AUTH_COOKIE_SECRET|\
-      HAVEN_AUTH_COOKIE_MAX_AGE) ;;
+      HAVEN_AUTH_COOKIE_MAX_AGE|CANVAS_ENABLED|CANVAS_PASSWORD_HASH) ;;
       *) continue ;;
     esac
     [[ -n "${!key:-}" ]] && continue

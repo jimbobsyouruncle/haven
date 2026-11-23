@@ -30,32 +30,61 @@ container=
 auth_container=
 caddy_container=
 cleanup() {
+  local rc=$?
+  if (( rc != 0 )) && [[ -n $container ]]; then
+    # This container has synthetic credentials only. Mask generated keys so
+    # failures can be diagnosed without copying them into Actions logs.
+    podman --remote=false logs "$container" 2>&1 |
+      sed -E 's/[[:xdigit:]]{64}/[fixture value]/g' >&2 || true
+  fi
   for id in "$caddy_container" "$auth_container" "$container"; do
     if [[ -n $id ]]; then
       podman --remote=false stop --time 5 "$id" >/dev/null 2>&1 || true
     fi
   done
+  if [[ -n $container ]]; then
+    podman --remote=false rm -f "$container" >/dev/null 2>&1 || true
+  fi
   podman --remote=false unshare rm -rf -- "$fixture"
 }
 trap cleanup EXIT
-install -d -m 0700 "$fixture/developer" "$fixture/peer"
+install -d -m 0700 "$fixture/developer" "$fixture/projects" "$fixture/peer"
 printf 'synthetic peer state\n' >"$fixture/peer/peer-state"
 openssl rand -hex 32 >"$fixture/developer/repo-token"
 chmod 0600 "$fixture/developer/repo-token"
-container=$(podman --remote=false run --detach --rm --pull=never \
+container=$(podman --remote=false run --detach --pull=never \
   --platform linux/arm64 --network none --http-proxy=false \
+  --user 20001:20001 --env HOME=/persona --env XDG_CONFIG_HOME=/persona/.config \
+  --env OH_PERSISTENCE_DIR=/persona/.openhands \
   --cap-drop ALL --security-opt no-new-privileges --image-volume=ignore \
-  --log-driver=none --memory=3g --cpus=2.5 --pids-limit=512 \
+  --log-driver=k8s-file --memory=3g --cpus=2.5 --pids-limit=512 \
   --volume "$fixture/developer:/persona:rw,U,Z" \
+  --volume "$fixture/projects:/projects:rw,U,Z" \
   --env "OH_SESSION_API_KEYS_0=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
   --env AGENT_SERVER_PORT=18000 \
   "$image")
-[[ $(podman --remote=false inspect --format '{{range .Mounts}}{{.Source}}:{{.Destination}}{{end}}' "$container") == "$fixture/developer:/persona" ]]
+podman --remote=false inspect --format '{{json .Mounts}}' "$container" |
+  python3 -c 'import json,sys
+from pathlib import Path
+root = Path(sys.argv[1])
+actual = {(mount["Source"], mount["Destination"]) for mount in json.load(sys.stdin)}
+expected = {(str(root / "developer"), "/persona"), (str(root / "projects"), "/projects")}
+if actual != expected:
+    raise SystemExit("Canvas fixture has an unexpected bind mount")' "$fixture"
 [[ $(podman --remote=false inspect --format '{{.HostConfig.NetworkMode}}' "$container") == none ]]
 pid=$(podman --remote=false inspect --format '{{.State.Pid}}' "$container")
+if (( pid == 0 )); then
+  echo "Canvas entrypoint stopped before the authentication fixture ran." >&2
+  exit 1
+fi
 read -r uid gid <<<"$(ps -o euid=,egid= -p "$pid")"
 [[ $uid != 0 && $gid != 0 ]]
-[[ $(stat -c '%u:%g' "$fixture/developer") == "$uid:$gid" ]]
+for dir in developer projects; do
+  if [[ $(stat -c '%u:%g' "$fixture/$dir") != "$uid:$gid" ]]; then
+    echo "Canvas fixture has unexpected ownership on the $dir mount." >&2
+    exit 1
+  fi
+done
 
 cookie_secret=$(openssl rand -hex 32)
 peer_flags=(--detach --rm --pull=never --network "container:$container"
@@ -193,7 +222,7 @@ assert.ok(client.ok, 'Canvas client script must load through ingress');
 assert.match(client.headers.get('content-type') ?? '', /javascript/);
 await client.body?.cancel();
 
-const repo = mkdtempSync('/persona/canvas-smoke-');
+const repo = mkdtempSync('/projects/canvas-smoke-');
 function git(...args) {
   execFileSync('git', ['-C', repo, ...args], { stdio: 'ignore' });
 }

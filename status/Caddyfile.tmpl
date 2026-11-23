@@ -258,6 +258,16 @@ https://hermes.{$TLS_DOMAIN} {
 	reverse_proxy hermes:8501
 }
 
+#@canvas
+%CANVAS_INGRESS_SNIPPET%
+https://canvas.{$TLS_DOMAIN} {
+	import trusted_only
+	import secure_headers
+	import hsts
+	import tls_dns
+	import canvas_ingress auth:8080 canvas:8000 canvas
+}
+#@on
 https://status.{$TLS_DOMAIN} {
 	import trusted_only
 	#@auth

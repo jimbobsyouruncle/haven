@@ -457,6 +457,14 @@ services:
       ACME_AUTO_HTTPS: ${ACME_AUTO_HTTPS:-disable_redirects}
 #@end
       DO_NOT_TRACK: "true"
+#@region canvas
+#@canvas
+      CANVAS_PASSWORD_HASH: ${CANVAS_PASSWORD_HASH:?Canvas requires a separate bcrypt grant}
+    networks:
+      default: {}
+      canvas-ingress:
+        ipv4_address: 172.31.253.2
+#@end
     security_opt:
       - no-new-privileges:true
     healthcheck:
@@ -470,6 +478,65 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
+#@region canvas_service
+#@canvas
+  canvas:
+    image: ghcr.io/openhands/agent-canvas@sha256:c349868d301e879a50da45f7f51e3c1f5f2814c8265b4a8ef8979d115956f59c
+    platform: linux/arm64
+    container_name: haven-canvas
+    profiles: [canvas]
+    user: "${CANVAS_UID:?Canvas requires a dedicated persona UID}:${CANVAS_GID:?Canvas requires a dedicated persona GID}"
+    restart: "no"
+    init: true
+    environment:
+      HOME: /persona
+      XDG_CONFIG_HOME: /persona/.config
+      OH_PERSISTENCE_DIR: /persona/.openhands
+      OH_SECRET_KEY: ${CANVAS_STATE_KEY:?Canvas requires its persistent settings encryption key}
+      OH_SESSION_API_KEYS_0: ${CANVAS_SESSION_KEY:?Canvas requires an independent Agent Server key}
+      AGENT_CANVAS_DISABLE_TELEMETRY: "1"
+      AGENT_SERVER_PORT: "18000"
+    volumes:
+      - type: bind
+        source: ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/canvas_data/persona
+        target: /persona
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/canvas_data/projects
+        target: /projects
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /run/haven-canvas/firewall-ready
+        target: /run/haven-canvas-firewall-ready
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      canvas-ingress:
+        ipv4_address: 172.31.253.3
+      canvas-egress: {}
+    dns: [1.1.1.1, 1.0.0.1]
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 3g
+    cpus: "2.5"
+    pids_limit: 512
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8000/api/conversations/search', {headers: {'X-Session-API-Key': process.env.OH_SESSION_API_KEYS_0}}).then(r => { if (!r.ok) process.exitCode = 1 })"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: "none"
+#@end
 #@region auth
 #@auth
 
@@ -540,3 +607,19 @@ networks:
   coder-net:
     name: haven-coder
     internal: true
+#@region canvas_network
+#@canvas
+  canvas-ingress:
+    name: haven-canvas-ingress
+    internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+      com.docker.network.bridge.name: haven-canvas-in
+    ipam:
+      config:
+        - subnet: 172.31.253.0/29
+  canvas-egress:
+    name: haven-canvas-egress
+    external: true
+#@end

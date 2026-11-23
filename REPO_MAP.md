@@ -71,6 +71,7 @@
 - deploy/50-haven-deploy.rules
 - deploy/IDENTITY-MIGRATION.md - Coordinated Haven identity cutover
 - deploy/README.md - deploy/ — headless deploy (one commit, one unit)
+- deploy/haven-canvas.service
 - deploy/haven-deploy@.service
 - deploy/haven-docker-prune.service
 - deploy/haven-docker-prune.timer
@@ -178,6 +179,8 @@
 ## scripts
 
 - scripts/bootstrap.sh
+- scripts/canvas-firewall.py - Install and verify Haven's Canvas-only rules without touching legacy rules.
+- scripts/canvas-runtime.sh - This is the sole normal start path for the Canvas Compose profile.
 - scripts/check-agent-context.sh - Check that the checked-in agent context maps are fresh.
 - scripts/check-git-remotes.sh - FILE: scripts/check-git-remotes.sh
 - scripts/check-hermes-nonroot.sh - FILE: scripts/check-hermes-nonroot.sh
@@ -211,6 +214,7 @@
 - scripts/test-backup-system-units.sh - FILE: scripts/test-backup-system-units.sh
 - scripts/test-backup.sh - shellcheck disable=SC2317,SC2329 # helpers and the EXIT trap are called indirectly
 - scripts/test-bootstrap.sh - FILE: scripts/test-bootstrap.sh
+- scripts/test-canvas-firewall.py - Run only in a disposable network namespace (sudo unshare --net).
 - scripts/test-check-agent-context.sh - Fixture test for scripts/check-agent-context.sh.
 - scripts/test-check-git-remotes.sh
 - scripts/test-check-no-ip-literals.sh - Fixture test for scripts/check-no-ip-literals.sh.
@@ -269,6 +273,7 @@
 ## scripts/lib
 
 - scripts/lib/build-gate.sh - FILE: scripts/lib/build-gate.sh
+- scripts/lib/canvas.sh - Shared by installer preflight and the boot supervisor.
 - scripts/lib/haven-env.sh - FILE: scripts/lib/haven-env.sh
 - scripts/lib/hybrid-ai-env.sh - Transitional import for installed legacy callers; no independent defaults.
 - scripts/lib/installer-env-render.sh - Render installer-owned settings to stdout. The installer owns the private
