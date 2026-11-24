@@ -795,6 +795,14 @@
 - die()
 - workspace_git()
 
+## scripts/setup-persona.sh
+- die()
+- exists()
+- protected_path()
+- bcrypt_valid()
+- canvas_password_hash()
+- lock_deployment()
+
 ## scripts/sync-agent-repos.sh
 - log()
 - ok()
@@ -1104,6 +1112,8 @@
 ## scripts/test-provision-persona.sh
 - provision()
 - reject()
+- setup_reject()
+- setup_terminal()
 
 ## scripts/test-prune-conversations.sh
 - skip()
