@@ -205,6 +205,7 @@
 - scripts/run-post-deploy-verify.sh
 - scripts/sandbox-firewall.sh
 - scripts/setup-agent-workspace.sh - FILE: scripts/setup-agent-workspace.sh
+- scripts/setup-persona.sh - Prepare application configuration for a dedicated Haven persona.
 - scripts/sync-agent-repos.sh - FILE: scripts/sync-agent-repos.sh
 - scripts/test-agent-image-hybrid-cutover.sh - FILE: scripts/test-agent-image-hybrid-cutover.sh
 - scripts/test-agent-image-repo-migration.sh - FILE: scripts/test-agent-image-repo-migration.sh

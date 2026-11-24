@@ -124,3 +124,118 @@ wait "$first"
 wait "$second"
 [[ "$(cut -d' ' -f2 "$scratch/first")" != "$(cut -d' ' -f2 "$scratch/second")" ]]
 printf 'Persona provisioning fixtures passed.\n'
+
+# Exercise the wrapper against the same synthetic identity and an installed
+# layout fixture. Use the real terminal interface and bcrypt utility.
+export SETUP_APP="$scratch/app" SETUP_STACK="$scratch/stack.env" SETUP_LOCKS="$scratch/locks"
+export SETUP_SCRIPT="$scripts/setup-persona.sh"
+mkdir "$SETUP_APP" "$SETUP_LOCKS"
+touch "$SETUP_LOCKS/"{hybrid-ai-deploy,haven-deploy}.lock
+chmod 644 "$HAVEN_ENV_FILE"
+printf 'HAVEN_APP_DIR=%s\nHAVEN_STACK_ENV_FILE=%s\n' "$SETUP_APP" "$SETUP_STACK" >> "$HAVEN_ENV_FILE"
+cat > "$SETUP_STACK" <<'STACK'
+TLS_ENABLED=yes
+TLS_DOMAIN=example.org
+TLS_VALIDATION=tlsalpn
+ACME_EMAIL=operator@example.org
+AUTH_ENABLED=on
+HAVEN_AUTH_USER=operator
+HAVEN_AUTH_HASH=$$2y$$12$$01234567890123456789012345678901234567890123456789012
+HAVEN_AUTH_COOKIE_SECRET=0000000000000000000000000000000000000000000000000000000000000000
+UNRELATED='preserve $ literally'
+STACK
+
+cat > "$scratch/run-setup" <<'RUN'
+#!/usr/bin/env bash
+# shellcheck disable=SC1090
+source "$SETUP_SCRIPT"
+setup_canvas "$SETUP_APP" "$HAVEN_ENV_FILE" "$SETUP_STACK" "${1:-}" "$SETUP_LOCKS"
+RUN
+chmod +x "$scratch/run-setup"
+
+setup_reject() {
+  local expected="$1"
+  shift
+  if "$scratch/run-setup" "$@" > "$scratch/error" 2>&1; then
+    echo 'Unexpected Canvas setup success.' >&2
+    exit 1
+  fi
+  grep -Fq -- "$expected" "$scratch/error"
+}
+
+setup_terminal() {
+  python3 - "$scratch/run-setup" "$@" <<'PYTEST'
+import os
+import pty
+import select
+import sys
+import termios
+import time
+
+password = b'synthetic fixture password!'
+pid, terminal = pty.fork()
+if pid == 0:
+    os.execv(sys.argv[1], sys.argv[1:])
+output = b''
+for prompt in (b'New Canvas password:', b'Confirm Canvas password:'):
+    while prompt not in output:
+        assert select.select([terminal], [], [], 10)[0], 'password prompt timed out'
+        output += os.read(terminal, 4096)
+    deadline = time.monotonic() + 10
+    while termios.tcgetattr(terminal)[3] & termios.ECHO:
+        assert time.monotonic() < deadline, 'terminal echo was not disabled'
+        time.sleep(0.01)
+    os.write(terminal, password + b'\n')
+while select.select([terminal], [], [], 10)[0]:
+    try:
+        output += os.read(terminal, 4096)
+    except OSError:
+        break
+else:
+    raise AssertionError('setup timed out')
+_, status = os.waitpid(pid, 0)
+assert password not in output, 'password exposed through terminal'
+assert os.waitstatus_to_exitcode(status) == 0, output.decode()
+PYTEST
+}
+
+cp "$SETUP_STACK" "$scratch/before-setup"
+setup_reject 'Missing or invalid Canvas key' --check
+cmp "$SETUP_STACK" "$scratch/before-setup"
+setup_terminal
+grep -Fxq "UNRELATED='preserve \$ literally'" "$SETUP_STACK"
+[[ "$(stat -c '%u:%g:%a:%h' "$SETUP_STACK")" == 0:0:600:1 ]]
+sed -n 's/^CANVAS_PASSWORD_HASH=/canvas:/p' "$SETUP_STACK" | sed 's/[$][$]/$/g' > "$scratch/htpasswd"
+printf '%s\n' 'synthetic fixture password!' | htpasswd -vi "$scratch/htpasswd" canvas >/dev/null
+cp "$SETUP_STACK" "$scratch/after-setup"
+inode="$(stat -c %i "$SETUP_STACK")"
+"$scratch/run-setup" --check
+"$scratch/run-setup"
+cmp "$SETUP_STACK" "$scratch/after-setup"
+[[ "$(stat -c %i "$SETUP_STACK")" == "$inode" ]]
+setup_terminal --rotate
+for name in CANVAS_SESSION_KEY CANVAS_PASSWORD_HASH; do
+  [[ "$(grep "^$name=" "$SETUP_STACK")" != "$(grep "^$name=" "$scratch/after-setup")" ]]
+done
+[[ "$(grep '^CANVAS_STATE_KEY=' "$SETUP_STACK")" == "$(grep '^CANVAS_STATE_KEY=' "$scratch/after-setup")" ]]
+
+(
+  flock -x 9
+  setup_reject 'another setup is in progress'
+) 9<"$SETUP_LOCKS/haven-deploy.lock"
+printf '%s\n' 'mismatched fixture key' > "$data/canvas_data/settings-key.recovered"
+setup_reject 'Reconcile the recovered Canvas settings key' --check
+rm "$data/canvas_data/settings-key.recovered"
+
+sed -i 's/^CANVAS_UID=.*/CANVAS_UID=980/' "$SETUP_STACK"
+setup_reject 'conflicts with the verified persona identity' --check
+cp "$scratch/after-setup" "$SETUP_STACK"
+sed -i 's/^AUTH_ENABLED=.*/AUTH_ENABLED=off/' "$SETUP_STACK"
+setup_reject 'requires TLS and Haven authentication' --check
+cp "$scratch/after-setup" "$SETUP_STACK"
+printf ' export CANVAS_ENABLED=off\n' >> "$SETUP_STACK"
+setup_reject 'Duplicate or noncanonical Canvas setting' --check
+mv "$SETUP_STACK" "$scratch/symlink-target"
+ln -s "$scratch/symlink-target" "$SETUP_STACK"
+setup_reject 'Unsafe configuration path' --check
+printf 'Canvas setup fixtures passed.\n'

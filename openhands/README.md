@@ -618,27 +618,37 @@ enforcing it while the supervisor stops Canvas. The checks run every two
 seconds plus command latency. Simultaneous removal of both host policies is
 outside the sandbox boundary.
 
-Before an owner-merge deploy that enables Canvas:
+After the setup helper has been deployed to the canonical Haven host, prepare
+Canvas as root:
 
-- On Jarvis, run `sudo /opt/haven/scripts/provision-persona.sh canvas`.
-  Save the printed `uid` and `gid` as `CANVAS_UID` and `CANVAS_GID` in the
-  protected stack environment. Verify the host setup with
-  `sudo /opt/haven/scripts/provision-persona.sh canvas --check`.
-  The command creates `haven-canvas` and its private state directories.
-  Only `persona` and `projects` are mounted. If Canvas was provisioned
-  manually, preserve the existing accounts and data and review their
-  identity before switching to the reservation-based command.
-- Make `canvas.<TLS_DOMAIN>` resolve to the existing Haven HTTPS endpoint on
-  the authorized network. In the protected stack env file, set
-  `CANVAS_UID`, `CANVAS_GID`, `CANVAS_SESSION_KEY` (32 random bytes as hex),
-  `CANVAS_PASSWORD_HASH` (a bcrypt hash for the separate `canvas` Basic grant),
-  and `CANVAS_ENABLED=on`. The installer generates and preserves
-  `CANVAS_STATE_KEY` for stored provider settings.
-- Provision a GitHub credential scoped to the approved public repositories and
-  Git operations, and enter the selected public provider key in Canvas. Keep
-  credentials in the persona's protected storage and out of clone URLs and
-  worktrees. Retain the Agent Server key for the authenticated Canvas backend
-  prompt. Use a workspace under `/projects` for persistent checkouts.
+```sh
+sudo /opt/haven/scripts/setup-persona.sh canvas canvas
+```
+
+The first argument identifies the persona and the second selects the application.
+The current installer supports only Canvas on `haven-canvas`. Applications added
+in the future can use the same provisioned persona UID/GID and authorized
+storage. `provision-persona.sh` owns the identity and storage reservation. If an
+existing Canvas account or storage has no matching reservation, have the owner
+review adoption before proceeding. Keep the existing `980:980` identity and
+private data on Jarvis.
+
+Setup requires existing Haven TLS and authentication and the `htpasswd` utility
+(from `apache2-utils` on Debian) when setting a password. It prompts through the
+terminal, saves the bcrypt grant and generated keys in the protected stack
+environment, and preserves existing credentials on rerun. Use
+`sudo /opt/haven/scripts/setup-persona.sh canvas canvas --check` for read-only
+verification. Use `--rotate` to replace the Canvas password and Agent Server
+key together. Rotation takes effect on deployment and clients must use the new
+credentials. The settings-encryption key is retained for backup and recovery.
+
+Point `canvas.<TLS_DOMAIN>` at the existing Haven HTTPS endpoint on the
+authorized network. The next eligible owner-merge deployment applies the
+prepared configuration through the existing installer and Canvas supervisor.
+After activation, enter the authorized provider credential in Canvas. If GitHub
+access is needed, separately provision a credential scoped to the approved
+repositories and Git operations. Keep credentials out of clone URLs and
+worktrees. Use a workspace under `/projects` for persistent checkouts.
 
 After deploy:
 
