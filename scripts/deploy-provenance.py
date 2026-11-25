@@ -188,7 +188,7 @@ def historical_deployment_jobs(run, sha):
         pending('PROVENANCE_DEPLOY_MISSING')
     require(len(deploy) == 1, 'PROVENANCE_DEPLOY_AMBIGUOUS')
     require((deploy[0]['status'], deploy[0]['conclusion']) ==
-            ('completed', 'failure'),
+            ('completed', run['conclusion']),
             'PROVENANCE_DEPLOY_STATE')
 
 
@@ -269,7 +269,7 @@ def trusted_run(run, sha):
     require(run['head_repository']['full_name'] == REPO, 'PROVENANCE_REPOSITORY')
 
 
-def manual_runs(sha, historical=False):
+def manual_runs(sha, historical=False, recovery_run=None):
     """Explicit root manual-identity acceptance; never used by automatic deploys.
 
     Reuse checks from the PR that produced this exact main merge. Main push
@@ -324,15 +324,19 @@ def manual_runs(sha, historical=False):
     data = get('/actions/runs?head_sha=' + sha + '&per_page=100')
     entries = complete_list(data, 'workflow_runs')
     retained, excluded = [], []
+    historical_conclusion = None
     for run in entries:
         trusted_run(run, sha)
         require(run['status'] == 'completed')
         if run.get('path') == '.github/workflows/deploy.yml':
             if historical:
-                require(sha == RECOVERY_SHA)
-                require(run['id'] == RECOVERY_RUN and run['head_branch'] == 'main'
-                        and run['event'] == 'push' and run['conclusion'] == 'failure')
+                if recovery_run is None:
+                    require(sha == RECOVERY_SHA and run['conclusion'] == 'failure')
+                require(run['id'] == (RECOVERY_RUN if recovery_run is None else recovery_run)
+                        and run['head_branch'] == 'main' and run['event'] == 'push'
+                        and run['conclusion'] in ('failure', 'cancelled', 'timed_out'))
                 historical_deployment_jobs(run, sha)
+                historical_conclusion = run['conclusion']
                 refreshed = get('/actions/runs/' + str(run['id']))
                 trusted_run(refreshed, sha)
                 require(all(refreshed.get(k) == run.get(k) for k in
@@ -362,7 +366,8 @@ def manual_runs(sha, historical=False):
                                     intentionally_skipped_deploy_runs=excluded))
     if historical:
         data['historical_failure'] = dict(merge_sha=sha, pr=matches[0]['number'],
-                                          head_sha=head, failed_deploy_run=excluded[0])
+                                          head_sha=head, failed_deploy_run=excluded[0],
+                                          conclusion=historical_conclusion)
         del data['manual_cutover']
     emit_evidence(data)
 
@@ -373,6 +378,10 @@ def main():
     if action == 'candidate':
         require(len(sys.argv) == 4)
         candidate(sha, sys.argv[3])
+        return
+    if action == 'recovery-runs' and len(sys.argv) == 4:
+        require(re.fullmatch(r'[1-9][0-9]{0,19}', sys.argv[3]))
+        manual_runs(sha, historical=True, recovery_run=int(sys.argv[3]))
         return
     require(len(sys.argv) == 3)
     if action == 'current-main':
