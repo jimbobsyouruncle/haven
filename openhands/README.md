@@ -650,10 +650,30 @@ access is needed, separately provision a credential scoped to the approved
 repositories and Git operations. Keep credentials out of clone URLs and
 worktrees. Use a workspace under `/projects` for persistent checkouts.
 
+The container entrypoint derives its settings and conversation paths from
+`HOME=/persona`. The bundled Canvas client sends an absolute working directory
+under `/home/openhands/.openhands/agent-canvas/workspaces` when starting a
+conversation without a project. Haven binds the existing private
+`canvas_data/persona` directory at both `/persona` and
+`/home/openhands/.openhands`. The second bind also replaces the image's
+anonymous volume at that path. Default workspace files therefore land under
+`canvas_data/persona/agent-canvas/workspaces` on the host. Settings,
+conversation records, and the settings-encryption key keep their existing
+locations. [Upstream Docker persistence](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
+
+For Jarvis's reported first-conversation permission error, no one-time
+migration is required. Let the normal owner-merge deployment recreate Canvas,
+then start a new conversation without selecting a workspace. If a separate
+installation previously wrote files into the old anonymous Docker volume,
+preserve that volume before deployment and arrange a reviewed copy of those
+files into the persona workspace directory. The normal deployment does not
+import anonymous volume contents.
+
 After deploy:
 
-1. Use the browser to start and reopen a conversation. Confirm the event socket
-   delivers events over HTTPS. Repeat with a missing Haven session, Canvas
+1. Start a conversation without selecting a workspace. Create a disposable
+   file, reopen the conversation, and confirm the file is still readable and
+   the event socket delivers events over HTTPS. Repeat with a missing Haven session, Canvas
    grant, and Agent Server key independently and confirm access is denied.
 2. From the host, LAN, and a separate persona with its normal egress enabled,
    verify the Canvas and Agent Server listeners cannot be reached directly.

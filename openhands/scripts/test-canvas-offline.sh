@@ -2,7 +2,6 @@
 # Exercise the pinned ARM64 Canvas bundle with synthetic data and no host access.
 set -euo pipefail
 
-image=ghcr.io/openhands/agent-canvas@sha256:c349868d301e879a50da45f7f51e3c1f5f2814c8265b4a8ef8979d115956f59c
 if ! command -v podman >/dev/null; then
   echo "Canvas smoke test requires local rootless Podman on ARM64." >&2
   exit 1
@@ -13,6 +12,8 @@ if [[ $(uname -m) != aarch64 || $(podman --remote=false info --format '{{.Host.S
 fi
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+image=$(awk '/^    image: ghcr[.]io\/openhands\/agent-canvas@sha256:/ { print $2 }' "$repo_root/docker-compose.yml.tmpl")
+[[ "$image" =~ ^ghcr[.]io/openhands/agent-canvas@sha256:[0-9a-f]{64}$ ]]
 caddy_image=$(awk '/^FROM caddy@sha256:/ { image=$2 } END { print image }' "$repo_root/caddy/Dockerfile")
 auth_image=localhost/haven-canvas-auth-fixture
 if [[ ${1:-} == --pull && $# == 1 ]]; then
@@ -23,6 +24,9 @@ elif (( $# != 0 )); then
   echo "Usage: $0 [--pull]" >&2
   exit 2
 fi
+
+podman --remote=false image inspect --format \
+  'Canvas image: entrypoint={{json .Config.Entrypoint}} working-dir={{json .Config.WorkingDir}} volumes={{json .Config.Volumes}}' "$image"
 
 api_key=$(openssl rand -hex 32)
 fixture=$(mktemp -d)
@@ -54,11 +58,12 @@ openssl rand -hex 32 >"$fixture/developer/repo-token"
 chmod 0600 "$fixture/developer/repo-token"
 container=$(podman --remote=false run --detach --pull=never \
   --platform linux/arm64 --network none --http-proxy=false \
-  --user 20001:20001 --env HOME=/persona --env XDG_CONFIG_HOME=/persona/.config \
+  --user 980:980 --env HOME=/persona --env XDG_CONFIG_HOME=/persona/.config \
   --env OH_PERSISTENCE_DIR=/persona/.openhands \
   --cap-drop ALL --security-opt no-new-privileges --image-volume=ignore \
   --log-driver=k8s-file --memory=3g --cpus=2.5 --pids-limit=512 \
   --volume "$fixture/developer:/persona:rw,U,Z" \
+  --volume "$fixture/developer:/home/openhands/.openhands:rw,U,Z" \
   --volume "$fixture/projects:/projects:rw,U,Z" \
   --env "OH_SESSION_API_KEYS_0=$api_key" --env AGENT_CANVAS_DISABLE_TELEMETRY=1 \
   --env AGENT_SERVER_PORT=18000 \
@@ -68,7 +73,11 @@ podman --remote=false inspect --format '{{json .Mounts}}' "$container" |
 from pathlib import Path
 root = Path(sys.argv[1])
 actual = {(mount["Source"], mount["Destination"]) for mount in json.load(sys.stdin)}
-expected = {(str(root / "developer"), "/persona"), (str(root / "projects"), "/projects")}
+expected = {
+    (str(root / "developer"), "/persona"),
+    (str(root / "developer"), "/home/openhands/.openhands"),
+    (str(root / "projects"), "/projects"),
+}
 if actual != expected:
     raise SystemExit("Canvas fixture has an unexpected bind mount")' "$fixture"
 [[ $(podman --remote=false inspect --format '{{.HostConfig.NetworkMode}}' "$container") == none ]]
@@ -155,12 +164,20 @@ podman --remote=false exec -i --env "FIXTURE_COOKIE=$cookie" \
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { request } from 'node:https';
 import { networkInterfaces } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 
-assert.notEqual(process.getuid(), 0, 'Agent image must run as non-root');
+assert.equal(process.getuid(), 980);
+assert.equal(process.getgid(), 980);
+assert.equal(process.env.HOME, '/persona');
+assert.equal(process.env.OH_PERSISTENCE_DIR, '/persona/.openhands');
+assert.ok(existsSync('/opt/agent-canvas/entrypoint.sh'), 'Expected the pinned Canvas entrypoint');
+const defaultWorkspaceRoot = '/home/openhands/.openhands/agent-canvas/workspaces';
+// Confirm the pinned client still requests the canonical absolute path.
+execFileSync('grep', ['-rlF', '--include=*.js', defaultWorkspaceRoot, '/opt/agent-canvas/frontend'],
+  { stdio: 'ignore' });
 const status = readFileSync('/proc/self/status', 'utf8');
 for (const set of ['Inh', 'Prm', 'Eff', 'Bnd', 'Amb']) {
   assert.match(status, new RegExp(`^Cap${set}:\\s+0+$`, 'm'));
@@ -333,23 +350,40 @@ assert.equal(await proxyGet(conversations, { cookie, authorization, 'X-Session-A
 assert.ok(outcomes.every(outcome => outcome.status === 'fulfilled'),
   'Every backend listener must reject missing and invalid keys.');
 
-const created = await fetch(proxy + '/api/conversations', {
-  method: 'POST',
-  headers: {
-    cookie, authorization, 'X-Session-API-Key': apiKey, 'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    agent: {
-      kind: 'Agent', tools: [], llm: { model: 'openai/gpt-4o-mini', api_key: 'synthetic-unused' },
+async function createConversation(workingDir) {
+  const created = await fetch(proxy + '/api/conversations', {
+    method: 'POST',
+    headers: {
+      cookie, authorization, 'X-Session-API-Key': apiKey, 'Content-Type': 'application/json',
     },
-    workspace: { kind: 'LocalWorkspace', working_dir: repo + '/task' },
-  }),
-  redirect: 'error',
-  signal: AbortSignal.timeout(30_000),
-});
-assert.ok(created.ok, `Conversation creation through Caddy returned HTTP ${created.status}`);
-const { id } = await created.json();
-assert.match(id, /^[0-9a-f-]{32,36}$/i);
+    body: JSON.stringify({
+      agent: {
+        kind: 'Agent', tools: [], llm: { model: 'openai/gpt-4o-mini', api_key: 'synthetic-unused' },
+      },
+      workspace: { kind: 'LocalWorkspace', working_dir: workingDir },
+    }),
+    redirect: 'error',
+    signal: AbortSignal.timeout(30_000),
+  });
+  assert.ok(created.ok, `Conversation creation through Caddy returned HTTP ${created.status}`);
+  const { id } = await created.json();
+  assert.match(id, /^[0-9a-f-]{32,36}$/i);
+  return id;
+}
+
+const defaultWorkspace = defaultWorkspaceRoot + '/' + randomBytes(16).toString('hex');
+assert.ok(!existsSync(defaultWorkspace));
+await createConversation(defaultWorkspace);
+assert.ok(statSync(defaultWorkspace).isDirectory(), 'Agent Server must create the default workspace');
+const workspaceFile = defaultWorkspace + '/haven-workspace-fixture.txt';
+writeFileSync(workspaceFile, 'canvas default workspace\n', { mode: 0o600 });
+assert.equal(statSync(workspaceFile).uid, 980);
+assert.equal(statSync(workspaceFile).gid, 980);
+assert.equal(readFileSync(workspaceFile.replace('/home/openhands/.openhands/', '/persona/'), 'utf8'),
+  'canvas default workspace\n');
+console.log('Agent Server created the default workspace and its files reached the persona bind.');
+
+const id = await createConversation(repo + '/task');
 const eventPath = '/sockets/events/' + id;
 assert.equal(await websocketStatus(eventPath, {}), 302, 'Caddy must gate the conversation upgrade');
 assert.equal(await websocketStatus(eventPath, { cookie }), 401,
@@ -397,5 +431,13 @@ assert.deepEqual(await conversationSocket(apiKey), { kind: 'ConversationStateUpd
   'The authorized socket must deliver conversation state through Caddy');
 console.log('Haven Caddy browser, API, and authenticated conversation event stream passed.');
 JS
+
+# Verify the workspace is on the host bind after stopping the exact image.
+podman --remote=false stop --time 5 "$container" >/dev/null
+podman --remote=false unshare bash -ec '
+  shopt -s nullglob
+  files=("$1"/agent-canvas/workspaces/*/haven-workspace-fixture.txt)
+  [[ ${#files[@]} == 1 && $(<"${files[0]}") == "canvas default workspace" ]]
+' _ "$fixture/developer"
 
 bash "$repo_root/openhands/scripts/test-canvas-personas.sh" "$image"

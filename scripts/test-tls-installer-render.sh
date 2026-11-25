@@ -91,6 +91,14 @@ canvas = spec["services"]["canvas"]
 assert canvas["restart"] == "no" and not canvas.get("ports") and not canvas.get("privileged")
 assert set(canvas["networks"]) == {"canvas-ingress", "canvas-egress"}
 assert canvas["user"] == "20001:20001" and canvas["cap_drop"] == ["ALL"]
+mounts = {v["target"]: v for v in canvas["volumes"]}
+persona = mounts["/persona"]
+workspace = mounts["/home/openhands/.openhands"]
+assert workspace["source"] == persona["source"]
+assert workspace["source"].endswith("/canvas_data/persona")
+assert workspace["type"] == "bind" and not workspace["bind"]["create_host_path"]
+assert canvas["environment"]["HOME"] == "/persona"
+assert canvas["environment"]["OH_PERSISTENCE_DIR"] == "/persona/.openhands"
 path = next(v for v in canvas["volumes"] if v["source"] == "/run/haven-canvas/firewall-ready")
 assert path["read_only"] and not path["bind"]["create_host_path"]
 assert spec["networks"]["canvas-ingress"]["internal"]'

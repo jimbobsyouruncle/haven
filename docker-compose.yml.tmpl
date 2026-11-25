@@ -502,6 +502,14 @@ services:
         target: /persona
         bind:
           create_host_path: false
+      # The bundled browser sends absolute default workspace paths under this
+      # image volume. Use the same validated host tree as /persona so existing
+      # HOME-based settings and conversations retain their original locations.
+      - type: bind
+        source: ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/canvas_data/persona
+        target: /home/openhands/.openhands
+        bind:
+          create_host_path: false
       - type: bind
         source: ${HAVEN_DATA_DIR:?HAVEN_DATA_DIR must be set - run ./install.sh}/canvas_data/projects
         target: /projects
