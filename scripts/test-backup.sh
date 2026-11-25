@@ -1214,6 +1214,9 @@ exec /usr/bin/stat "$@"
 EOF
 chmod +x "$STUB/stat"
 mkwal "$CANVAS_FIXTURE_ROOT/persona/state.sqlite" 7
+canvas_workspace=persona/agent-canvas/workspaces/0123456789abcdef0123456789abcdef
+mkdir -p -- "$CANVAS_FIXTURE_ROOT/$canvas_workspace"
+printf 'persistent default workspace\n' > "$CANVAS_FIXTURE_ROOT/$canvas_workspace/file.txt"
 git -C "$CANVAS_FIXTURE_ROOT/projects" init -q
 printf 'workspace\n' > "$CANVAS_FIXTURE_ROOT/projects/worktree.txt"
 ln -s worktree.txt "$CANVAS_FIXTURE_ROOT/projects/internal-link"
@@ -1230,6 +1233,8 @@ assert "Persona capture status is recorded" grep -Eq '^persona_identities +: com
 assert "Canvas staged key is private" test "$(stat -c %a "$STAGE/env/canvas-state-key")" = 600
 assert "Canvas SQLite WAL is staged" test -f "$STAGE/files/canvas_data/persona/state.sqlite-wal"
 assert "Canvas Git workspace metadata is staged" test -d "$STAGE/files/canvas_data/projects/.git"
+assert "Canvas default workspace is staged" cmp -s \
+  "$CANVAS_FIXTURE_ROOT/$canvas_workspace/file.txt" "$STAGE/files/canvas_data/$canvas_workspace/file.txt"
 assert "Canvas confined symlinks are retained" test -L "$STAGE/files/canvas_data/projects/internal-link"
 assert "Canvas symlinks cannot capture backup credentials" test ! -L "$STAGE/files/canvas_data/projects/outside-link"
 assert "Canvas capture makes no Docker call" test ! -s "$DOCKER_LOG"
@@ -1243,6 +1248,8 @@ check "Canvas scratch restore succeeds" 0 "$RUN_RC"
 canvas_scratch="$(tail -n1 "$TMPROOT/canvas-restore.args")"
 canvas_rows="$("$REAL_SQLITE3" "$canvas_scratch/files/canvas_data/persona/state.sqlite" 'select count(*) from t;')"
 assert "Canvas WAL rows survive scratch restore" test "$canvas_rows" = 7
+assert "Canvas default workspace survives scratch restore" cmp -s \
+  "$CANVAS_FIXTURE_ROOT/$canvas_workspace/file.txt" "$canvas_scratch/files/canvas_data/$canvas_workspace/file.txt"
 assert "Canvas scratch restore preserves its key" cmp -s "$CANVAS_CAPTURE/env/canvas-state-key" "$canvas_scratch/env/canvas-state-key"
 assert "Scratch restore preserves persona reservations" \
   cmp -s "$PERSONA_FIXTURE_RECORD" "$canvas_scratch/env/persona-identities"
@@ -1315,6 +1322,10 @@ EOF
   if (( root_rc != 0 )); then cat "$TMPROOT/canvas-root.out"; fi
   assert "Canvas restore applies the destination persona UID/GID" test \
     "$(sudo -n stat -c '%u:%g:%a' "$root_data/canvas_data/projects/worktree.txt")" = 24567:24567:600
+  assert "Canvas live restore preserves default workspace contents" sudo -n cmp -s \
+    "$CANVAS_CAPTURE/files/canvas_data/$canvas_workspace/file.txt" "$root_data/canvas_data/$canvas_workspace/file.txt"
+  assert "Canvas workspace is restored under the destination persona UID/GID" test \
+    "$(sudo -n stat -c '%u:%g:%a' "$root_data/canvas_data/$canvas_workspace/file.txt")" = 24567:24567:600
   assert "Canvas restore keeps the prior tree in a protected safety directory" test -n \
     "$(sudo -n find "$root_data" -path '*/previous/projects/prior.txt' -print -quit)"
   assert "Canvas recovered key is root-owned and private" test \

@@ -457,6 +457,10 @@ whose configuration remains enabled. The supervisor rechecks its firewall.
 System-mode capture copies the resolved `${HAVEN_DATA_DIR}/canvas_data/persona`
 and `projects` trees while Canvas is stopped, including settings, conversation
 data, Git metadata and worktrees, SQLite files and their WAL/SHM sidecars.
+Canvas default conversation files appear in the snapshot at
+`files/canvas_data/persona/agent-canvas/workspaces/<id>/`. The existing Canvas
+settings and conversation records still use `files/canvas_data/persona/.openhands/`.
+A restore returns both trees to the same private persona bind.
 No Canvas cache patterns are excluded. The copy stays on the source
 filesystem and keeps symlinks confined to each authorized tree. Devices,
 special files and links escaping either tree are omitted. Live permissions

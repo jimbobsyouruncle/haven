@@ -3,6 +3,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'docker-compose.yml.tmpl'
       - 'openhands/canvas-ingress.caddyfile'
       - 'openhands/scripts/test-canvas-offline.sh'
       - 'openhands/scripts/test-canvas-personas.*'
