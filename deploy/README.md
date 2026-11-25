@@ -802,3 +802,87 @@ and artifacts and review the exact failure before retrying. Code/control rollbac
 does not restore data or restart containers; after writers may have run, a
 separately reviewed current-data recovery is required. A successor deployment
 requires its own authorization.
+
+### Resume canonical verification after a lock conflict or interruption
+
+The canonical unit runs `deploy-instance.sh` as `ExecStart`. It execs
+`install-root.py`, which locks the legacy and canonical lock files in that
+order. The installer handoff through `deploy-remote.sh` passes the same open
+file descriptions on descriptors 9 and 8 for proxy preflight. Linux retains
+those locks while any descendant holds a copy. When `ExecStart` exits
+successfully, systemd starts `deploy-verify.sh` as `ExecStartPost`. That process
+runs `run-post-deploy-verify.sh`, whose installation wiring check takes both
+locks through fresh opens. A surviving installer descriptor can make that
+first check fail with “another operation holds the deployment lock.” The
+canonical deployment driver now explicitly unlocks after saving the completed
+installer checkpoint and before returning to systemd. The pending journal
+continues to prevent a new installation until verification accepts it.
+
+For Jarvis, the pending revision is `a34a712be0f6408e487229628a17685e5d3f4e3f`.
+[Run 45631764130](https://github.com/jimbobsyouruncle/haven/actions/runs/45631764130)
+records successful source validation and a failed deployment job. A journal
+with `last operation = run-installer` and no failure can also result from an
+interruption before the installer finished. Recovery requires the final
+control-file digests and recorded Caddy candidate, as well as fresh checks.
+
+Use this procedure with separate owner authorization before allowing the next
+normal deployment. Pause competing deployment, backup, restore and prune
+operations. Confirm privately that an independent backup and the retained
+recovery artifacts are available. Set `reviewed_sha` to the full SHA of the
+reviewed, checked recovery driver from this fix. A reviewed PR commit can be
+used before merge so the automatic deployment triggered by merging can wait
+until the pending transaction is accepted. Run in an administrator shell on
+Jarvis.
+
+```bash
+set -euo pipefail
+reviewed_sha=REPLACE_WITH_REVIEWED_FULL_SHA
+production_sha=a34a712be0f6408e487229628a17685e5d3f4e3f
+deploy_run=45631764130
+journal=/var/lib/haven-install-root/current.json
+reviewed_checkout=$(sudo mktemp -d /root/haven-verifier-recovery.XXXXXXXX)
+
+sudo git clone --no-checkout https://github.com/jimbobsyouruncle/haven.git "$reviewed_checkout"
+sudo git -C "$reviewed_checkout" fetch origin "$reviewed_sha"
+sudo git -C "$reviewed_checkout" checkout --detach "$reviewed_sha"
+test "$(sudo git -C "$reviewed_checkout" rev-parse HEAD)" = "$reviewed_sha"
+test -z "$(sudo git -C "$reviewed_checkout" status --porcelain)"
+test "$(sudo git -C /opt/haven rev-parse HEAD)" = "$production_sha"
+
+transaction_hash=$(sudo sha256sum "$journal" | cut -d ' ' -f 1)
+started_ns=$(sudo jq -er --arg sha "$production_sha" '
+  select(.sha == $sha and .phase == "awaiting_verifier"
+         and .operation.stage == "run-installer" and (.failure == null)
+         and (.active_files | type == "object")
+         and (.proxy_runtime.candidate_id | type == "string"))
+  | .started_ns' "$journal")
+sudo python3 "$reviewed_checkout/scripts/install-root.py" \
+  reverify-recovery "$production_sha" "$transaction_hash" "$deploy_run"
+
+sudo jq -e --arg sha "$production_sha" --argjson started "$started_ns" \
+  '.sha == $sha and .started_ns == $started and .phase == "accepted"' "$journal"
+sudo jq -e --arg sha "$production_sha" '
+  select(.sha == $sha and .head == $sha and .rc == 0
+         and ([.gates[] | select(.required and .state != "PASS")] | length == 0))
+  | {sha, head, at, verdict, rc, gates: (.gates | map_values({required, state}))}
+' "/var/lib/haven/hermes_data/deploy-verdicts/$production_sha.json"
+```
+
+Both locks are held through checkout and render verification, retained control
+and archive checks, live Caddy identity and route, enabled Compose services
+(including Canvas when enabled), exact-tree GitHub validation, application
+health, backup gates and acceptance. The driver publishes a fresh receipt and
+checks the journal digest again before accepting. An overall WARN can retain
+the historical deployment failure or optional warnings. Require exit 0, the
+same journal SHA and start time, phase `accepted`, and a fresh receipt with all
+required gates passing. Keep the failed Actions run as historical evidence.
+
+Stop on any refusal or failed gate. Keep the installed checkout, journal,
+services and recovery artifacts in place for review. The recovery command
+checks the existing installation and does not run the installer or start the
+proxy rollback path. After acceptance, use the normal protected-main deployment
+path for the then-current tip. The first upgrade still launches its
+`ExecStart` from the installed revision, so if that upgrade encounters the old
+lock failure, use the same recovery procedure with its own SHA, run ID and
+journal digest after confirming the cause and completion evidence. Deployment
+of a superseded SHA is refused by the normal exact-main policy.

@@ -235,6 +235,15 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                            'ACME_DNS_PROVIDER': 'cloudflare'}, check=True)
         self.assertEqual(set(self.git(self.tx.app, 'diff', '--name-only', 'HEAD').splitlines()),
                          {'docker-compose.yml', 'status/Caddyfile'})
+        # Model a completed canonical installer checkpoint in the fixture.
+        self.tx.project = 'haven'
+        journal = self.tx.load()
+        journal['proxy_runtime'] = {'candidate_id': 'a' * 64}
+        journal['active_files'] = {
+            item['path']: (hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None)
+            for item in journal['files'] for path in [Path(item['path'])]
+        }
+        self.tx.save(journal)
         original = self.tx.journal.read_bytes()
         digest = hashlib.sha256(original).hexdigest()
         runner = self.tx.run
@@ -242,14 +251,21 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
             if args[0] != '/usr/bin/timeout':
                 return runner(args, **kw)
             self.assertEqual(kw['env']['HAVEN_VERIFY_RECOVERY'], '1')
+            self.assertEqual(kw['env']['HAVEN_VERIFY_RECOVERY_RUN_ID'], '123')
             result = self.receipt()
-            for name in ('backup_log', 'backup_readability', 'verdict_file'):
+            for name in ('backup_log', 'backup_readability', 'verdict_file', 'proxy_runtime', 'compose_services'):
                 result['gates'][name] = dict(required=True, state='PASS')
             os.write(int(kw['env']['HAVEN_VERIFY_EVIDENCE_FD']), json.dumps(result).encode())
             return subprocess.CompletedProcess(args, 0)
-        with patch.object(MODULE, 'RECOVERY_SHA', self.sha), patch.object(self.tx, 'trusted'):
+        with (patch.object(self.tx, 'trusted'),
+              patch.object(self.tx, 'verify_proxy') as proxy,
+              patch.object(self.tx, 'verify_services') as services,
+              patch.object(self.tx, 'identify_candidate', return_value={'State': {'Running': True}})):
+            def recover(digest):
+                self.tx.reverify_recovery(self.sha, digest, '123')
+
             with self.assertRaises(MODULE.Refusal):
-                self.tx.reverify_recovery(self.sha, 'f' * 64)
+                recover('f' * 64)
             for name, extra in (
                 ('docker-compose.yml', b'    privileged: true\n'),
                 ('status/Caddyfile', b'admin :2019\n'),
@@ -262,7 +278,7 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                     path.write_bytes(expected + extra)
                     with patch.object(self.tx, 'run', side_effect=verifier) as run:
                         with self.assertRaises((MODULE.Refusal, subprocess.CalledProcessError)):
-                            self.tx.reverify_recovery(self.sha, digest)
+                            recover(digest)
                         self.assertFalse(any(args[0] == '/usr/bin/timeout'
                                              for (args,), _ in run.call_args_list))
                     self.assertEqual(self.tx.journal.read_bytes(), original)
@@ -270,32 +286,32 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
             stack = self.secret.read_bytes()
             self.secret.write_bytes(stack.replace(b'AUTH_ENABLED=on', b'AUTH_ENABLED=off'))
             with self.assertRaisesRegex(MODULE.Refusal, 'differs from expected render'):
-                self.tx.reverify_recovery(self.sha, digest)
+                recover(digest)
             self.secret.write_bytes(stack)
             self.git(self.tx.app, 'update-index', '--assume-unchanged', 'install.sh')
             with self.assertRaisesRegex(MODULE.Refusal, 'hidden or unresolved tracked paths'):
-                self.tx.reverify_recovery(self.sha, digest)
+                recover(digest)
             self.git(self.tx.app, 'update-index', '--no-assume-unchanged', 'install.sh')
             archive = Path(self.tx.load()['proxy_recovery']['archive'])
             saved = archive.read_bytes()
             archive.write_bytes(b'corrupt')
             with self.assertRaises(MODULE.Refusal):
-                self.tx.reverify_recovery(self.sha, digest)
+                recover(digest)
             archive.write_bytes(saved)
             with patch.object(self.tx, 'run', side_effect=KeyboardInterrupt):
-                with self.assertRaises(KeyboardInterrupt): self.tx.reverify_recovery(self.sha, digest)
+                with self.assertRaises(KeyboardInterrupt): recover(digest)
             self.assertEqual(self.tx.journal.read_bytes(), original)
             def failed_gate(args, **kw):
                 if args[0] != '/usr/bin/timeout':
                     return runner(args, **kw)
                 result = self.receipt()
-                for name in ('backup_log', 'backup_readability', 'verdict_file'):
+                for name in ('backup_log', 'backup_readability', 'verdict_file', 'proxy_runtime', 'compose_services'):
                     result['gates'][name] = dict(required=True, state='PASS')
                 result['gates']['runtime_health']['state'] = 'FAIL'
                 os.write(int(kw['env']['HAVEN_VERIFY_EVIDENCE_FD']), json.dumps(result).encode())
                 return subprocess.CompletedProcess(args, 0)
             with patch.object(self.tx, 'run', side_effect=failed_gate):
-                with self.assertRaises(MODULE.Refusal): self.tx.reverify_recovery(self.sha, digest)
+                with self.assertRaises(MODULE.Refusal): recover(digest)
             self.assertEqual(self.tx.journal.read_bytes(), original)
             def changed_journal(args, **kw):
                 result = verifier(args, **kw)
@@ -303,15 +319,55 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
                     self.tx.journal.write_bytes(original + b' ')
                 return result
             with patch.object(self.tx, 'run', side_effect=changed_journal):
-                with self.assertRaises(MODULE.Refusal): self.tx.reverify_recovery(self.sha, digest)
+                with self.assertRaises(MODULE.Refusal): recover(digest)
             self.tx.journal.write_bytes(original)
             with patch.object(self.tx, 'run', side_effect=verifier):
-                self.tx.reverify_recovery(self.sha, digest)
+                recover(digest)
                 accepted = self.tx.journal.read_bytes()
-                with self.assertRaises(MODULE.Refusal): self.tx.reverify_recovery(self.sha, digest)
+                with self.assertRaises(MODULE.Refusal): recover(digest)
             self.assertEqual(self.tx.journal.read_bytes(), accepted)
             self.assertEqual(self.tx.load()['phase'], 'accepted')
+            proxy.assert_called_with(self.sha, recover=False)
+            services.assert_called_with(self.sha)
             self.assertFalse((self.tx.app / 'unexpected-execution').exists())
+
+    def test_synchronous_verifier_lock_handoff(self):
+        # A live installer descendant keeps both descriptions open, even if
+        # the deploy driver closes its copies before ExecStartPost starts.
+        self.tx.path('/run/lock').mkdir(parents=True)
+        self.tx.path('/var/log/hybrid-ai').mkdir(parents=True)
+        self.tx.project = 'haven'
+        real_dup2 = os.dup2
+        workers = []
+        def deploy(sha, *, handoff):
+            self.assertTrue(handoff)
+            workers.append(subprocess.Popen(['/bin/cat'], stdin=subprocess.PIPE,
+                                            pass_fds=(9, 8)))
+            with self.assertRaises(BlockingIOError):
+                self.tx.lock_pair()
+
+        try:
+            with patch.object(MODULE, 'Transaction', return_value=self.tx), \
+                 patch.object(self.tx, 'deploy', side_effect=deploy), \
+                 patch.object(self.tx, 'command', return_value=f'haven-deploy:x:{os.getgid()}:'), \
+                 patch.object(os, 'geteuid', return_value=0), \
+                 patch.object(os, 'chown'), patch.object(os, 'fchown'), \
+                 patch.object(os, 'dup2', side_effect=lambda src, dst, **kw:
+                              real_dup2(src, dst, **kw) if dst in (8, 9) else dst), \
+                 patch.object(sys, 'argv', ['install-root.py', 'deploy', self.sha]):
+                MODULE.main()
+            self.assertIsNone(workers[0].poll())
+            # Model ExecStart's exit, including on the buggy implementation.
+            for fd in (8, 9):
+                try:
+                    os.close(fd)
+                except OSError:  # The corrected driver has already closed it.
+                    pass
+            for fd in self.tx.lock_pair():
+                os.close(fd)
+        finally:
+            for worker in workers:
+                worker.communicate(timeout=5)
 
     def test_legacy_and_repeated_deployment(self):
         self.tx.deploy(self.sha)
@@ -320,6 +376,8 @@ tls_render_to_file status/Caddyfile.tmpl "on dns auth" status/Caddyfile
         self.assertIn('# unrelated line', self.tx.keys.read_text())
         self.assertIn('restrict,command=', self.tx.keys.read_text())
         self.tx.wiring(self.sha)
+        with self.assertRaisesRegex(MODULE.Refusal, 'previous deployment awaits verifier'):
+            self.tx.deploy(self.sha)
         self.tx.accept(self.sha, self.receipt())
         self.assertEqual(self.tx.load()['phase'], 'accepted')
         self.tx.deploy(self.sha)

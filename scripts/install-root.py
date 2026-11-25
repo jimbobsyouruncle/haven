@@ -1249,7 +1249,7 @@ class Transaction:
         state = container['State']
         return not state['Running'] and state['Status'] in ('exited', 'dead') and state['ExitCode'] != 0
 
-    def verify_proxy(self, sha):
+    def verify_proxy(self, sha, *, recover=True):
         journal = self.load()
         if not journal or journal['sha'] != sha or journal['phase'] != 'awaiting_verifier':
             raise Refusal('PROXY_IDENTITY: no matching pending deployment')
@@ -1260,7 +1260,7 @@ class Transaction:
         deadline = time.monotonic() + 60
         while True:
             candidate = self.identify_candidate(runtime)
-            if not runtime['unchanged'] and self.failed_proxy(candidate):
+            if recover and not runtime['unchanged'] and self.failed_proxy(candidate):
                 self.recover_proxy(journal)
                 raise Refusal('PROXY_CANDIDATE: verification failed; previous proxy restored, owner review required')
             if candidate['State']['Running'] and self.proxy_answers(runtime['tls_domain']):
@@ -1581,10 +1581,12 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                         or path.read_bytes() != (Path(tmp) / output).read_bytes()):
                     raise Refusal(f'installed generated configuration differs from expected render: {name}')
 
-    def reverify_recovery(self, sha, journal_hash):
+    def reverify_recovery(self, sha, journal_hash, run_id=None):
         """Verify and accept the specific pending transaction, without deployment."""
-        if sha != RECOVERY_SHA:
+        if run_id is None and sha != RECOVERY_SHA:
             raise Refusal('unsupported recovery revision')
+        if run_id is not None and not re.fullmatch(r'[1-9][0-9]{0,19}', run_id):
+            raise Refusal('invalid recovery run ID')
         if not re.fullmatch(r'[0-9a-f]{64}', journal_hash):
             raise Refusal('invalid transaction identity')
         self.trusted(self.journal)
@@ -1627,12 +1629,32 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                 checksum.update(chunk)
         if checksum.hexdigest() != recovery['archive_sha256']:
             raise Refusal('recovery archive checksum mismatch')
+        if run_id is not None:
+            active = journal.get('active_files')
+            if (self.project != 'haven' or journal.get('failure')
+                    or journal.get('operation', {}).get('stage') != 'run-installer'
+                    or not journal.get('proxy_runtime', {}).get('candidate_id')
+                    or not isinstance(active, dict)
+                    or active.keys() != {item['path'] for item in journal['files']}):
+                raise Refusal('completed installer checkpoint unavailable')
+            for name, digest in active.items():
+                path = Path(name)
+                # wiring() checks the deploy-account-owned SSH entrypoint.
+                if path == self.keys:
+                    continue
+                self.trusted(path)
+                if (self.file_digest(path) if path.exists() else None) != digest:
+                    raise Refusal('installed control differs from completed installer checkpoint')
+            self.verify_proxy(sha, recover=False)
+            self.verify_services(sha)
         driver = Path(__file__).absolute().parent
         self.trusted(driver, tree=True)
         env = dict(PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
                    HAVEN_APP_DIR=str(self.app), HAVEN_ENV_FILE_FALLBACK=str(self.layout),
                    HAVEN_VERIFY_INSTALL_ROOT='1', HAVEN_VERIFY_BACKUP_GATES='required',
                    HAVEN_VERIFY_RECOVERY='1', HAVEN_REPOSITORY_SLUG='jimbobsyouruncle/haven')
+        if run_id is not None:
+            env['HAVEN_VERIFY_RECOVERY_RUN_ID'] = run_id
         with tempfile.TemporaryFile() as evidence:
             env['HAVEN_VERIFY_EVIDENCE_FD'] = str(evidence.fileno())
             self.run(['/usr/bin/timeout', '--kill-after=30s', '10m', 'bash',
@@ -1640,9 +1662,11 @@ tls_render_to_file status/Caddyfile.tmpl "$variants" "$1/caddy"
                      cwd=self.app, env=env, check=True, pass_fds=(evidence.fileno(),))
             evidence.seek(0)
             result = json.load(evidence)
-            if not all(result.get('gates', {}).get(k, {}).get('state') == 'PASS' for k in
-                       ('backup_log', 'backup_readability', 'backup_tile', 'verdict_file')):
-                raise Refusal('mandatory recovery backup or receipt evidence missing')
+            required = ('backup_log', 'backup_readability', 'backup_tile', 'verdict_file')
+            if run_id is not None:
+                required += ('proxy_runtime', 'compose_services')
+            if not all(result.get('gates', {}).get(k, {}).get('state') == 'PASS' for k in required):
+                raise Refusal('mandatory recovery evidence missing')
             matching()
             self.accept(sha, result)
 
@@ -1970,10 +1994,11 @@ def main():
         return
     actions = ('deploy', 'migrate', 'recover', 'accept', 'verify', 'verify-proxy', 'verify-services',
                'rollback', 'reverify-manual', 'reverify-recovery')
-    if len(sys.argv) not in (3, 4) or sys.argv[1] not in actions \
-            or (len(sys.argv) == 4) != (sys.argv[1] == 'reverify-recovery') \
-            or not re.fullmatch(r'[0-9a-f]{40}', sys.argv[2]):
-        raise Refusal('usage: install-root.py deploy|migrate|recover|accept|verify|rollback|reverify-manual <full SHA>')
+    if (len(sys.argv) < 3 or sys.argv[1] not in actions
+            or len(sys.argv) not in ((4, 5) if sys.argv[1] == 'reverify-recovery' else (3,))
+            or not re.fullmatch(r'[0-9a-f]{40}', sys.argv[2])):
+        raise Refusal('usage: install-root.py <action> <full SHA>; '
+                      'reverify-recovery also requires <journal SHA256> [deployment run ID]')
     if os.geteuid() != 0:
         raise Refusal('installation handoff requires root')
     action, sha = sys.argv[1:3]
@@ -1987,7 +2012,7 @@ def main():
     for fd in acquired:
         os.close(fd)
     for opened, fd in zip(preserved, (9, 8)):
-        os.dup2(opened, fd)
+        os.dup2(opened, fd, inheritable=False)
         os.close(opened)
     if action == 'migrate':
         transaction.identity_cutover = True
@@ -2011,6 +2036,12 @@ def main():
         os.dup2(stream, 2)
         os.close(stream)
         transaction.deploy(sha, handoff=True)
+        # flock belongs to the open file description, including copies passed
+        # to installer descendants. ExecStartPost can open fresh locks only
+        # after this explicit unlock, which follows the durable checkpoint.
+        for fd in (8, 9):
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
     elif action == 'rollback':
         journal = transaction.load()
         if not journal or journal['sha'] != sha or journal['phase'] not in (
@@ -2027,7 +2058,7 @@ def main():
     elif action == 'reverify-manual':
         transaction.reverify_manual(sha)
     elif action == 'reverify-recovery':
-        transaction.reverify_recovery(sha, sys.argv[3])
+        transaction.reverify_recovery(sha, *sys.argv[3:])
     elif action == 'accept':
         transaction.accept(sha, json.load(sys.stdin))
     else:

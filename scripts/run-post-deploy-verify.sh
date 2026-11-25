@@ -515,7 +515,7 @@ probe_runs() {
   RUN_IDS=(); RUN_STATUS=(); RUN_CONCLUSION=()
 
   if [[ "${HAVEN_VERIFY_RECOVERY:-0}" == 1 ]]; then
-    if ! python3 "$DRIVER_DIR/deploy-provenance.py" recovery-runs "$SHA" > "$BODY_FILE"; then
+    if ! python3 "$DRIVER_DIR/deploy-provenance.py" recovery-runs "$SHA" ${HAVEN_VERIFY_RECOVERY_RUN_ID:+"$HAVEN_VERIFY_RECOVERY_RUN_ID"} > "$BODY_FILE"; then
       PROBE_STATE="error"
       PROBE_ERROR="historical recovery provenance unavailable or unsuccessful"
       return 0
@@ -630,7 +630,7 @@ while :; do
 
       if [[ "${HAVEN_VERIFY_RECOVERY:-0}" == 1 ]]; then
         record_gate workflow_runs true PASS "exact-tree required CI and historical source validation passed"
-        record_gate historical_deployment false FAIL "$(jq -r '"historical deployment run \(.historical_failure.failed_deploy_run) failed; recovery verification is separate"' "$BODY_FILE")"
+        record_gate historical_deployment false FAIL "$(jq -r '"historical deployment run \(.historical_failure.failed_deploy_run) concluded \(.historical_failure.conclusion // "failure"); recovery verification is separate"' "$BODY_FILE")"
       elif [[ "${HAVEN_VERIFY_MANUAL_CUTOVER:-0}" == 1 ]]; then
         record_gate workflow_runs true PASS "$(jq -r '"exact merged PR \(.manual_cutover.pr) head \(.manual_cutover.head_sha): required CI/SAST and context gates passed; applicable deployed-SHA workflows succeeded"' "$BODY_FILE")"
         record_gate manual_deployment false SKIPPED "$(jq -r '"owner-authorized manual cutover: disabled push deployment runs \(.manual_cutover.intentionally_skipped_deploy_runs | tojson), both jobs skipped; automatic deployment inapplicable"' "$BODY_FILE")"
@@ -671,6 +671,10 @@ while :; do
           if ! python3 "$DRIVER_DIR/install-root.py" verify-services "$SHA"; then
             finish FAIL 1 "mandatory Compose service health verification failed"
           fi
+        elif [[ "${HAVEN_VERIFY_RECOVERY:-0}" == 1 && -n "${HAVEN_VERIFY_RECOVERY_RUN_ID:-}" ]]; then
+          # The recovery driver checked these under both locks before invoking us.
+          record_gate proxy_runtime true PASS "Caddy candidate identity and route verified by recovery driver"
+          record_gate compose_services true PASS "enabled Compose services verified by recovery driver"
         fi
         health_rc=0
         "$APP_DIR/doctor.sh" --no-cloud >/dev/null 2>&1 || health_rc=$?

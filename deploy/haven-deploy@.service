@@ -51,7 +51,8 @@ Environment=HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven
 # `%i` is the 40-hex commit; deploy-instance.sh re-validates it, then fetches,
 # checks ancestry, resets, asserts HEAD, and execs deploy-remote.sh.
 ExecStart=/opt/haven/scripts/deploy-instance.sh %i
-# ExecStart has exited and released its locks. Keep the unit/SSH request pending
+# ExecStart explicitly unlocks the installer handoff after its final checkpoint.
+# Keep the unit/SSH request pending
 # until the existing root verifier accepts the durable transaction. Failure or
 # cancellation leaves the journal unresolved and blocks subsequent deployment.
 Environment=HAVEN_APP_DIR=/opt/haven
