@@ -9,7 +9,7 @@
 #
 # WHAT IT DOES, IN ORDER:
 #   1. Checks that required programs (docker, git, jq, curl, openssl, sqlite3,
-#      rsync, tailscale) are installed, and stops with instructions if any are
+#      rsync, tailscale, htpasswd) are installed, and stops with instructions if any are
 #      missing.
 #   2. Refreshes the read-only agent repo reference tree Hermes reads at
 #      /agent-repos, so it is current even if a later step fails or stops. A
@@ -236,7 +236,7 @@ fi
 log "Probing host dependencies..."
 
 MISSING=()
-for bin in docker git jq curl openssl sqlite3 rsync; do
+for bin in docker git jq curl openssl sqlite3 rsync htpasswd; do
   command -v "$bin" >/dev/null 2>&1 || MISSING+=("$bin")
 done
 command -v tailscale >/dev/null 2>&1 || MISSING+=("tailscale")
@@ -248,7 +248,7 @@ if ((${#MISSING[@]} > 0)); then
   Install them first. On Raspberry Pi OS / Debian / Ubuntu:
 
     sudo apt-get update
-    sudo apt-get install -y git jq curl openssl sqlite3 rsync restic
+    sudo apt-get install -y git jq curl openssl sqlite3 rsync restic apache2-utils
     curl -fsSL https://get.docker.com | sudo sh
     curl -fsSL https://tailscale.com/install.sh | sudo sh
     sudo usermod -aG docker "$USER"   # then log out and back in
