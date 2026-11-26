@@ -322,14 +322,6 @@ services:
         read_only: true
         bind:
           create_host_path: false
-      # The post-deploy verifier's log: read-only display data for the Deploy
-      # verification tile. Same single-file pattern as the two logs above.
-      - type: bind
-        source: ${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/haven-post-deploy-verify.log}
-        target: /data/post-deploy-verify.log
-        read_only: true
-        bind:
-          create_host_path: false
     environment:
       STATUS_PORT: "8088"
       STATUS_BACKUP_SOCKET: /run/status-verifier/backup.sock
@@ -346,7 +338,6 @@ services:
       WEBUI_DATA_PATH: /data/webui_data
       BACKUP_LOG_PATH: /data/backup.log
       INSTALL_LOG_PATH: /data/install.log
-      POST_DEPLOY_VERIFY_LOG_PATH: /data/post-deploy-verify.log
       # Not a secret: the pod's MagicDNS name, and it is masked in all output.
       # The status container resolves it through this service's `dns:` entry
       # (the tailnet resolver), so no stored mesh address is needed.
@@ -412,6 +403,9 @@ services:
       dockerfile: Dockerfile
     image: ${CADDY_IMAGE:-haven-caddy:2.11.9-dns}
 #@end
+    # A bind-mounted file can retain its old inode after an atomic render.
+    labels:
+      dev.haven.caddy-config: ${HAVEN_CADDY_CONFIG_HASH:-unset}
     container_name: haven-proxy
     restart: unless-stopped
     depends_on:

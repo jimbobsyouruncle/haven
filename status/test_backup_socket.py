@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Real Unix-socket and host-verifier integration; synthetic logs, no Docker."""
+"""Real Unix-socket integration; synthetic logs, no Docker."""
 import importlib.util
 import json
 import os
 from pathlib import Path
-import shutil
 import socket
 import stat
 import subprocess
@@ -131,52 +130,15 @@ class BackupSocketTests(unittest.TestCase):
                 self.assertEqual(client.recv(1024), b"")
             self.assertEqual(self.request()[0], 200)
 
-    def test_verifier_with_real_curl(self):
-        """Only GitHub, HEAD and privilege dropping are stubbed; socket HTTP is real."""
+    def test_private_probe_with_real_curl(self):
         self.write_success()
-        bin_dir = self.root / "bin"
-        bin_dir.mkdir()
-        real_curl = shutil.which("curl")
-        self.assertIsNotNone(real_curl)
-        scripts = {
-            "curl": '''#!/bin/bash
-for arg in "$@"; do
-  if [[ "$arg" == --unix-socket ]]; then exec "$REAL_CURL" "$@"; fi
-done
-while [[ $# -gt 0 ]]; do
-  if [[ "$1" == -o ]]; then out="$2"; shift; fi
-  shift
-done
-printf '%s' '{"workflow_runs":[{"id":1,"status":"completed","conclusion":"success"}]}' > "$out"
-printf 200
-''',
-            "git": "#!/bin/sh\nprintf '%s\\n' \"$FIXTURE_SHA\"\n",
-            "id": "#!/bin/sh\nif [ \"$1\" = -u ]; then echo 0; else exec /usr/bin/id \"$@\"; fi\n",
-            "setpriv": "#!/bin/sh\nexit 0\n",
-        }
-        for name, text in scripts.items():
-            file = bin_dir / name
-            file.write_text(text)
-            file.chmod(0o700)
-        sha = "a" * 40
-        layout = self.root / "layout.env"
-        layout.write_text(f"HAVEN_DATA_DIR={self.root}\nBACKUP_LOG={self.log}\nBACKUP_GROUP_GID={os.getgid()}\n")
-        env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", REAL_CURL=real_curl,
-                   FIXTURE_SHA=sha, HAVEN_ENV_FILE_FALLBACK=str(layout),
-                   HAVEN_APP_DIR=str(self.root), HAVEN_UID=str(os.getuid()),
-                   HAVEN_GID=str(os.getgid()), VERIFY_STATUS_GID=str(os.getgid()),
-                   HAVEN_VERIFY_BACKUP_GATES="required",
-                   HAVEN_DEPLOY_VERDICT_DIR=str(self.root / "receipts"))
-        for key in ("HAVEN_DATA_DIR", "BACKUP_LOG", "BACKUP_GROUP_GID", "VERIFY_STATUS_UID"):
-            env.pop(key, None)
         with app.backup_verifier_socket(self.path):
-            result = subprocess.run(["bash", str(ROOT / "scripts/run-post-deploy-verify.sh"),
-                                     "--wait-for", sha], env=env, capture_output=True,
-                                    text=True, timeout=20)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        receipt = json.loads((self.root / "receipts" / f"{sha}.json").read_text())
-        self.assertEqual(receipt["verdict"], "PASS")
-        self.assertEqual(receipt["gates"]["backup_tile"]["state"], "PASS")
+            result = subprocess.run(
+                ["curl", "--disable", "--fail", "--silent", "--show-error", "--noproxy", "*",
+                 "--unix-socket", self.path, "http://localhost/backup"],
+                capture_output=True, check=True, timeout=10,
+            )
+        self.assertEqual(json.loads(result.stdout), {"name": "Backups", "state": "ok"})
 
 
 if __name__ == "__main__":

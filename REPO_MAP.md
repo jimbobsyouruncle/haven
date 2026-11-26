@@ -70,7 +70,7 @@
 
 - deploy/50-haven-deploy.rules
 - deploy/IDENTITY-MIGRATION.md - Coordinated Haven identity cutover
-- deploy/README.md - deploy/ — headless deploy (one commit, one unit)
+- deploy/README.md - Deploy Haven on Jarvis
 - deploy/haven-canvas.service
 - deploy/haven-deploy@.service
 - deploy/haven-docker-prune.service
@@ -103,7 +103,7 @@
 - docs/haven/adr/0003-ciso-persona.md - ADR-0003 — Independent CISO persona
 - docs/haven/adr/0004-github-epic-governance.md - ADR-0004 — GitHub epics and agent governance
 - docs/haven/adr/0005-evidence-based-completion.md - ADR-0005 — Evidence-based issue completion
-- docs/haven/adr/0006-installation-root.md - ADR-0006 — Transactional installation root migration
+- docs/haven/adr/0006-installation-root.md - ADR-0006 — Canonical installation and desired-state deployment
 - docs/haven/adr/0007-complete-platform-identity.md - ADR-0007 — Complete Haven identity and restore automatic deployment
 - docs/haven/adr/0008-persona-runtime-isolation.md - ADR-0008 — Persona runtime, host filesystem, and secret isolation
 ## docs/haven/identity
@@ -189,20 +189,18 @@
 - scripts/ci-components.py - Small conservative PR test selector; unknown paths select full validation.
 - scripts/ci-parity.sh - Replay the repository-owned static gates from CI, locally, before you push.
 - scripts/deploy-forced-command.sh
+- scripts/deploy-host.py - Reconcile the canonical Haven installation to an approved main commit.
 - scripts/deploy-image-gate.sh - FILE: scripts/deploy-image-gate.sh
 - scripts/deploy-instance.sh
 - scripts/deploy-provenance.py - Fail-closed main deployment provenance; API reads only, no host mutation.
-- scripts/deploy-remote.sh
+- scripts/deploy-remote.sh - Called by deploy-host.py while it holds the deployment locks.
 - scripts/deploy-trigger.sh
-- scripts/deploy-verify.sh - Root ExecStartPost: resolve the existing log override and bound verification.
 - scripts/generate-agent-context.py - Generate Haven's architectural maps with the pinned shared generator.
-- scripts/install-root.py - Recoverable installation/identity handoff using the ADR-0006 checkpoint.
 - scripts/no-masked-literals-baseline.txt
 - scripts/provision-persona.sh - Provision and verify a dedicated Haven persona identity and storage as root.
 - scripts/prune-conversations.sh - FILE: scripts/prune-conversations.sh
 - scripts/prune-docker-cache.sh - FILE: scripts/prune-docker-cache.sh
 - scripts/reset-passwords.sh - FILE: scripts/reset-passwords.sh
-- scripts/run-post-deploy-verify.sh
 - scripts/sandbox-firewall.sh
 - scripts/setup-agent-workspace.sh - FILE: scripts/setup-agent-workspace.sh
 - scripts/setup-persona.sh - Prepare application configuration for a dedicated Haven persona.
@@ -226,17 +224,15 @@
 - scripts/test-container-upgrade.sh - CI smoke: a pinned image replacement preserves data, unrelated services and rollback.
 - scripts/test-deploy-build-gate.sh - FILE: scripts/test-deploy-build-gate.sh
 - scripts/test-deploy-forced-command.sh
+- scripts/test-deploy-host.py - Focused offline tests for the canonical deployment driver.
 - scripts/test-deploy-image-gate.sh
-- scripts/test-deploy-instance.sh
 - scripts/test-deploy-provenance.sh - Offline API/event fixtures for the existing deployment workflow.
-- scripts/test-deploy-remote.sh
 - scripts/test-deploy-trigger.sh
 - scripts/test-deploy-wiring-install.sh - FILE: scripts/test-deploy-wiring-install.sh
 - scripts/test-doctor-b87-tooling.sh - FILE: scripts/test-doctor-b87-tooling.sh
 - scripts/test-doctor-backup-counts.sh - FILE: scripts/test-doctor-backup-counts.sh
 - scripts/test-doctor-backup-probe.sh - Offline regression guard for doctor.sh's backup-repository probe.
 - scripts/test-doctor-lease-less.sh - FILE: scripts/test-doctor-lease-less.sh
-- scripts/test-doctor-post-deploy-log.sh - FILE: scripts/test-doctor-post-deploy-log.sh
 - scripts/test-doctor-proxy-b77.sh - FILE: scripts/test-doctor-proxy-b77.sh
 - scripts/test-doctor-resolv-conf.sh - FILE: scripts/test-doctor-resolv-conf.sh
 - scripts/test-doctor-runpod-key.sh - FILE: scripts/test-doctor-runpod-key.sh
@@ -248,16 +244,13 @@
 - scripts/test-hermes-nonroot-preflight.sh - FILE: scripts/test-hermes-nonroot-preflight.sh
 - scripts/test-install-auth-env-leak.sh - FILE: scripts/test-install-auth-env-leak.sh
 - scripts/test-install-health.sh - FILE: scripts/test-install-health.sh
-- scripts/test-install-root.sh - ADR-0006 and coordinated identity fixtures. The optional Compose check uses
 - scripts/test-install-tailscale-migration.sh - FILE: scripts/test-install-tailscale-migration.sh
-- scripts/test-post-deploy-verify-log-env.sh - FILE: scripts/test-post-deploy-verify-log-env.sh
 - scripts/test-provision-persona.sh - Run as root in a disposable environment. Account mutations use only fixtures.
 - scripts/test-prune-conversations.sh - FILE: scripts/test-prune-conversations.sh
 - scripts/test-prune-docker-cache.sh - FILE: scripts/test-prune-docker-cache.sh
 - scripts/test-read-probe.sh - FILE: scripts/test-read-probe.sh
 - scripts/test-repository-identity.sh - Offline selector tests, including refusals before any consumer side effects.
 - scripts/test-reset-passwords.sh - FILE: scripts/test-reset-passwords.sh
-- scripts/test-run-post-deploy-verify.sh
 - scripts/test-sandbox-firewall.sh
 - scripts/test-secret-guard.sh - FILE: scripts/test-secret-guard.sh
 - scripts/test-status-backup-log-env.sh - FILE: scripts/test-status-backup-log-env.sh
@@ -294,8 +287,7 @@
 - status/README.md - status/ — Status Page
 - status/app.py - FILE: status/app.py
 - status/test_backup_probe.py - FILE: status/test_backup_probe.py
-- status/test_backup_socket.py - Real Unix-socket and host-verifier integration; synthetic logs, no Docker.
-- status/test_deploy_verification.py - FILE: status/test_deploy_verification.py
+- status/test_backup_socket.py - Real Unix-socket integration; synthetic logs, no Docker.
 - status/test_hub_urls.py - FILE: status/test_hub_urls.py
 - status/test_pod_probe.py - FILE: status/test_pod_probe.py
 ## tests/qualification

@@ -102,12 +102,13 @@ chmod 600 "$CRED/r2.env" "$CRED/repo-password"
   && git add backup/restore.sh scripts/lib/haven-env.sh && git commit -q -m init )
 SHA="$( cd "$APPD" && git rev-parse HEAD )"
 
-# Minimal install.sh / doctor.sh stubs so deploy-remote's steps succeed.
+# Stub reconciliation and firewall for the deploy wrapper. Use real Doctor.
 cat > "$APPD/install.sh" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
 chmod +x "$APPD/install.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$APPD/scripts/sandbox-firewall.sh"
 
 run_doctor() { # mode
   : > "$SYSCTL_LOG"
@@ -119,7 +120,7 @@ run_doctor() { # mode
 
 run_deploy() { # mode
   : > "$SYSCTL_LOG"
-  ( cd "$APPD" && PATH="$BIN:$PATH" HAVEN_BACKUP_MODE="$1" \
+  ( cd "$APPD" && PATH="$BIN:$PATH" HAVEN_BACKUP_MODE="$1" HAVEN_BACKUP_CRED_DIR="$CRED" \
       HAVEN_WORK_DIR="$APPD" HOME="$WORK/home" \
       timeout 60 bash ./scripts/deploy-remote.sh "$SHA" ) > "$WORK/deploy.$1.out" 2>&1
   return 0

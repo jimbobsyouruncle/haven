@@ -1,5 +1,7 @@
 # Coordinated Haven identity cutover
 
+> Historical record. The transaction driver and commands below were retired by the [desired-state decision](../docs/haven/adr/0006-installation-root.md). For the current Jarvis bootstrap and disaster recovery, use the [deployment runbook](README.md).
+
 This runbook records the one-time legacy identity cutover. Current automatic deployment follows [ADR-0006](../docs/haven/adr/0006-installation-root.md#current-decision-2026-11-21). Direct cutover, recovery execution and cleanup remain separate owner decisions. This uses `install-root.py` and its ADR-0006
 checkpoint, immutable Caddy recovery export, main ancestry check and verifier.
 It does not change the RunPod worker, remote Restic repository or credentials.

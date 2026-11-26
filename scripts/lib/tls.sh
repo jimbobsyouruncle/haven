@@ -733,7 +733,7 @@ tls_validate_caddyfile() {  # FILE
     token_mount=(
       -v "${HAVEN_TLS_TOKEN_FILE}:/run/secrets/${TLS_RENDER_SECRET_NAME:-$(tls_secret_name "${ACME_DNS_PROVIDER:-cloudflare}")}:ro"
     )
-  elif command -v caddy >/dev/null 2>&1; then
+  elif [[ "${HAVEN_DESIRED_DEPLOY:-0}" != 1 ]] && command -v caddy >/dev/null 2>&1; then
     # Plain shell variables that were never exported: export them for the
     # validator only, in a subshell, so the caller's environment is untouched.
     (
@@ -744,10 +744,15 @@ tls_validate_caddyfile() {  # FILE
     return
   fi
   if tls__docker_ready; then
-    local -a docker_env=()
+    local -a docker_env=() isolation=()
+    if [[ "${HAVEN_DESIRED_DEPLOY:-0}" == 1 ]]; then
+      isolation=(--read-only --cap-drop ALL --cap-add NET_BIND_SERVICE
+        --security-opt no-new-privileges --tmpfs /data --tmpfs /config
+        --memory 128m --cpus 0.5)
+    fi
     local e
     for e in "${envs[@]}"; do docker_env+=(-e "$e"); done
-    docker run --rm --network none --entrypoint caddy \
+    docker run --rm --network none "${isolation[@]}" --entrypoint caddy \
       "${docker_env[@]}" \
       -v "${file}:/etc/caddy/Caddyfile:ro" ${token_mount[@]+"${token_mount[@]}"} \
       "$(tls_validate_image_for "$file")" \
@@ -787,6 +792,10 @@ tls_render_and_install() {
   local rc=0
   tls_validate_compose_file "$compose_tmp" || rc=$?
   if (( rc == 3 )); then
+    if [[ "${HAVEN_DESIRED_DEPLOY:-0}" == 1 ]]; then
+      rm -f -- "$caddy_tmp" "$compose_tmp"
+      tls__die "Deployment requires Docker Compose configuration validation."
+    fi
     tls__warn "docker is unavailable: the rendered docker-compose.yml was NOT validated."
   elif (( rc != 0 )); then
     rm -f -- "$caddy_tmp" "$compose_tmp"
@@ -795,6 +804,10 @@ tls_render_and_install() {
   rc=0
   tls_validate_caddyfile "$caddy_tmp" || rc=$?
   if (( rc == 3 )); then
+    if [[ "${HAVEN_DESIRED_DEPLOY:-0}" == 1 ]]; then
+      rm -f -- "$caddy_tmp" "$compose_tmp"
+      tls__die "Deployment requires Caddy configuration validation."
+    fi
     tls__warn "caddy is unavailable: the rendered status/Caddyfile was NOT validated."
   elif (( rc != 0 )); then
     rm -f -- "$caddy_tmp" "$compose_tmp"

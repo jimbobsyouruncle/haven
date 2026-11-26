@@ -27,7 +27,6 @@
 #     Shell syntax check                                        (git ls-files, bash -n)
 #     Python syntax check                                       (git ls-files, py_compile)
 #     Generated pipe is in sync with its sources                 (openwebui/build_pipe.py)
-#     Status deploy-verification tile tests                     (status/test_deploy_verification.py)
 #     GPU pod wake-readiness tile tests                         (status/test_pod_probe.py)
 #     Status hub URL / domain-cutover tests                     (status/test_hub_urls.py)
 #     Assert proxy allowlist is intact
