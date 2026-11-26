@@ -45,7 +45,7 @@ It shows:
 
 - **Services** — Open WebUI, Ollama, Hermes Agent, OpenHands, and the GPU pod, with response times
 - **Scheduled jobs** — the last outcome of every backup, integrity check, restore rehearsal, retention prune and install, with staleness detection
-- **System checks** — container states, disk, memory, installed models, backup freshness, deploy verification, database health
+- **System checks** — container states, disk, memory, installed models, backup freshness, database health
 - **Recent errors** — filtered from the last 120 log lines of each service
 - **Log tails** — collapsible, last 40 lines per service
 - **Download diagnostic** — one click, no terminal
@@ -68,7 +68,7 @@ This page reveals service state, log excerpts, and offers a downloadable bundle.
 
 ### It holds no secrets
 
-The status container is **not given `.env`**, any API key, or any credential. It cannot leak what it was never given. Its whole configuration is `STATUS_PORT`, `LOCAL_DOMAIN`, `TLS_ENABLED`, `TLS_DOMAIN`, `OLLAMA_URL`, `WEBUI_URL`, `HERMES_URL`, `OPENHANDS_URL`, `WEBUI_DATA_PATH`, `BACKUP_LOG_PATH`, `INSTALL_LOG_PATH`, `POST_DEPLOY_VERIFY_LOG_PATH`, `RUNPOD_HOST`, `RUNPOD_KEY_PRESENT`, `PI_HOST`, `VLLM_PORT`, `PYTHONDONTWRITEBYTECODE` and `DO_NOT_TRACK` — service addresses, host names, port numbers, container-side file paths and three static flags. `TLS_ENABLED` (`no` by default, the same truthy values the installer accepts) and `TLS_DOMAIN` (the public certificate name) are public hostnames only: they decide whether the hub prints the `https://` names or today's `http://` ones, and they grant no access. They are deliberately not `TLS_HOSTS`, the certificate watchdog's probe list, and they carry no key, token or path. None of it is a secret; the one hostname that could be sensitive, `RUNPOD_HOST`, is masked in all output anyway. `RUNPOD_KEY_PRESENT` is a derived presence boolean — `1` when the host has `RUNPOD_API_KEY` set, empty otherwise — not a credential. Retrieving the key value itself from this container is impossible: compose passes only `${RUNPOD_API_KEY:+1}`, so the value never enters it. `RUNPOD_HOST` is a MagicDNS **name**, never a stored address: the container resolves it through the `dns:` resolver on the status service each time the GPU pod tile is probed, and only the resolved address is validated against `[IP_ADDRESS]/10`.
+The status container is **not given `.env`**, any API key, or any credential. It cannot leak what it was never given. Its whole configuration is `STATUS_PORT`, `LOCAL_DOMAIN`, `TLS_ENABLED`, `TLS_DOMAIN`, `OLLAMA_URL`, `WEBUI_URL`, `HERMES_URL`, `OPENHANDS_URL`, `WEBUI_DATA_PATH`, `BACKUP_LOG_PATH`, `INSTALL_LOG_PATH`, `RUNPOD_HOST`, `RUNPOD_KEY_PRESENT`, `PI_HOST`, `VLLM_PORT`, `PYTHONDONTWRITEBYTECODE` and `DO_NOT_TRACK` — service addresses, host names, port numbers, container-side file paths and three static flags. `TLS_ENABLED` (`no` by default, the same truthy values the installer accepts) and `TLS_DOMAIN` (the public certificate name) are public hostnames only: they decide whether the hub prints the `https://` names or today's `http://` ones, and they grant no access. They are deliberately not `TLS_HOSTS`, the certificate watchdog's probe list, and they carry no key, token or path. None of it is a secret; the one hostname that could be sensitive, `RUNPOD_HOST`, is masked in all output anyway. `RUNPOD_KEY_PRESENT` is a derived presence boolean — `1` when the host has `RUNPOD_API_KEY` set, empty otherwise — not a credential. Retrieving the key value itself from this container is impossible: compose passes only `${RUNPOD_API_KEY:+1}`, so the value never enters it. `RUNPOD_HOST` is a MagicDNS **name**, never a stored address: the container resolves it through the `dns:` resolver on the status service each time the GPU pod tile is probed, and only the resolved address is validated against `[IP_ADDRESS]/10`.
 
 This is why the web diagnostic is deliberately narrower than `./collect-diagnostics.sh`: the CLI tool can report which config keys are set and how long their values are, because it runs as you on the host. The web service cannot, because giving it that access would make it worth attacking.
 
@@ -92,7 +92,6 @@ Each system check is a row with a state (`ok`, `warn`, `fail` or `info`), a one-
 | Resources | Disk and memory | `ok`, `warn` above 80 %, `fail` above 90 % |
 | Local models | Ollama `/api/tags` | `ok`, `warn` none installed, `fail` unreachable |
 | Backups | `backup.log` | `ok` within 36 h, `warn` within 168 h, `fail` older; `warn` when the log is absent, unreadable or empty |
-| Deploy verification | The post-deploy verifier log | `ok` on `PASS`, `fail` on `FAIL`/`TIMEOUT`, `warn` when nothing is readable yet |
 | Data | `webui.db` (read-only) | `ok`, `warn` missing or unreadable |
 
 #### Backups
@@ -145,17 +144,6 @@ primary gid for the Docker socket, drops every capability, and stays read-only
 with `no-new-privileges`. In user mode `BACKUP_GROUP_GID` is the container's own
 primary gid, so it gains nothing.
 
-#### Deploy verification
-
-A deploy runs `scripts/run-post-deploy-verify.sh` in a transient unit after every deploy. That unit appends one block per run to its log: a header `waiting for <40-hex-sha> at <UTC-timestamp>`, then exactly one verdict — `PASS`, `FAIL: <detail>` or `TIMEOUT: <detail>`. The **Deploy verification** tile reads the **last** block:
-
-- **`ok`** — the revision verified: the tile names the short sha and the timestamp.
-- **`fail`** — the verifier reported `FAIL` or `TIMEOUT`; the tile quotes the verdict and points at `journalctl -u 'haven-post-deploy-verify-*'` for the full run.
-- **`warn`** — no verdict is readable: the log is absent, empty, a directory (Docker creates one when the bind source does not exist yet), unreadable by the status container, or has no parseable `waiting for` line. The detail says which.
-
-The log is mounted **read-only, single file** into the container at `/data/post-deploy-verify.log` from `${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/haven-post-deploy-verify.log}`, the same pattern as `backup.log` and `install.log`. It holds only shas, timestamps and verdict lines — no credential, no environment value — and every emitted string still passes `redact()`.
-
-This complements the check `doctor.sh` added in PR #94, which surfaces the verdict at the **next** deploy; this tile is visible within about a minute of the verdict being written.
 
 ### Response headers are uniform across the proxy
 

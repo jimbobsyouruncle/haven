@@ -1247,7 +1247,6 @@
 - def probe_models()
 - def _owner_ids(path)
 - def probe_backups()
-- def probe_deploy_verification()
 - def probe_data()
 - def _parse_events(path, limit)
 - def _backup_journal_hint()
@@ -1300,15 +1299,7 @@
   - def test_do_not_replace_files_or_symlinks(self)
   - def test_cleanup_preserves_replacement(self)
   - def test_partial_request_times_out(self)
-  - def test_verifier_with_real_curl(self)
-
-## status/test_deploy_verification.py
-- def ok(msg)
-- def bad(msg)
-- def check(label, got, want)
-- def write(text)
-- def remove()
-- def shape(tile)
+  - def test_private_probe_with_real_curl(self)
 
 ## status/test_hub_urls.py
 - def ok(msg)
