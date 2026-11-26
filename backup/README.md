@@ -579,7 +579,7 @@ ONLY manual step; everything after it runs from the units. Card F must create:
      `/etc/credstore/haven-backup`. Symlinks inside the cache are warned
      about, never followed. A missing `haven-backup` account warns and logs
      `backup_cache_reconcile_skipped reason=no_account`; it is never fatal.
-   - A root-invoked `backup.sh` -- `--init` and the first-backup prompt -- gets
+   - A root-invoked `backup.sh` (including `--init`) gets
      its **own** cache, `RESTIC_CACHE_DIR=/var/cache/haven-backup-root`,
      through the `RESTIC_CACHE_DIR` override rather than `systemd-run`. So no
      entry under `/var/cache/haven-backup` is root-owned after setup, while
@@ -635,6 +635,8 @@ was captured.
 
 ## Troubleshooting
 
+A failed upload probe aborts with backup exit 1 and records Restic’s exit status and a fixed reason. Older Restic versions may report specific errors as a generic failure. The upload never attempts repository creation.
+
 | Symptom | Cause | Fix |
 |---|---|---|
 | `No credentials at ~/.config/...` | Backups never configured | Run `./install.sh` |
@@ -643,6 +645,10 @@ was captured.
 | `unable to open cache: ... permission denied` | A directory under the restic cache (`<repo>`, `<repo>/snapshots/<prefix>/`, `<repo>/index/`) is owned by another uid, usually after an earlier root run. `backup.sh` probes to that depth, so it sees this | Self-healing in both modes: `backup.sh` logs `restic_cache_unwritable` and falls back to a writable cache (`restic_cache_fallback`). In SYSTEM mode the fallback is the last resort: with no writable fallback the run aborts in seconds with `restic_cache_unusable` naming the path, owner and mode. `./install.sh` as root reconciles the ownership on its next run (`backup_cache_ownership_repaired`); by hand it is `sudo chown -R haven-backup:haven-backup /var/cache/haven-backup` |
 | `has permissions 644; expected 600` | Permissions drifted on a `HAVEN_BACKUP_CRED_DIR` file | `chmod 600 ~/.config/haven-backup/*` |
 | `has permissions ...; a systemd LoadCredential copy must be 0400 or 0440` | A `$CREDENTIALS_DIRECTORY` copy has an unexpected mode | None: systemd materialises that tmpfs copy (0400/0440) on every start. If it reports another mode, check the `LoadCredential=` source file's mode |
+| `repository_missing` (Restic exit 10) | Restic could not find a repository at the configured location | Verify the endpoint, bucket and prefix. For an existing backup, investigate the missing repository. Use explicit `--init` only when deliberately provisioning a new repository |
+| `repository_lock_failed` (Restic exit 11) | Restic could not acquire a repository lock | Check for another running Restic operation before investigating stale locks |
+| `repository_password_incorrect` (Restic exit 12) | Restic rejected the repository password | Verify the repository password configured for the backup account |
+| `repository_access_unknown` | Restic returned an exit status without a specific probe diagnosis | Check backend connectivity, credentials, permissions and cache access from the failing backup context |
 | `restic init failed` | Wrong account ID, bucket, or token | Verify the endpoint URL and that the token has Object Read & Write on that bucket |
 | `Could not capture ... via SQLite` | The database could not be captured online (e.g. `sqlite3` missing, or a WAL database in a directory the user cannot write) | `sudo apt-get install -y sqlite3`. The script falls back to a verified cold copy; if that also cannot capture it, the run is marked INCOMPLETE (exit 3), not failed |
 | `backup_incomplete` in the log, exit code 3 | The run uploaded but missed durable state (a rejected path, an unreadable entry, a partial rsync, an unverifiable database) | Check the events around it (`db_path_rejected`, `hermes_data_unreadable`, `rsync_partial`, `backup_data_unreadable`, `cold_copy_failed`). This is not retried automatically, by design |

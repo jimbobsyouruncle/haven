@@ -128,7 +128,7 @@
 #   ./backup.sh --check            verify repository integrity (slow)
 #   ./backup.sh --init             create the repository (first-time setup)
 #   ./backup.sh --dry-run          show what would be backed up, upload nothing
-#   ./backup.sh --non-interactive  never prompt (used by the systemd timer)
+#   ./backup.sh --non-interactive  compatibility flag used by the systemd timer
 #   ./backup.sh --stage-only       capture only (capture unit); load no credentials
 #   ./backup.sh --upload-only      upload only (upload unit); read no data tree
 # ---------------------------------------------------------------------------
@@ -186,7 +186,6 @@ STOPPED_CONTAINERS=()
 
 MODE="backup"          # backup | check | init | dryrun
 RUN_PHASE="both"       # both | stage | upload
-NON_INTERACTIVE=0
 for arg in "$@"; do
   case "$arg" in
     --check)           MODE="check" ;;
@@ -194,7 +193,7 @@ for arg in "$@"; do
     --dry-run)         MODE="dryrun" ;;
     --stage-only)      RUN_PHASE="stage" ;;
     --upload-only)     RUN_PHASE="upload" ;;
-    --non-interactive) NON_INTERACTIVE=1 ;;
+    --non-interactive) ;;
     -h|--help) sed -n '2,133p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown argument: $arg" >&2; exit 2 ;;
   esac
@@ -1552,12 +1551,6 @@ dry_run_report() {
 # missing, and it exits with EXIT_INCOMPLETE rather than reporting success.
 # ---------------------------------------------------------------------------
 upload_backup() {
-# We were invoked only to upload an existing staging directory, so an
-# uninitialised repository is fatal here; there is no capture to redo.
-if [[ "$RUN_PHASE" == "upload" ]] && ! restic snapshots >/dev/null 2>&1; then
-  die "Repository uninitialized. Run: ./backup/backup.sh --init"
-fi
-
 # In upload phase, stage_backup() did not run, so STAGED_MB and CONSISTENCY come
 # from the staged tree and the STATUS file (never from a data tree).
 if [[ "$RUN_PHASE" == "upload" ]]; then
@@ -1571,23 +1564,22 @@ if [[ "$RUN_PHASE" == "upload" ]]; then
 fi
 
 log "Checking restic repository status..."
-if ! restic snapshots >/dev/null 2>&1; then
-  warn "Repository at ${RESTIC_REPOSITORY} is not initialized!"
-  if (( NON_INTERACTIVE )) || [[ ! -t 0 ]]; then
-    die "Repository uninitialized. Run: ./backup/backup.sh --init"
-  fi
-  read -r -p "  Initialize repository now? [Y/n]: " _init_ans < /dev/tty
-  if [[ "${_init_ans,,}" != "n" ]]; then
-    log "Initialising restic repository..."
-    if restic init; then
-      event "repo_initialised_on_demand" "host=${BACKUP_HOST}"
-      ok "Repository initialized successfully."
-    else
-      die "Failed to initialize restic repository. Check credentials and bucket name."
-    fi
-  else
-    die "Backup aborted: repository is not initialized."
-  fi
+# Restic output can include backend URLs and paths. Use only its documented
+# exit codes, with a generic fallback for older versions and other failures.
+local probe_rc=0 reason guidance
+restic snapshots >/dev/null 2>&1 || probe_rc=$?
+if (( probe_rc != 0 )); then
+  case "$probe_rc" in
+    10) reason=repository_missing
+        guidance="Verify the configured repository location and confirm the repository exists." ;;
+    11) reason=repository_lock_failed
+        guidance="Check for another Restic operation holding the repository lock." ;;
+    12) reason=repository_password_incorrect
+        guidance="Verify the repository password used by this backup." ;;
+    *)  reason=repository_access_unknown
+        guidance="Check backend connectivity, credentials, permissions, and cache access." ;;
+  esac
+  die "Restic repository probe failed: reason=${reason} restic_exit=${probe_rc}. ${guidance}"
 fi
 
 if (( INCOMPLETE_COUNT > 0 )); then
