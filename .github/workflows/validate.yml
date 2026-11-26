@@ -132,7 +132,7 @@ jobs:
 
       - name: Repository identity tests
         if: steps.components.outputs.full == 'true'
-        # Offline selector validation and standalone verifier consistency.
+        # Offline selector validation and embedded alias consistency.
         run: bash scripts/test-repository-identity.sh
 
       - name: Shared path helper tests
@@ -191,17 +191,6 @@ jobs:
         # pager is followed. The harness fails against a doctor.sh without the
         # check.
         run: bash scripts/test-doctor-startup-grace.sh
-
-      - name: Doctor post-deploy-log tests
-        if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
-        # Offline. RUNS doctor.sh (stubbed host commands, fixture log files) to
-        # prove the new warning-only post-deploy verification-log check: a fresh
-        # non-empty log passes at the base exit code, a 0-byte log warns and exits
-        # 1 (never 2), a log older than the deployed HEAD's commit warns, and an
-        # absent or unreadable log or git tree prints a skip note and leaves the
-        # exit code alone. The harness fails against a doctor.sh without the
-        # check.
-        run: bash scripts/test-doctor-post-deploy-log.sh
 
       - name: Doctor RunPod key tests
         if: steps.components.outputs.full == 'true' || steps.components.outputs.doctor == 'true'
@@ -327,18 +316,11 @@ jobs:
         if: steps.components.outputs.full == 'true'
         run: sudo unshare --net -- python3 scripts/test-canvas-firewall.py
 
-      - name: Deploy-remote tests
-        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true' || steps.components.outputs.doctor == 'true'
-        # Offline. Proves scripts/deploy-remote.sh refuses a wrong revision
-        # before running install.sh, and maps doctor.sh's exit code correctly.
-        run: bash scripts/test-deploy-remote.sh
 
-      - name: Post-deploy verifier tests
-        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.doctor == 'true'
-        # Offline. Proves scripts/run-post-deploy-verify.sh resolves APP_DIR from
-        # the environment, then the layout file, then /workspace, and that the
-        # tree check verdicts PASS / FAIL against a throwaway checkout.
-        run: bash scripts/test-run-post-deploy-verify.sh
+
+      - name: Desired-state deployment tests
+        if: steps.components.outputs.full == 'true'
+        run: python3 scripts/test-deploy-host.py
 
       - name: Deployment provenance tests
         if: steps.components.outputs.full == 'true'
@@ -353,22 +335,11 @@ jobs:
         # that one user, action, verb and unit shape. systemctl is stubbed.
         run: bash scripts/test-deploy-forced-command.sh
 
-      - name: Installation root migration tests
-        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true'
-        run: bash scripts/test-install-root.sh --compose
 
       - name: Container image upgrade and rollback smoke
         if: steps.components.outputs.full == 'true'
         run: bash scripts/test-container-upgrade.sh
 
-      - name: Headless deploy instance tests
-        if: steps.components.outputs.full == 'true'
-        # Offline. Proves scripts/deploy-instance.sh re-validates the sha, takes
-        # the lock, refuses a credential-bearing origin, fetches the public
-        # https remote with hooks disabled, refuses a non-ancestor sha and a
-        # HEAD mismatch, writes the run log mode 0640, and that the unit has no
-        # Restart= line. git and deploy-remote.sh are stubbed.
-        run: bash scripts/test-deploy-instance.sh
 
       - name: Headless deploy trigger tests
         if: steps.components.outputs.full == 'true'
@@ -499,15 +470,6 @@ jobs:
         # are stubbed on PATH; the run uses --no-start.
         run: bash scripts/test-env-pin-migration.sh
 
-      - name: Post-deploy verify-log env tests
-        if: steps.components.outputs.full == 'true'
-        # Offline. Proves install.sh's STEP 8 template writes
-        # HAVEN_POST_DEPLOY_VERIFY_LOG as ${VAR:-default}: with nothing set
-        # it writes the default path; an owner override loaded from the existing
-        # .env survives the rewrite byte-for-byte; a second run changes nothing.
-        # Docker and friends are stubbed on PATH; the run uses --no-start. The
-        # harness fails against an install.sh without the template line.
-        run: bash scripts/test-post-deploy-verify-log-env.sh
 
       - name: Status backup-log env tests
         if: steps.components.outputs.full == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.backup == 'true'

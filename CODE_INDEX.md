@@ -278,7 +278,6 @@
 - install_firewall_unit()
 - install_deploy_unit()
 - install_deploy_polkit_rule()
-- install_post_deploy_verifier()
 - install_prune_scheduler()
 - run_prune_catch_up()
 - install_secret_guard_hook()
@@ -480,14 +479,27 @@
 ## scripts/deploy-forced-command.sh
 - refuse()
 
+## scripts/deploy-host.py
+- class Refusal(RuntimeError)
+- class Deployment()
+  - def __init__(self, root, runner, owner)
+  - def lock_pair(self)
+  - def path(self, value)
+  - def command(self, args, *, capture, **kwargs)
+  - def git(self, directory, *args, **kwargs)
+  - def trusted(self, path, tree)
+  - def preflight(self)
+  - def open_log(self, log_dir, sha)
+  - def update(self, sha)
+  - def deploy(self, sha, bootstrap)
+- def main()
+
 ## scripts/deploy-image-gate.sh
 - resolve_pin()
 - probe_manifest()
 
 ## scripts/deploy-instance.sh
-- die()
-- url_has_userinfo()
-- url_is_https()
+- (no symbols)
 
 ## scripts/deploy-provenance.py
 - class Refused(ValueError)
@@ -501,14 +513,9 @@
 - def candidate(sha, before)
 - def require_merge_eligibility(sha, before)
 - def evidence_list(data, key)
-- def historical_deployment_jobs(run, sha)
 - def active_deployment(sha)
 - def authorize_host(sha)
-- def runs(sha)
-- def emit_evidence(data)
-- def complete_list(data, key)
 - def trusted_run(run, sha)
-- def manual_runs(sha, historical, recovery_run)
 - def main()
 
 ## scripts/deploy-remote.sh
@@ -517,80 +524,8 @@
 ## scripts/deploy-trigger.sh
 - (no symbols)
 
-## scripts/deploy-verify.sh
-- (no symbols)
-
 ## scripts/generate-agent-context.py
 - def main()
-
-## scripts/install-root.py
-- class Refusal(RuntimeError)
-- class Transaction()
-  - def __init__(self, root, runner, owner)
-  - def mapping(self)
-  - def mapped(self, value)
-  - def mapped_literal(self, raw)
-  - def installation_environment()
-  - def lock_pair(self)
-  - def verify_inherited_locks(self)
-  - def translate(self, content, layout)
-  - def identity_preflight(self, values)
-  - def operation(self, journal, stage, item)
-  - def failure(journal, error)
-  - def unit_present(self, name)
-  - def identity_prepare(self, journal)
-  - def identity_activate(self, journal)
-  - def recover(self, sha)
-  - def verify_identity(self, journal)
-  - def docker_socket_bind(self, service, mount)
-  - def check_identity_binds(self, identity)
-  - def check_move(move, path)
-  - def identity_restore(self, journal)
-  - def path(self, value)
-  - def command(self, args, **kwargs)
-  - def git(self, directory, *args)
-  - def trusted(self, path, tree)
-  - def atomic(self, path, data, mode, uid, gid)
-  - def sync(directory)
-  - def save(self, journal)
-  - def load(self)
-  - def values(content)
-  - def source(self)
-  - def gate_command(self, refusal, args, *, missing_image)
-  - def docker_architecture(self)
-  - def migration_recovery_image(self, running)
-  - def verify_archive(archive, metadata)
-  - def compatible_proxy(self, recovery, source, migration)
-  - def probe_proxy(self, image, source, runtime, compare_running, require_dns)
-  - def proxy_preflight(self, source)
-  - def retain_recovery(self, recovery)
-  - def proxy_container(self)
-  - def proxy_compose(self, root, env_file, overlay)
-  - def service_containers(self, compose)
-  - def verify_services(self, sha)
-  - def file_digest(self, path, private)
-  - def proxy_inputs(self, container)
-  - def proxy_data_identity(self, path)
-  - def proxy_config_volume(container)
-  - def snapshot_proxy(self, values, recovery)
-  - def candidate_proxy(self, token)
-  - def identify_candidate(self, runtime)
-  - def proxy_answers(self, domain)
-  - def failed_proxy(container)
-  - def verify_proxy(self, sha, *, recover)
-  - def recover_proxy(self, journal)
-  - def snapshots(self, extra)
-  - def restore(self, journal)
-  - def wiring(self, sha)
-  - def reverify_manual(self, sha)
-  - def verify_recovery_render(self, sha)
-  - def reverify_recovery(self, sha, journal_hash, run_id)
-  - def accept(self, sha, evidence, allow_accepted)
-  - def authorize_deploy(self, sha)
-  - def staged_proxy_preflight(self, stage, sha)
-  - def deploy(self, sha, *, handoff)
-- def main()
-- def cli()
 
 ## scripts/lib/build-gate.sh
 - build_gate_file_sha()
@@ -760,25 +695,6 @@
 - hermes_restart()
 - summary_line()
 - main()
-
-## scripts/run-post-deploy-verify.sh
-- haven_repository_slug()
-- usage_refuse()
-- record_gate()
-- verdict_dir()
-- write_verdict()
-- accept_evidence()
-- finish()
-- file_value()
-- resolve_app_dir()
-- gate_skip()
-- layout_value()
-- log_has_success()
-- probe_read_as_status()
-- probe_tile()
-- check_backup_tile()
-- probe_runs()
-- conclusion_list()
 
 ## scripts/sandbox-firewall.sh
 - usage()
@@ -961,34 +877,24 @@
 - run()
 - run_split()
 
+## scripts/test-deploy-host.py
+- class DeploymentTests(TestCase)
+  - def setUp(self)
+  - def write(path, content)
+  - def git(self, cwd, *args)
+  - def commit(self)
+  - def deploy(self, fail)
+  - def assert_persistent_data(self)
+  - def test_converges_to_exact_main_and_keeps_validated_render(self)
+  - def test_failure_releases_locks_and_next_deploy_ignores_old_journal(self)
+  - def test_refuses_persistent_overlap_unrestricted_ssh_and_checkout_collision(self)
+
 ## scripts/test-deploy-image-gate.sh
 - probes_used()
 - run_gate()
 
-## scripts/test-deploy-instance.sh
-- has_line()
-- hasnt_regex()
-- run_instance()
-- check_line()
-- ceiling_guard()
-- check_ceiling()
-- run_verify()
-
 ## scripts/test-deploy-provenance.sh
 - (no symbols)
-
-## scripts/test-deploy-remote.sh
-- pass()
-- fail()
-- make_shims()
-- setup_repo()
-- write_install_stub()
-- write_doctor_stub()
-- has_line()
-- line_number()
-- repo_sha()
-- run_deploy()
-- run_doctor()
 
 ## scripts/test-deploy-trigger.sh
 - has_line()
@@ -1000,7 +906,6 @@
 ## scripts/test-deploy-wiring-install.sh
 - run_install()
 - reset_state()
-- reset_sbin()
 
 ## scripts/test-doctor-b87-tooling.sh
 - pass()
@@ -1019,12 +924,6 @@
 - fail()
 
 ## scripts/test-doctor-lease-less.sh
-- pass()
-- fail()
-- summary_count()
-- run_doctor()
-
-## scripts/test-doctor-post-deploy-log.sh
 - pass()
 - fail()
 - summary_count()
@@ -1097,17 +996,10 @@
 - firewall_sudo()
 - set_stack_tls()
 
-## scripts/test-install-root.sh
-- (no symbols)
-
 ## scripts/test-install-tailscale-migration.sh
 - run_install()
 - env_value()
 - normalise()
-
-## scripts/test-post-deploy-verify-log-env.sh
-- run_install()
-- env_value()
 
 ## scripts/test-provision-persona.sh
 - provision()
@@ -1155,14 +1047,6 @@
 - env_value()
 - yaml_value()
 - mode_of()
-
-## scripts/test-run-post-deploy-verify.sh
-- pass()
-- fail()
-- make_tree()
-- write_layout()
-- run_verify()
-- write_gate_layout()
 
 ## scripts/test-sandbox-firewall.sh
 - have()

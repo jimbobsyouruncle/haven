@@ -305,9 +305,9 @@ git_public() {
 
 prepare_app_dir() {
   # Re-running bootstrap must never silently replace an existing legacy layout.
-  # Its next authorized normal deployment performs the journaled migration.
+  # Prepare legacy storage separately before installing the canonical layout.
   [[ ! -e "$(host_path /opt/hybrid-ai)" && ! -L "$(host_path /opt/hybrid-ai)" ]] || \
-    die 4 "legacy root exists; use the authorized normal deployment migration"
+    die 4 "legacy root exists; prepare the canonical layout with the owner before continuing"
   [[ ! -L "$APP_DIR" ]] || die 4 "refusing a symlinked installation root"
   if [[ -z "$ROOT_PREFIX" && -e "$APP_DIR" ]]; then
     [[ "$(realpath -e -- "$APP_DIR")" == "$APP_DIR" ]] || \

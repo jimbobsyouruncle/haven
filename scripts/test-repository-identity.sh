@@ -11,7 +11,7 @@ source "$SCRIPT_DIR/lib/repository-identity.sh"
 [[ "$(HAVEN_REPOSITORY_SLUG=jimbobsyouruncle/haven haven_repository_slug)" == jimbobsyouruncle/haven ]]
 [[ "$(HYBRID_AI_REPOSITORY_SLUG=jimbobsyouruncle/haven bash -c 'source "$1"; haven_repository_slug' _ "$SCRIPT_DIR/lib/repository-identity.sh")" == jimbobsyouruncle/haven ]]
 
-# The installed verifier must run without a checkout/helper beside it.
+# Keep the embedded compatibility blocks consistent.
 python3 - "$SCRIPT_DIR" <<'PY'
 from pathlib import Path
 import sys
@@ -20,11 +20,10 @@ def block(path):
     text = path.read_text()
     return text.split('# BEGIN repository identity selector\n', 1)[1].split(
         '# END repository identity selector', 1)[0]
-assert block(root / 'lib/repository-identity.sh') == block(root / 'run-post-deploy-verify.sh')
 def aliases(path):
     return path.read_text().split('# BEGIN Haven environment compatibility\n', 1)[1].split(
         '# END Haven environment compatibility', 1)[0]
-for relative in ('lib/repository-identity.sh', 'run-post-deploy-verify.sh', 'bootstrap.sh'):
+for relative in ('lib/repository-identity.sh', 'bootstrap.sh'):
     assert aliases(root / relative) == aliases(root / 'lib/haven-env.sh')
 PY
 
@@ -50,7 +49,7 @@ for invalid in '' jimbobsyouruncle/hybrid-ai someone/other jimbobsyouruncle/Have
   HAVEN_REPOSITORY_SLUG="$invalid" haven_repository_slug > "$WORK/out" 2> "$WORK/err" || rc=$?
   [[ "$rc" == 2 && ! -s "$WORK/out" ]]
   [[ "$(cat "$WORK/err")" == 'repository identity: HAVEN_REPOSITORY_SLUG must select an approved repository' ]]
-  for script in bootstrap.sh deploy-instance.sh deploy-remote.sh run-post-deploy-verify.sh; do
+  for script in bootstrap.sh; do
     : > "$IDENTITY_CALLS"
     rc=0
     env PATH="$WORK/bin:$PATH" HAVEN_REPOSITORY_SLUG="$invalid" \

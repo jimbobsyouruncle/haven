@@ -239,91 +239,12 @@ claim a key is bad when it could not answer.
 
 ---
 
-## Post-deploy verification
+## Diagnose a deployment failure
 
-Every deploy starts `scripts/run-post-deploy-verify.sh` in a **transient**
-systemd unit named `hybrid-ai-post-deploy-verify-<sha12>-<pid>`. It outlives the
-deploy unit, waits for the GitHub Actions run(s) for the deployed commit to
-finish, then checks the host is on that commit. Why a transient unit:
-[`deploy/README.md`](../deploy/README.md#post-deploy-verification-after-the-workflow-has-finished).
+Open the workflow result for the exact commit and inspect the first failing
+operation. The [deployment runbook](../deploy/README.md) describes the host
+logs and how to run the next authorized deployment.
 
-Read the result:
-
-```
-sudo tail -n 20 /var/log/hybrid-ai-post-deploy-verify.log
-sudo journalctl -u 'hybrid-ai-post-deploy-verify-*' --since -2h
-```
-
-Each run also writes the same verdict as JSON, one file per deploy sha, at
-`${HAVEN_DATA_DIR}/hermes_data/deploy-verdicts/<sha>.json` (default
-`/var/lib/hybrid-ai/hermes_data/deploy-verdicts/`). The container sees that
-directory at `/root/.hermes/deploy-verdicts/`, so this is how a check inside the
-container reads the verdict of the deploy that put it there. The host log above
-is not mounted in the container. A failure to write the file is a warning on
-stderr only; it never changes the result line or the exit code.
-
-Read it on the host:
-
-```
-sudo jq . "/var/lib/hybrid-ai/hermes_data/deploy-verdicts/$(git -C /workspace rev-parse HEAD).json"
-```
-
-Read it inside the container, where each file is one compact JSON object:
-
-```
-jq . /root/.hermes/deploy-verdicts/*.json
-jq -r 'select(.verdict != "PASS") | "\(.sha) \(.verdict): \(.detail)"' /root/.hermes/deploy-verdicts/*.json
-```
-
-The keys are `sha`, `verdict` (`PASS`, `FAIL` or `TIMEOUT`), `rc`, `at` (UTC),
-`head` (the tree's commit, or `null`), `app_dir`, `detail` (the same text the
-result line carries, `""` when there is none) and `run_ids` (the polled run ids,
-or `null` when none were polled). The directory is 0755 and the files are 0644,
-owned by `hermes:hermes`; a root-owned file there is what `doctor.sh` warns
-about.
-
-Each run appends a `waiting for <sha> at <UTC>` line and then exactly one
-result line:
-
-| Line | Meaning |
-|---|---|
-| `PASS` | Every workflow run for that commit concluded `success`, and `/workspace` is on that commit |
-| `FAIL: run <id> conclusion <c>` | One run, and it did not succeed (`failure`, `cancelled`, `timed_out`, ...) |
-| `FAIL: run conclusions: <list>` | Several runs; the list is one word per run, in API order |
-| `FAIL: deployed tree is on <sha>, expected <sha>` | CI was green, but the host is on a different commit (interrupted deploy, or a manual `git reset`) |
-| `FAIL: github api returned HTTP <code>` | The API refused (401/403/404, or 429 rate limit). The request is anonymous, so a 403 usually means the anonymous rate limit |
-| `FAIL: cannot read HEAD of the deployed tree at /workspace` | The deployment directory is absent or not a git checkout |
-| `FAIL: ... that jq could not parse` | The API returned a body this script does not understand (proxy or captive portal, usually) |
-| `TIMEOUT: no completed run for <sha> after 60 minutes` | No run for that commit finished inside an hour |
-
-The most common **silent** failure used to be a 0-byte log: the verifier was
-killed when the deploy unit exited, so nothing was written and nothing said so.
-`doctor.sh` now catches it. It reads the log as data, takes the **last**
-`waiting for <sha> at <ts>` line as the run of interest, and reads the first
-verdict line after it. It never compares the log's mtime with anything: `doctor`
-runs during a deploy, after the new tree is checked out but before that deploy's
-verifier can have written, so an mtime comparison would warn on every deploy by
-construction. Instead, the previous deploy's verdict is surfaced in the **next**
-deploy's Actions log through these warnings.
-
-| Situation | doctor.sh |
-|---|---|
-| Log absent | prints `- post-deploy verification log skipped (log not present (...))`, counts nothing |
-| Log is 0 bytes | **warns**: "the post-deploy verifier never wrote anything", with the `journalctl` remedy |
-| Last waiting line, verdict `PASS` | **passes**: `post-deploy verification passed for <sha12> (verdict written <ts>)`. There is no comparison with the deployed `HEAD`, so a `PASS` for any sha passes |
-| Verdict `FAIL: ...` or `TIMEOUT: ...` | **warns**: "post-deploy verification reported '\<verdict\>' for \<sha12\>", with the `journalctl` remedy |
-| Waiting line, no verdict, wait started more than 65 minutes ago | **warns**: the verification was abandoned |
-| Waiting line, no verdict, wait started within 65 minutes | prints a skip note: the verification is still running. Back-to-back deploys are legitimate |
-| Non-empty log with no parseable waiting line | **warns**: the waiting line cannot be parsed. It never passes silently |
-| Log unreadable, git tree unreadable, or unparseable waiting timestamp | prints a skip note, counts nothing |
-
-None of these can fail the host: the check is warning-only, so the worst it can
-do is exit 1. If the deploy printed `::warning::post-deploy verification script
-is absent: <path>`, `install.sh` never placed the verifier -- re-run
-`./install.sh` as root, then check `ls -l /usr/local/sbin/run-post-deploy-verify.sh`.
-The deploy's own exit status never depends on the verifier.
-
----
 
 ## Headless deploy: refusal exit codes
 
@@ -349,71 +270,10 @@ The forced-command SSH entrypoint, `scripts/deploy-forced-command.sh`:
 | `2` | The command was refused: it was not exactly `deploy <40-lowercase-hex>` (extra arguments, another verb, shell metacharacters, or an empty command). Nothing was run | Send exactly `ssh <host> deploy <40-lowercase-hex>` |
 | `3` | The unit was started but did not finish successfully | Read the run log (below); the deploy failed inside `deploy-remote.sh` or the unit |
 
-The unit's script, `scripts/deploy-instance.sh` (run as root by
-`hybrid-ai-deploy@<sha>.service`):
-
-| Exit | Meaning | Fix |
-|---|---|---|
-| `0` | Handed off to `deploy-remote.sh` (its exit code then propagates through `exec`) | — |
-| `2` | Missing argument, or not a 40-lowercase-hex commit | Pass the full 40-character lowercase hex commit |
-| `3` | Another deploy holds the lock | Wait for the running deploy to finish, then retry |
-| `4` | The origin remote carries a credential (userinfo in its URL) | Remove the credential from the origin URL; the deploy fetches only from the public https remote |
-| `5` | The public remote is unsafe (not https, or carries userinfo) | Point `HAVEN_DEPLOY_PUBLIC_REMOTE` at the public https remote, by name only |
-| `6` | Fetching main from the public remote failed | Check network and the remote URL, then retry |
-| `7` | The commit is not an ancestor of `origin/main` | Deploy a commit that is on `main` |
-| `8` | `HEAD` is not the commit after `git reset --hard` | Investigate the checkout; the reset did not land on the validated revision |
-
-Every run's output is written to `$HAVEN_LOG_DIR/deploy/<sha>.log` (mode
-`0640`, group `hybrid-ai-deploy`). The deploy account reads its own run log there
-without any systemd-journal access. Full detail is in
-[`deploy/README.md`](../deploy/README.md).
-
-### Headless deploy: the forced command refused the request
-
-Symptom: the deploy job fails with `::error::forced command refused the request`.
-
-`scripts/deploy-forced-command.sh` accepts EXACTLY one string:
-`deploy <40-lowercase-hex>`. It refused what it received. The usual causes:
-
-- The sha was not 40 lowercase hex characters (a short sha, or uppercase).
-- The client sent extra arguments, or a second command.
-- Something other than `scripts/deploy-trigger.sh` connected and asked for a
-  different command.
-
-The client sends exactly the two-token string. If this fires, check that the
-deploy step still calls `scripts/deploy-trigger.sh "$GITHUB_SHA"` and that the
-client was not modified to add arguments. Nothing ran on the host.
-
-### Headless deploy: the deploy unit failed
-
-Symptom: the deploy job fails with `::error::deploy unit failed`.
-
-The forced command started `hybrid-ai-deploy@<sha>.service`, but the unit did not
-finish successfully. The job log above the error carries the unit name
-(`unit:`), its `result:` and the run log. The run log names the failing control
-in `scripts/deploy-instance.sh` or `scripts/deploy-remote.sh` (an ancestor
-refusal, a HEAD mismatch, a doctor.sh failure). Fix the reported problem, then
-push again.
-
-### Headless deploy: the host ran a stale installed unit
-
-Symptom: the unit gives up earlier than the tree says it should (for example
-`Result=timeout` at 20 min while `deploy/hybrid-ai-deploy@.service` says
-`TimeoutStartSec=45min`), or an older copy of the unit is missing a directive
-the tree has.
-
-Cause: `/etc/systemd/system/hybrid-ai-deploy@.service` was installed by an
-earlier `scripts/bootstrap.sh` and never refreshed. This happened on 2026-10-22:
-the host enforced a stale `TimeoutStartSec=20min` and SIGTERM'd a deploy
-mid-build, and the raise to 45 min had to be copied over by hand.
-
-This is now self-healing. `install.sh` re-applies the unit (and the polkit rule)
-on every deploy, so the **next** deploy replaces the stale file and the one
-after that runs with it: a deploy re-applies the unit while running inside it,
-and the running instance keeps its loaded configuration. To fix it immediately
-instead of waiting for the next deploy, re-run `./install.sh` as root and then
-`sudo systemctl daemon-reload`. Compare the installed copy against the tree with
-`diff /etc/systemd/system/hybrid-ai-deploy@.service deploy/hybrid-ai-deploy@.service`.
+The unit writes the failing stage in the run log at
+`$HAVEN_LOG_DIR/deploy/<sha>.log`. Host preflight errors that occur before
+the log is opened appear in the unit journal. The [deployment runbook](../deploy/README.md)
+covers failed attempts and authorized retries.
 
 ### Headless deploy: host-key mismatch
 
@@ -804,7 +664,7 @@ du -sh webui_data ollama_data
 docker exec -it ollama ollama list       # unused models are usually the culprit
 ```
 
-Follow the [Haven recovery image retention rule](../deploy/README.md#recover-a-missing-local-proxy-image)
+Follow the [deployment and recovery runbook](../deploy/README.md#storage-and-recovery)
 before removing images from an active host.
 
 **Full reset without losing data**
@@ -2331,7 +2191,7 @@ sudo apt-get update && sudo apt-get upgrade -y
 docker exec -it ollama ollama list   # remove models you no longer use
 ```
 
-Review the [Haven recovery image retention rule](../deploy/README.md#recover-a-missing-local-proxy-image)
+Review the [deployment and recovery runbook](../deploy/README.md#storage-and-recovery)
 before removing images.
 
 **Quarterly**

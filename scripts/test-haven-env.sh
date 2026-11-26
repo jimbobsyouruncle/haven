@@ -709,9 +709,8 @@ if (( FAIL != 0 )); then
 fi
 printf 'All %d haven-env checks passed.\n' "$PASS"
 
-# Focused handoff security regressions use the real resolver and protected driver.
+# Focused layout security regressions use the real resolver.
 python3 - "$REPO" <<'PY_IDENTITY'
-import importlib.util
 import os
 import sys
 import re
@@ -721,11 +720,6 @@ import tempfile
 import unittest
 
 ROOT = Path(sys.argv.pop(1))
-spec = importlib.util.spec_from_file_location("install_root", ROOT / "scripts/install-root.py")
-driver = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(driver)
-
-
 class ConfigIdentityTests(unittest.TestCase):
     def setUp(self):
         self.work = tempfile.TemporaryDirectory()
@@ -832,19 +826,15 @@ class ConfigIdentityTests(unittest.TestCase):
             "scripts/bootstrap.sh",  # installed process import
             "scripts/check-hermes-nonroot.sh",  # installed UID import
             "scripts/ci-parity.sh",  # existing generator override
-            "scripts/install-root.py",  # protected historical schema/handoff
             "scripts/lib/build-gate.sh",  # heartbeat setting import
             "scripts/lib/haven-env.sh",  # explicit key/process alias readers
             "scripts/lib/hybrid-ai-env.sh",  # legacy external entrypoint
             "scripts/lib/repository-identity.sh",  # installed selector import
             "scripts/prune-docker-cache.sh",  # installed cap import
-            "scripts/run-post-deploy-verify.sh",  # standalone installed reader
             "scripts/uninstall.sh",  # legacy layout/process recovery
             "scripts/test-haven-env.sh",  # handoff/refusal fixtures
-            "scripts/test-deploy-remote.sh",  # legacy selector handoff
             "scripts/test-repository-identity.sh",  # legacy selector import
             "scripts/test-install-auth-env-leak.sh",  # literal credential migration
-            "scripts/test-install-root.sh",  # historical and coordinated recovery fixtures
         }
         # These exact lines discard a stale installed log alias and exercise
         # that refusal. Keep rejecting any other legacy use in these files.
@@ -866,14 +856,5 @@ class ConfigIdentityTests(unittest.TestCase):
                 unexpected.append(name)
         self.assertEqual(unexpected, [], "unreviewed legacy namespace in active source")
 
-    def test_driver_reads_both_formats_without_changing_historical_schema(self):
-        for prefix in ("HAVEN_", "HYBRID_AI_"):
-            result = driver.Transaction.values(prefix + "APP_DIR=/opt/haven\n")
-            self.assertEqual(result["HYBRID_AI_APP_DIR"], "/opt/haven")
-        with self.assertRaises(driver.Refusal):
-            driver.Transaction.values("HAVEN_APP_DIR=/opt/haven\nHYBRID_AI_APP_DIR=/different\n")
-
-
-if __name__ == "__main__":
-    unittest.main()
+unittest.main()
 PY_IDENTITY

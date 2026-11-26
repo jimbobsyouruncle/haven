@@ -322,11 +322,10 @@ if grep -qE 'wait_for "hermes-agent".*300' "$REPO/install.sh"; then
 else
   bad "hermes-agent does not wait 300 s"
 fi
-if grep -qE 'wait_for "openhands".*warn' "$REPO/install.sh" \
-   && grep -qE 'wait_for "status page".*warn' "$REPO/install.sh"; then
-  ok "OpenHands and the status page still only warn"
+if grep -qE 'wait_for "openhands".*warn' "$REPO/install.sh"; then
+  ok "Interactive installer keeps the OpenHands startup warning"
 else
-  bad "OpenHands or the status page no longer only warns"
+  bad "OpenHands no longer only warns in the installer"
 fi
 
 # ---------------------------------------------------------------------------

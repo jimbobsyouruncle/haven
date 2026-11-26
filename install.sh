@@ -1032,11 +1032,6 @@ HAVEN_GID=${HAVEN_GID:-}
 #HAVEN_LOG_DIR=${LOG_DIR}
 #HAVEN_WORK_DIR=${WORK_DIR}
 
-# The post-deploy verifier's log. Unlike the paths above this one is WRITTEN,
-# not commented: docker-compose.yml interpolates it for the status service's
-# read-only mount and refuses a bind whose source is unset. Written as
-# ${VAR:-default} so an owner override in this file survives every reinstall.
-HAVEN_POST_DEPLOY_VERIFY_LOG=${HAVEN_POST_DEPLOY_VERIFY_LOG:-/var/log/haven-post-deploy-verify.log}
 
 # The backup log the status service mounts read-only. WRITTEN, not commented:
 # docker-compose.yml interpolates BACKUP_LOG fail-closed for that bind. The
@@ -1471,56 +1466,6 @@ install_deploy_polkit_rule() {
 }
 
 # ---------------------------------------------------------------------------
-# STEP 9a-1b. Install the post-deploy verifier
-# ---------------------------------------------------------------------------
-# scripts/deploy-remote.sh starts this verifier in a transient systemd unit
-# after every deploy. It used to point at a file nothing ever installed, so the
-# check silently never ran. Copied root:root 0755 from the tree, staged as
-# <target>.tmp then moved, so a failed copy leaves any previous file in place.
-#
-# Fail-safe, never fail-closed: it never calls sudo, never dies and never
-# changes this script's exit status. Without root or without the source it warns
-# and records an event.
-#
-# HAVEN_SBIN_DIR is a HARNESS-ONLY override, the same precedent as
-# HAVEN_SYSTEMD_UNIT_DIR and HAVEN_POLKIT_RULES_DIR above; it is not
-# documented anywhere else.
-install_post_deploy_verifier() {
-  local source_file="${APP_DIR}/scripts/run-post-deploy-verify.sh"
-  local sbin_dir="${HAVEN_SBIN_DIR:-/usr/local/sbin}"
-  local target_file="${sbin_dir}/run-post-deploy-verify.sh"
-
-  if [[ "$(id -u)" != "0" ]]; then
-    warn "The post-deploy verifier needs root to install into ${sbin_dir}; not calling sudo."
-    warn "Re-run ./install.sh as root so post-deploy verification is installed."
-    event "post_deploy_verifier_install_failed" "reason=not_root"
-    return 0
-  fi
-
-  if [[ ! -f "$source_file" ]]; then
-    warn "Missing post-deploy verifier: ${source_file}"
-    event "post_deploy_verifier_install_failed" "reason=source_missing"
-    return 0
-  fi
-
-  if ! install -o root -g root -m 0755 "$source_file" "${target_file}.tmp"; then
-    rm -f "${target_file}.tmp"
-    warn "Could not stage the post-deploy verifier in ${sbin_dir}."
-    event "post_deploy_verifier_install_failed" "reason=copy_failed"
-    return 0
-  fi
-  if ! mv -f "${target_file}.tmp" "$target_file"; then
-    warn "Could not move the post-deploy verifier into ${sbin_dir}."
-    event "post_deploy_verifier_install_failed" "reason=move_failed"
-    return 0
-  fi
-
-  ok "Installed the post-deploy verifier (0755): ${target_file}"
-  event "post_deploy_verifier_installed"
-  return 0
-}
-
-# ---------------------------------------------------------------------------
 # STEP 9a-2. Install and enable the prune units (conversations and Docker cache)
 # ---------------------------------------------------------------------------
 # Two timers, two independent daily jobs, installed together:
@@ -1855,7 +1800,6 @@ install_secret_guard_hook() {
 install_firewall_unit || true
 install_deploy_unit || true
 install_deploy_polkit_rule || true
-install_post_deploy_verifier || true
 install_prune_scheduler || true
 SECRET_GUARD_HOOK_RETRY_AFTER_START=0
 install_secret_guard_hook || true
@@ -1986,14 +1930,24 @@ PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 unset HAVEN_AUTH_HASH HAVEN_AUTH_USER
 unset CANVAS_PASSWORD_HASH
 
+if [[ "${HAVEN_DESIRED_DEPLOY:-0}" == 1 ]]; then
+  proxy_image="$("${COMPOSE[@]}" config --format json | jq -er '.services.proxy.image')" ||
+    die "Could not resolve the configured Caddy image."
+  proxy_image_id="$(docker image inspect --format '{{.Id}}' "$proxy_image")" ||
+    die "Could not identify the local Caddy image."
+  [[ "$proxy_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    die "Invalid local Caddy image identity."
+  CADDY_VALIDATE_IMAGE="$proxy_image_id" tls_validate_caddyfile "$APP_DIR/status/Caddyfile" ||
+    die "The local Caddy image refused the validated configuration."
+fi
+HAVEN_CADDY_CONFIG_HASH="$(sha256sum "$APP_DIR/status/Caddyfile")" ||
+  die "Could not hash the validated Caddy configuration."
+export HAVEN_CADDY_CONFIG_HASH="${HAVEN_CADDY_CONFIG_HASH%% *}"
 UP_ARGS=(-d --remove-orphans)
-if [[ -n "${HAVEN_PROXY_TRANSACTION:-}" ]]; then
-  proxy_overlay="$(python3 "${APP_DIR}/scripts/install-root.py" proxy-preflight "$HAVEN_PROXY_TRANSACTION")" \
-    || die "Caddy candidate preflight refused activation."
-  if [[ -n "$proxy_overlay" ]]; then
-    COMPOSE+=(-f "$proxy_overlay")
-  fi
-  UP_ARGS+=(--no-build)
+if [[ "${HAVEN_DESIRED_DEPLOY:-0}" == 1 ]]; then
+  "${COMPOSE[@]}" config --quiet || die "Full Compose configuration failed validation."
+  "${APP_DIR}/scripts/sandbox-firewall.sh" apply || die "Sandbox firewall could not be installed."
+  UP_ARGS+=(--no-build --wait --wait-timeout 300)
 fi
 if ! "${COMPOSE[@]}" up "${UP_ARGS[@]}"; then
   PHASE_UP=$(( SECONDS - _phase_mark ))
@@ -2158,9 +2112,15 @@ case "$tls_state" in
     if [[ -z "${TLS_DOMAIN:-}" || -z "$tls_probe_ip" ]]; then
       warn "TLS is on but TLS_DOMAIN or this host's address could not be resolved; skipping the HTTPS status probe."
       event "healthcheck_skip" "service=status page" "reason=no-tls-host"
+      [[ "${HAVEN_DESIRED_DEPLOY:-0}" != 1 ]] || HEALTH_FAILED=1
     else
+      required_status=""
+      if [[ "${HAVEN_DESIRED_DEPLOY:-0}" == 1 ]] && tls_auth_is_on; then required_status=302; fi
       wait_for_https "status page" "https://${tls_status_host}/status/healthz" \
-        "$tls_status_host" "$tls_probe_ip" 60 "$TLS_DOMAIN" || warn "Status reverse proxy initializing..."
+        "$tls_status_host" "$tls_probe_ip" 60 "$TLS_DOMAIN" "${required_status:-}" || {
+          warn "Status reverse proxy initializing..."
+          [[ "${HAVEN_DESIRED_DEPLOY:-0}" != 1 ]] || HEALTH_FAILED=1
+        }
     fi
     if [[ "${CANVAS_ENABLED:-off}" == on ]]; then
       canvas_host="canvas.$TLS_DOMAIN"
@@ -2173,7 +2133,10 @@ case "$tls_state" in
     unset tls_status_host tls_probe_ip
     ;;
   *)
-    wait_for "status page"  "http://127.0.0.1:80/status/healthz" 60 || warn "Status reverse proxy initializing..."
+    wait_for "status page"  "http://127.0.0.1:80/status/healthz" 60 || {
+      warn "Status reverse proxy initializing..."
+      [[ "${HAVEN_DESIRED_DEPLOY:-0}" != 1 ]] || HEALTH_FAILED=1
+    }
     ;;
 esac
 unset tls_state
@@ -2734,7 +2697,7 @@ event "install_success" \
 hr
 ok "Control plane stack is up."
 
-run_prune_catch_up || true
+if [[ "${HAVEN_DESIRED_DEPLOY:-0}" != 1 ]]; then run_prune_catch_up || true; fi
 
 # Section 7.4: ONE set of names, not two. With TLS on the certificate-bearing
 # names are printed and the old http://<LOCAL_DOMAIN> block is gone; with TLS

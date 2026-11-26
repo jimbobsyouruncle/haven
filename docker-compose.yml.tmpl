@@ -412,6 +412,9 @@ services:
       dockerfile: Dockerfile
     image: ${CADDY_IMAGE:-haven-caddy:2.11.9-dns}
 #@end
+    # A bind-mounted file can retain its old inode after an atomic render.
+    labels:
+      dev.haven.caddy-config: ${HAVEN_CADDY_CONFIG_HASH:-unset}
     container_name: haven-proxy
     restart: unless-stopped
     depends_on:

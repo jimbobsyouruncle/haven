@@ -26,10 +26,10 @@ requires an up-to-date PR, both existing checks and an empty bypass list.
 Source validation, ShellCheck, Semgrep, CodeQL and applicable ARM64 checks run
 before merge. The deployment eligibility job keeps the name
 `validate / Validate sources` so the installed bootstrap can authorize the
-first upgrade through the normal transaction. The bot's owner-merged
+first upgrade through desired-state reconciliation. The bot's owner-merged
 context-map PRs stay deployment-neutral.
 
-For historical setup and rollback, see the [one-time host transition](../deploy/README.md#one-time-policy-transition).
+For the installed host transition, see the [one-time Jarvis bootstrap](../deploy/README.md#one-time-jarvis-bootstrap).
 Clearing `HAVEN_AUTOMATIC_DEPLOYMENT` pauses new candidates. Drain queued and
 running jobs before host maintenance. A newer main commit can supersede a
 waiting candidate, including when the newer change is docs-only. Merge another
@@ -71,9 +71,7 @@ Only runs if `validate` passed.
    artifacts, and snapshots the previous checkout and controls before switching.
 6. The host verifies the proxy, enabled Compose services, application health and
    canonical wiring in `ExecStartPost`. The job stays pending until the root
-   verifier accepts the transaction. A failed or incomplete mandatory gate
-   leaves recovery artifacts available and blocks another deployment until
-   recovery. See the [host procedure](../deploy/README.md).
+   required health and security checks pass. See the [deployment runbook](../deploy/README.md).
 
 **Why the runner no longer runs a shell script on the Pi.** The deploy account's
 SSH key is pinned to ONE forced command. It cannot run git, a shell, or a second
@@ -161,7 +159,7 @@ health gate. `scripts/deploy-remote.sh` remains the runtime authority via
 `doctor.sh --no-cloud`: 0 healthy, 1 warning/degraded (deployment warns), 2 failure
 (deployment fails), and a missing doctor fails closed. Existing remote-deploy
 and doctor fixtures cover these semantics and asleep/optional components.
-Exact-SHA assertions and the canonical root verifier/transaction acceptance are
+Exact-SHA assertions and the host health and security checks are
 unchanged. CI never runs doctor against production or requests live cloud work.
 
 Known coupling (tracked in [#217](https://github.com/jimbobsyouruncle/haven/issues/217)): installer render tests extract sections of the large installer;
@@ -185,7 +183,7 @@ source job, require PRs and up-to-date branches on main while preserving the
 existing required checks and no bypass actors. The installed root bootstrap
 also checks for that source job in the active deployment attempt. Its policy
 must support the replacement before a merge can remove the job. See the
-[host policy transition](../deploy/README.md#one-time-policy-transition) for the
+[host policy transition](../deploy/README.md#one-time-jarvis-bootstrap) for the
 existing bootstrap handoff pattern.
 
 ---
@@ -361,7 +359,7 @@ reviewer after the one-time transition.
 
 After the host is ready, set the repository variable
 `HAVEN_AUTOMATIC_DEPLOYMENT=enabled`. Review the next application merge in
-Actions and confirm the exact SHA reached an accepted host transaction.
+Actions and confirm the exact SHA reached the installed host.
 
 ## Troubleshooting
 
@@ -377,8 +375,7 @@ Actions and confirm the exact SHA reached an accepted host transaction.
 ---
 
 For a transient pre-activation failure while the SHA is still current main,
-rerun **all jobs** from the original push run. For a failed host transaction,
-follow the [host rollback procedure](../deploy/README.md#rollback) first.
+rerun **all jobs** from the original push run. After a host failure, inspect the failed step before retrying. See the [deployment runbook](../deploy/README.md).
 
 ## Security notes
 
