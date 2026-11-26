@@ -1920,16 +1920,6 @@ fi
 haven_progress_stop
 PHASE_BUILD=$(( SECONDS - _phase_mark )); _phase_mark=$SECONDS
 
-# STEP 2 exported every key from the stack env file into this shell, so the
-# login-gate pair is still here in its Compose-escaped file form. Compose reads
-# the process environment ahead of --env-file, so leaving it set would hand the
-# container the escaped bytes instead of the operator's value (a 60-byte bcrypt
-# hash arrives as 63 bytes and every password is refused). Drop only these two
-# from this shell before the start; the env file itself carries them intact.
-# The fail-closed empty-value check already ran in STEP 5 (tls_auth_fail_closed).
-unset HAVEN_AUTH_HASH HAVEN_AUTH_USER
-unset CANVAS_PASSWORD_HASH
-
 if [[ "${HAVEN_DESIRED_DEPLOY:-0}" == 1 ]]; then
   proxy_image="$("${COMPOSE[@]}" config --format json | jq -er '.services.proxy.image')" ||
     die "Could not resolve the configured Caddy image."
@@ -1940,6 +1930,16 @@ if [[ "${HAVEN_DESIRED_DEPLOY:-0}" == 1 ]]; then
   CADDY_VALIDATE_IMAGE="$proxy_image_id" tls_validate_caddyfile "$APP_DIR/status/Caddyfile" ||
     die "The local Caddy image refused the validated configuration."
 fi
+# STEP 2 exported every key from the stack env file into this shell, so the
+# login-gate pair is still here in its Compose-escaped file form. Compose reads
+# the process environment ahead of --env-file, so leaving it set would hand the
+# container the escaped bytes instead of the operator's value (a 60-byte bcrypt
+# hash arrives as 63 bytes and every password is refused). Drop only these two
+# from this shell before the start; the env file itself carries them intact.
+# The fail-closed empty-value check already ran in STEP 5 (tls_auth_fail_closed).
+unset HAVEN_AUTH_HASH HAVEN_AUTH_USER
+unset CANVAS_PASSWORD_HASH
+
 HAVEN_CADDY_CONFIG_HASH="$(sha256sum "$APP_DIR/status/Caddyfile")" ||
   die "Could not hash the validated Caddy configuration."
 export HAVEN_CADDY_CONFIG_HASH="${HAVEN_CADDY_CONFIG_HASH%% *}"

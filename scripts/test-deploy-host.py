@@ -40,6 +40,7 @@ class DeploymentTests(unittest.TestCase):
         helper.parent.mkdir()
         shutil.copyfile(ROOT / 'scripts/lib/haven-env.sh', helper)
         self.write(self.remote / 'backup/restore.sh', '# fixture')
+        self.write(self.remote / 'updated', 'old source')
         self.write(self.remote / 'obsolete', 'old source')
         self.commit()
         self.app.parent.mkdir()
@@ -48,6 +49,7 @@ class DeploymentTests(unittest.TestCase):
         self.write(self.app / 'status/Caddyfile', 'validated production configuration')
         (self.remote / 'obsolete').unlink()
         self.write(self.remote / 'new-code', 'approved source')
+        self.write(self.remote / 'updated', 'new source')
         self.sha = self.commit()
 
         self.data = self.root / 'data'
@@ -108,6 +110,7 @@ class DeploymentTests(unittest.TestCase):
         self.deploy()
         self.assertEqual(self.git(self.app, 'rev-parse', 'HEAD'), self.sha)
         self.assertEqual((self.app / 'new-code').read_text(), 'approved source')
+        self.assertEqual((self.app / 'updated').read_text(), 'new source')
         self.assertFalse((self.app / 'obsolete').exists())
         self.assertEqual((self.app / 'status/Caddyfile').read_text(), 'validated production configuration')
         self.assert_persistent_data()
