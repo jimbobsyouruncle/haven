@@ -39,3 +39,30 @@ For disaster recovery:
 3. Reconcile with `install.sh` against the restored layout and verify with `doctor.sh`, the sandbox firewall check, and the configured HTTPS and authentication routes. Verify the backup timer and a successful snapshot after recovery.
 
 Schema and storage changes can make an older application revision incompatible with live data. Review the migration, confirm a compatible snapshot, and make a deliberate restore decision before replacing live data.
+
+## Declaring an additional persona
+
+Keep one operator-reviewed, credential-free declaration per additional persona.
+Use two literal lines in this order:
+
+```dotenv
+PERSONA_ID=research
+PERSONA_APPS=hermes
+```
+
+Run these commands from a trusted checkout as the host administrator. The first
+reserves a stable non-root UID/GID and creates private state and project
+directories. Repeating it reconciles the same identity and storage. The second
+checks the enabled persona's existing identity and storage without writing them.
+
+```bash
+sudo ./scripts/provision-persona.sh --declaration < research.env
+sudo ./scripts/provision-persona.sh --declaration --check < research.env
+```
+
+Set `PERSONA_APPS=` to disable provisioning through the declaration. A disabled
+declaration check validates its syntax and reports it disabled. The account,
+reserved IDs, and data remain in place for re-enabling. At this stage the
+declaration controls provisioning only. Service startup, shutdown, and
+deployment reconciliation will consume the declaration in later changes.
+Existing Canvas and Hermes use their current setup and deployment paths.

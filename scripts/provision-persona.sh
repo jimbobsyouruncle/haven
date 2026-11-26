@@ -10,11 +10,32 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/persona-reservations.sh
 source "$script_dir/lib/persona-reservations.sh"
 
-if (( $# < 1 || $# > 2 )) || [[ "${2---check}" != --check ]] || ! persona_valid_name "$1"; then
-  die "Usage: provision-persona.sh <persona> [--check] (use a non-reserved lowercase name)"
+if (( $# < 1 || $# > 2 )) || [[ "${2---check}" != --check ]]; then
+  die "Usage: provision-persona.sh <persona|--declaration> [--check]"
 fi
 (( EUID == 0 )) || die "Run as root."
+
 persona="$1"
+if [[ "$persona" == --declaration ]]; then
+  # Read literal settings from stdin. Never evaluate an operator declaration as shell.
+  declaration="$(awk -F= '
+    NR == 1 && /^PERSONA_ID=[a-z][a-z0-9-]*$/ { id = $2; next }
+    NR == 2 && /^PERSONA_APPS=(hermes)?$/ { apps = $2; next }
+    { exit 1 }
+    END {
+      if (NR != 2 || id == "") exit 1
+      print id, apps
+    }
+  ')" || die "Expected PERSONA_ID=<name> followed by PERSONA_APPS=hermes or PERSONA_APPS=."
+  read -r persona apps <<< "$declaration"
+  [[ "$persona" != canvas ]] || die "Use the existing setup path for Canvas."
+fi
+persona_valid_name "$persona" || die "Use a non-reserved lowercase persona name."
+if [[ "$1" == --declaration && -z "$apps" ]]; then
+  printf 'persona=%s disabled\n' "$persona"
+  exit 0
+fi
+
 account="haven-$persona"
 check="${2:-}"
 # shellcheck source=scripts/lib/haven-env.sh
