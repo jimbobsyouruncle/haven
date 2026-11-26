@@ -88,7 +88,13 @@ cat > "$STUB/restic" <<'EOF'
 # fixture snapshot given in SNAPSHOT_SRC, so restore.sh --test has something
 # real to verify.
 case "$1" in
-  snapshots) exit 0 ;;
+  snapshots)
+    if [[ "${RESTIC_PROBE_RC:-0}" != 0 ]]; then
+      printf '%s\n' 'synthetic-probe-secret https://probe.invalid/private?signature=fixture' >&2
+      printf '%s\n' '/synthetic/private/path'
+    fi
+    exit "${RESTIC_PROBE_RC:-0}" ;;
+  init) touch "${CAPTURE_DIR}.unexpected-init"; exit 1 ;;
   backup)
     if [[ -n "${CAPTURE_DIR:-}" && -d "${2:-}" ]]; then
       rm -rf "$CAPTURE_DIR"
@@ -667,6 +673,27 @@ assert "case m: staging kept"                       test -d "$STAGE"
 assert "case m: STATUS is incomplete"               bash -c "grep -qx 'status=incomplete' '$STAGE/STATUS'"
 assert "case m: STATUS carries a fixed reason code" bash -c "grep -qE '^reason=[A-Za-z_]+[:A-Za-z_]*$' '$STAGE/STATUS'"
 assert "case m: raw db name never in STATUS"        bash -c "! grep -q 'boom' '$STAGE/STATUS'"
+
+# Both upload entry points fail closed and keep raw probe output private.
+for probe_case in 1:repository_access_unknown 10:repository_missing \
+                  11:repository_lock_failed 12:repository_password_incorrect; do
+  probe_rc="${probe_case%%:*}"
+  reason="${probe_case#*:}"
+  run_backup_env HAVEN_WORK_DIR="$STAGE_WORK" RESTIC_PROBE_RC="$probe_rc" -- --upload-only
+  check "upload probe $probe_rc: backup fails" 1 "$RUN_RC"
+  assert "upload probe $probe_rc: fixed reason and Restic status are logged" \
+    grep -q "event=backup_failed .*reason=$reason restic_exit=$probe_rc" "$LOG"
+  assert "upload probe $probe_rc: no secret, init advice or success" bash -c \
+    "! grep -Ei 'synthetic|probe\.invalid|initializ|--init|backup_success' '$TMPROOT/out' '$LOG'"
+done
+
+run_backup_env RESTIC_PROBE_RC=1 --
+check "combined probe: backup fails" 1 "$RUN_RC"
+assert "combined probe: unknown access failure is logged" \
+  grep -q 'event=backup_failed .*reason=repository_access_unknown restic_exit=1' "$LOG"
+assert "combined probe: no secret, init advice or success" bash -c \
+  "! grep -Ei 'synthetic|probe\.invalid|initializ|--init|backup_success' '$TMPROOT/out' '$LOG'"
+assert "probe failures: Restic init was never called" test ! -e "${CAPTURE_DIR}.unexpected-init"
 
 # Case n: --upload-only refuses when the staging directory / STATUS is missing.
 rm -rf "$STAGE"
