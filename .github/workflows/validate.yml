@@ -319,7 +319,7 @@ jobs:
 
 
       - name: Desired-state deployment tests
-        if: steps.components.outputs.full == 'true'
+        if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.doctor == 'true'
         run: python3 scripts/test-deploy-host.py
 
       - name: Deployment provenance tests

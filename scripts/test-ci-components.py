@@ -94,7 +94,7 @@ class SelectionTests(unittest.TestCase):
 
         backup = steps('backup/restore.sh')
         self.assertTrue({'Backup script fixture tests', 'Backup mode / timer tests',
-                         'Post-deploy verifier tests', 'Deploy-remote tests',
+                         'Desired-state deployment tests',
                          'Private Backups socket tests'}.issubset(backup))
         self.assertNotIn('Pipe behavioural tests', backup)
         self.assertNotIn('Auth service tests', backup)
@@ -106,8 +106,8 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn('Backup script fixture tests', auth)
         status = steps('status/app.py')
         self.assertTrue({'Private Backups socket tests', 'GPU pod wake-readiness tile tests',
-                         'Post-deploy verifier tests', 'Compose schema check'}.issubset(status))
-        self.assertTrue({'Backup script fixture tests', 'Installation root migration tests',
+                         'Desired-state deployment tests', 'Compose schema check'}.issubset(status))
+        self.assertTrue({'Backup script fixture tests',
                          'B77 port-80 redirect-only dynamic tests', 'Auth service tests',
                          'Pipe behavioural tests'}.isdisjoint(status))
         docs = steps('README.md')
