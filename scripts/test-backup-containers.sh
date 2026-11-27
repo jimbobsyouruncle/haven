@@ -156,6 +156,13 @@ assert "cleanup resumes the previously running Canvas supervisor" grep -Fxq 'sta
 assert "cleanup withdraws the Canvas cold capture record" test ! -e "$RUN_DIR/canvas-ready"
 
 : > "$SYSTEMCTL_LOG"
+run_helper "${CANVAS_ENV[@]}" CANVAS_ACTIVITY=activating -- pause
+assert "backup cancels pending Canvas recovery" grep -Fxq 'stop haven-canvas.service' "$SYSTEMCTL_LOG"
+assert "backup records pending Canvas recovery for release" test -f "$RUN_DIR/canvas-resume"
+run_helper "${CANVAS_ENV[@]}" -- unpause
+assert "backup restores pending recovery through the supervisor" grep -Fxq 'start haven-canvas.service' "$SYSTEMCTL_LOG"
+
+: > "$SYSTEMCTL_LOG"
 run_helper "${CANVAS_ENV[@]}" -- pause
 run_helper "${CANVAS_ENV[@]}" -- unpause
 assert "a previously stopped Canvas is never started" bash -c "! grep -q '^start ' '$SYSTEMCTL_LOG'"

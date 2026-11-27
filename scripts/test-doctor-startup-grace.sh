@@ -78,6 +78,10 @@ done
 for a in "$@"; do [[ "$a" == "network" ]] && exit 1; done
 [[ "$*" == *"hermes-agent"* ]] && exit 1
 [[ "$*" == *"name=oh-agent-server"* ]] && exit 0
+if [[ "${*: -1}" == haven-canvas ]]; then
+  echo running:healthy
+  exit 0
+fi
 case "$tmpl" in
   *".State.Status"*) echo running; exit 0 ;;
   *".State.Health"*) echo none; exit 0 ;;
@@ -189,6 +193,10 @@ EOF
 
 cat > "$BIN/systemctl" <<'EOF'
 #!/usr/bin/env bash
+case "${*: -1}:${FIXTURE:-}" in
+  haven-canvas.service:canvas-retry) echo activating; exit 0 ;;
+  haven-canvas.service:canvas-ready) echo active; exit 0 ;;
+esac
 exit 1
 EOF
 
@@ -462,6 +470,22 @@ if [[ "$RC_OFFSETLESS" != "2" ]]; then
   pass "offset-less fixture: exit code is never 2 (check is warning-only)"
 else
   fail "offset-less fixture: exit code is 2 -- the check must never fail the run"
+fi
+
+printf '\n  canvas:\n' >> "$APPD/docker-compose.yml"
+printf '%s\n' 'test "$1" = canvas-check' > "$APPD/scripts/sandbox-firewall.sh"
+run_doctor canvas-retry
+if [[ "$RC" == 2 ]] && grep -q 'Canvas is unavailable while starting or retrying' "$WORK/out.canvas-retry" &&
+   ! grep -q 'Canvas Agent Server health probe passed' "$WORK/out.canvas-retry"; then
+  pass "Canvas retry is unavailable even with cached healthy container status"
+else
+  fail "Canvas retry is unavailable even with cached healthy container status"
+fi
+run_doctor canvas-ready
+if [[ "$RC" == "$RC_OK" ]] && grep -q 'Canvas Agent Server health probe passed' "$WORK/out.canvas-ready"; then
+  pass "Canvas recovery restores the health pass"
+else
+  fail "Canvas recovery restores the health pass"
 fi
 
 echo "---"

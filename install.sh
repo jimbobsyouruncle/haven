@@ -2002,8 +2002,11 @@ if [[ "${CANVAS_ENABLED:-off}" == on ]]; then
   if ! { install -m 0644 "$APP_DIR/deploy/haven-canvas.service" "$unit_dir/haven-canvas.service.tmp" &&
          mv -f "$unit_dir/haven-canvas.service.tmp" "$unit_dir/haven-canvas.service" &&
          systemctl daemon-reload &&
-         systemctl enable haven-canvas.service &&
-         systemctl start haven-canvas.service; }; then
+         systemctl enable haven-canvas.service; }; then
+    die "Could not install the Canvas supervisor."
+  fi
+  if ! systemctl start haven-canvas.service; then
+    systemctl stop haven-canvas.service || die "Could not cancel Canvas recovery after a failed startup gate."
     die "Canvas did not pass its firewall/startup gate. Check haven-canvas.service."
   fi
 fi

@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
 # This is the sole normal start path for the Canvas Compose profile.
 set -Eeuo pipefail
+fail() {
+  printf 'Canvas supervisor: %s\n' "$1" >&2
+  exit 1
+}
+
 stop_canvas() {
-  local owner
-  owner="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}:{{index .Config.Labels "com.docker.compose.service"}}' haven-canvas 2>/dev/null)" ||
-    return 0
+  local owner containers
+  if ! owner="$(timeout 10 docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}:{{index .Config.Labels "com.docker.compose.service"}}' haven-canvas 2>/dev/null)"; then
+    containers="$(timeout 10 docker ps -a --filter 'name=^/haven-canvas$' --format '{{.Names}}' 2>/dev/null)" ||
+      return 1
+    [[ -z "$containers" ]]
+    return
+  fi
   [[ "$owner" == haven:canvas ]] || return 1
   timeout 10 docker network disconnect -f haven-canvas-egress haven-canvas 2>/dev/null || true
-  timeout 10 docker stop --time 5 haven-canvas >/dev/null
+  timeout 10 docker stop --time 5 haven-canvas >/dev/null 2>&1
 }
 if [[ ${1:-} == stop ]]; then
   rm -f /run/haven-canvas/firewall-ready
-  stop_canvas
+  stop_canvas || fail "could not confirm Canvas stopped"
   exit
 fi
 
@@ -33,11 +42,15 @@ compose=(docker compose -p haven --env-file "$HAVEN_STACK_ENV_FILE"
 firewall() {
   bash "$script_dir/sandbox-firewall.sh" "canvas-$1"
 }
+check_hold() {
+  [[ ! -e /run/haven-backup-control/canvas-hold && ! -L /run/haven-backup-control/canvas-hold ]] ||
+    fail "startup blocked by backup or restore hold"
+}
 
 rm -f /run/haven-canvas/firewall-ready
-[[ ! -e /run/haven-backup-control/canvas-hold && ! -L /run/haven-backup-control/canvas-hold ]]
-stop_canvas
-enabled
+check_hold
+stop_canvas || fail "could not confirm Canvas stopped"
+enabled || fail "Canvas configuration or ingress is disabled"
 canvas_check_identity "$HAVEN_DATA_DIR/canvas_data" \
   "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_UID)" \
   "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_GID)"
@@ -50,18 +63,22 @@ if [[ -e "$recovered_key" || -L "$recovered_key" ]]; then
     exit 1
   fi
 fi
-firewall apply
-trap 'rm -f /run/haven-canvas/firewall-ready; stop_canvas' EXIT
+firewall apply || fail "startup firewall gate failed"
+trap 'rm -f /run/haven-canvas/firewall-ready; stop_canvas || fail "could not confirm Canvas stopped"' EXIT
 trap 'exit 0' TERM INT
-[[ ! -e /run/haven-backup-control/canvas-hold && ! -L /run/haven-backup-control/canvas-hold ]]
+check_hold
 install -m 0444 /dev/null /run/haven-canvas/firewall-ready
 "${compose[@]}" up -d --force-recreate --no-deps --no-build --pull never canvas
-container="$(docker inspect -f '{{.Id}}' haven-canvas)"
+container="$(docker inspect -f '{{.Id}}' haven-canvas 2>/dev/null)" ||
+  fail "could not identify the started container"
 
 deadline=$(( SECONDS + 180 ))
 ready=0
-while enabled && firewall check; do
-  state="$(docker inspect -f '{{.Id}}:{{.State.Status}}:{{.State.Health.Status}}' haven-canvas)"
+while true; do
+  enabled || fail "Canvas configuration or ingress is disabled"
+  firewall check || fail "active firewall verification failed"
+  state="$(docker inspect -f '{{.Id}}:{{.State.Status}}:{{.State.Health.Status}}' haven-canvas 2>/dev/null)" ||
+    fail "could not inspect container health"
   case "$state" in
     "$container":running:healthy)
       if (( ! ready )); then
@@ -69,11 +86,11 @@ while enabled && firewall check; do
         ready=1
       fi
       ;;
-    "$container":running:starting)
-      (( ready || SECONDS < deadline )) || exit 1
+    "$container":running:starting|"$container":running:unhealthy)
+      (( ! ready )) || fail "container lost readiness"
+      (( SECONDS < deadline )) || fail "startup health probe timed out"
       ;;
-    *) exit 1 ;;
+    *) fail "container stopped or its identity or health state changed" ;;
   esac
   sleep 2
 done
-exit 1

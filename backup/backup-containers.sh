@@ -107,7 +107,7 @@ hold_canvas() {
   active="$(systemctl show -p ActiveState --value "$CANVAS_UNIT")" || return 1
   case "$active" in
     active|activating|reloading|deactivating)
-      if [[ "$purpose" == backup && "$active" == active &&
+      if [[ "$purpose" == backup && ( "$active" == active || "$active" == activating ) &&
             "$(_haven_file_get "$HAVEN_STACK_ENV_FILE" CANVAS_ENABLED)" == on ]] &&
         systemctl is-enabled --quiet "$CANVAS_UNIT"; then
         : > "$CONTROL_RUN_DIR/canvas-resume" || return 1

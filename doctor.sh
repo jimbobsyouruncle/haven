@@ -623,11 +623,12 @@ for svc in ollama open-webui haven-status haven-proxy haven-openhands; do
 done
 
 if grep -Fq '  canvas:' "$APP_DIR/docker-compose.yml"; then
-  CANVAS_STATE="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' haven-canvas 2>/dev/null || true)"
-  case "$CANVAS_STATE" in
-    healthy) pass "Canvas Agent Server health probe passed" ;;
-    starting) warn "Canvas is initializing" "Wait for the Agent Server health probe and run ./doctor.sh again." ;;
-    *) fail "Canvas health: ${CANVAS_STATE:-container missing}" "Check the installer result and the Canvas persona state ownership." ;;
+  CANVAS_UNIT_STATE="$(systemctl show -p ActiveState --value haven-canvas.service 2>/dev/null || true)"
+  CANVAS_STATE="$(docker inspect -f '{{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{end}}' haven-canvas 2>/dev/null || true)"
+  case "$CANVAS_UNIT_STATE:$CANVAS_STATE" in
+    active:running:healthy) pass "Canvas Agent Server health probe passed" ;;
+    activating:*) fail "Canvas is unavailable while starting or retrying" "Check journalctl -u haven-canvas.service -o short-monotonic, then rerun /opt/haven/doctor.sh." ;;
+    *) fail "Canvas is unavailable" "Check haven-canvas.service and the Canvas supervisor journal." ;;
   esac
   if [[ $EUID == 0 ]]; then
     if bash "$APP_DIR/scripts/sandbox-firewall.sh" canvas-check; then

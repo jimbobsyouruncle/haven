@@ -219,6 +219,7 @@
 - scripts/test-backup.sh - shellcheck disable=SC2317,SC2329 # helpers and the EXIT trap are called indirectly
 - scripts/test-bootstrap.sh - FILE: scripts/test-bootstrap.sh
 - scripts/test-canvas-firewall.py - Run only in a disposable network namespace (sudo unshare --net).
+- scripts/test-canvas-recovery.sh - Exercise the service manager on a disposable CI runner with no Docker or network.
 - scripts/test-check-agent-context.sh - Fixture test for scripts/check-agent-context.sh.
 - scripts/test-check-git-remotes.sh
 - scripts/test-check-no-ip-literals.sh - Fixture test for scripts/check-no-ip-literals.sh.

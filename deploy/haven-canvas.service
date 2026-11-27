@@ -5,6 +5,8 @@ Wants=network-online.target
 BindsTo=docker.service
 PartOf=docker.service
 ConditionPathExists=/opt/haven/scripts/canvas-runtime.sh
+# Retry after outages of any length. RestartSec sets the minimum cadence.
+StartLimitIntervalSec=0
 
 [Service]
 Type=notify
@@ -13,6 +15,8 @@ RuntimeDirectory=haven-canvas
 RuntimeDirectoryMode=0755
 TimeoutStartSec=360
 TimeoutStopSec=30
+Restart=on-failure
+RestartSec=30s
 ExecStart=/bin/bash /opt/haven/scripts/canvas-runtime.sh
 # An unsuccessful start, a failed policy check, or a killed supervisor must
 # stop the agent. Docker itself is deliberately barred from restarting it.
