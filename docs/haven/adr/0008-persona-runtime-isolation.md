@@ -63,3 +63,26 @@ network and private Hermes service without published ports.
 proxy ingress and must preserve the peer and backend denials, including with
 internet enabled. Keep Docker socket access, privileged execution,
 infrastructure credentials and peer storage outside persona containers.
+
+### Companion WebUI ingress decision — #297
+
+The owner approved a Haven firewall exception scoped to the existing Caddy
+instance and each explicitly configured companion HTTP endpoint. Companions
+publish no host ports. Caddy stays outside persona bridges, and the exception
+permits only the configured connection and its established replies. Peer
+persona, direct backend and host management access remain denied. Same-persona
+communication and the persona's outbound internet setting retain their existing
+behavior.
+
+Caddy must enforce Haven owner authentication at each companion HTTPS hostname
+before proxying. Remove `haven_auth` from upstream requests and prevent the
+app from setting it in downstream responses. Preserve app-specific cookies
+where required and strip infrastructure credentials and unnecessary
+authorization headers.
+
+This decision is pending implementation. Activation requires verified Caddy
+and companion endpoint identities across recreation, a working return path
+under the supported bridge configuration, and effective ingress and bypass
+tests. File Browser is the first candidate, conditional on an ARM64 image pin
+and security qualification. Keep companion ingress disabled if the existing
+bridge and firewall can’t provide that scoped path.
