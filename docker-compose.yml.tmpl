@@ -451,11 +451,16 @@ services:
       ACME_AUTO_HTTPS: ${ACME_AUTO_HTTPS:-disable_redirects}
 #@end
       DO_NOT_TRACK: "true"
-#@region canvas
+#@region proxy_networks
 #@canvas
       CANVAS_PASSWORD_HASH: ${CANVAS_PASSWORD_HASH:?Canvas requires a separate bcrypt grant}
+#@auth
     networks:
       default: {}
+      persona-proxy:
+        ipv4_address: 10.231.32.2
+        gw_priority: 1
+#@canvas
       canvas-ingress:
         ipv4_address: 172.31.253.2
 #@end
@@ -624,4 +629,17 @@ networks:
   canvas-egress:
     name: haven-canvas-egress
     external: true
+#@end
+#@region persona_proxy_network
+#@auth
+  # Only Caddy attaches here. The persona firewall matches this interface
+  # alongside Caddy's address, which other stack containers cannot impersonate.
+  persona-proxy:
+    name: haven-persona-proxy
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: haven-files-in
+    ipam:
+      config:
+        - subnet: 10.231.32.0/29
 #@end

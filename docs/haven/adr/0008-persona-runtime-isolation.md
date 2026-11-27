@@ -47,12 +47,13 @@ Expose each approved native WebUI behind existing authenticated Caddy HTTPS on a
 
 ## Persona network decision (2026-11-27)
 
-Each persona uses one isolated Docker bridge. Containers attached to the
-same persona bridge can communicate freely. The operator-reviewed declaration
-persists an optional `PERSONA_INTERNET` setting, which defaults to `true`.
-It enables ordinary outbound public IPv4 via the host uplink. A disabled
-setting uses an internal bridge and blocks routed traffic. Changing the
-setting retains persona state and identity.
+Each persona uses one routable Docker bridge. Containers on the same bridge
+can communicate freely. The operator-reviewed declaration persists
+`PERSONA_INTERNET`, which defaults to `true` and allows public IPv4 via the
+host uplink. When it is `false`, Haven's firewall denies internet traffic
+and still permits explicitly configured Caddy ingress and established replies.
+Changing the setting retains persona state, identity, and bridge addressing.
+The launcher verifies firewall rules before starting persona containers.
 
 Use the existing Docker and Haven host firewall model. Deny traffic between
 personas and block host gateways, other Docker bridges and published port
@@ -80,20 +81,17 @@ app from setting it in downstream responses. Preserve app-specific cookies
 where required and strip infrastructure credentials and unnecessary
 authorization headers.
 
-This decision is pending implementation. Activation requires verified Caddy
-and companion endpoint identities across recreation, a working return path
-under the supported bridge configuration, and effective ingress and bypass
-tests. The upstream File Browser candidate failed security qualification. Its
-final release, v2.63.23, is affected by an unpatched high-severity memory
-exhaustion vulnerability, and upstream has ended security maintenance. Select
-a maintained candidate before enabling a companion route.
-[Upstream release](https://github.com/filebrowser/filebrowser/releases/tag/v2.63.23) ·
-[Security advisory](https://github.com/filebrowser/filebrowser/security/advisories/GHSA-448h-jr2h-3vhp)
+Caddy uses a dedicated source bridge that only Caddy joins. The IPv4
+firewall permits TCP/8080 from Caddy's bridge and address to the reserved
+FileBrowser address on that persona's bridge. The reverse rule matches only
+established replies. The address derives from the persona's non-reused UID and
+sits outside Docker's dynamic allocation range. The operator adds an explicit
+route under the authenticated HTTPS wildcard site. See the
+[operator procedure](../../../deploy/README.md#filebrowser-https-access).
 
 FileBrowser Quantum v2.1.0-stable is the selected replacement. The pinned
 image index includes Linux ARM64. The optional `PERSONA_APPS=hermes,files`
 declaration shares the persona's `projects` directory with both apps.
 Quantum keeps its database and cache in the separately provisioned `files`
 directory, runs with the reserved persona UID/GID, and publishes no ports.
-The Compose definition does not yet provide an authenticated HTTPS route.
 [Published image](https://github.com/gtsteffaniak/filebrowser/pkgs/container/filebrowser/1630175613?tag=2.1.0-stable)
