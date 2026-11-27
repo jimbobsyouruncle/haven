@@ -21,13 +21,15 @@ if [[ "$persona" == --declaration ]]; then
   declaration="$(awk -F= '
     NR == 1 && /^PERSONA_ID=[a-z][a-z0-9-]*$/ { id = $2; next }
     NR == 2 && /^PERSONA_APPS=(hermes)?$/ { apps = $2; next }
+    NR == 3 && /^PERSONA_INTERNET=(true|false)$/ { internet = $2; next }
     { exit 1 }
     END {
-      if (NR != 2 || id == "") exit 1
-      print id, apps
+      if (NR < 2 || id == "") exit 1
+      printf "%s:%s:%s\n", id, apps, internet
     }
-  ')" || die "Expected PERSONA_ID=<name> followed by PERSONA_APPS=hermes or PERSONA_APPS=."
-  read -r persona apps <<< "$declaration"
+  ')" || die "Expected PERSONA_ID and PERSONA_APPS, with optional PERSONA_INTERNET=true or false."
+  IFS=: read -r persona apps internet <<< "$declaration"
+  printf -v declaration_input 'PERSONA_ID=%s\nPERSONA_APPS=%s\nPERSONA_INTERNET=%s' "$persona" "$apps" "$internet"
   [[ "$persona" != canvas ]] || die "Use the existing setup path for Canvas."
 fi
 persona_valid_name "$persona" || die "Use a non-reserved lowercase persona name."
@@ -215,6 +217,9 @@ else
   # Re-open in check mode after dropping the exclusive directory lock.
   cleanup
   exec {lock}<&-
+  if [[ "$1" == --declaration && -n "$internet" ]]; then
+    exec bash "$script_dir/provision-persona.sh" --declaration --check <<< "$declaration_input"
+  fi
   exec bash "$script_dir/provision-persona.sh" "$persona" --check
 fi
 printf 'persona=%s uid=%s gid=%s data_dir=%s\n' "$persona" "$uid" "$gid" "$data"

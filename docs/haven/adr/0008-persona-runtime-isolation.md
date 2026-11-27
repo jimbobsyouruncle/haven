@@ -38,8 +38,28 @@ The repository currently defines one Hermes service with a configurable host UID
 
 **Owner-approved scope; implementation not yet complete.** Implement the isolation model through [epic #294](https://github.com/jimbobsyouruncle/haven/issues/294), beginning with only the existing Haven owner login and existing authenticated HTTPS. This is **not** a decision to eliminate independent human-user authorization from the eventual multi-user design: persona-aware user login/RBAC and OIDC are postponed to a separate phase. Do not represent shared owner authentication as multi-human separation.
 
-Reuse the existing `scripts/provision-persona.sh` stable UID/GID reservation and private storage roots, Docker Compose and systemd deployment, existing Caddy proxy and firewall, and Restic backup. Provide a minimal declarative mechanism for enabling a persona and its services; do not introduce a daemon, orchestration control plane, application marketplace, generic secret broker or per-application identities. Multiple services in a persona share that persona's unprivileged Unix UID/GID and **only** its explicitly mounted private storage. Its internal network may be shared within the persona, while cross-persona private networking, mounts, credentials and host-management access remain denied by default. Any allowed shared inference destination is a separately scoped exception, not a bridge between persona storage/services.
+Reuse the existing `scripts/provision-persona.sh` stable UID/GID reservation and private storage roots, Docker Compose and systemd deployment, existing Caddy proxy and firewall, and Restic backup. Provide a minimal declarative mechanism for enabling a persona and its services; do not introduce a daemon, orchestration control plane, application marketplace, generic secret broker or per-application identities. Multiple services in a persona share that persona's unprivileged Unix UID/GID and **only** its explicitly mounted private storage. Its internal network may be shared within the persona, while cross-persona private networking, mounts, credentials and host-management access remain denied by default. Public internet access follows the networking decision below.
 
 Expose each approved native WebUI behind existing authenticated Caddy HTTPS on a flat `<persona>-<service>.<TLS_DOMAIN>` name. Enforce backend non-bypass and service boundaries; single-owner authentication does not imply a new RBAC platform. Existing persona data and deployments should not be migrated merely to add new personas. Backup/deploy/doctor should reuse their existing paths and report actual coverage, not add blanket CI or scheduled test frameworks.
 
 **Verification proportionate to change:** use two disposable personas for a representative positive same-persona file exchange and denied peer file/service access, verify service identity/mount/privilege and authenticated access, and retain data through one recreation and the existing backup capture. Reuse prior qualified CI, ARM64 and restore evidence; do not repeat unrelated fleet or full-system rehearsals. Capture unverified restrictions as limits, not claims. Matrix, multi-human login, protected restricted RunPod mode, full Canvas/Hermes delegation and specialized ComfyUI inference are separate future capabilities.
+
+
+## Persona network decision (2026-11-27)
+
+Each persona uses one isolated Docker bridge. Containers attached to the
+same persona bridge can communicate freely. The operator-reviewed declaration
+persists an optional `PERSONA_INTERNET` setting, which defaults to `true`.
+It enables ordinary outbound public IPv4 via the host uplink. A disabled
+setting uses an internal bridge and blocks routed traffic. Changing the
+setting retains persona state and identity.
+
+Use the existing Docker and Haven host firewall model. Deny traffic between
+personas and block host gateways, other Docker bridges and published port
+bypass. Apply and verify the boundary before starting any persona workload.
+[#296](https://github.com/jimbobsyouruncle/haven/issues/296) introduces the
+network and private Hermes service without published ports.
+[#297](https://github.com/jimbobsyouruncle/haven/issues/297) owns authenticated
+proxy ingress and must preserve the peer and backend denials, including with
+internet enabled. Keep Docker socket access, privileged execution,
+infrastructure credentials and peer storage outside persona containers.

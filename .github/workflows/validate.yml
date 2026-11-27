@@ -304,6 +304,10 @@ jobs:
 
 
 
+      - name: Persona Docker network boundary
+        if: steps.components.outputs.full == 'true'
+        run: sudo --preserve-env=GITHUB_ACTIONS bash scripts/test-persona-network.sh
+
       - name: Desired-state deployment tests
         if: steps.components.outputs.full == 'true' || steps.components.outputs.backup == 'true' || steps.components.outputs.status == 'true' || steps.components.outputs.doctor == 'true'
         run: python3 scripts/test-deploy-host.py
