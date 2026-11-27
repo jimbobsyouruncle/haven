@@ -222,4 +222,8 @@ else
   fi
   exec bash "$script_dir/provision-persona.sh" "$persona" --check
 fi
-printf 'persona=%s uid=%s gid=%s data_dir=%s\n' "$persona" "$uid" "$gid" "$data"
+printf 'persona=%s uid=%s gid=%s' "$persona" "$uid" "$gid"
+if [[ "$1" == --declaration && -n "$internet" ]]; then
+  printf ' internet=%s' "$internet"
+fi
+printf ' data_dir=%s\n' "$data"

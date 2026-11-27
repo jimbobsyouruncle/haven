@@ -25,7 +25,7 @@ persona="${BASH_REMATCH[1]}"
 uid="${BASH_REMATCH[2]}"
 gid="${BASH_REMATCH[3]}"
 internet="${BASH_REMATCH[5]:-true}"
-data_dir="${BASH_REMATCH[6]}"
+data_dir="${BASH_REMATCH[6]}/${persona}_data"
 network="haven-persona-$persona"
 
 case "$1" in
