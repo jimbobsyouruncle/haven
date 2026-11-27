@@ -618,6 +618,19 @@ enforcing it while the supervisor stops Canvas. The checks run every two
 seconds plus command latency. Simultaneous removal of both host policies is
 outside the sandbox boundary.
 
+After a supervisor failure, systemd waits 30 seconds before retrying the full
+startup gate. This continues through extended outages. A trial reports ready
+only after the container is healthy and the firewall check succeeds. A failed
+policy check never grants startup. If the uplink returns with a different
+policy or firewall rules have drifted, Canvas stays unavailable pending
+operator diagnosis.
+
+Check `sudo journalctl -u haven-canvas.service -o short-monotonic` for the
+failed gate and `sudo /opt/haven/doctor.sh` for health and active firewall
+verification. `systemctl stop haven-canvas.service` cancels pending retries.
+The backup hold also blocks startup. Backup release resumes an enabled
+supervisor that was active or starting/retrying before capture.
+
 After the setup helper has been deployed to the canonical Haven host, prepare
 Canvas as root:
 

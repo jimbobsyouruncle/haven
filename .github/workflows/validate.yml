@@ -302,6 +302,10 @@ jobs:
         if: steps.components.outputs.full == 'true'
         run: sudo unshare --net -- python3 scripts/test-canvas-firewall.py
 
+      - name: Canvas supervisor recovery
+        if: steps.components.outputs.full == 'true'
+        run: sudo bash scripts/test-canvas-recovery.sh
+
 
 
       - name: Persona Docker network boundary

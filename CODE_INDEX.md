@@ -446,9 +446,11 @@
 - def main(mode)
 
 ## scripts/canvas-runtime.sh
+- fail()
 - stop_canvas()
 - enabled()
 - firewall()
+- check_hold()
 
 ## scripts/check-agent-context.sh
 - (no symbols)
@@ -831,6 +833,11 @@
   - def test_kernel_policy_and_drift(self)
   - def host_input_boundary(self, peer, fixture)
   - def test_missing_bridge_does_not_modify_rules(self)
+
+## scripts/test-canvas-recovery.sh
+- wait_for()
+- retry_pending()
+- tried_at_least_twice()
 
 ## scripts/test-check-agent-context.sh
 - greet()
