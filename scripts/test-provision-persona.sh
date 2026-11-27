@@ -123,6 +123,48 @@ second=$!
 wait "$first"
 wait "$second"
 [[ "$(cut -d' ' -f2 "$scratch/first")" != "$(cut -d' ' -f2 "$scratch/second")" ]]
+# Operator declarations share the existing identity and storage checks.
+declare_persona() {
+  printf 'PERSONA_ID=%s\nPERSONA_APPS=%s\n' "$1" "$2" | provision --declaration "${@:3}"
+}
+
+[[ "$(declare_persona dormant '')" == 'persona=dormant disabled' ]]
+[[ ! -e "$data/dormant_data" ]]
+grep -q '^dormant:' "$data/.persona-identities" && exit 1
+
+for invalid in \
+  $'PERSONA_ID=../escape\nPERSONA_APPS=hermes' \
+  $'PERSONA_ID=canvas\nPERSONA_APPS=hermes' \
+  $'PERSONA_ID=alpha\nPERSONA_APPS=unknown' \
+  $'PERSONA_ID=alpha\nPERSONA_APPS=\nPERSONA_APPS=hermes' \
+  $'PERSONA_ID=alpha\nPERSONA_APPS=$(exit 0)' \
+  'PERSONA_ID=alpha'; do
+  if printf '%s\n' "$invalid" | provision --declaration; then
+    echo 'Unexpected success for invalid persona declaration.' >&2
+    exit 1
+  fi
+done
+[[ ! -e "$data/alpha_data" ]]
+grep -q '^alpha:' "$data/.persona-identities" && exit 1
+
+alpha="$(declare_persona alpha hermes)"
+beta="$(declare_persona beta hermes)"
+[[ "$(declare_persona alpha hermes --check)" == "$alpha" ]]
+[[ "$(declare_persona beta hermes --check)" == "$beta" ]]
+IFS=: read -r _ alpha_uid alpha_gid < <(awk -F: '$1 == "alpha"' "$data/.persona-identities")
+IFS=: read -r _ beta_uid beta_gid < <(awk -F: '$1 == "beta"' "$data/.persona-identities")
+[[ "$alpha_uid" != "$beta_uid" && "$alpha_gid" != "$beta_gid" ]]
+[[ "$(stat -c '%u:%g:%a' -- "$data/alpha_data/persona")" == "$alpha_uid:$alpha_gid:700" ]]
+[[ "$(stat -c '%u:%g:%a' -- "$data/beta_data/persona")" == "$beta_uid:$beta_gid:700" ]]
+
+printf 'keep this\n' > "$data/alpha_data/persona/state"
+before="$(stat -c '%i:%z' "$data/.persona-identities" "$data/alpha_data/persona")"
+[[ "$(declare_persona alpha '' --check)" == 'persona=alpha disabled' ]]
+[[ "$(declare_persona alpha '')" == 'persona=alpha disabled' ]]
+[[ "$(declare_persona alpha hermes)" == "$alpha" ]]
+[[ "$(stat -c '%i:%z' "$data/.persona-identities" "$data/alpha_data/persona")" == "$before" ]]
+[[ "$(cat "$data/alpha_data/persona/state")" == 'keep this' ]]
+
 printf 'Persona provisioning fixtures passed.\n'
 
 # Exercise the wrapper against the same synthetic identity and an installed

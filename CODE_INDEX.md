@@ -1004,6 +1004,7 @@
 ## scripts/test-provision-persona.sh
 - provision()
 - reject()
+- declare_persona()
 - setup_reject()
 - setup_terminal()
 
