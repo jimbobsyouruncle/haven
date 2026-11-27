@@ -61,12 +61,15 @@ def policy(bridge, uplink, blocked, backend=None):
     if backend:
         # ACCEPT in the filter table lets this specific flow through Docker's
         # unpublished-port drop. Interface matches exclude other bridges.
-        inbound.append(("-i", PROXY_BRIDGE, "-s", PROXY_IP + "/32", "-d", backend + "/32",
-                        "-p", "tcp", "-m", "tcp", "--dport", FILES_PORT, "-m", "conntrack",
+        # Keep addresses ahead of interfaces, as emitted by iptables -S.
+        inbound.append(("-s", PROXY_IP + "/32", "-d", backend + "/32",
+                        "-i", PROXY_BRIDGE, "-p", "tcp", "-m", "tcp", "--dport", FILES_PORT,
+                        "-m", "conntrack",
                         "--ctstate", "NEW,ESTABLISHED", "--ctdir", "ORIGINAL",
                         "-j", "ACCEPT"))
-        outbound.append(("-o", PROXY_BRIDGE, "-s", backend + "/32", "-d", PROXY_IP + "/32",
-                         "-p", "tcp", "-m", "tcp", "--sport", FILES_PORT, "-m", "conntrack",
+        outbound.append(("-s", backend + "/32", "-d", PROXY_IP + "/32",
+                         "-o", PROXY_BRIDGE, "-p", "tcp", "-m", "tcp", "--sport", FILES_PORT,
+                         "-m", "conntrack",
                          "--ctstate", "ESTABLISHED", "--ctdir", "REPLY",
                          "-j", "ACCEPT"))
     if uplink:
