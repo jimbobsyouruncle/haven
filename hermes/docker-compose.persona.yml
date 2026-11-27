@@ -39,7 +39,9 @@ services:
     cap_drop: [ALL]
     restart: "no"
     mem_limit: 256m
-    networks: [persona]
+    networks:
+      persona:
+        ipv4_address: ${PERSONA_FILES_IP:-}
     environment:
       FILEBROWSER_CONFIG: /etc/haven-filebrowser.yaml
     healthcheck:

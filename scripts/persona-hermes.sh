@@ -39,7 +39,6 @@ exec {lock}>/run/haven-persona-network.lock
 flock -x "$lock"
 local_env=(env -i PATH="$PATH")
 compose=(
-  "${local_env[@]}"
   PERSONA_UID="$uid" PERSONA_GID="$gid" PERSONA_DATA_DIR="$data_dir" PERSONA_NETWORK="$network"
   # Interpolate only verified persona values. The legacy stack env holds credentials.
   COMPOSE_DISABLE_ENV_FILE=1
@@ -48,8 +47,16 @@ compose=(
   --file "$script_dir/../hermes/docker-compose.persona.yml"
   --profile files
 )
-"${compose[@]}" down
+# Compose validates interpolation even on down. The placeholder is unused
+# until up, after the firewall has verified the reserved endpoint.
+"${local_env[@]}" PERSONA_FILES_IP= "${compose[@]}" down
 if [[ "$1" == up ]]; then
-  "${local_env[@]}" python3 -B "$script_dir/persona-firewall.py" "$network" "$internet"
-  exec "${compose[@]}" up --build --detach "${services[@]}"
+  files_args=()
+  if [[ "$apps" == hermes,files ]]; then files_args=("$uid"); fi
+  backend="$("${local_env[@]}" python3 -B "$script_dir/persona-firewall.py" \
+    "$network" "$internet" "${files_args[@]}")"
+  "${local_env[@]}" PERSONA_FILES_IP="$backend" "${compose[@]}" up --build --detach "${services[@]}"
+  if [[ -n "$backend" ]]; then
+    printf 'Caddy route: import persona_files %s %s\n' "$persona" "$backend"
+  fi
 fi

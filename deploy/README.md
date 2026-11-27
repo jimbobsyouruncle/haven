@@ -77,8 +77,7 @@ Containers on the same persona bridge can communicate freely. Internet-enabled
 personas use public IPv4 via the host's public uplink. Local host services,
 other Docker bridges, other personas, and Docker-published port forwarding
 are blocked. Leave the project stopped after a host reboot until the launcher
-has reapplied its rules. This stage has no published ports. The authenticated
-proxy path is tracked in [#297](https://github.com/jimbobsyouruncle/haven/issues/297).
+has reapplied its rules. Persona services have no published ports.
 
 ```bash
 sudo ./scripts/persona-hermes.sh up < research.env
@@ -88,8 +87,10 @@ sudo ./scripts/persona-hermes.sh down < research.env
 To turn internet access off, update the operator-owned declaration from
 `internet-off` and reapply it. Use `internet-on` to turn it back on. Save the
 updated file before reapplying so the policy survives restart. A mode change
-recreates the persona's bridge and Hermes container while retaining all
-state, projects and identity reservations. Teardown also retains those paths.
+reapplies firewall rules and recreates the persona's containers while
+retaining their addresses, state, projects and identity reservations. The
+first start after upgrading from an internal bridge replaces that bridge.
+Teardown also retains the persona's data.
 
 ```bash
 next="$(mktemp ./research.env.XXXXXXXX)"
@@ -100,3 +101,32 @@ else
   rm -- "$next"
 fi
 ```
+
+### FileBrowser HTTPS access
+
+Set `PERSONA_APPS=hermes,files` in the persona declaration, then provision and
+start it using the commands above. The launcher prints the Caddy route import,
+for example `import persona_files assistant 10.231.7.10`. Use the line printed
+for your persona. Its address remains stable across container recreation and
+internet setting changes.
+
+On a Haven installation with authenticated HTTPS and wildcard DNS and TLS
+coverage for `TLS_DOMAIN`, save that line as a root-owned
+`$HAVEN_DATA_DIR/caddy/persona-files/assistant.caddy`. Keep the directory and
+route files writable only by the operator. Apply the change to the running
+proxy with:
+
+```bash
+sudo docker exec haven-proxy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+Open `https://assistant-files.<TLS_DOMAIN>` and sign in to Haven before using
+FileBrowser's own account. An unsigned browser should be sent to Haven login.
+With `PERSONA_INTERNET=false`, the browser route and same-persona HTTP still
+work. The FileBrowser port stays unpublished.
+
+The dedicated Caddy subnet is `10.231.32.0/29`, and reserved FileBrowser
+subnets are drawn from `10.231.0.0/19`. Keep those ranges clear of existing
+host, VPN and Docker routes. To remove access, remove the persona's
+`.caddy` file and reload Caddy before manually deleting its reserved Docker
+network. The launcher retains the network on normal teardown.

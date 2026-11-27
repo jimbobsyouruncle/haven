@@ -2,6 +2,8 @@
 """Apply Haven's existing bridge-firewall model to a persona network."""
 from hashlib import sha256
 import importlib.util
+from ipaddress import IPv4Network
+import re
 import json
 from pathlib import Path
 import sys
@@ -17,6 +19,9 @@ spec.loader.exec_module(firewall)
 command = firewall.command
 DOCKER = ("docker", "--host", "unix:///var/run/docker.sock")
 TAG = ("-m", "comment", "--comment", "haven-persona")
+PROXY_BRIDGE = "haven-files-in"
+PROXY_IP = "10.231.32.2"
+FILES_PORT = "8080"
 
 
 def network(name, bridge):
@@ -41,7 +46,7 @@ def network(name, bridge):
     return current
 
 
-def policy(bridge, uplink, blocked):
+def policy(bridge, uplink, blocked, backend=None):
     outgoing, incoming = f"{bridge}-out", f"{bridge}-in"
     hooks = {
         "INPUT": [("-i", bridge, *TAG, "-j", "DROP")],
@@ -53,14 +58,25 @@ def policy(bridge, uplink, blocked):
     }
     outbound = []
     inbound = []
+    if backend:
+        # ACCEPT in the filter table lets this specific flow through Docker's
+        # unpublished-port drop. Interface matches exclude other bridges.
+        inbound.append(("-i", PROXY_BRIDGE, "-s", PROXY_IP + "/32", "-d", backend + "/32",
+                        "-p", "tcp", "-m", "tcp", "--dport", FILES_PORT, "-m", "conntrack",
+                        "--ctstate", "NEW,ESTABLISHED", "--ctdir", "ORIGINAL",
+                        "-j", "ACCEPT"))
+        outbound.append(("-o", PROXY_BRIDGE, "-s", backend + "/32", "-d", PROXY_IP + "/32",
+                         "-p", "tcp", "-m", "tcp", "--sport", FILES_PORT, "-m", "conntrack",
+                         "--ctstate", "ESTABLISHED", "--ctdir", "REPLY",
+                         "-j", "ACCEPT"))
     if uplink:
-        outbound = [
+        outbound.extend([
             ("-m", "conntrack", "--ctstate", "INVALID,DNAT", "-j", "DROP"),
             *(("-d", dest, "-j", "DROP") for dest in blocked),
             ("-o", uplink, "-j", "RETURN"),
-        ]
-        inbound = [("-i", uplink, "-m", "conntrack", "--ctstate", "ESTABLISHED",
-                    "-j", "RETURN")]
+        ])
+        inbound.append(("-i", uplink, "-m", "conntrack", "--ctstate", "ESTABLISHED",
+                        "-j", "RETURN"))
     chains = {
         outgoing: [(*rule[:-2], *TAG, *rule[-2:]) for rule in outbound],
         incoming: [(*rule[:-2], *TAG, *rule[-2:]) for rule in inbound],
@@ -111,40 +127,60 @@ def apply(family, table, bridge, hooks, chains):
         raise ValueError("persona firewall policy failed verification")
 
 
-def prepare(name, internet):
+def prepare(name, internet, files_uid=None):
     bridge = "hp" + sha256(name.encode()).hexdigest()[:12]
+    # A reserved, non-reused UID identifies one /29. Keep Docker's dynamic
+    # allocation in the upper half so it cannot reserve the FileBrowser IP.
+    subnet = IPv4Network((int(IPv4Network("10.231.0.0/16").network_address)
+                          + files_uid * 8, 29)) if files_uid is not None else None
+    ip_range = list(subnet.subnets())[1] if subnet else None
+    backend = str(subnet.network_address + 2) if subnet else None
+    expected_ipam = {"Subnet": str(subnet), "IPRange": str(ip_range)}
     current = network(name, bridge)
-    if current is not None and current["Internal"] == internet:
-        # The launcher has already stopped the old project. Docker refuses
-        # removal if any other service remains attached.
+    if current is not None and (
+        current["Internal"] or (
+            subnet and not any(
+                all(entry.get(key) == value for key, value in expected_ipam.items())
+                for entry in current["IPAM"]["Config"]
+            )
+        )
+    ):
+        # The launcher has already stopped the project. Docker refuses to
+        # remove the network if another container is still attached.
         command(*DOCKER, "network", "rm", name)
         current = None
     if current is None:
-        mode = "nat" if internet else "isolated"
+        ipam = ("--subnet", str(subnet), "--ip-range", str(ip_range)) if subnet else ()
         command(*DOCKER, "network", "create", "--driver", "bridge", "--ipv6=false",
                 "--label", f"dev.haven.persona={name}",
                 "--opt", f"com.docker.network.bridge.name={bridge}",
                 "--opt", "com.docker.network.bridge.enable_icc=true",
-                "--opt", f"com.docker.network.bridge.gateway_mode_ipv4={mode}",
-                *([] if internet else ["--internal"]), name)
+                "--opt", "com.docker.network.bridge.gateway_mode_ipv4=nat",
+                *ipam, name)
         current = network(name, bridge)
-    if current is None or current["Internal"] == internet:
+    if current is None or current["Internal"]:
         raise ValueError("persona network mode failed verification")
     uplink, blocked = firewall.public_uplink() if internet else (None, ())
     for family in ("ip6tables", "iptables"):
-        hooks, chains = policy(bridge, uplink if family == "iptables" else None, blocked)
+        ipv4 = family == "iptables"
+        hooks, chains = policy(bridge, uplink if ipv4 else None, blocked,
+                               backend if ipv4 else None)
         for table in ("mangle", "filter"):
             apply(family, table, bridge, hooks, chains)
+    return backend
 
 
 if __name__ == "__main__":
-    import re
-
-    if (len(sys.argv) != 3 or not re.fullmatch(r"haven-persona-[a-z][a-z0-9-]{0,25}", sys.argv[1])
-            or sys.argv[2] not in ("true", "false")):
-        sys.exit("usage: persona-firewall.py haven-persona-NAME {true|false}")
+    if (len(sys.argv) not in (3, 4)
+            or not re.fullmatch(r"haven-persona-[a-z][a-z0-9-]{0,25}", sys.argv[1])
+            or sys.argv[2] not in ("true", "false")
+            or (len(sys.argv) == 4 and not re.fullmatch(r"[1-9][0-9]{2}", sys.argv[3]))):
+        sys.exit("usage: persona-firewall.py haven-persona-NAME {true|false} [FILES_UID]")
     try:
-        prepare(sys.argv[1], sys.argv[2] == "true")
+        backend = prepare(sys.argv[1], sys.argv[2] == "true",
+                          int(sys.argv[3]) if len(sys.argv) == 4 else None)
+        if backend:
+            print(backend)
     except (ValueError, KeyError, OSError, subprocess.SubprocessError) as error:
         reason = str(error) if type(error) is ValueError else type(error).__name__
         sys.exit(f"Persona firewall: network setup failed ({reason})")

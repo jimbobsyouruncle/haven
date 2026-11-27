@@ -53,6 +53,19 @@
 		uri /verify
 	}
 }
+
+# Install a root-controlled import inside the authenticated wildcard route.
+(persona_files) {
+	@files_{args[0]} host {args[0]}-files.{$TLS_DOMAIN}
+	handle @files_{args[0]} {
+		reverse_proxy {args[1]}:8080 {
+			header_up Cookie "(^|;)[[:blank:]]*haven_auth[[:blank:]]*=[^;]*" ""
+			header_up -Authorization
+			header_down Set-Cookie "^[[:blank:]]*haven_auth[[:blank:]]*=.*" ""
+			header_down -Clear-Site-Data
+		}
+	}
+}
 #@end
 
 #@region local_http
@@ -282,17 +295,17 @@ https://status.{$TLS_DOMAIN} {
 }
 
 https://*.{$TLS_DOMAIN} {
-	# Wildcard catch-all. Unknown subdomain gets a bare 404, so a probe
-	# cannot enumerate services. No (hsts): HSTS is only for the three
-	# named hosts above.
 	import trusted_only
-	#@auth
-	import auth
-	#@on
 	import secure_headers
 	import tls_dns
 
-	respond 404
+	route {
+		#@auth
+		import auth
+		import /data/persona-files/*.caddy
+		#@on
+		respond 404
+	}
 }
 
 # --- HTTP -> HTTPS redirect (port 80 stays open for redirect + HTTP-01) ---

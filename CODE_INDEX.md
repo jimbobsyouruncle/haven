@@ -641,10 +641,10 @@
 
 ## scripts/persona-firewall.py
 - def network(name, bridge)
-- def policy(bridge, uplink, blocked)
+- def policy(bridge, uplink, blocked, backend)
 - def verify(listing, bridge, hooks, chains)
 - def apply(family, table, bridge, hooks, chains)
-- def prepare(name, internet)
+- def prepare(name, internet, files_uid)
 
 ## scripts/persona-hermes.sh
 - (no symbols)
