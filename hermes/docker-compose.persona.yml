@@ -30,6 +30,38 @@ services:
         bind:
           create_host_path: false
 
+  files:
+    image: ghcr.io/gtsteffaniak/filebrowser:2.1.0-stable@sha256:17de8d0ac6a6bcfd5ef9aca43d6c0aa2fd031a07d6ee9b8a3b7c6c646efe35bf
+    profiles: [files]
+    user: "${PERSONA_UID:?Verify the persona identity first}:${PERSONA_GID:?Verify the persona identity first}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    restart: "no"
+    mem_limit: 256m
+    networks: [persona]
+    environment:
+      FILEBROWSER_CONFIG: /etc/haven-filebrowser.yaml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
+    volumes:
+      - type: bind
+        source: ${PERSONA_DATA_DIR:?Verify the persona storage first}/projects
+        target: /folder
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PERSONA_DATA_DIR:?Verify the persona storage first}/files
+        target: /home/filebrowser/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./filebrowser.yaml
+        target: /etc/haven-filebrowser.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+
 networks:
   persona:
     external: true

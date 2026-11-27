@@ -266,6 +266,11 @@
 
 ## hermes/docker-compose.persona.yml
 - hermes
+- files
+
+## hermes/filebrowser.yaml
+- http
+- server
 
 ## install.sh
 - tls_flag_value()

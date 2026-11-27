@@ -89,3 +89,11 @@ exhaustion vulnerability, and upstream has ended security maintenance. Select
 a maintained candidate before enabling a companion route.
 [Upstream release](https://github.com/filebrowser/filebrowser/releases/tag/v2.63.23) ·
 [Security advisory](https://github.com/filebrowser/filebrowser/security/advisories/GHSA-448h-jr2h-3vhp)
+
+FileBrowser Quantum v2.1.0-stable is the selected replacement. The pinned
+image index includes Linux ARM64. The optional `PERSONA_APPS=hermes,files`
+declaration shares the persona's `projects` directory with both apps.
+Quantum keeps its database and cache in the separately provisioned `files`
+directory, runs with the reserved persona UID/GID, and publishes no ports.
+The Compose definition does not yet provide an authenticated HTTPS route.
+[Published image](https://github.com/gtsteffaniak/filebrowser/pkgs/container/filebrowser/1630175613?tag=2.1.0-stable)

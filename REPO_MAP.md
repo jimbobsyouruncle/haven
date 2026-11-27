@@ -139,6 +139,7 @@
 - hermes/README.md - hermes/ — Hermes Agent system orchestrator
 - hermes/docker-compose.hermes.yml - Passed through from the env file so the image's hermes uid/gid match
 - hermes/docker-compose.persona.yml - Restart is operator-gated so a daemon/host restart cannot race the firewall.
+- hermes/filebrowser.yaml
 ## hermes/agent-hooks
 
 - hermes/agent-hooks/secret-guard.py - pre_tool_call guard: treat the model as adversarial.
