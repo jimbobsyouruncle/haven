@@ -1,0 +1,36 @@
+services:
+  hermes:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HAVEN_UID: ${PERSONA_UID:?Verify the persona identity first}
+        HAVEN_GID: ${PERSONA_GID:?Verify the persona identity first}
+    user: "${PERSONA_UID:?Verify the persona identity first}:${PERSONA_GID:?Verify the persona identity first}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Restart is operator-gated so a daemon/host restart cannot race the firewall.
+    restart: "no"
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    networks:
+      - persona
+    volumes:
+      - type: bind
+        source: ${PERSONA_DATA_DIR:?Verify the persona storage first}/persona
+        target: /root/.hermes
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PERSONA_DATA_DIR:?Verify the persona storage first}/projects
+        target: /root/workspace
+        bind:
+          create_host_path: false
+
+networks:
+  persona:
+    external: true
+    name: ${PERSONA_NETWORK:?Prepare the persona firewall first}

@@ -151,6 +151,15 @@ alpha="$(declare_persona alpha hermes)"
 beta="$(declare_persona beta hermes)"
 [[ "$(declare_persona alpha hermes --check)" == "$alpha" ]]
 [[ "$(declare_persona beta hermes --check)" == "$beta" ]]
+declare_internet() {
+  printf 'PERSONA_ID=alpha\nPERSONA_APPS=hermes\nPERSONA_INTERNET=%s\n' "$1" | provision --declaration "${@:2}"
+}
+[[ "$(declare_internet false --check)" == "${alpha/ data_dir=/ internet=false data_dir=}" ]]
+[[ "$(declare_internet true)" == "${alpha/ data_dir=/ internet=true data_dir=}" ]]
+if declare_internet invalid --check; then
+  echo 'Unexpected success for invalid internet setting.' >&2
+  exit 1
+fi
 IFS=: read -r _ alpha_uid alpha_gid < <(awk -F: '$1 == "alpha"' "$data/.persona-identities")
 IFS=: read -r _ beta_uid beta_gid < <(awk -F: '$1 == "beta"' "$data/.persona-identities")
 [[ "$alpha_uid" != "$beta_uid" && "$alpha_gid" != "$beta_gid" ]]

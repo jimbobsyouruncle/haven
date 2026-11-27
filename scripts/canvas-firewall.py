@@ -60,6 +60,10 @@ def topology():
     for family in ("iptables", "ip6tables"):
         if Path(f"/proc/sys/net/bridge/bridge-nf-call-{family}").read_text().strip() != "1":
             raise ValueError("bridge filtering is disabled")
+    return public_uplink()
+
+
+def public_uplink():
     route, = json.loads(command("ip", "-j", "-4", "route", "get", RESOLVERS[0]))
     uplink = route["dev"]
     if (not route.get("gateway") or not re.fullmatch(r"[A-Za-z0-9_.-]+", uplink)
@@ -128,8 +132,9 @@ def rules(family, table):
 
 def verify(listing, hooks, chains):
     return (all(listing.get(chain) == expected for chain, expected in chains.items())
-            and all(listing.get(chain, [])[:len(expected)] == expected
-                    and not any("haven-canvas" in rule for rule in listing[chain][len(expected):])
+            and all([rule for rule in listing.get(chain, [])
+                     if "haven-persona" not in rule][:len(expected)] == expected
+                    and sum("haven-canvas" in rule for rule in listing[chain]) == len(expected)
                     for chain, expected in hooks.items()))
 
 

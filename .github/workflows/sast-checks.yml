@@ -429,6 +429,9 @@ jobs:
             || { echo "::error::HERMES_HOME is '${HOME_VAL}', expected the data volume /root/.hermes"; exit 1; }
           echo "HERMES_HOME is the data volume; dependency state (incl. .leases) stays off /opt."
 
+      - name: Declared Hermes coexistence and recreation
+        run: sudo --preserve-env=GITHUB_ACTIONS bash scripts/test-persona-hermes.sh
+
       - name: Show what Hermes writes at first start (paths only)
         # Always runs, so a pull request shows what Hermes writes and where
         # tools install. `docker diff` output is a change type plus a path.

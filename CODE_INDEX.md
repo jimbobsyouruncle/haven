@@ -264,6 +264,9 @@
 ## hermes/docker-compose.hermes.yml
 - hermes
 
+## hermes/docker-compose.persona.yml
+- hermes
+
 ## install.sh
 - tls_flag_value()
 - log()
@@ -430,6 +433,7 @@
 - def command(*args, data)
 - def network(name, bridge, *, internal, allowed)
 - def topology()
+- def public_uplink()
 - def policy(uplink, blocked, *, ipv6)
 - def rules(family, table)
 - def verify(listing, hooks, chains)
@@ -629,6 +633,16 @@
 - tls_print_ca_caution()
 - tls_check_dns()
 - tls_load_env_file_values()
+
+## scripts/persona-firewall.py
+- def network(name, bridge)
+- def policy(bridge, uplink, blocked)
+- def verify(listing, bridge, hooks, chains)
+- def apply(family, table, bridge, hooks, chains)
+- def prepare(name, internet)
+
+## scripts/persona-hermes.sh
+- (no symbols)
 
 ## scripts/provision-persona.sh
 - die()
@@ -1001,10 +1015,22 @@
 - env_value()
 - normalise()
 
+## scripts/test-persona-hermes.sh
+- wait_for_webui()
+- verify_mounts()
+
+## scripts/test-persona-network.sh
+- launch_http()
+- launch_client()
+- request()
+- deny()
+- same_persona()
+
 ## scripts/test-provision-persona.sh
 - provision()
 - reject()
 - declare_persona()
+- declare_internet()
 - setup_reject()
 - setup_terminal()
 

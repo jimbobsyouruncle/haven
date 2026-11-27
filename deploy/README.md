@@ -43,11 +43,12 @@ Schema and storage changes can make an older application revision incompatible w
 ## Declaring an additional persona
 
 Keep one operator-reviewed, credential-free declaration per additional persona.
-Use two literal lines in this order:
+Use these literal settings in order. The third line is optional and defaults to `true`.
 
 ```dotenv
 PERSONA_ID=research
 PERSONA_APPS=hermes
+PERSONA_INTERNET=true
 ```
 
 Run these commands from a trusted checkout as the host administrator. The first
@@ -62,7 +63,40 @@ sudo ./scripts/provision-persona.sh --declaration --check < research.env
 
 Set `PERSONA_APPS=` to disable provisioning through the declaration. A disabled
 declaration check validates its syntax and reports it disabled. The account,
-reserved IDs, and data remain in place for re-enabling. At this stage the
-declaration controls provisioning only. Service startup, shutdown, and
-deployment reconciliation will consume the declaration in later changes.
+reserved IDs, and data remain in place for re-enabling. Shut down a running
+declared Hermes instance with the command below before clearing the app list.
+Automatic deployment reconciliation is tracked in
+[#298](https://github.com/jimbobsyouruncle/haven/issues/298).
 Existing Canvas and Hermes use their current setup and deployment paths.
+
+### Running a declared Hermes instance
+
+The root-only launcher checks the provisioned identity and storage, then
+starts Hermes on one private bridge after the host firewall is verified.
+Containers on the same persona bridge can communicate freely. Internet-enabled
+personas use public IPv4 via the host's public uplink. Local host services,
+other Docker bridges, other personas, and Docker-published port forwarding
+are blocked. Leave the project stopped after a host reboot until the launcher
+has reapplied its rules. This stage has no published ports. The authenticated
+proxy path is tracked in [#297](https://github.com/jimbobsyouruncle/haven/issues/297).
+
+```bash
+sudo ./scripts/persona-hermes.sh up < research.env
+sudo ./scripts/persona-hermes.sh down < research.env
+```
+
+To turn internet access off, update the operator-owned declaration from
+`internet-off` and reapply it. Use `internet-on` to turn it back on. Save the
+updated file before reapplying so the policy survives restart. A mode change
+recreates the persona's bridge and Hermes container while retaining all
+state, projects and identity reservations. Teardown also retains those paths.
+
+```bash
+next="$(mktemp ./research.env.XXXXXXXX)"
+if sudo ./scripts/persona-hermes.sh internet-off < research.env > "$next"; then
+  mv -- "$next" research.env
+  sudo ./scripts/persona-hermes.sh up < research.env
+else
+  rm -- "$next"
+fi
+```
