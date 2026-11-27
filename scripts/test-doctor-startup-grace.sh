@@ -473,7 +473,9 @@ else
 fi
 
 printf '\n  canvas:\n' >> "$APPD/docker-compose.yml"
-printf '%s\n' 'test "$1" = canvas-check' > "$APPD/scripts/sandbox-firewall.sh"
+cat > "$APPD/scripts/sandbox-firewall.sh" <<'EOF'
+test "$1" = canvas-check
+EOF
 run_doctor canvas-retry
 if [[ "$RC" == 2 ]] && grep -q 'Canvas is unavailable while starting or retrying' "$WORK/out.canvas-retry" &&
    ! grep -q 'Canvas Agent Server health probe passed' "$WORK/out.canvas-retry"; then
