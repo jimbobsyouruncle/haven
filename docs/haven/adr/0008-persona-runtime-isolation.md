@@ -63,3 +63,37 @@ network and private Hermes service without published ports.
 proxy ingress and must preserve the peer and backend denials, including with
 internet enabled. Keep Docker socket access, privileged execution,
 infrastructure credentials and peer storage outside persona containers.
+
+### Companion WebUI ingress decision — #297
+
+The owner approved a Haven firewall exception scoped to the existing Caddy
+instance and each explicitly configured companion HTTP endpoint. Companions
+publish no host ports. Caddy stays outside persona bridges, and the exception
+permits only the configured connection and its established replies. Peer
+persona, direct backend and host management access remain denied. Same-persona
+communication and the persona's outbound internet setting retain their existing
+behavior.
+
+Caddy must enforce Haven owner authentication at each companion HTTPS hostname
+before proxying. Remove `haven_auth` from upstream requests and prevent the
+app from setting it in downstream responses. Preserve app-specific cookies
+where required and strip infrastructure credentials and unnecessary
+authorization headers.
+
+This decision is pending implementation. Activation requires verified Caddy
+and companion endpoint identities across recreation, a working return path
+under the supported bridge configuration, and effective ingress and bypass
+tests. The upstream File Browser candidate failed security qualification. Its
+final release, v2.63.23, is affected by an unpatched high-severity memory
+exhaustion vulnerability, and upstream has ended security maintenance. Select
+a maintained candidate before enabling a companion route.
+[Upstream release](https://github.com/filebrowser/filebrowser/releases/tag/v2.63.23) ·
+[Security advisory](https://github.com/filebrowser/filebrowser/security/advisories/GHSA-448h-jr2h-3vhp)
+
+FileBrowser Quantum v2.1.0-stable is the selected replacement. The pinned
+image index includes Linux ARM64. The optional `PERSONA_APPS=hermes,files`
+declaration shares the persona's `projects` directory with both apps.
+Quantum keeps its database and cache in the separately provisioned `files`
+directory, runs with the reserved persona UID/GID, and publishes no ports.
+The Compose definition does not yet provide an authenticated HTTPS route.
+[Published image](https://github.com/gtsteffaniak/filebrowser/pkgs/container/filebrowser/1630175613?tag=2.1.0-stable)

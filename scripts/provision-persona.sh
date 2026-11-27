@@ -20,7 +20,7 @@ if [[ "$persona" == --declaration ]]; then
   # Read literal settings from stdin. Never evaluate an operator declaration as shell.
   declaration="$(awk -F= '
     NR == 1 && /^PERSONA_ID=[a-z][a-z0-9-]*$/ { id = $2; next }
-    NR == 2 && /^PERSONA_APPS=(hermes)?$/ { apps = $2; next }
+    NR == 2 && /^PERSONA_APPS=(hermes(,files)?)?$/ { apps = $2; next }
     NR == 3 && /^PERSONA_INTERNET=(true|false)$/ { internet = $2; next }
     { exit 1 }
     END {
@@ -29,7 +29,8 @@ if [[ "$persona" == --declaration ]]; then
     }
   ')" || die "Expected PERSONA_ID and PERSONA_APPS, with optional PERSONA_INTERNET=true or false."
   IFS=: read -r persona apps internet <<< "$declaration"
-  printf -v declaration_input 'PERSONA_ID=%s\nPERSONA_APPS=%s\nPERSONA_INTERNET=%s' "$persona" "$apps" "$internet"
+  printf -v declaration_input 'PERSONA_ID=%s\nPERSONA_APPS=%s' "$persona" "$apps"
+  if [[ -n "$internet" ]]; then declaration_input+=$'\n'"PERSONA_INTERNET=$internet"; fi
   [[ "$persona" != canvas ]] || die "Use the existing setup path for Canvas."
 fi
 persona_valid_name "$persona" || die "Use a non-reserved lowercase persona name."
@@ -161,7 +162,7 @@ if exists "$state"; then
   shopt -s nullglob dotglob
   for entry in "$state"/*; do
     case "${entry##*/}" in
-      persona|projects)
+      persona|projects|files)
         [[ -d "$entry" && ! -L "$entry" && "$(metadata "$entry")" == "$uid:$gid:700" ]] ||
           die "Unsafe persona child directory."
         require_unmounted "$entry"
@@ -179,6 +180,9 @@ fi
 if [[ -n "$check" ]]; then
   [[ -n "$user" && -n "$group" && -d "$state/persona" && -d "$state/projects" ]] ||
     die "Persona provisioning is incomplete."
+  if [[ "${apps:-}" == hermes,files && ! -d "$state/files" ]]; then
+    die "FileBrowser storage is missing. Provision this declaration first."
+  fi
 else
   stage=""
   cleanup() {
@@ -206,7 +210,9 @@ else
     useradd --system --uid "$uid" --gid "$gid" --no-user-group --no-create-home \
       --home-dir /nonexistent --shell "$shell" -- "$account"
   fi
-  for entry in "$state" "$state/persona" "$state/projects"; do
+  directories=("$state" "$state/persona" "$state/projects")
+  if [[ "${apps:-}" == hermes,files ]]; then directories+=("$state/files"); fi
+  for entry in "${directories[@]}"; do
     if ! exists "$entry"; then
       [[ -n "$stage" ]] || make_stage
       mkdir -m 0700 -- "$stage/directory"
@@ -217,12 +223,13 @@ else
   # Re-open in check mode after dropping the exclusive directory lock.
   cleanup
   exec {lock}<&-
-  if [[ "$1" == --declaration && -n "$internet" ]]; then
+  if [[ "$1" == --declaration ]]; then
     exec bash "$script_dir/provision-persona.sh" --declaration --check <<< "$declaration_input"
   fi
   exec bash "$script_dir/provision-persona.sh" "$persona" --check
 fi
 printf 'persona=%s uid=%s gid=%s' "$persona" "$uid" "$gid"
+if [[ "${apps:-}" == hermes,files ]]; then printf ' apps=hermes,files'; fi
 if [[ "$1" == --declaration && -n "$internet" ]]; then
   printf ' internet=%s' "$internet"
 fi

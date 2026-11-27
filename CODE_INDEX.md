@@ -266,6 +266,11 @@
 
 ## hermes/docker-compose.persona.yml
 - hermes
+- files
+
+## hermes/filebrowser.yaml
+- http
+- server
 
 ## install.sh
 - tls_flag_value()
@@ -1018,6 +1023,7 @@
 ## scripts/test-persona-hermes.sh
 - wait_for_webui()
 - verify_mounts()
+- container_id()
 
 ## scripts/test-persona-network.sh
 - launch_http()

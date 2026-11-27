@@ -15,7 +15,7 @@ if [[ "$identity" == 'persona='*' disabled' ]]; then
   exit 1
 fi
 
-identity_pattern='^persona=([a-z][a-z0-9-]*) uid=([1-9][0-9][0-9]) gid=([1-9][0-9][0-9])( internet=(true|false))? data_dir=(/.+)$'
+identity_pattern='^persona=([a-z][a-z0-9-]*) uid=([1-9][0-9][0-9]) gid=([1-9][0-9][0-9])( apps=(hermes,files))?( internet=(true|false))? data_dir=(/.+)$'
 if [[ ! "$identity" =~ $identity_pattern ]]; then
   printf 'Could not read the verified persona identity.\n' >&2
   exit 1
@@ -24,13 +24,15 @@ fi
 persona="${BASH_REMATCH[1]}"
 uid="${BASH_REMATCH[2]}"
 gid="${BASH_REMATCH[3]}"
-internet="${BASH_REMATCH[5]:-true}"
-data_dir="${BASH_REMATCH[6]}/${persona}_data"
+apps="${BASH_REMATCH[5]:-hermes}"
+internet="${BASH_REMATCH[7]:-true}"
+data_dir="${BASH_REMATCH[8]}/${persona}_data"
 network="haven-persona-$persona"
+IFS=, read -r -a services <<< "$apps"
 
 case "$1" in
-  internet-on) printf 'PERSONA_ID=%s\nPERSONA_APPS=hermes\nPERSONA_INTERNET=true\n' "$persona"; exit ;;
-  internet-off) printf 'PERSONA_ID=%s\nPERSONA_APPS=hermes\nPERSONA_INTERNET=false\n' "$persona"; exit ;;
+  internet-on) printf 'PERSONA_ID=%s\nPERSONA_APPS=%s\nPERSONA_INTERNET=true\n' "$persona" "$apps"; exit ;;
+  internet-off) printf 'PERSONA_ID=%s\nPERSONA_APPS=%s\nPERSONA_INTERNET=false\n' "$persona" "$apps"; exit ;;
 esac
 
 exec {lock}>/run/haven-persona-network.lock
@@ -44,9 +46,10 @@ compose=(
   docker --host unix:///var/run/docker.sock compose
   --project-name "$network"
   --file "$script_dir/../hermes/docker-compose.persona.yml"
+  --profile files
 )
 "${compose[@]}" down
 if [[ "$1" == up ]]; then
   "${local_env[@]}" python3 -B "$script_dir/persona-firewall.py" "$network" "$internet"
-  exec "${compose[@]}" up --build --detach hermes
+  exec "${compose[@]}" up --build --detach "${services[@]}"
 fi

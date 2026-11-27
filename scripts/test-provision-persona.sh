@@ -166,6 +166,16 @@ IFS=: read -r _ beta_uid beta_gid < <(awk -F: '$1 == "beta"' "$data/.persona-ide
 [[ "$(stat -c '%u:%g:%a' -- "$data/alpha_data/persona")" == "$alpha_uid:$alpha_gid:700" ]]
 [[ "$(stat -c '%u:%g:%a' -- "$data/beta_data/persona")" == "$beta_uid:$beta_gid:700" ]]
 
+if declare_persona alpha hermes,files --check; then
+  echo 'Unexpected success without companion storage.' >&2
+  exit 1
+fi
+alpha_files="${alpha/ data_dir=/ apps=hermes,files data_dir=}"
+[[ "$(declare_persona alpha hermes,files)" == "$alpha_files" ]]
+[[ "$(declare_persona alpha hermes,files --check)" == "$alpha_files" ]]
+[[ "$(stat -c '%u:%g:%a' -- "$data/alpha_data/files")" == "$alpha_uid:$alpha_gid:700" ]]
+[[ ! -e "$data/beta_data/files" ]]
+
 printf 'keep this\n' > "$data/alpha_data/persona/state"
 before="$(stat -c '%i:%z' "$data/.persona-identities" "$data/alpha_data/persona")"
 [[ "$(declare_persona alpha '' --check)" == 'persona=alpha disabled' ]]
