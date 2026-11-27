@@ -39,8 +39,9 @@ local_env=(env -i PATH="$PATH")
 compose=(
   "${local_env[@]}"
   PERSONA_UID="$uid" PERSONA_GID="$gid" PERSONA_DATA_DIR="$data_dir" PERSONA_NETWORK="$network"
+  # Interpolate only verified persona values. The legacy stack env holds credentials.
+  COMPOSE_DISABLE_ENV_FILE=1
   docker --host unix:///var/run/docker.sock compose
-  --env-file /dev/null
   --project-name "$network"
   --file "$script_dir/../hermes/docker-compose.persona.yml"
 )
