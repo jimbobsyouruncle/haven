@@ -63,9 +63,10 @@ sudo ./scripts/provision-persona.sh --declaration --check < research.env
 
 Set `PERSONA_APPS=` to disable provisioning through the declaration. A disabled
 declaration check validates its syntax and reports it disabled. The account,
-reserved IDs, and data remain in place for re-enabling. At this stage the
-declaration controls provisioning only. Service startup, shutdown, and
-deployment reconciliation will consume the declaration in later changes.
+reserved IDs, and data remain in place for re-enabling. Shut down a running
+declared Hermes instance with the command below before clearing the app list.
+Automatic deployment reconciliation is tracked in
+[#298](https://github.com/jimbobsyouruncle/haven/issues/298).
 Existing Canvas and Hermes use their current setup and deployment paths.
 
 ### Running a declared Hermes instance

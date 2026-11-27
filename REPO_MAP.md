@@ -248,6 +248,7 @@
 - scripts/test-install-auth-env-leak.sh - FILE: scripts/test-install-auth-env-leak.sh
 - scripts/test-install-health.sh - FILE: scripts/test-install-health.sh
 - scripts/test-install-tailscale-migration.sh - FILE: scripts/test-install-tailscale-migration.sh
+- scripts/test-persona-hermes.sh - Run on the disposable ARM runner beside the existing Hermes smoke container.
 - scripts/test-persona-network.sh - Run only on a disposable CI Docker host. The firewall remains until teardown
 - scripts/test-provision-persona.sh - Run as root in a disposable environment. Account mutations use only fixtures.
 - scripts/test-prune-conversations.sh - FILE: scripts/test-prune-conversations.sh

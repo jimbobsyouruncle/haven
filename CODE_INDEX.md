@@ -1015,6 +1015,10 @@
 - env_value()
 - normalise()
 
+## scripts/test-persona-hermes.sh
+- wait_for_webui()
+- verify_mounts()
+
 ## scripts/test-persona-network.sh
 - launch_http()
 - launch_client()
