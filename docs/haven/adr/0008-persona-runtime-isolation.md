@@ -83,6 +83,9 @@ authorization headers.
 This decision is pending implementation. Activation requires verified Caddy
 and companion endpoint identities across recreation, a working return path
 under the supported bridge configuration, and effective ingress and bypass
-tests. File Browser is the first candidate, conditional on an ARM64 image pin
-and security qualification. Keep companion ingress disabled if the existing
-bridge and firewall can’t provide that scoped path.
+tests. The upstream File Browser candidate failed security qualification. Its
+final release, v2.63.23, is affected by an unpatched high-severity memory
+exhaustion vulnerability, and upstream has ended security maintenance. Select
+a maintained candidate before enabling a companion route.
+[Upstream release](https://github.com/filebrowser/filebrowser/releases/tag/v2.63.23) ·
+[Security advisory](https://github.com/filebrowser/filebrowser/security/advisories/GHSA-448h-jr2h-3vhp)
