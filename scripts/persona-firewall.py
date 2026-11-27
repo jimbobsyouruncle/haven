@@ -130,6 +130,23 @@ def apply(family, table, bridge, hooks, chains):
         raise ValueError("persona firewall policy failed verification")
 
 
+def apply_proxy_prerouting(bridge, backend):
+    # Docker can drop directly routed traffic to NAT bridge endpoints in raw
+    # PREROUTING, before the verified mangle and filter policy sees it.
+    # This early ACCEPT only ends processing in raw. Forwarding still requires
+    # the narrow, stateful companion rules in both later tables.
+    hooks = {"PREROUTING": []}
+    chains = {}
+    if backend:
+        hooks["PREROUTING"].append(("-i", PROXY_BRIDGE, *TAG, "-j", bridge))
+        chains[bridge] = [
+            ("-s", PROXY_IP + "/32", "-d", backend + "/32", "-p", "tcp", "-m", "tcp",
+             "--dport", FILES_PORT, *TAG, "-j", "ACCEPT"),
+            (*TAG, "-j", "RETURN"),
+        ]
+    apply("iptables", "raw", bridge, hooks, chains)
+
+
 def prepare(name, internet, files_uid=None):
     bridge = "hp" + sha256(name.encode()).hexdigest()[:12]
     # A reserved, non-reused UID identifies one /29. Keep Docker's dynamic
@@ -170,6 +187,7 @@ def prepare(name, internet, files_uid=None):
                                backend if ipv4 else None)
         for table in ("mangle", "filter"):
             apply(family, table, bridge, hooks, chains)
+    apply_proxy_prerouting(bridge, backend)
     return backend
 
 

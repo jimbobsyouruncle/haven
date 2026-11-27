@@ -644,6 +644,7 @@
 - def policy(bridge, uplink, blocked, backend)
 - def verify(listing, bridge, hooks, chains)
 - def apply(family, table, bridge, hooks, chains)
+- def apply_proxy_prerouting(bridge, backend)
 - def prepare(name, internet, files_uid)
 
 ## scripts/persona-hermes.sh
