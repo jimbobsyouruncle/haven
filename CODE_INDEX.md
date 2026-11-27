@@ -264,6 +264,9 @@
 ## hermes/docker-compose.hermes.yml
 - hermes
 
+## hermes/docker-compose.persona.yml
+- hermes
+
 ## install.sh
 - tls_flag_value()
 - log()
@@ -629,6 +632,9 @@
 - tls_print_ca_caution()
 - tls_check_dns()
 - tls_load_env_file_values()
+
+## scripts/persona-hermes.sh
+- (no symbols)
 
 ## scripts/provision-persona.sh
 - die()

@@ -66,3 +66,21 @@ reserved IDs, and data remain in place for re-enabling. At this stage the
 declaration controls provisioning only. Service startup, shutdown, and
 deployment reconciliation will consume the declaration in later changes.
 Existing Canvas and Hermes use their current setup and deployment paths.
+
+### Isolated Hermes qualification
+
+The per-persona Compose project uses the existing Hermes image recipe, with
+the provisioned UID/GID and only the persona's state and project mounts. This
+qualification path disables container networking. Check WebUI liveness from
+inside the container with the host administrator's Docker CLI. Provider
+traffic and user-facing access require a separate network configuration.
+
+With the enabled declaration, an authorized administrator can start and
+remove the qualification container. Removal retains the host state and
+identity. Use the enabled declaration for teardown before clearing its app
+list.
+
+```bash
+sudo ./scripts/persona-hermes.sh up < research.env
+sudo ./scripts/persona-hermes.sh down < research.env
+```

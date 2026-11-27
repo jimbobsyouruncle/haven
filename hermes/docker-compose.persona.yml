@@ -1,0 +1,25 @@
+services:
+  hermes:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HAVEN_UID: ${PERSONA_UID:?Verify the persona identity first}
+        HAVEN_GID: ${PERSONA_GID:?Verify the persona identity first}
+    user: "${PERSONA_UID:?Verify the persona identity first}:${PERSONA_GID:?Verify the persona identity first}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    network_mode: none
+    volumes:
+      - type: bind
+        source: ${PERSONA_DATA_DIR:?Verify the persona storage first}/persona
+        target: /root/.hermes
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PERSONA_DATA_DIR:?Verify the persona storage first}/projects
+        target: /root/workspace
+        bind:
+          create_host_path: false

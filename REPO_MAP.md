@@ -138,6 +138,7 @@
 - hermes/Dockerfile
 - hermes/README.md - hermes/ — Hermes Agent system orchestrator
 - hermes/docker-compose.hermes.yml - Passed through from the env file so the image's hermes uid/gid match
+- hermes/docker-compose.persona.yml
 ## hermes/agent-hooks
 
 - hermes/agent-hooks/secret-guard.py - pre_tool_call guard: treat the model as adversarial.
@@ -197,6 +198,7 @@
 - scripts/deploy-trigger.sh
 - scripts/generate-agent-context.py - Generate Haven's architectural maps with the pinned shared generator.
 - scripts/no-masked-literals-baseline.txt
+- scripts/persona-hermes.sh - Manage one provisioned Hermes Compose project from a trusted operator declaration.
 - scripts/provision-persona.sh - Provision and verify a dedicated Haven persona identity and storage as root.
 - scripts/prune-conversations.sh - FILE: scripts/prune-conversations.sh
 - scripts/prune-docker-cache.sh - FILE: scripts/prune-docker-cache.sh
