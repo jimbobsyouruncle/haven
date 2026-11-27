@@ -1023,6 +1023,7 @@
 ## scripts/test-persona-hermes.sh
 - wait_for_webui()
 - verify_mounts()
+- container_id()
 
 ## scripts/test-persona-network.sh
 - launch_http()
